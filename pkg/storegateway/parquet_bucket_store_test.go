@@ -35,7 +35,7 @@ func TestParquetBucketStore_InitialSync(t *testing.T) {
 	require.NoError(t, err)
 	store := createTestParquetBucketStore(t, userID, bkt)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
@@ -60,7 +60,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 	require.NoError(t, err)
 	store := createTestParquetBucketStore(t, userID, bkt)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
@@ -264,8 +264,30 @@ func TestParquetBucketStores_RowLimits(t *testing.T) {
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 3, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
+
+	t.Run("RowCountLimitEnforcesLimit", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		cfg.BucketStore.ParquetMaxRowCount = 1
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		// Query should fail due to row limit (we have 3 series but limit is 1)
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "would fetch too many rows")
+		require.Empty(t, warnings)
+		require.Empty(t, seriesSet)
+	})
 
 	t.Run("RowCountLimitAllowsNormalOperation", func(t *testing.T) {
 		cfg := prepareParquetStorageConfig(t)

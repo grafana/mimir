@@ -670,6 +670,40 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
+func generateStorageBlockWithMultipleSeries(t *testing.T, storageDir, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+	// Create a directory for the user (if doesn't already exist).
+	userDir := filepath.Join(storageDir, userID)
+	if _, err := os.Stat(userDir); err != nil {
+		require.NoError(t, os.Mkdir(userDir, os.ModePerm))
+	}
+
+	// Create a temporary directory where the TSDB is opened,
+	// then it will be snapshotted to the storage directory.
+	tmpDir := t.TempDir()
+
+	db, err := tsdb.Open(tmpDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	app := db.Appender(context.Background())
+
+	// Generate multiple series with the specified numSeries
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		series := labels.FromStrings(labels.MetricName, metricName, "series_id", fmt.Sprintf("%d", seriesIdx))
+
+		for ts := minT; ts < maxT; ts += int64(step) {
+			_, err = app.Append(0, series, ts, 1)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Snapshot TSDB to the storage directory.
+	require.NoError(t, db.Snapshot(userDir, true))
+}
+
 func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
