@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 // testPartitionsCount is lower in test to make debugging easier.
 const testPartitionsCount = 16
 
-func TestUsageTracker_PartitionAssignment(t *testing.T) {
+func TestUsageTracker_Tracking(t *testing.T) {
 	t.Run("happy-case series tracking", func(t *testing.T) {
 		t.Parallel()
 
@@ -101,7 +101,9 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: nil}, resp)
 	})
+}
 
+func TestUsageTracker_PartitionAssignment(t *testing.T) {
 	t.Run("happy-case initial assignment of all partitions", func(t *testing.T) {
 		t.Parallel()
 
@@ -156,7 +158,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		requireAllTrackersReady(t, trackers)
 	})
 
-	t.Run("partitions are not instantiated if previous instances are not running", func(t *testing.T) {
+	t.Run("partitions are instantiated even if previous instances are not running yet", func(t *testing.T) {
 		t.Parallel()
 
 		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
@@ -165,16 +167,14 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			"b1": newTestUsageTracker(t, 1, "zone-b", ikv, pkv, cluster),
 		}
 		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
-
-		// Usage-trackers have started now, we run reconciliations but nothing should happen yet
-		// because previous instances (-0) are not running yet.
 		reconcileAllTrackersPartitionCountTimes(t, trackers)
 
-		// They should not be ready yet.
-		requireAllTrackersNotReady(t, trackers)
+		// They should not bre ready already.
+		requireAllTrackersReady(t, trackers)
 
 		// start zone-a-0.
 		trackers["a0"] = newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// Reconcile them again.
 		for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
@@ -186,7 +186,13 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		// zone-a-0 and zone-a-1 should be ready now, but zone-b-1 is not ready yet because zone-b-0 didn't join the instance ring yet.
 		require.NoError(t, trackers["a0"].CheckReady(context.Background()), "Tracker a0 should be ready now")
 		require.NoError(t, trackers["a1"].CheckReady(context.Background()), "Tracker a1 should be ready now")
-		require.Error(t, trackers["b1"].CheckReady(context.Background()), "Tracker b1 should not be ready yet")
+		require.NoError(t, trackers["b1"].CheckReady(context.Background()), "Tracker b1 should not be ready yet")
+
+		for _, tracker := range trackers {
+			withRLock(&tracker.partitionsMtx, func() {
+				require.Len(t, tracker.partitions, testPartitionsCount/2, "Tracker %q should have %d partitions", tracker.cfg.InstanceRing.InstanceID, testPartitionsCount/2)
+			})
+		}
 	})
 
 	t.Run("new instance takes partitions, old shut downs them", func(t *testing.T) {
@@ -718,8 +724,7 @@ func TestInstancePartitions(t *testing.T) {
 					minSize := int32(math.MaxInt32)
 					maxSize := int32(0)
 					for i := int32(0); i < instances; i++ {
-						start, end, err := instancePartitions(i, instances, partitions)
-						require.NoError(t, err)
+						start, end := instancePartitions(i, instances, partitions)
 						ranges = append(ranges, rng{start, end})
 						require.True(t, start <= end, "instance=%d, start=%d end=%d", i, start, end)
 						require.True(t, start >= 0, "instance=%d, start=%d end=%d", i, start, end)

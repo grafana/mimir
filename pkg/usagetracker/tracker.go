@@ -370,11 +370,7 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 	}
 
 	logger := log.With(t.logger, "reconciliation_time", time.Now().UTC().Truncate(time.Second).Format(time.RFC3339))
-	start, end, totalInstances, err := t.instancePartitions()
-	if err != nil {
-		level.Error(logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
-		return nil
-	}
+	start, end, totalInstances := t.instancePartitions()
 
 	if err := t.removeStalePartitionOwnership(ctx, start, end); err != nil {
 		level.Error(logger).Log("msg", "unable to remove stale partition ownership, cannot reconcile", "err", err)
@@ -383,7 +379,7 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 
 	current := int32(len(t.partitions))
 
-	level.Info(logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions)
+	level.Debug(logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions)
 
 	unmarkedAsLost := 0
 	for p, lostAt := range t.lostPartitions {
@@ -673,10 +669,7 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 // CheckReady performs a readiness check.
 // An instance is ready when it has instantiated all the partitions that should belong to it according to the ring.
 func (t *UsageTracker) CheckReady(_ context.Context) error {
-	start, end, _, err := t.instancePartitions()
-	if err != nil {
-		return fmt.Errorf("unable to calculate partitions belonging to this instance: %w", err)
-	}
+	start, end, _ := t.instancePartitions()
 
 	var pending []int32
 	t.partitionsMtx.RLock()
@@ -694,16 +687,21 @@ func (t *UsageTracker) CheckReady(_ context.Context) error {
 	return nil
 }
 
-func (t *UsageTracker) instancePartitions() (start, end, totalInstances int32, err error) {
+func (t *UsageTracker) instancePartitions() (start, end, totalInstances int32) {
 	totalInstances = t.instancesServingPartitions()
 	if readOnly, _ := t.instanceLifecycler.GetReadOnlyState(); readOnly {
 		// If we're in read-only mode, we don't serve any partitions.
 		// We're going to gradually lose the ones we still own.
-		return 0, -1, totalInstances, nil
+		return 0, -1, totalInstances
+	}
+	if t.instanceID >= totalInstances {
+		// We're usage-tracker-zone-x-N but there are M < N+1 replicas in the ring.
+		// Let's just assume they'll start later instead of failing here.
+		totalInstances = t.instanceID + 1
 	}
 
-	start, end, err = instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
-	return start, end, totalInstances, err
+	start, end = instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
+	return start, end, totalInstances
 }
 
 // instancesServingPartitions returns the number of instances that are responsible for serving partitions.
@@ -757,9 +755,9 @@ func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID st
 }
 
 // instancePartitions returns the the interval [start, end) of partitions that the instance is responsible for.
-func instancePartitions(instance, instances, partitions int32) (start, end int32, err error) {
+func instancePartitions(instance, instances, partitions int32) (start, end int32) {
 	if instance >= instances {
-		return 0, 0, fmt.Errorf("instance %d >= instances %d", instance, instances)
+		panic(fmt.Errorf("instance %d >= instances %d", instance, instances))
 	}
 	start = instancePartitionsStart(instance, partitions)
 	end = partitions
@@ -769,7 +767,7 @@ func instancePartitions(instance, instances, partitions int32) (start, end int32
 			end = thatInstanceStart
 		}
 	}
-	return start, end, nil
+	return start, end
 }
 
 func instancePartitionsStart(instance, partitions int32) (start int32) {
