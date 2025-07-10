@@ -647,7 +647,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	// Init usage-tracker client (if enabled).
-	if canJoinDistributorsRing && cfg.UsageTrackerEnabled {
+	if cfg.UsageTrackerEnabled {
 		if usageTrackerPartitionRing == nil {
 			return nil, errors.New("usage-tracker partition ring is required")
 		}
