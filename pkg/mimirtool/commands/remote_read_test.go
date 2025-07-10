@@ -262,7 +262,7 @@ func TestExport(t *testing.T) {
 						to:            testCase.queryTo.Format(time.RFC3339Nano),
 						readTimeout:   30 * time.Second,
 						readSizeLimit: DefaultChunkedReadLimit,
-						blockSize:     time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
+						blockDuration: time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
 					}
 
 					require.NoError(t, c.export(nil), "expected export to complete without error")

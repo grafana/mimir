@@ -68,7 +68,7 @@ type RemoteReadCommand struct {
 	from          string
 	to            string
 	readSizeLimit uint64
-	blockSize     time.Duration
+	blockDuration time.Duration
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -122,9 +122,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		Default("").
 		StringVar(&c.tsdbPath)
 
-	exportCmd.Flag("block-size", "Maximum block size to create. Requests that span multiple blocks will be split.").
+	exportCmd.Flag("block-duration", "Maximum block duration to create. Requests that span multiple blocks will be split, and all blocks will be aligned to the Unix epoch.").
 		Default((time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond).String()).
-		DurationVar(&c.blockSize)
+		DurationVar(&c.blockDuration)
 }
 
 type setTenantIDTransport struct {
@@ -408,8 +408,8 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
-	if c.blockSize <= 0 {
-		return errors.New("block size must be greater than zero")
+	if c.blockDuration <= 0 {
+		return errors.New("block duration must be greater than zero")
 	}
 
 	query, from, to, err := c.parseArgsAndPrepareClient()
@@ -437,16 +437,16 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 	ctx := context.Background()
 	var blocks []ulid.ULID
 
-	for blockStart := alignToStartOfBlock(from, c.blockSize); blockStart.Before(to) || blockStart.Equal(to); blockStart = blockStart.Add(c.blockSize) {
+	for blockStart := alignToStartOfBlock(from, c.blockDuration); blockStart.Before(to) || blockStart.Equal(to); blockStart = blockStart.Add(c.blockDuration) {
 		queryStart := maxTime(blockStart, from)
-		queryEnd := minTime(blockStart.Add(c.blockSize-time.Millisecond), to) // The query time range is inclusive at both ends, so don't query the first millisecond included in the next block.
+		queryEnd := minTime(blockStart.Add(c.blockDuration-time.Millisecond), to) // The query time range is inclusive at both ends, so don't query the first millisecond included in the next block.
 
 		timeseries, err := query(ctx, queryStart, queryEnd)
 		if err != nil {
 			return err
 		}
 
-		block, err := backfill.CreateBlock(timeseries, c.tsdbPath, c.blockSize)
+		block, err := backfill.CreateBlock(timeseries, c.tsdbPath, c.blockDuration)
 		if err != nil {
 			return err
 		}
