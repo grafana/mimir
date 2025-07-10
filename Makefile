@@ -241,7 +241,7 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests check-protobuf-format
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
@@ -272,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests generate-otlp: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-otlp: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -508,6 +508,14 @@ format-promql-tests:
 
 check-promql-tests: format-promql-tests
 	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
+
+.PHONY: format-protobuf
+format-protobuf:
+	buf format --write $(addprefix --path=,$(PROTO_DEFS))
+
+.PHONY: check-protobuf-format
+check-protobuf-format:
+	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
