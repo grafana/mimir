@@ -274,10 +274,9 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	at := m.ActiveSeriesTracker(userID)
 	labelStrings := m.limits.CostAttributionLabels(userID)
 	labels := parseCostAttributionLabels(labelStrings)
-	lbls := slices.Clone(labels)
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(lbls, func(a, b Label) int {
+	slices.SortFunc(labels, func(a, b Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
@@ -285,16 +284,16 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
 
-	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
+	if !st.hasSameLabels(labels) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.stmtx.Lock()
-		st = newSampleTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		st = newSampleTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
 		m.sampleTrackersByUserID[userID] = st
 		m.stmtx.Unlock()
 	}
 
-	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
+	if !at.hasSameLabels(labels) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
-		at = NewActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		at = NewActiveSeriesTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
 		m.atmtx.Unlock()
 	}
