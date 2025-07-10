@@ -91,6 +91,10 @@ func (t *testNode) Details() proto.Message {
 	panic("not supported")
 }
 
+func (t *testNode) NodeType() NodeType {
+	panic("not supported")
+}
+
 func (t *testNode) Children() []Node {
 	return t.children
 }

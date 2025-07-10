@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -27,6 +28,12 @@ type tenantStats struct {
 	Blocks  int
 	MinTime string
 	MaxTime string
+
+	// PastGracePeriod defines how far in the past we accept samples.
+	// This value includes OutOfOrderTimeWindow.
+	PastGracePeriod time.Duration
+	// FutureGracePeriod defines how far into the future we accept samples.
+	FutureGracePeriod time.Duration
 
 	Warning string
 }
@@ -79,20 +86,28 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
+		var warnings []string
 		s := tenantStats{}
 		s.Tenant = t
 		s.Blocks = len(db.Blocks())
+		s.PastGracePeriod = i.limits.PastGracePeriod(t) + i.limits.OutOfOrderTimeWindow(t)
+		s.FutureGracePeriod = i.limits.CreationGracePeriod(t)
+
 		minMillis := db.Head().MinTime()
 		s.MinTime = formatMillisTime(db.Head().MinTime())
 		maxMillis := db.Head().MaxTime()
 		s.MaxTime = formatMillisTime(maxMillis)
 
-		if maxMillis-nowMillis > i.limits.CreationGracePeriod(t).Milliseconds() {
-			s.Warning = "TSDB Head max timestamp too far in the future"
+		if delta := maxMillis - nowMillis; delta > s.FutureGracePeriod.Milliseconds() {
+			deltaDuration := time.Duration(delta) * time.Millisecond
+			warning := fmt.Sprintf("TSDB Head max timestamp too far in the future: %v", deltaDuration)
+			warnings = append(warnings, warning)
 		}
 		if i.limits.PastGracePeriod(t) > 0 && nowMillis-minMillis > (i.limits.PastGracePeriod(t)+i.limits.OutOfOrderTimeWindow(t)).Milliseconds() {
-			s.Warning = "TSDB Head min timestamp too far in the past"
+			warnings = append(warnings, "TSDB Head min timestamp too far in the past")
 		}
+
+		s.Warning = strings.Join(warnings, ", ")
 
 		tss = append(tss, s)
 	}

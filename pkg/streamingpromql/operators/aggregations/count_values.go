@@ -133,7 +133,10 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
 
 	for _, s := range accumulator {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		outputMetadata, err = types.AppendSeriesMetadata(c.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		if err != nil {
+			return nil, err
+		}
 
 		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {

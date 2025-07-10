@@ -121,7 +121,7 @@ type MetricsQueryRequest interface {
 	// GetEnd returns the end timestamp of the query time range in milliseconds.
 	// The start and end timestamp are set to the same value in case of an instant query.
 	GetEnd() int64
-	// GetStep returns the step of the request in milliseconds.
+	// GetStep returns the step of the request in milliseconds, or 0 if this is an instant query.
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string

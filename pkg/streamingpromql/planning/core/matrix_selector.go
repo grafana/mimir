@@ -30,6 +30,10 @@ func (m *MatrixSelector) Details() proto.Message {
 	return m.MatrixSelectorDetails
 }
 
+func (m *MatrixSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_MATRIX_SELECTOR
+}
+
 func (m *MatrixSelector) Children() []planning.Node {
 	return nil
 }

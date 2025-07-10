@@ -1416,12 +1416,18 @@ How it **works**:
 
 - The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
 - The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
+- This alert doesn't respect the per-user creation grace period.
 
 How to **investigate**
 
-- Find the tenant with a bad sample on an affected ingester's tenants list (obtained via the `/ingester/tenants` endpoint), where a warning "TSDB Head max timestamp too far in the future" is displayed.
-- Flush the tenant's data to blocks storage.
-- Remove the tenant's directory on disk and the restart ingester.
+- Find an affected ingester pod and connect to its http API. For example, using `kubectl port-forward <pod> 8080:80`.
+- Find the tenant with a bad sample on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The sample should display the warning "TSDB Head max timestamp too far in the future".
+- If there are no warnings, the sample is likely within the tenant's grace interval and the alert is a false positive.
+
+If it's not a false positive:
+
+- Flush the tenant's data to blocks storage through the `/ingester/flush?wait=true&tenant=foo` endpoint.
+- Remove the tenant's directory on disk and restart the ingester.
 
 ### MimirStoreGatewayTooManyFailedOperations
 
@@ -1751,55 +1757,23 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
-### MimirBlockBuilderNoCycleProcessing
-
-This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
-
-How it **works**:
-
-- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
-- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
-
-How to **investigate**:
-
-- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
-
-Data recovery / temporary mitigation:
-
-While the block builder is still getting mature, ingester is likely still uploading blocks to a backup bucket (if you name your bucket as `*-blocks`, the backup bucket could be `*-ingester-blocks`).
-
-If the block builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following.
-
-If there is a backup `*-ingester-blocks` bucket
-
-1. Firstly, reconfigure ingesters to upload blocks to the main `*-blocks` bucket.
-2. Use `copyblocks` tool from Mimir to copy over the blocks from the backup bucket `*-ingester-blocks` to the main `*-blocks` bucket for the duration block builder did not produce blocks. It is advised to have the start time for copying blocks to be few hours prior (maybe 4hrs) to when the issue started.
-3. Fix the issue in block builder. Let it catch up with the backlog. Once it catches up, you can switch back ingesters to the backup bucket.
-
-If there is no backup bucket that ingester is uploading to
-
-- Increase the retention of the Kafka topic to buy some time.
-- Spin up a new set of block builder with an older version with a **new kafka topic name**, so that it does not conflict with the existing block builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
-- If the `block-builder.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block builders start back far enough to cover the missing data.
-- If there is any corrupt data in the partition that is hard failing the block builder, then this solution will not work. Keep increasing the kafka topic retention until the issue is resolved and block builder has caught up.
-
 ### MimirBlockBuilderLagging
 
-This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+This alert fires when the block-builder reports a large number of unprocessed records in Kafka partitions.
 
 How it **works**:
 
-- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
-- The block-builder must consume and process these records into TSDB blocks.
-- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
-- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+- The block-builder-scheduler watches the Kafka topic backlog. The lag is calculated per-partition as the difference between the partition's end and its last committed offset.
+- The block-builder-scheduler chops the backlog into jobs, and distributes the jobs between the block-builder instances.
+- A block-builder must consume and process the records in a job into TSDB blocks.
+- When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
+
+If the block-builder reports high values in the lag, this could indicate that the block-builder cannot fully process and commit Kafka record.
 
 How to **investigate**:
 
-- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Check if the per-partition lag has been growing over the past hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
-
-Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 ### MimirBlockBuilderCompactAndUploadFailed
 
@@ -1814,6 +1788,30 @@ How to **investigate**:
 - Explore the block-builder logs to check what errors are there.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+#### MimirBlockBuilderHasNotShippedBlocks
+
+Similar to [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks) but for block-builder.
+
+This alert fires when the block-builder stops shipping any blocks for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks.
+- It then sends the TSDB blocks to the object storage.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition jobs. These log records include the details about the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+Data recovery / temporary mitigation:
+
+If the block-builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following:
+
+- Increase the retention of the Kafka topic to buy some time.
+- Spin up a new set of block-builders and block-builder-scheduler with an older version and a **new kafka consumer group**. The latter is so it didn't conflict with the existing block-builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
+- If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
+- Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
 ### MimirServerInvalidClusterValidationLabelRequests
 

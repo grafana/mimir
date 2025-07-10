@@ -616,6 +616,7 @@ spec:
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1508,6 +1509,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080

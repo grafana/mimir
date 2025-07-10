@@ -1851,6 +1851,8 @@ func (o otlpLimitsMock) OTelPromoteScopeMetadata(string) bool {
 	return false
 }
 
+func (o otlpLimitsMock) OTelNativeDeltaIngestion(string) bool { return false }
+
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
 	for _, span := range h.PositiveSpans {

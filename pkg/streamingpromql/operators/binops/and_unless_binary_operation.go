@@ -143,12 +143,16 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 			// This series doesn't match any series from the right side.
 			// Discard the group.
 			a.leftSeriesGroups[seriesIdx] = nil
+			a.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(leftMetadata[seriesIdx].Labels)
 		} else {
 			leftMetadata[nextOutputSeriesIndex] = leftMetadata[seriesIdx]
 			nextOutputSeriesIndex++
 			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
+
+	// Clear up labels that we don't need anymore.
+	clear(leftMetadata[nextOutputSeriesIndex:])
 
 	return leftMetadata[:nextOutputSeriesIndex]
 }

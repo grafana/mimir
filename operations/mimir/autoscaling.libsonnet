@@ -63,10 +63,10 @@
     name: name,
   },
 
-  // metricWithWeight will multiply the metric by the weight provided if it's different from 1.
-  local metricWithWeight(metric, weight) =
+  // queryWithWeight will multiply the metric by the weight provided if it's different from 1.
+  local queryWithWeight(metric, weight) =
     if weight == 1 then metric
-    else '%s * %.2f' % [metric, weight],
+    else '(%s) * %.2f' % [metric, weight],
 
 
   // replicaswithWeight will return the portion of replicas that should be applied with the weight provided.
@@ -186,7 +186,7 @@
           // to have enough querier workers to run the max observed inflight requests 50% of time.
           //
           // This metric covers the case queries are piling up in the query-scheduler queue.
-          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
+          query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
 
           threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
         },
@@ -197,7 +197,7 @@
           //
           // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
           // but queriers are busy.
-          query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
+          query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
 
           threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
         },
@@ -208,7 +208,7 @@
 
           // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
           // We use the query scheduler metric which includes active queries and queries in the queue.
-          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(period)s))' % {
+          query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(period)s))' % {
             container: query_scheduler_container_name,
             namespace: $._config.namespace,
             lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
@@ -389,7 +389,7 @@
           metric_name: '%s%s_cpu_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: metricWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
+          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
@@ -401,7 +401,7 @@
           metric_name: '%s%s_memory_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: memoryHPAQuery(with_ready_trigger) % queryParameters,
+          query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),

@@ -28,6 +28,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
@@ -57,10 +58,11 @@ const (
 	maxExemplarRunes = 128
 	// Trace and Span id keys are defined as part of the spec:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification%2Fmetrics%2Fdatamodel.md#exemplars-2
-	traceIDKey       = "trace_id"
-	spanIDKey        = "span_id"
-	infoType         = "info"
-	targetMetricName = "target_info"
+	traceIDKey           = "trace_id"
+	spanIDKey            = "span_id"
+	infoType             = "info"
+	targetMetricName     = "target_info"
+	defaultLookbackDelta = 5 * time.Minute
 )
 
 type bucketBoundsData struct {
@@ -159,11 +161,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
+	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
 	for _, label := range labels {
-		finalKey := label.Name
-		if !settings.AllowUTF8 {
-			finalKey = otlptranslator.NormalizeLabel(finalKey)
-		}
+		finalKey := labelNamer.Build(label.Name)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -172,10 +172,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := lbl.Name
-		if !settings.AllowUTF8 {
-			normalized = otlptranslator.NormalizeLabel(normalized)
-		}
+		normalized := labelNamer.Build(lbl.Name)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -186,9 +183,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		l["otel_scope_schema_url"] = scope.schemaURL
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := "otel_scope_" + k
-			if !settings.AllowUTF8 {
-				name = otlptranslator.NormalizeLabel(name)
-			}
+			name = labelNamer.Build(name)
 			l[name] = v.AsString()
 			return true
 		})
@@ -226,8 +221,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained.
-		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
-			name = otlptranslator.NormalizeLabel(name)
+		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
+			name = labelNamer.Build(name)
 		}
 		l[name] = extras[i+1]
 	}
@@ -433,39 +428,49 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 	return promExemplars, nil
 }
 
-// mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics.
-func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
-	var ts pcommon.Timestamp
+// findMinAndMaxTimestamps returns the minimum of minTimestamp and the earliest timestamp in metric and
+// the maximum of maxTimestamp and the latest timestamp in metric, respectively.
+func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp pcommon.Timestamp) (pcommon.Timestamp, pcommon.Timestamp) {
 	// handle individual metric based on type
 	//exhaustive:enforce
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
 		dataPoints := metric.Gauge().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = max(ts, dataPoints.At(x).Timestamp())
+			ts := dataPoints.At(x).Timestamp()
+			minTimestamp = min(minTimestamp, ts)
+			maxTimestamp = max(maxTimestamp, ts)
 		}
 	case pmetric.MetricTypeSum:
 		dataPoints := metric.Sum().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = max(ts, dataPoints.At(x).Timestamp())
+			ts := dataPoints.At(x).Timestamp()
+			minTimestamp = min(minTimestamp, ts)
+			maxTimestamp = max(maxTimestamp, ts)
 		}
 	case pmetric.MetricTypeHistogram:
 		dataPoints := metric.Histogram().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = max(ts, dataPoints.At(x).Timestamp())
+			ts := dataPoints.At(x).Timestamp()
+			minTimestamp = min(minTimestamp, ts)
+			maxTimestamp = max(maxTimestamp, ts)
 		}
 	case pmetric.MetricTypeExponentialHistogram:
 		dataPoints := metric.ExponentialHistogram().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = max(ts, dataPoints.At(x).Timestamp())
+			ts := dataPoints.At(x).Timestamp()
+			minTimestamp = min(minTimestamp, ts)
+			maxTimestamp = max(maxTimestamp, ts)
 		}
 	case pmetric.MetricTypeSummary:
 		dataPoints := metric.Summary().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = max(ts, dataPoints.At(x).Timestamp())
+			ts := dataPoints.At(x).Timestamp()
+			minTimestamp = min(minTimestamp, ts)
+			maxTimestamp = max(maxTimestamp, ts)
 		}
 	}
-	return ts
+	return minTimestamp, maxTimestamp
 }
 
 func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
@@ -644,8 +649,8 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *MimirConverter) {
-	if settings.DisableTargetInfo || timestamp == 0 {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time, converter *MimirConverter) {
+	if settings.DisableTargetInfo {
 		return
 	}
 
@@ -691,12 +696,27 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
-	sample := &mimirpb.Sample{
-		Value: float64(1),
-		// convert ns to ms
-		TimestampMs: convertTimeStamp(timestamp),
+	// Generate target_info samples starting at earliestTimestamp and ending at latestTimestamp,
+	// with a sample at every interval between them.
+	// Use an interval corresponding to half of the lookback delta, to ensure that target_info samples are found
+	// for the entirety of the relevant period.
+	if settings.LookbackDelta == 0 {
+		settings.LookbackDelta = defaultLookbackDelta
 	}
-	converter.addSample(sample, labels)
+	interval := settings.LookbackDelta / 2
+	ts, _ := converter.getOrCreateTimeSeries(labels)
+	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
+		ts.Samples = append(ts.Samples, mimirpb.Sample{
+			Value:       float64(1),
+			TimestampMs: timestamp.UnixMilli(),
+		})
+	}
+	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].TimestampMs < latestTimestamp.UnixMilli() {
+		ts.Samples = append(ts.Samples, mimirpb.Sample{
+			Value:       float64(1),
+			TimestampMs: latestTimestamp.UnixMilli(),
+		})
+	}
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

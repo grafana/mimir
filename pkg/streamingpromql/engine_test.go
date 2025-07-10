@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -54,6 +55,7 @@ var (
 func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -65,15 +67,11 @@ func init() {
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.Functions["info"].Experimental = false
-	parser.Functions["sort_by_label"].Experimental = false
-	parser.Functions["sort_by_label_desc"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"info(metric{})":                       "'info' function",
-		`sort_by_label(metric{}, "test")`:      "'sort_by_label' function",
-		`sort_by_label_desc(metric{}, "test")`: "'sort_by_label_desc' function",
+		"info(metric{})": "'info' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -1396,14 +1394,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool,
-			// and we have five series and each of the series has SeriesMetadata.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
+			// and we have five series and each of the series has labels of the same size.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
@@ -1411,13 +1410,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1435,51 +1436,51 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_metric)",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - the next series from the selector
-			//  - the labels for the output series
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
+			// There are two stages to processing the query. They take different memory depending on whether we're running with stringlabels or not.
+			// At peak we'll hold in memory either A) or B)
+			rangeQueryExpectedPeak: max(
+				// A)
+				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
+				//   - 1 output series metadata (no labels)
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				// B)
+				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
+				//   - the next series from the selector
+				//   - the series metadata for the output series (no labels)
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+			),
+			rangeQueryLimit: max(
+				// A)
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				// B)
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+			),
 
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory 9 SeriesMetadata.
-			instantQueryExpectedPeak: 9 * types.SeriesMetadataSize,
-			instantQueryLimit:        9 * types.SeriesMetadataSize,
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
 			shouldSucceed: false,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			// - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			// - and the next series with SeriesMetadata from the selector.
-			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize + types.BoolSize - 1,
+			// At peak we'll hold in memory
+			//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
+			//   - 1 output series metadata (no labels). This will tip over the limit and we won't allocate it, so the peak calculations don't include it.
+			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
 
-			// At peak we'll hold in memory 9 SeriesMetadata.
-			// To make the memory limit fail, we set limit at 8 SeriesMetadata, hence no any small allocation is possible.
-			instantQueryExpectedPeak: 8 * types.SeriesMetadataSize,
-			instantQueryLimit:        8 * types.SeriesMetadataSize,
+			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series from the selector.
 			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer),
-			//  - the next series from the selector,
-			//  - and the output sample.
+
 			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 		},
@@ -1582,16 +1583,17 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 					span.End()
 
 					if testCase.shouldSucceed {
-						require.NoError(t, res.Err)
-						require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(0)), "cortex_querier_queries_rejected_total"))
+						assert.NoError(t, res.Err)
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(0)), "cortex_querier_queries_rejected_total"))
 					} else {
-						require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
-						require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
+						assert.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
 					}
 
-					spanStubs := spanExporter.GetSpans()
-					require.Len(t, spanStubs, 1)
-					spanStub := spanStubs[0]
+					var spanStub tracetest.SpanStub
+					if spanStubs := spanExporter.GetSpans(); assert.Len(t, spanStubs, 1) {
+						spanStub = spanStubs[0]
+					}
 					assertEstimatedPeakMemoryConsumption(t, reg, spanStub, expectedPeakMemoryConsumption, queryType)
 				})
 			}
@@ -1624,7 +1626,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
+	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -4076,4 +4078,37 @@ func (s *synchronisingQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 func (s *synchronisingQuerier) Close() error {
 	return s.inner.Close()
+}
+
+func TestInstantQueryDurationExpression(t *testing.T) {
+	// promqltest's "check an instant query works as a range query" behaviour makes it difficult to test step() in an instant query, so we do it here instead.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1ms
+			some_metric 0+1x300
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	expr := "count_over_time(some_metric[step()+1ms])"
+	ts := timestamp.Time(0).Add(5 * time.Millisecond)
+
+	prometheusQuery, err := prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	prometheusResult := prometheusQuery.Exec(ctx)
+	require.NoError(t, prometheusResult.Err)
+	t.Cleanup(prometheusQuery.Close)
+
+	mimirQuery, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	mimirResult := mimirQuery.Exec(ctx)
+	require.NoError(t, mimirResult.Err)
+	t.Cleanup(mimirQuery.Close)
+
+	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
 }

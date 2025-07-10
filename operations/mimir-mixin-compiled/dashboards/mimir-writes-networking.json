@@ -73,7 +73,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -121,7 +121,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -172,13 +172,13 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"})",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"})",
                         "format": "time_series",
                         "legendFormat": "highest",
                         "legendLink": null
@@ -230,19 +230,19 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"}))",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"}))",
                         "format": "time_series",
                         "legendFormat": "highest",
                         "legendLink": null
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester|mimir-write).*\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*mimir-)?(distributor|ingester).*\"})",
                         "format": "time_series",
                         "legendFormat": "limit",
                         "legendLink": null

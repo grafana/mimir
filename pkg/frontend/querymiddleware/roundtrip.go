@@ -445,6 +445,34 @@ func newQueryMiddlewares(
 		)
 	}
 
+	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
+	// functions for those are not controlled here.
+	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
+	queryRangeMiddleware = append(
+		queryRangeMiddleware,
+		newInstrumentMiddleware("experimental_functions", metrics),
+		experimentalFunctionsMiddleware,
+	)
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("experimental_functions", metrics),
+		experimentalFunctionsMiddleware,
+	)
+
+	if cfg.PrunedQueries {
+		pruneMiddleware := newPruneMiddleware(log)
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("pruning", metrics),
+			pruneMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("pruning", metrics),
+			pruneMiddleware,
+		)
+	}
+
 	// Create split and cache middleware if either splitting or caching is enabled
 	var splitAndCacheMiddleware MetricsQueryMiddleware
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
@@ -510,39 +538,11 @@ func newQueryMiddlewares(
 		)
 	}
 
-	if cfg.PrunedQueries {
-		pruneMiddleware := newPruneMiddleware(log)
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
-		)
-	}
-
 	if cfg.MaxRetries > 0 {
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 		remoteReadMiddleware = append(remoteReadMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 	}
-
-	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
-	// functions for those are not controlled here.
-	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
-	queryRangeMiddleware = append(
-		queryRangeMiddleware,
-		newInstrumentMiddleware("experimental_functions", metrics),
-		experimentalFunctionsMiddleware,
-	)
-	queryInstantMiddleware = append(
-		queryInstantMiddleware,
-		newInstrumentMiddleware("experimental_functions", metrics),
-		experimentalFunctionsMiddleware,
-	)
 
 	return
 }
