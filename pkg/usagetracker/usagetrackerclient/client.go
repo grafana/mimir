@@ -31,6 +31,8 @@ var (
 )
 
 type Config struct {
+	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
+
 	GRPCClientConfig grpcclient.Config `yaml:"grpc"`
 
 	PreferAvailabilityZone string        `yaml:"prefer_availability_zone"`
@@ -49,6 +51,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.IgnoreRejectedSeries, prefix+"ignore-rejected-series", false, "Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.")
+
 	f.StringVar(&cfg.PreferAvailabilityZone, prefix+"prefer-availability-zone", "", "Preferred availability zone to query usage-trackers.")
 	f.DurationVar(&cfg.RequestsHedgingDelay, prefix+"requests-hedging-delay", 100*time.Millisecond, "Delay before initiating requests to further usage-trackers (e.g. in other zones).")
 	f.IntVar(&cfg.ReusableWorkers, prefix+"reusable-workers", 500, "Number of pre-allocated workers used to send requests to usage-trackers. If 0, no workers pool will be used and a new goroutine will be spawned for each request.")
@@ -170,6 +174,11 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 	if err != nil {
 		return nil, err
+	}
+
+	if c.cfg.IgnoreRejectedSeries {
+		// If the client is configured to ignore rejected series, we return an empty slice.
+		return nil, nil
 	}
 
 	// It should never happen that a response arrives at this point, but better to protect

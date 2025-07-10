@@ -1561,6 +1561,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.usage-tracker-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -distributor.usage-tracker-client.ignore-rejected-series
+    	[experimental] Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.
   -distributor.usage-tracker-client.prefer-availability-zone string
     	Preferred availability zone to query usage-trackers.
   -distributor.usage-tracker-client.requests-hedging-delay duration

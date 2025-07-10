@@ -293,71 +293,83 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
-	t.Run("should return rejected series", func(t *testing.T) {
-		t.Parallel()
+	for _, returnRejectedSeries := range []bool{true, false} {
+		testName := map[bool]string{
+			true:  "should return rejected series",
+			false: "should not return rejected series",
+		}[returnRejectedSeries]
 
-		partitionRing, instanceRing, registerer := prepareTest()
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-		// Generate the series hashes so that we can predict in which partition they're sharded to.
-		partitions := partitionRing.PartitionRing().Partitions()
-		require.Len(t, partitions, 2)
-		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+			partitionRing, instanceRing, registerer := prepareTest()
 
-		require.Equal(t, int32(1), partitions[0].Id)
-		require.Equal(t, int32(2), partitions[1].Id)
+			// Generate the series hashes so that we can predict in which partition they're sharded to.
+			partitions := partitionRing.PartitionRing().Partitions()
+			require.Len(t, partitions, 2)
+			slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
 
-		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
-		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
-		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
-		series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
-		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
+			require.Equal(t, int32(1), partitions[0].Id)
+			require.Equal(t, int32(2), partitions[1].Id)
 
-		// Mock the usage-tracker server.
-		instances := map[string]*usageTrackerMock{
-			"usage-tracker-zone-a-1": newUsageTrackerMockWithSuccessfulResponse(),
-			"usage-tracker-zone-a-2": newUsageTrackerMockWithSuccessfulResponse(),
+			series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+			series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+			series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+			series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
+			series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
 
-			// Return rejected series only from zone-b to ensure the response is picked up from this zone.
-			"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series2Partition1}}, nil),
-			"usage-tracker-zone-b-2": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series4Partition2, series5Partition2}}, nil),
-		}
+			// Mock the usage-tracker server.
+			instances := map[string]*usageTrackerMock{
+				"usage-tracker-zone-a-1": newUsageTrackerMockWithSuccessfulResponse(),
+				"usage-tracker-zone-a-2": newUsageTrackerMockWithSuccessfulResponse(),
 
-		clientCfg := createTestClientConfig()
-		clientCfg.PreferAvailabilityZone = "zone-b"
-
-		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
-			mock, ok := instances[instance.Id]
-			if ok {
-				return mock, nil
+				// Return rejected series only from zone-b to ensure the response is picked up from this zone.
+				"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series2Partition1}}, nil),
+				"usage-tracker-zone-b-2": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series4Partition2, series5Partition2}}, nil),
 			}
 
-			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+			clientCfg := createTestClientConfig()
+			clientCfg.IgnoreRejectedSeries = !returnRejectedSeries
+			clientCfg.PreferAvailabilityZone = "zone-b"
+
+			clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+				mock, ok := instances[instance.Id]
+				if ok {
+					return mock, nil
+				}
+
+				return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+			})
+
+			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+			})
+
+			rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+			require.NoError(t, err)
+			if returnRejectedSeries {
+				require.ElementsMatch(t, []uint64{series2Partition1, series4Partition2, series5Partition2}, rejected)
+			} else {
+				require.Empty(t, rejected)
+			}
+
+			// Should have tracked series only to usage-tracker replicas in the preferred zone.
+			instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 0)
+			instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
+			instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
+			instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+
+			req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
+			require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+			require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+
+			req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
+			require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+			require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 		})
-
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
-		})
-
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
-		require.NoError(t, err)
-		require.ElementsMatch(t, []uint64{series2Partition1, series4Partition2, series5Partition2}, rejected)
-
-		// Should have tracked series only to usage-tracker replicas in the preferred zone.
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
-
-		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
-
-		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
-	})
+	}
 
 	t.Run("should hedge requests to the other zone if a usage-tracker instance in the preferred zone is slow", func(t *testing.T) {
 		t.Parallel()

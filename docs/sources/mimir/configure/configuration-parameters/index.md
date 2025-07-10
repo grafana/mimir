@@ -2015,6 +2015,13 @@ instance_limits:
 [reusable_ingester_push_workers: <int> | default = 2000]
 
 usage_tracker_client:
+  # (experimental) Ignore rejected series when tracking series in usage-tracker.
+  # If enabled, the client will not return the list of rejected series, but it
+  # will still track them in usage-tracker. This is useful to validate the
+  # rollout process of this service.
+  # CLI flag: -distributor.usage-tracker-client.ignore-rejected-series
+  [ignore_rejected_series: <boolean> | default = false]
+
   # The grpc_client block configures the gRPC client used to communicate between
   # two Mimir components.
   # The CLI flags prefix for this block configuration is:

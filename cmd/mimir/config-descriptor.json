@@ -1842,6 +1842,17 @@
           "desc": "",
           "blockEntries": [
             {
+              "kind": "field",
+              "name": "ignore_rejected_series",
+              "required": false,
+              "desc": "Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.usage-tracker-client.ignore-rejected-series",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "grpc",
               "required": false,
