@@ -183,32 +183,32 @@ func (am *MultitenantAlertmanager) GetUserState(w http.ResponseWriter, r *http.R
 	}
 
 	// Try to get the full state from the running Alertmanager, using the database as a fallback.
+	var st *clusterpb.FullState
 	am.alertmanagersMtx.Lock()
 	userAM, ok := am.alertmanagers[userID]
-	am.alertmanagersMtx.Unlock()
-
-	var st *clusterpb.FullState
 	if ok {
 		st, err = userAM.state.GetFullState()
-		if err != nil {
-			level.Error(logger).Log("msg", errGettingFullState, "err", err, "user", userID)
-			w.WriteHeader(http.StatusInternalServerError)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errGettingFullState, err.Error())})
-			return
-		}
 	} else {
-		desc, err := am.store.GetFullState(r.Context(), userID)
-		if err != nil {
-			if errors.Is(err, alertspb.ErrNotFound) {
-				w.WriteHeader(http.StatusNotFound)
-				util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
-			} else {
-				w.WriteHeader(http.StatusInternalServerError)
-				util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
-			}
+		var desc alertspb.FullStateDesc
+		desc, err = am.store.GetFullState(r.Context(), userID)
+		if err == nil {
+			st = desc.State
+		}
+	}
+	am.alertmanagersMtx.Unlock()
+
+	// Handle any errors without holding the lock.
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
 			return
 		}
-		st = desc.State
+
+		level.Error(logger).Log("msg", errGettingFullState, "err", err, "user", userID)
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errGettingFullState, err.Error())})
+		return
 	}
 
 	bytes, err := st.Marshal()
