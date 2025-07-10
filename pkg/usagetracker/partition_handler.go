@@ -49,10 +49,19 @@ type partitionHandler struct {
 
 	store *trackerStore
 
-	cfg        Config
-	logger     log.Logger
+	cfg    Config
+	logger log.Logger
+
+	// registerer is the global usage-tracker registered
 	registerer prometheus.Registerer
-	collector  prometheus.Collector
+	// partitionRegisterer is registerer wrapped with partition label,
+	// to register and un-register the tracker store at the correct moment.
+	partitionRegisterer prometheus.Registerer
+	// collector is a prometheus registerer wrapped with partition label,
+	// this holds all the metrics, especially the ones for Kafka client.
+	// It's used to overcome the Kafka client limitation as it's impossible to un-register its metrics,
+	// so we un-register the entire collector instead.
+	collector prometheus.Collector
 
 	partitionID int32
 
@@ -108,11 +117,13 @@ func newPartitionHandler(
 ) (*partitionHandler, error) {
 	reg := prometheus.NewRegistry()
 	logger = log.With(logger, "partition", partitionID)
+	partitionLabels := prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}
 	p := &partitionHandler{
-		cfg:        cfg,
-		logger:     logger,
-		registerer: registerer,
-		collector:  prometheus.WrapCollectorWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, reg),
+		cfg:                 cfg,
+		logger:              logger,
+		registerer:          registerer,
+		partitionRegisterer: prometheus.WrapRegistererWith(partitionLabels, registerer),
+		collector:           prometheus.WrapCollectorWith(partitionLabels, reg),
 
 		partitionID: partitionID,
 
@@ -184,11 +195,7 @@ func newPartitionHandler(
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	p.store = newTrackerStore(cfg.IdleTimeout, logger, lim, eventsPublisher)
-	if err := reg.Register(p.store); err != nil {
-		return nil, errors.Wrap(err, "unable to register usage-tracker store as Prometheus collector")
-	}
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
-
 	return p, nil
 }
 
@@ -208,6 +215,11 @@ func (p *partitionHandler) start(ctx context.Context) error {
 	}
 	if err := p.loadEvents(ctx, eventsOffset); err != nil {
 		return errors.Wrap(err, "unable to load events")
+	}
+
+	// Register the tracker store only after loading snapshots & events.
+	if err := p.partitionRegisterer.Register(p.store); err != nil {
+		return errors.Wrap(err, "unable to register tracker store as Prometheus collector")
 	}
 
 	// Do this only once ready
@@ -482,6 +494,7 @@ func (p *partitionHandler) run(ctx context.Context) error {
 // stop implements services.StoppingFn.
 func (p *partitionHandler) stop(_ error) error {
 	p.registerer.Unregister(p.collector)
+	p.partitionRegisterer.Unregister(p.store)
 	// Stop dependencies.
 	err := services.StopAndAwaitTerminated(context.Background(), p.partitionLifecycler)
 

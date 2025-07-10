@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -71,6 +73,13 @@ func TestPartitionHandler(t *testing.T) {
 		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3}, []uint64{3}) // limit is 4, but current limit is 2 (because it's halfway)
 		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+
+		require.NoError(t, testutil.CollectAndCompare(h.reg, strings.NewReader(`
+			# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+        	# TYPE cortex_usage_tracker_active_series gauge
+			cortex_usage_tracker_active_series{partition="0",pidx="0",user="tenant-1"} 2
+		`), "cortex_usage_tracker_active_series"))
+
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 
 		// No snapshot was published, yet the new partitionHandler consumes last events on creation.
@@ -334,13 +343,41 @@ func TestPartitionHandler(t *testing.T) {
 		// New partitionHandler is created, loads the snapshot and should contain the same series.
 		ph := h.newHandler(t)
 		// This partitionHandler has a slow bucket reader.
-		getLatency := time.Second
-		ph.snapshotsBucket = &slowBucket{ph.snapshotsBucket, getLatency}
+		unblock := make(chan struct{})
+		running := make(chan struct{})
+		ph.snapshotsBucket = &slowBucket{ph.snapshotsBucket, unblock}
 
-		t0 := time.Now()
-		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
-		require.GreaterOrEqual(t, time.Since(t0), getLatency, "partition handler start should take longer than get latency")
-		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+		go func() {
+			assert.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+			close(running)
+		}()
+		// Wait a little bit.
+		time.Sleep(500 * time.Millisecond)
+
+		// While partition handler is starting the per-tenant metrics should not be registered yet.
+		descs := make(chan *prometheus.Desc)
+		go func() {
+			h.reg.Describe(descs)
+			close(descs)
+		}()
+		for desc := range descs {
+			assert.NotContains(t, desc.String(), activeSeriesMetricName, "partition handler should not register per-tenant metrics while starting")
+		}
+
+		// Unblock the bucket reader, so it can load the snapshot.
+		close(unblock)
+
+		select {
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for partition handler to start")
+		case <-running:
+			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+			require.NoError(t, testutil.CollectAndCompare(h.reg, strings.NewReader(`
+			# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+			# TYPE cortex_usage_tracker_active_series gauge
+			cortex_usage_tracker_active_series{partition="0",pidx="1",user="tenant-1"} 2
+		`), "cortex_usage_tracker_active_series"))
+		}
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
@@ -559,12 +596,12 @@ type expectedSnapshotEvent struct{}
 
 type slowBucket struct {
 	objstore.Bucket
-	getArtificialDelay time.Duration
+	unblock chan struct{}
 }
 
 func (s *slowBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	select {
-	case <-time.After(s.getArtificialDelay):
+	case <-s.unblock:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

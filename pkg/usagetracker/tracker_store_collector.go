@@ -6,8 +6,10 @@ import "github.com/prometheus/client_golang/prometheus"
 
 var _ prometheus.Collector = &trackerStore{}
 
+const activeSeriesMetricName = "cortex_usage_tracker_active_series"
+
 var trackerStoreMetricDesc = prometheus.NewDesc(
-	"cortex_usage_tracker_active_series",
+	activeSeriesMetricName,
 	"Number of active series tracker for each user.",
 	[]string{"user"}, nil,
 )
