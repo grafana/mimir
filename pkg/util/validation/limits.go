@@ -934,28 +934,8 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-type CostAttributionLabel struct {
-	// InputLabel is the source label name that exists in the input metrics.
-	InputLabel string
-	// OutputLabel is the label name that will be used at the output of the cost attribution.
-	// If empty, the input label should be used as the output label.
-	OutputLabel string
-}
-
-func (o *Overrides) CostAttributionLabels(userID string) []CostAttributionLabel {
-	labelStrings := o.getOverridesForUser(userID).CostAttributionLabels
-	output := make([]CostAttributionLabel, 0, len(labelStrings))
-
-	for _, label := range labelStrings {
-		// A label string is of the form "output=input" or "input".
-		if l, r, ok := strings.Cut(label, "="); ok {
-			output = append(output, CostAttributionLabel{InputLabel: r, OutputLabel: l})
-		} else {
-			output = append(output, CostAttributionLabel{InputLabel: label})
-		}
-	}
-
-	return output
+func (o *Overrides) CostAttributionLabels(userID string) []string {
+	return o.getOverridesForUser(userID).CostAttributionLabels
 }
 
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {

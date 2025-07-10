@@ -100,8 +100,7 @@ func (m *Manager) enabledForUser(userID string) bool {
 		return false
 	}
 
-	labels := m.limits.CostAttributionLabels(userID)
-	return len(labels) > 0
+	return len(m.limits.CostAttributionLabels(userID)) > 0
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -118,7 +117,8 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.limits.CostAttributionLabels(userID)
+	labelStrings := m.limits.CostAttributionLabels(userID)
+	labels := ParseCostAttributionLabels(labelStrings)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -130,8 +130,8 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 	// sort the labels to ensure the order is consistent
 	orderedLabels := slices.Clone(labels)
-	slices.SortFunc(orderedLabels, func(a, b validation.CostAttributionLabel) int {
-		return strings.Compare(a.InputLabel, b.InputLabel)
+	slices.SortFunc(orderedLabels, func(a, b Label) int {
+		return strings.Compare(a.input, b.input)
 	})
 
 	tracker = newSampleTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
@@ -153,7 +153,8 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.limits.CostAttributionLabels(userID)
+	labelStrings := m.limits.CostAttributionLabels(userID)
+	labels := ParseCostAttributionLabels(labelStrings)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -165,8 +166,8 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 	// sort the labels to ensure the order is consistent
 	orderedLabels := slices.Clone(labels)
-	slices.SortFunc(orderedLabels, func(a, b validation.CostAttributionLabel) int {
-		return strings.Compare(a.InputLabel, b.InputLabel)
+	slices.SortFunc(orderedLabels, func(a, b Label) int {
+		return strings.Compare(a.input, b.input)
 	})
 
 	tracker = NewActiveSeriesTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
@@ -273,12 +274,13 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
-	labels := m.limits.CostAttributionLabels(userID)
+	labelStrings := m.limits.CostAttributionLabels(userID)
+	labels := ParseCostAttributionLabels(labelStrings)
 	lbls := slices.Clone(labels)
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(lbls, func(a, b validation.CostAttributionLabel) int {
-		return strings.Compare(a.InputLabel, b.InputLabel)
+	slices.SortFunc(lbls, func(a, b Label) int {
+		return strings.Compare(a.input, b.input)
 	})
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker

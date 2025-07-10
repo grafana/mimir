@@ -14,13 +14,12 @@ import (
 
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]validation.CostAttributionLabel{{InputLabel: "team", OutputLabel: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, st.hasSameLabels([]Label{{input: "team", output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {

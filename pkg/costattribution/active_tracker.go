@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -30,7 +29,7 @@ type ActiveSeriesTracker struct {
 	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
 	logger                                         log.Logger
 
-	labels         []validation.CostAttributionLabel
+	labels         []Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -43,7 +42,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []validation.CostAttributionLabel, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -65,11 +64,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []validation.CostAttrib
 
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
-		if label.OutputLabel != "" {
-			variableLabels = append(variableLabels, label.OutputLabel)
-		} else {
-			variableLabels = append(variableLabels, label.InputLabel)
-		}
+		variableLabels = append(variableLabels, label.outputLabel())
 	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
@@ -85,7 +80,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []validation.CostAttrib
 	return ast
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels []validation.CostAttributionLabel) bool {
+func (at *ActiveSeriesTracker) hasSameLabels(labels []Label) bool {
 	return slices.Equal(at.labels, labels)
 }
 
@@ -286,7 +281,7 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 		if idx > 0 {
 			buf.WriteRune(sep)
 		}
-		v := lbls.Get(cal.InputLabel)
+		v := lbls.Get(cal.input)
 		if v != "" {
 			buf.WriteString(v)
 		} else {

@@ -14,7 +14,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const sep = rune(0x80)
@@ -33,7 +32,7 @@ type SampleTracker struct {
 	discardedSampleAttribution *prometheus.Desc
 	logger                     log.Logger
 
-	labels         []validation.CostAttributionLabel
+	labels         []Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -46,7 +45,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []validation.CostAttributionLabel, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTracker(userID string, trackedLabels []Label, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -69,12 +68,7 @@ func newSampleTracker(userID string, trackedLabels []validation.CostAttributionL
 
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
-		// If given, we rewrite the input label to the output label.
-		if label.OutputLabel != "" {
-			variableLabels = append(variableLabels, label.OutputLabel)
-		} else {
-			variableLabels = append(variableLabels, label.InputLabel)
-		}
+		variableLabels = append(variableLabels, label.outputLabel())
 	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
@@ -90,7 +84,7 @@ func newSampleTracker(userID string, trackedLabels []validation.CostAttributionL
 	return tracker
 }
 
-func (st *SampleTracker) hasSameLabels(labels []validation.CostAttributionLabel) bool {
+func (st *SampleTracker) hasSameLabels(labels []Label) bool {
 	return slices.Equal(st.labels, labels)
 }
 
@@ -177,7 +171,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal.InputLabel {
+			if l.Name == cal.input {
 				exists = true
 				buf.WriteString(l.Value)
 				break
