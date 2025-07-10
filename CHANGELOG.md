@@ -61,6 +61,7 @@
   * Moved `distributor.ha_tracker.ha_tracker_update_timeout_jitter_max` to `limits.ha_tracker_update_timeout_jitter_max`.
   * Moved `distributor.ha_tracker.ha_tracker_failover_timeout` to `limits.ha_tracker_failover_timeout`.
 * [CHANGE] Distributor: `Memberlist` marked as stable as an option for backend storage for the HA tracker. #11861
+* [CHANGE] Distributor: `etcd` deprecated as an option for backend storage for the HA tracker. #12047
 * [CHANGE] Memberlist: Apply new default configuration values for MemberlistKV. This unlocks using it as backend storage for the HA Tracker. We have observed better performance with these defaults across different production loads. #11874
   * `memberlist.packet-dial-timeout`: `500ms`
   * `memberlist.packet-write-timeout`: `500ms`
