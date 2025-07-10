@@ -111,16 +111,14 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	// Updates the Ref on each chunk.
 	for _, series := range specs {
-		stats.NumSeries++
-
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
 				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
-			stats.NumChunks++
-			stats.NumSamples += uint64(c.Chunk.NumSamples())
 		}
+
+		updateStats(&stats, 1, series.Chunks)
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
 			return nil, err
