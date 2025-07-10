@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: Add  `user` label to `cortex_ingester_tsdb_head_min_timestamp_seconds` and `cortex_ingester_tsdb_head_max_timestamp_seconds` metrics, which return minimum and maximum times of TSDB Heads open in an ingester. #11945
 * [CHANGE] Query-frontend: Ensure that cache keys generated from cardinality estimate middleware are less than 250 bytes in length by hashing the tenant IDs that are included in them. This change invalidates all cardinality estimates in the cache. #11568
 * [CHANGE] Ruler: Remove experimental CLI flag `-ruler-storage.cache.rule-group-enabled` to enable or disable caching the contents of rule groups. Caching rule group contents is now always enabled when a cache is configured for the ruler. #10949
 * [CHANGE] Ingester: Out-of-order native histograms are now enabled whenever both native histogram and out-of-order ingestion is enabled. The `-ingester.ooo-native-histograms-ingestion-enabled` CLI flag and corresponding `ooo_native_histograms_ingestion_enabled` runtime configuration option have been removed. #10956
