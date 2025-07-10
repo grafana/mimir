@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1529,7 +1530,10 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
 
 			require.NotEmpty(t, span.Events, "There should be events in the span.")
-			logEvents := filter(span.Events, func(e tracesdk.Event) bool { return e.Name == "log" })
+
+			logEvents := filter(span.Events, func(e tracesdk.Event) bool {
+				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "query stats"))
+			})
 			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
 			logEvent := logEvents[0]
 			expectedFields := []attribute.KeyValue{

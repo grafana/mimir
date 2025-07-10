@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // This file implements common subexpression elimination.
@@ -55,7 +57,7 @@ func (e *OptimizationPass) Name() string {
 	return "Eliminate common subexpressions"
 }
 
-func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// Find all the paths to leaves
 	paths := e.accumulatePaths(plan)
 
@@ -67,6 +69,9 @@ func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*
 
 	e.selectorsInspected.Add(float64(len(paths)))
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
+
+	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	spanLog.DebugLog("msg", "attempted common subexpression elimination", "selectors_inspected", len(paths), "selectors_eliminated", selectorsEliminated)
 
 	return plan, nil
 }
@@ -188,7 +193,7 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 	return groups
 }
 
-// applyDuplication replaces duplicate expressions at the tails of paths in group with a single expression.
+// applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
 func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, error) {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
