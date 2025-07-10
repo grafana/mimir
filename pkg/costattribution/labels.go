@@ -22,9 +22,9 @@ func (l Label) outputLabel() string {
 	return l.Output
 }
 
-// ParseCostAttributionLabels parses a slice of strings into Label structs.
+// parseCostAttributionLabels parses a slice of strings into Label structs.
 // Each string can be in the format "output=input" or just "input".
-func ParseCostAttributionLabels(labelStrings []string) []Label {
+func parseCostAttributionLabels(labelStrings []string) []Label {
 	output := make([]Label, 0, len(labelStrings))
 
 	for _, label := range labelStrings {

@@ -118,7 +118,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := ParseCostAttributionLabels(labelStrings)
+	labels := parseCostAttributionLabels(labelStrings)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -153,7 +153,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := ParseCostAttributionLabels(labelStrings)
+	labels := parseCostAttributionLabels(labelStrings)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -273,7 +273,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
 	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := ParseCostAttributionLabels(labelStrings)
+	labels := parseCostAttributionLabels(labelStrings)
 	lbls := slices.Clone(labels)
 
 	// sort the labels to ensure the order is consistent

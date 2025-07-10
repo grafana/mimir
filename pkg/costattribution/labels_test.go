@@ -41,7 +41,7 @@ func TestParseCostAttributionLabels(t *testing.T) {
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-			result := ParseCostAttributionLabels(tt.input)
+			result := parseCostAttributionLabels(tt.input)
 			require.Equal(t, tt.expected, result)
 		})
 	}
