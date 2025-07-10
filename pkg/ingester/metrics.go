@@ -6,10 +6,12 @@
 package ingester
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
@@ -27,10 +29,11 @@ type ingesterMetrics struct {
 	ingestedExemplarsFail prometheus.Counter
 	ingestedMetadataFail  prometheus.Counter
 
-	queries          prometheus.Counter
-	queriedSamples   prometheus.Histogram
-	queriedExemplars prometheus.Histogram
-	queriedSeries    prometheus.Histogram
+	queries           prometheus.Counter
+	queriedSamples    prometheus.Histogram
+	queriedExemplars  prometheus.Histogram
+	queriedSeries     prometheus.Histogram
+	queryRequestStage *prometheus.HistogramVec
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
@@ -172,6 +175,12 @@ func newIngesterMetrics(
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
+		queryRequestStage: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                           "cortex_ingester_query_request_stage_latency_seconds",
+			Help:                           "How much each stage in processing queries took.",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 100,
+		}, []string{"user", "stage"}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",
 			Help: "The current number of metadata in memory.",
@@ -430,6 +439,19 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
+}
+
+func (m *ingesterMetrics) recordRequestStageLatencies(ctx context.Context, userID string, regexDuration *atomic.Duration, requestStart time.Time) {
+	totalDuration := time.Since(requestStart)
+	regexDurationSnapshot := regexDuration.Load()
+
+	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	var exemplarLabels prometheus.Labels = nil
+	if ok {
+		exemplarLabels = prometheus.Labels{"trace_id": traceID}
+	}
+	m.queryRequestStage.WithLabelValues(userID, "label_matching").(prometheus.ExemplarObserver).ObserveWithExemplar(regexDurationSnapshot.Seconds(), exemplarLabels)
+	m.queryRequestStage.WithLabelValues(userID, "other").(prometheus.ExemplarObserver).ObserveWithExemplar((totalDuration - regexDurationSnapshot).Seconds(), exemplarLabels)
 }
 
 type discardedMetrics struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -30,14 +31,14 @@ func ToQueryRequest(from, to model.Time, matchers []*labels.Matcher) (*QueryRequ
 }
 
 // FromQueryRequest unpacks a QueryRequest proto.
-func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []*labels.Matcher, error) {
-	matchers, err := FromLabelMatchers(req.Matchers)
+func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []*labels.Matcher, *atomic.Duration, error) {
+	matchers, regexDuration, err := FromLabelMatchers(req.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 	from := model.Time(req.StartTimestampMs)
 	to := model.Time(req.EndTimestampMs)
-	return from, to, matchers, nil
+	return from, to, matchers, regexDuration, nil
 }
 
 // ToExemplarQueryRequest builds an ExemplarQueryRequest proto.
@@ -62,7 +63,7 @@ func ToExemplarQueryRequest(from, to model.Time, matchers ...[]*labels.Matcher) 
 func FromExemplarQueryRequest(req *ExemplarQueryRequest) (int64, int64, [][]*labels.Matcher, error) {
 	var result [][]*labels.Matcher
 	for _, m := range req.Matchers {
-		matchers, err := FromLabelMatchers(m.Matchers)
+		matchers, _, err := FromLabelMatchers(m.Matchers)
 		if err != nil {
 			return 0, 0, nil, err
 		}
@@ -91,20 +92,21 @@ func ToMetricsForLabelMatchersRequest(from, to model.Time, hints *storage.Select
 	}, nil
 }
 
-// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto.
-func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (*storage.SelectHints, [][]*labels.Matcher, error) {
+// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto and returns regex duration.
+func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (*storage.SelectHints, [][]*labels.Matcher, *atomic.Duration, error) {
 	matchersSet := make([][]*labels.Matcher, 0, len(req.MatchersSet))
+	totalRegexDuration := atomic.NewDuration(0)
 	for _, matchers := range req.MatchersSet {
-		matchers, err := FromLabelMatchers(matchers.Matchers)
+		matchers, err := FromLabelMatchersWithTimeTracking(matchers.Matchers, totalRegexDuration)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		matchersSet = append(matchersSet, matchers)
 	}
 	hints := &storage.SelectHints{
 		Limit: int(req.Limit),
 	}
-	return hints, matchersSet, nil
+	return hints, matchersSet, totalRegexDuration, nil
 }
 
 // FromMetricsForLabelMatchersResponse unpacks a MetricsForLabelMatchersResponse proto
@@ -136,16 +138,17 @@ func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, hints 
 	}, nil
 }
 
-// FromLabelValuesRequest unpacks a LabelValuesRequest proto
-func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, *storage.LabelHints, []*labels.Matcher, error) {
+// FromLabelValuesRequest unpacks a LabelValuesRequest proto and returns regex duration
+func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, *storage.LabelHints, []*labels.Matcher, *atomic.Duration, error) {
 	var err error
 	var hints *storage.LabelHints
 	var matchers []*labels.Matcher
+	var regexDuration *atomic.Duration
 
 	if req.Matchers != nil {
-		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
+		matchers, regexDuration, err = FromLabelMatchers(req.Matchers.Matchers)
 		if err != nil {
-			return "", 0, 0, nil, nil, err
+			return "", 0, 0, nil, nil, nil, err
 		}
 	}
 
@@ -153,7 +156,7 @@ func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, *sto
 		hints = &storage.LabelHints{Limit: int(req.Limit)}
 	}
 
-	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
+	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, hints, matchers, regexDuration, nil
 }
 
 // ToLabelNamesRequest builds a LabelNamesRequest proto
@@ -176,15 +179,16 @@ func ToLabelNamesRequest(from, to model.Time, hints *storage.LabelHints, matcher
 	}, nil
 }
 
-// FromLabelNamesRequest unpacks a LabelNamesRequest proto
-func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, *storage.LabelHints, []*labels.Matcher, error) {
+// FromLabelNamesRequest unpacks a LabelNamesRequest proto and returns regex duration
+func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, *storage.LabelHints, []*labels.Matcher, *atomic.Duration, error) {
 	var err error
 	var hints *storage.LabelHints
 	var matchers []*labels.Matcher
+	var regexDuration *atomic.Duration
 	if req.Matchers != nil {
-		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
+		matchers, regexDuration, err = FromLabelMatchers(req.Matchers.Matchers)
 		if err != nil {
-			return 0, 0, nil, nil, err
+			return 0, 0, nil, nil, nil, err
 		}
 	}
 
@@ -192,7 +196,7 @@ func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, *storage.Label
 		hints = &storage.LabelHints{Limit: int(req.Limit)}
 	}
 
-	return req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
+	return req.StartTimestampMs, req.EndTimestampMs, hints, matchers, regexDuration, nil
 }
 
 func ToActiveSeriesRequest(matchers []*labels.Matcher) (*ActiveSeriesRequest, error) {
@@ -228,7 +232,13 @@ func ToLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
 	return result, nil
 }
 
-func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
+func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, *atomic.Duration, error) {
+	regexRunDuration := atomic.NewDuration(0)
+	parsedMatchers, err := FromLabelMatchersWithTimeTracking(matchers, regexRunDuration)
+	return parsedMatchers, regexRunDuration, err
+}
+
+func FromLabelMatchersWithTimeTracking(matchers []*LabelMatcher, regexRunDuration *atomic.Duration) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		var mtype labels.MatchType
@@ -244,7 +254,7 @@ func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 		default:
 			return nil, fmt.Errorf("invalid matcher type")
 		}
-		matcher, err := labels.NewMatcher(mtype, matcher.Name, matcher.Value)
+		matcher, err := labels.NewMatcherWithTimeTracker(mtype, matcher.Name, matcher.Value, regexRunDuration)
 		if err != nil {
 			return nil, err
 		}

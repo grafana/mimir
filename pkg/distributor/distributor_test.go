@@ -6565,7 +6565,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, errFail
 	}
 
-	_, _, matchers, err := client.FromQueryRequest(req)
+	_, _, matchers, _, err := client.FromQueryRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6796,7 +6796,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	hints, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, multiMatchers, _, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6835,7 +6835,7 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 		return nil, errFail
 	}
 
-	labelName, from, to, hints, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, from, to, hints, matchers, _, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6889,7 +6889,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 		return nil, errFail
 	}
 
-	_, _, hints, matchers, err := client.FromLabelNamesRequest(req)
+	_, _, hints, matchers, _, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -7007,7 +7007,7 @@ func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.L
 		return nil, errFail
 	}
 
-	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	matchers, _, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return nil, err
 	}
@@ -7081,7 +7081,7 @@ func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSerie
 		return nil, errFail
 	}
 
-	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	matchers, _, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return nil, err
 	}
