@@ -1876,6 +1876,12 @@ cost_attribution_labels: ""
 `,
 			expectedLabels: []CostAttributionLabel{},
 		},
+		"single": {
+			inputYAML: `
+cost_attribution_labels: "team"
+`,
+			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: ""}},
+		},
 		"regular list": {
 			inputYAML: `
 cost_attribution_labels: "team,service"
@@ -1893,6 +1899,12 @@ cost_attribution_labels: "eng_team=team,eng_service=service"
 cost_attribution_labels: "eng_team=team,service"
 `,
 			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: "eng_team"}, {InputLabel: "service", OutputLabel: ""}},
+		},
+		"output=input": {
+			inputYAML: `
+cost_attribution_labels: "team=team"
+`,
+			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: "team"}},
 		},
 	}
 
