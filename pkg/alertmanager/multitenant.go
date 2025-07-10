@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,12 +17,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingNotify "github.com/grafana/alerting/notify"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -761,7 +763,9 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
 	cfg := amConfig{
-		AlertConfigDesc: cfgs.Mimir,
+		User:            cfgs.Mimir.User,
+		RawConfig:       cfgs.Mimir.RawConfig,
+		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
@@ -891,7 +895,9 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 }
 
 type amConfig struct {
-	alertspb.AlertConfigDesc
+	User               string
+	RawConfig          string
+	Templates          []definition.PostableApiTemplate
 	tmplExternalURL    *url.URL
 	usingGrafanaConfig bool
 	emailConfig        alertingReceivers.EmailSenderConfig
@@ -906,7 +912,10 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
 		// configurations. This means metrics from API requests are confused with metrics from
 		// tenant configurations. To avoid this confusion, we use a different origin.
-		validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+		validateMatchersInConfigDesc(am.logger, "tenant", alertspb.AlertConfigDesc{
+			User:      cfg.User,
+			RawConfig: cfg.RawConfig,
+		})
 	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
@@ -947,19 +956,10 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	templates := make([]alertingTemplates.TemplateDefinition, 0, len(cfg.Templates))
-	for _, tmpl := range cfg.Templates {
-		templates = append(templates, alertingTemplates.TemplateDefinition{
-			Name:     tmpl.Filename,
-			Template: tmpl.Body,
-			Kind:     alertingTemplates.GrafanaKind, // TODO this kind is only considered by Grafana code. Load it from TemplateDesc
-		})
-	}
-
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
 		if err != nil {
 			return err
 		}
@@ -967,7 +967,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	} else if configChanged(am.cfgs[cfg.User], cfg.AlertConfigDesc) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
@@ -981,7 +981,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -1011,7 +1011,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, emailCfg, usingGrafanaConfig); err != nil {
+	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg, tmplExternalURL, emailCfg, usingGrafanaConfig); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
@@ -1133,7 +1133,9 @@ func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanag
 	}
 
 	amConfig := amConfig{
-		AlertConfigDesc: alertspb.ToProto("", nil, userID),
+		User:            userID,
+		RawConfig:       "",
+		Templates:       nil,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	if err := am.setConfig(amConfig); err != nil {
@@ -1176,7 +1178,8 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	// Calling setConfig with an empty configuration will use the fallback config.
 	amConfig := amConfig{
-		AlertConfigDesc: cfgDesc,
+		User:            cfgDesc.User,
+		RawConfig:       cfgDesc.RawConfig,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	err = am.setConfig(amConfig)
