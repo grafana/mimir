@@ -53,7 +53,7 @@ var (
 	)
 
 	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
-		"the request has been rejected because the tenant exceeded the active series limit, set to %d",
+		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
 		validation.MaxActiveSeriesPerUserFlag,
 	)
 )
@@ -132,18 +132,22 @@ func (e validationError) Unwrap() error {
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
 
-func newActiveSeriesLimitedError(limit int) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
-		limit: limit,
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		limit:                         limit,
 	}
 }
 
 type activeSeriesLimitedError struct {
-	limit int
+	totalSeriesInThisRequest      int
+	rejectedSeriesFromThisRequest int
+	limit                         int
 }
 
 func (e activeSeriesLimitedError) Error() string {
-	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit)
+	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
 }
 
 func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {

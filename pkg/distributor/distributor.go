@@ -1449,6 +1449,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			seriesHashes    = make([]uint64, len(req.Timeseries))
 			builder         = labels.NewScratchBuilder(100)
 			nonCopiedLabels labels.Labels
+			totalTimeseries = len(req.Timeseries)
 		)
 
 		for idx, series := range req.Timeseries {
@@ -1496,7 +1497,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(d.limits.MaxActiveSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1505,7 +1506,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(d.limits.MaxActiveSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
 		}
 
 		return nil
