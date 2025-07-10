@@ -148,17 +148,17 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.Add(1 * time.Second).UnixMilli(), Value: 100}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
-								HelpRef: 2,
-								UnitRef: 3,
+								HelpRef: 3,
+								UnitRef: 4,
 							},
 							CreatedTimestamp: queryStart.UnixMilli(),
 						},
 					},
-					Symbols: []string{"__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
+					Symbols: []string{"", "__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
 				},
 			},
 			queries: map[string]model.Matrix{
