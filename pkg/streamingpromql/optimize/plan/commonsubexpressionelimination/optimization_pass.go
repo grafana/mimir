@@ -71,7 +71,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
 
 	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
-	spanLog.DebugLog("msg", "attempted common subexpression elimination", "inspected_selectors", len(paths), "eliminated_selectors", selectorsEliminated)
+	spanLog.DebugLog("msg", "attempted common subexpression elimination", "selectors_inspected", len(paths), "selectors_eliminated", selectorsEliminated)
 
 	return plan, nil
 }
