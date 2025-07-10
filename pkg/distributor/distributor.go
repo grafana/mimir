@@ -1439,6 +1439,11 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
+		if len(req.Timeseries) == 0 {
+			// There's nothing to reject here.
+			return next(ctx, pushReq)
+		}
+
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
