@@ -87,6 +87,10 @@ type ParquetBucketStore struct {
 	// This is not restricted to the Series() RPC.
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
+
+	// querierOpts holds the options for the parquet querier. These opts are passed down to the Materializer which is
+	// the one that has information about the row count, chunk size and data size limits.
+	querierOpts []parquet.QuerierOpts
 }
 
 // NewParquetBucketStore creates a new bucket backed store that implements the store API against
@@ -124,6 +128,24 @@ func NewParquetBucketStore(
 		seriesLimiterFactory: seriesLimiterFactory,
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
 	}
+
+	var pOpts []parquet.QuerierOpts
+	if bucketStoreConfig.ParquetMaxRowCount > 0 {
+		pOpts = append(pOpts, parquet.WithRowCountLimitFunc(func(ctx context.Context) int64 {
+			return int64(bucketStoreConfig.ParquetMaxRowCount)
+		}))
+	}
+	if bucketStoreConfig.ParquetMaxChunkSizeBytes > 0 {
+		pOpts = append(pOpts, parquet.WithChunkBytesLimitFunc(func(ctx context.Context) int64 {
+			return int64(bucketStoreConfig.ParquetMaxChunkSizeBytes)
+		}))
+	}
+	if bucketStoreConfig.ParquetMaxDataSizeBytes > 0 {
+		pOpts = append(pOpts, parquet.WithDataBytesLimitFunc(func(ctx context.Context) int64 {
+			return int64(bucketStoreConfig.ParquetMaxDataSizeBytes)
+		}))
+	}
+	s.querierOpts = pOpts
 
 	s.readerPool = parquetBlock.NewReaderPool(
 		bucketStoreConfig.IndexHeader,
@@ -564,7 +586,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	}
 
 	decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder)
+	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, s.querierOpts...)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error creating parquet queryable")
 	}
