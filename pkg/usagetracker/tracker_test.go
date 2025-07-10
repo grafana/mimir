@@ -28,6 +28,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -40,6 +41,67 @@ func TestMain(m *testing.M) {
 const testPartitionsCount = 16
 
 func TestUsageTracker_PartitionAssignment(t *testing.T) {
+	t.Run("happy-case series tracking", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+			},
+		})
+
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{0, 1},
+		})
+		require.NoError(t, err)
+		require.Len(t, resp.RejectedSeriesHashes, 1)
+	})
+
+	t.Run("applies global series limit when configured", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount,     // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 2, // two series per partition
+			},
+		}, func(cfg *Config) {
+			cfg.UseGlobalSeriesLimits = true
+		})
+
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{0, 1, 2, 3},
+		})
+		require.NoError(t, err)
+		require.Len(t, resp.RejectedSeriesHashes, 2)
+	})
+
+	t.Run("service dry-run does not reject series", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount,     // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 2, // two series per partition
+			},
+		}, func(cfg *Config) {
+			cfg.DoNotApplySeriesLimits = true
+		})
+
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{0, 1, 2, 3, 4, 5, 6, 7},
+		})
+		require.NoError(t, err)
+		require.Equal(t, &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: nil}, resp)
+	})
+
 	t.Run("happy-case initial assignment of all partitions", func(t *testing.T) {
 		t.Parallel()
 
@@ -533,7 +595,27 @@ func prepareKVStoreAndKafkaMocks(t *testing.T) (*consul.Client, *consul.Client, 
 	return ikv, pkv, cluster
 }
 
+func newReadyTestUsageTracker(t *testing.T, limits map[string]*validation.Limits, options ...func(cfg *Config)) *UsageTracker {
+	options = append(options, func(cfg *Config) {
+		cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount // create all partitions in one reconcile.
+	})
+	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+	tracker := newTestUsageTrackerWithTenantLimits(t, 0, "zone-a", ikv, pkv, cluster, validation.NewMockTenantLimits(limits), options...)
+	waitUntilAllTrackersSeeAllInstancesInTheirZones(t, map[string]*UsageTracker{"a0": tracker})
+	require.NoError(t, tracker.reconcilePartitions(t.Context()))
+
+	require.EventuallyWithT(t, func(t *assert.CollectT) {
+		require.Len(t, getPartitionRing(t, pkv).ActivePartitionIDs(), testPartitionsCount)
+	}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
+
+	return tracker
+}
+
 func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster, options ...func(cfg *Config)) *UsageTracker {
+	return newTestUsageTrackerWithTenantLimits(t, index, zone, ikv, pkv, cluster, nil, options...)
+}
+
+func newTestUsageTrackerWithTenantLimits(t *testing.T, index int, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster, tenantLimits validation.TenantLimits, options ...func(cfg *Config)) *UsageTracker {
 	instanceID := fmt.Sprintf("usage-tracker-%s-%d", zone, index)
 	cfg := newTestUsageTrackerConfig(t, instanceID, zone, ikv, pkv, cluster)
 	for _, option := range options {
@@ -549,7 +631,7 @@ func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Clien
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
 	startServiceAndStopOnCleanup(t, partitionRingWatcher)
 
-	overrides := validation.NewOverrides(validation.Limits{}, nil)
+	overrides := validation.NewOverrides(validation.Limits{}, tenantLimits)
 
 	ut, err := NewUsageTracker(cfg, instanceRing, partitionRing, overrides, logger, reg)
 	require.NoError(t, err)
