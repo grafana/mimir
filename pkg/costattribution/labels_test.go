@@ -19,23 +19,23 @@ func TestParseCostAttributionLabels(t *testing.T) {
 		},
 		"single": {
 			input:    []string{"team"},
-			expected: []Label{{input: "team", output: ""}},
+			expected: []Label{{Input: "team", Output: ""}},
 		},
 		"regular list": {
 			input:    []string{"team", "service"},
-			expected: []Label{{input: "team", output: ""}, {input: "service", output: ""}},
+			expected: []Label{{Input: "team", Output: ""}, {Input: "service", Output: ""}},
 		},
 		"list with renames": {
 			input:    []string{"eng_team=team", "eng_service=service"},
-			expected: []Label{{input: "team", output: "eng_team"}, {input: "service", output: "eng_service"}},
+			expected: []Label{{Input: "team", Output: "eng_team"}, {Input: "service", Output: "eng_service"}},
 		},
 		"list with partial renames": {
 			input:    []string{"eng_team=team", "service"},
-			expected: []Label{{input: "team", output: "eng_team"}, {input: "service", output: ""}},
+			expected: []Label{{Input: "team", Output: "eng_team"}, {Input: "service", Output: ""}},
 		},
 		"output=input": {
 			input:    []string{"team=team"},
-			expected: []Label{{input: "team", output: "team"}},
+			expected: []Label{{Input: "team", Output: "team"}},
 		},
 	}
 
@@ -53,11 +53,11 @@ func TestLabel_outputLabel(t *testing.T) {
 		expected string
 	}{
 		"empty output": {
-			input:    Label{input: "team", output: ""},
+			input:    Label{Input: "team", Output: ""},
 			expected: "team",
 		},
 		"non-empty output": {
-			input:    Label{input: "team", output: "eng_team"},
+			input:    Label{Input: "team", Output: "eng_team"},
 			expected: "eng_team",
 		},
 	}

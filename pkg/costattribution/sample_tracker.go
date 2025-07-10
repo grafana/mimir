@@ -171,7 +171,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal.input {
+			if l.Name == cal.Input {
 				exists = true
 				buf.WriteString(l.Value)
 				break

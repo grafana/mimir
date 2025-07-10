@@ -6,22 +6,20 @@ import "strings"
 
 // Label represents a label for cost attribution.
 type Label struct {
-	// input is the source label name that exists in the input metrics.
-	input string
-	// output is the label name that will be used at the output of the cost attribution.
-	// If empty, the input label should be used as the output label.
-	output string
+	// Input is the source label name that exists in the Input metrics.
+	Input string
+	// Output is the label name that will be used at the Output of the cost attribution.
+	// If empty, the input label should be used as the Output label.
+	Output string
 }
 
-func NewLabel(inputLabel, outputLabel string) Label {
-	return Label{input: inputLabel, output: outputLabel}
-}
-
+// outputLabel returns the output label for the label.
+// If the output label is empty, the input label is returned.
 func (l Label) outputLabel() string {
-	if l.output == "" {
-		return l.input
+	if l.Output == "" {
+		return l.Input
 	}
-	return l.output
+	return l.Output
 }
 
 // ParseCostAttributionLabels parses a slice of strings into Label structs.
@@ -30,11 +28,10 @@ func ParseCostAttributionLabels(labelStrings []string) []Label {
 	output := make([]Label, 0, len(labelStrings))
 
 	for _, label := range labelStrings {
-		// A label string is of the form "output=input" or "input".
-		if l, r, ok := strings.Cut(label, "="); ok {
-			output = append(output, Label{input: r, output: l})
+		if out, in, ok := strings.Cut(label, "="); ok {
+			output = append(output, Label{Input: in, Output: out})
 		} else {
-			output = append(output, Label{input: label})
+			output = append(output, Label{Input: label})
 		}
 	}
 

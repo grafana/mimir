@@ -131,7 +131,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	// sort the labels to ensure the order is consistent
 	orderedLabels := slices.Clone(labels)
 	slices.SortFunc(orderedLabels, func(a, b Label) int {
-		return strings.Compare(a.input, b.input)
+		return strings.Compare(a.Input, b.Input)
 	})
 
 	tracker = newSampleTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
@@ -167,7 +167,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	// sort the labels to ensure the order is consistent
 	orderedLabels := slices.Clone(labels)
 	slices.SortFunc(orderedLabels, func(a, b Label) int {
-		return strings.Compare(a.input, b.input)
+		return strings.Compare(a.Input, b.Input)
 	})
 
 	tracker = NewActiveSeriesTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
@@ -280,7 +280,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	// sort the labels to ensure the order is consistent
 	slices.SortFunc(lbls, func(a, b Label) int {
-		return strings.Compare(a.input, b.input)
+		return strings.Compare(a.Input, b.Input)
 	})
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker

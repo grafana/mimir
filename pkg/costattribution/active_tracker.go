@@ -281,7 +281,7 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 		if idx > 0 {
 			buf.WriteRune(sep)
 		}
-		v := lbls.Get(cal.input)
+		v := lbls.Get(cal.Input)
 		if v != "" {
 			buf.WriteString(v)
 		} else {

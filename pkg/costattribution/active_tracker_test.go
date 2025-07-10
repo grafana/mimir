@@ -16,7 +16,7 @@ import (
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	ast := manager.ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels([]Label{{input: "team", output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, ast.hasSameLabels([]Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {

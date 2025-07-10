@@ -19,7 +19,7 @@ import (
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]Label{{input: "team", output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, st.hasSameLabels([]Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
