@@ -129,23 +129,23 @@ func NewParquetBucketStore(
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
 	}
 
-	var pOpts []parquet.QuerierOpts
+	var querierOpts []parquet.QuerierOpts
 	if bucketStoreConfig.ParquetMaxRowCount > 0 {
-		pOpts = append(pOpts, parquet.WithRowCountLimitFunc(func(ctx context.Context) int64 {
+		querierOpts = append(querierOpts, parquet.WithRowCountLimitFunc(func(ctx context.Context) int64 {
 			return int64(bucketStoreConfig.ParquetMaxRowCount)
 		}))
 	}
 	if bucketStoreConfig.ParquetMaxChunkSizeBytes > 0 {
-		pOpts = append(pOpts, parquet.WithChunkBytesLimitFunc(func(ctx context.Context) int64 {
+		querierOpts = append(querierOpts, parquet.WithChunkBytesLimitFunc(func(ctx context.Context) int64 {
 			return int64(bucketStoreConfig.ParquetMaxChunkSizeBytes)
 		}))
 	}
 	if bucketStoreConfig.ParquetMaxDataSizeBytes > 0 {
-		pOpts = append(pOpts, parquet.WithDataBytesLimitFunc(func(ctx context.Context) int64 {
+		querierOpts = append(querierOpts, parquet.WithDataBytesLimitFunc(func(ctx context.Context) int64 {
 			return int64(bucketStoreConfig.ParquetMaxDataSizeBytes)
 		}))
 	}
-	s.querierOpts = pOpts
+	s.querierOpts = querierOpts
 
 	s.readerPool = parquetBlock.NewReaderPool(
 		bucketStoreConfig.IndexHeader,
