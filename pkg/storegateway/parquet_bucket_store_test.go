@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestParquetBucketStore_InitialSync(t *testing.T) {
@@ -253,4 +254,57 @@ func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Buck
 	)
 	require.NoError(t, err)
 	return store
+}
+func TestParquetBucketStores_RowLimits(t *testing.T) {
+	userID := "test-user"
+	metricName := "test_metric"
+	ctx := context.Background()
+	storageDir := t.TempDir()
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	createBucketIndex(t, bkt, userID)
+
+	t.Run("RowCountLimitAllowsNormalOperation", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		cfg.BucketStore.ParquetMaxRowCount = 1000
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		// Query should succeed
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.GreaterOrEqual(t, len(seriesSet), 0)
+	})
+
+	t.Run("RowCountLimitDisabledWhenZero", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		// cfg.BucketStore.ParquetMaxRowCount = 0  already the default
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.GreaterOrEqual(t, len(seriesSet), 0)
+	})
 }
