@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -207,8 +206,6 @@ type UsageTracker struct {
 	partitions    map[int32]*partitionHandler
 
 	lostPartitions map[int32]time.Time
-
-	ready atomic.Bool
 
 	// Dependencies.
 	subservicesWatcher *services.FailureWatcher
@@ -511,9 +508,8 @@ losingPartitions:
 
 	if skipped > 0 {
 		level.Info(logger).Log("msg", "max partitions to create reached, skipping the rest until next reconcile", "added", added, "skipped", skipped)
-	} else if !t.ready.Load() {
-		level.Info(logger).Log("msg", "all partitions created, marking as ready")
-		t.ready.Store(true)
+	} else if t.instanceLifecycler.GetState() == ring.JOINING {
+		level.Info(logger).Log("msg", "all partitions created, becoming ACTIVE")
 		if err := t.instanceLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
 			return errors.Wrap(err, "unable to change instance lifecycler state to ACTIVE")
 		}
@@ -700,6 +696,12 @@ func (t *UsageTracker) CheckReady(_ context.Context) error {
 
 func (t *UsageTracker) instancePartitions() (start, end, totalInstances int32, err error) {
 	totalInstances = t.instancesServingPartitions()
+	if readOnly, _ := t.instanceLifecycler.GetReadOnlyState(); readOnly {
+		// If we're in read-only mode, we don't serve any partitions.
+		// We're going to gradually lose the ones we still own.
+		return 0, -1, totalInstances, nil
+	}
+
 	start, end, err = instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
 	return start, end, totalInstances, err
 }
