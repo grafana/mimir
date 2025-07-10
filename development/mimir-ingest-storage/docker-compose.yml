@@ -397,3 +397,78 @@
       - "4318"
     "volumes":
       - "./config:/etc/config"
+  "usage-tracker-zone-a-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-a-0"
+    "image": "mimir"
+    "ports":
+      - "8010:8080"
+      - "11010:11010"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "usage-tracker-zone-a-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-a-1"
+    "image": "mimir"
+    "ports":
+      - "8011:8080"
+      - "11011:11011"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "usage-tracker-zone-b-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-b-0"
+    "image": "mimir"
+    "ports":
+      - "8012:8080"
+      - "11012:11012"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
