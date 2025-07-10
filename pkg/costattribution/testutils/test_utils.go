@@ -44,7 +44,7 @@ type Series struct {
 
 func CreateRequest(data []Series) *mimirpb.WriteRequest {
 	timeSeries := make([]mimirpb.PreallocTimeseries, 0, len(data))
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		var Labels []mimirpb.LabelAdapter
 		for j := 0; j+1 < len(data[i].LabelValues); j += 2 {
 			Labels = append(Labels, mimirpb.LabelAdapter{Name: data[i].LabelValues[j], Value: data[i].LabelValues[j+1]})

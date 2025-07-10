@@ -14,6 +14,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const sep = rune(0x80)
@@ -32,7 +33,7 @@ type SampleTracker struct {
 	discardedSampleAttribution *prometheus.Desc
 	logger                     log.Logger
 
-	labels         []string
+	labels         []validation.CostAttributionLabel
 	overflowLabels []string
 
 	maxCardinality   int
@@ -45,7 +46,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTracker(userID string, trackedLabels []validation.CostAttributionLabel, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -66,8 +67,17 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		overflowCounter:  observation{},
 	}
 
-	variableLabels := slices.Clone(trackedLabels)
+	variableLabels := make([]string, 0, len(trackedLabels)+2)
+	for _, label := range trackedLabels {
+		// If given, we rewrite the input label to the output label.
+		if label.OutputLabel != "" {
+			variableLabels = append(variableLabels, label.OutputLabel)
+		} else {
+			variableLabels = append(variableLabels, label.InputLabel)
+		}
+	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
+
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
@@ -80,7 +90,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 	return tracker
 }
 
-func (st *SampleTracker) hasSameLabels(labels []string) bool {
+func (st *SampleTracker) hasSameLabels(labels []validation.CostAttributionLabel) bool {
 	return slices.Equal(st.labels, labels)
 }
 
@@ -167,7 +177,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal {
+			if l.Name == cal.InputLabel {
 				exists = true
 				buf.WriteString(l.Value)
 				break

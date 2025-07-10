@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -29,7 +30,7 @@ type ActiveSeriesTracker struct {
 	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
 	logger                                         log.Logger
 
-	labels         []string
+	labels         []validation.CostAttributionLabel
 	overflowLabels []string
 
 	maxCardinality   int
@@ -42,7 +43,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []validation.CostAttributionLabel, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -62,7 +63,14 @@ func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 		cooldownDuration: cooldownDuration,
 	}
 
-	variableLabels := slices.Clone(trackedLabels)
+	variableLabels := make([]string, 0, len(trackedLabels)+2)
+	for _, label := range trackedLabels {
+		if label.OutputLabel != "" {
+			variableLabels = append(variableLabels, label.OutputLabel)
+		} else {
+			variableLabels = append(variableLabels, label.InputLabel)
+		}
+	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
@@ -77,7 +85,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 	return ast
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels []string) bool {
+func (at *ActiveSeriesTracker) hasSameLabels(labels []validation.CostAttributionLabel) bool {
 	return slices.Equal(at.labels, labels)
 }
 
@@ -278,7 +286,7 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 		if idx > 0 {
 			buf.WriteRune(sep)
 		}
-		v := lbls.Get(cal)
+		v := lbls.Get(cal.InputLabel)
 		if v != "" {
 			buf.WriteString(v)
 		} else {

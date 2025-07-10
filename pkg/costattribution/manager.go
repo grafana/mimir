@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,7 +99,9 @@ func (m *Manager) enabledForUser(userID string) bool {
 	if m == nil {
 		return false
 	}
-	return len(m.limits.CostAttributionLabels(userID)) > 0
+
+	labels := m.limits.CostAttributionLabels(userID)
+	return len(labels) > 0
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -127,7 +130,9 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 	// sort the labels to ensure the order is consistent
 	orderedLables := slices.Clone(labels)
-	slices.Sort(orderedLables)
+	slices.SortFunc(orderedLables, func(a, b validation.CostAttributionLabel) int {
+		return strings.Compare(a.InputLabel, b.InputLabel)
+	})
 
 	tracker = newSampleTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.sampleTrackersByUserID[userID] = tracker
@@ -160,7 +165,9 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 	// sort the labels to ensure the order is consistent
 	orderedLables := slices.Clone(labels)
-	slices.Sort(orderedLables)
+	slices.SortFunc(orderedLables, func(a, b validation.CostAttributionLabel) int {
+		return strings.Compare(a.InputLabel, b.InputLabel)
+	})
 
 	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
@@ -266,10 +273,13 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
-	lbls := slices.Clone(m.limits.CostAttributionLabels(userID))
+	labels := m.limits.CostAttributionLabels(userID)
+	lbls := slices.Clone(labels)
 
 	// sort the labels to ensure the order is consistent
-	slices.Sort(lbls)
+	slices.SortFunc(lbls, func(a, b validation.CostAttributionLabel) int {
+		return strings.Compare(a.InputLabel, b.InputLabel)
+	})
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
 	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
@@ -282,7 +292,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 		m.stmtx.Unlock()
 	}
 
-	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
+	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
 		at = NewActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
