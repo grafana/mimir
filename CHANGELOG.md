@@ -187,7 +187,10 @@
 ### Mimirtool
 
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
+* [ENHANCEMENT] Add `--block-size` CLI flag to `remote-read export` that allows setting the output block size. #12025
 * [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402
+* [BUGFIX] Fix issue where `remote-read export` could omit some samples if the query time range spans multiple blocks. #12025
+* [BUGFIX] Fix issue where `remote-read export` could omit some output blocks in the list printed to the console or fail with `read/write on closed pipe`. #12025
 
 ### Mimir Continuous Test
 
