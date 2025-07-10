@@ -611,7 +611,7 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 
 func fakeKafkaCluster(t *testing.T, topicsToSeed ...string) *kfake.Cluster {
 	t.Helper()
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(1, topicsToSeed...))
+	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(testPartitionsCount, topicsToSeed...))
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
 	return cluster

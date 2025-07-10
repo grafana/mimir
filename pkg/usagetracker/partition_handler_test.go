@@ -130,6 +130,51 @@ func TestPartitionHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("snapshot is loaded for the correct partition", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 0 // no limit.
+
+		// First partitionHandler is created, tracks some series and creates a snapshot.
+		ph1 := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph1))
+		requireTrackSeries(t, ph1, tenantID, oneSeriesPerShard(), noRejected)
+		require.NoError(t, ph1.publishSnapshot(ctx))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
+
+		// Different partition, it should not load the snapshot.
+		differentPartitionHandler := h.newHandlerForPartitionID(t, 1)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, differentPartitionHandler))
+		requirePerTenantSeries(t, differentPartitionHandler, map[string]uint64{})
+		// Track series for a different tenant in this partition.
+		differentSeriesSet := make([]uint64, 10*shards)
+		for i := range differentSeriesSet {
+			differentSeriesSet[i] = uint64(i + 1000) // Different series set.
+		}
+		requireTrackSeries(t, differentPartitionHandler, "different-tenant", differentSeriesSet, noRejected)
+		requirePerTenantSeries(t, differentPartitionHandler, map[string]uint64{"different-tenant": 10 * shards})
+		// Publish a snapshot for this partition.
+		require.NoError(t, differentPartitionHandler.publishSnapshot(ctx))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, differentPartitionHandler))
+
+		snapshotFiles := 0
+		require.NoError(t, h.snapshotsBucket.Iter(context.Background(), "", func(name string) error {
+			snapshotFiles++
+			return nil
+		}))
+		require.Equal(t, 2, snapshotFiles, "There should be exactly 2 snapshot files created, got %d", snapshotFiles)
+
+		// New partitionHandler is created, it should load the snapshot for the correct partition.
+		ph2 := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
+		requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: shards})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
+	})
+
 	t.Run("snapshot events are loaded continuously", func(t *testing.T) {
 		t.Parallel()
 
@@ -444,6 +489,11 @@ type partitionHandlerTestHelper struct {
 
 func (h *partitionHandlerTestHelper) newHandler(t *testing.T, maybeConfigure ...func(cfg *Config)) *partitionHandler {
 	t.Helper()
+	return h.newHandlerForPartitionID(t, 0, maybeConfigure...)
+}
+
+func (h *partitionHandlerTestHelper) newHandlerForPartitionID(t *testing.T, partitionID int32, maybeConfigure ...func(cfg *Config)) *partitionHandler {
+	t.Helper()
 	// Wrap logger to understand test logs easier.
 	logger := log.With(h.logger, "pidx", h.pidx)
 	// Wrap the registry to allow running two partitionHandler handlers for the same partitionHandler ID (this doesn't happen in usage-tracker).
@@ -458,7 +508,7 @@ func (h *partitionHandlerTestHelper) newHandler(t *testing.T, maybeConfigure ...
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
 
-	p, err := newPartitionHandler(0, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
+	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
 	require.NoError(t, err)
 	return p
 }

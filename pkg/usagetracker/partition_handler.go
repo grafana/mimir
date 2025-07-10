@@ -860,7 +860,7 @@ func findEndOffset(ctx context.Context, client *kgo.Client, topic string, partit
 	}
 	topicOffset, ok := offsets.Lookup(topic, partition)
 	if !ok {
-		return 0, fmt.Errorf("failed to get end offsets, topic or partition not found, offsets: %#v", offsets)
+		return 0, fmt.Errorf("failed to get end offsets, topic or partition not found, make sure the partition exists. Got offsets: %#v", offsets)
 	}
 
 	return topicOffset.Offset, nil
