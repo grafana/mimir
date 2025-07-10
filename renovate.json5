@@ -3,7 +3,7 @@
     "extends": [
       "config:recommended"
     ],
-    "baseBranches": ["main", "release-2.16", "release-2.15"],
+    "baseBranches": ["main", "release-2.17", "release-2.16", "release-2.15"],
     "postUpdateOptions": [
       "gomodTidy",
       "gomodUpdateImportPaths"
