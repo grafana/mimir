@@ -1864,3 +1864,46 @@ func getDefaultLimits() Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+func TestCostAttributionLabels(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML      string
+		expectedLabels []CostAttributionLabel
+	}{
+		"no labels": {
+			inputYAML: `
+cost_attribution_labels: ""
+`,
+			expectedLabels: []CostAttributionLabel{},
+		},
+		"regular list": {
+			inputYAML: `
+cost_attribution_labels: "team,service"
+`,
+			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: ""}, {InputLabel: "service", OutputLabel: ""}},
+		},
+		"list with renames": {
+			inputYAML: `
+cost_attribution_labels: "eng_team=team,eng_service=service"
+`,
+			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: "eng_team"}, {InputLabel: "service", OutputLabel: "eng_service"}},
+		},
+		"list with partial renames": {
+			inputYAML: `
+cost_attribution_labels: "eng_team=team,service"
+`,
+			expectedLabels: []CostAttributionLabel{{InputLabel: "team", OutputLabel: "eng_team"}, {InputLabel: "service", OutputLabel: ""}},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var limitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML)
+			require.NoError(t, err)
+
+			ov := NewOverrides(limitsYAML, nil)
+			require.Equal(t, tt.expectedLabels, ov.CostAttributionLabels("user1"))
+		})
+	}
+}

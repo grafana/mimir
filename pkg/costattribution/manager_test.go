@@ -61,6 +61,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 2)
+
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -148,7 +149,6 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user1"} 2
 		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
 		`
-
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
 			"cortex_cost_attribution_sample_tracker_cardinality",
 			"cortex_cost_attribution_sample_tracker_overflown",
@@ -280,4 +280,42 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		// No metrics should remain after all purged
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
+}
+
+func TestManager_OutputLabels(t *testing.T) {
+	manager, _, costAttributionReg := newTestManager()
+
+	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+	manager.SampleTracker("user6").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
+	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
+	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 2)
+
+	expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+		cortex_discarded_attributed_samples_total{eng_team="bar",reason="invalid-metrics-name",tenant="user6",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{eng_team="foo",reason="invalid-metrics-name",tenant="user6",tracker="cost-attribution"} 1
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{eng_team="foo",tenant="user6",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{eng_team="bar",tenant="user6",tracker="cost-attribution"} 52
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{eng_team="bar",tenant="user6",tracker="cost-attribution"} 2
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_series gauge
+        cortex_ingester_attributed_active_series{eng_team="bar",tenant="user6",tracker="cost-attribution"} 3
+		`
+	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
+		strings.NewReader(expectedMetrics),
+		"cortex_discarded_attributed_samples_total",
+		"cortex_distributor_received_attributed_samples_total",
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets",
+	))
 }

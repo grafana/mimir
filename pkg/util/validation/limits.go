@@ -949,7 +949,7 @@ func (o *Overrides) CostAttributionLabels(userID string) []CostAttributionLabel 
 	for _, label := range labelStrings {
 		// A label string is of the form "output=input" or "input".
 		if l, r, ok := strings.Cut(label, "="); ok {
-			output = append(output, CostAttributionLabel{InputLabel: l, OutputLabel: r})
+			output = append(output, CostAttributionLabel{InputLabel: r, OutputLabel: l})
 		} else {
 			output = append(output, CostAttributionLabel{InputLabel: label})
 		}
