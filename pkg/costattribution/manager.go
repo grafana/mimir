@@ -129,12 +129,12 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// sort the labels to ensure the order is consistent
-	orderedLables := slices.Clone(labels)
-	slices.SortFunc(orderedLables, func(a, b validation.CostAttributionLabel) int {
+	orderedLabels := slices.Clone(labels)
+	slices.SortFunc(orderedLabels, func(a, b validation.CostAttributionLabel) int {
 		return strings.Compare(a.InputLabel, b.InputLabel)
 	})
 
-	tracker = newSampleTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = newSampleTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
 	m.sampleTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -164,12 +164,12 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// sort the labels to ensure the order is consistent
-	orderedLables := slices.Clone(labels)
-	slices.SortFunc(orderedLables, func(a, b validation.CostAttributionLabel) int {
+	orderedLabels := slices.Clone(labels)
+	slices.SortFunc(orderedLabels, func(a, b validation.CostAttributionLabel) int {
 		return strings.Compare(a.InputLabel, b.InputLabel)
 	})
 
-	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = NewActiveSeriesTracker(userID, orderedLabels, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
