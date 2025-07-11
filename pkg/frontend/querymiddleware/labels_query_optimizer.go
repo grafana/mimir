@@ -75,8 +75,8 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	// Optimize the matchers.
 	optimizedMatchers, optimized, err := optimizeLabelNamesRequestMatchers(rawMatchers)
 	if err != nil {
-		// Do not log any error because this error is typically caused by a malformed request, which wouldn't be actionable.
-		// TODO a debuglog on the spanlog is fine
+		// Do not log an error because this error is typically caused by a malformed request, which wouldn't be actionable.
+		spanLog.DebugLog("msg", "failed to optimize label names matchers", "err", err)
 		// TODO track a metric with reason "skipped"
 		return l.next.RoundTrip(req)
 	}
@@ -101,11 +101,10 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 		return l.next.RoundTrip(req)
 	}
 
-	// TODO log that it was optimized. Log the matchers before and after.
-	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
-
 	// TODO DEBUG
 	level.Info(l.logger).Log("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
+
+	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
 	return l.next.RoundTrip(optimizedReq)
 }
 
@@ -119,10 +118,10 @@ func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, opt
 
 	for _, matchers := range matcherSets {
 		// If an empty matcher `{}` was provided we need to preserve it because it's an invalid matcher
-		// for the labels API, but we want to get the actual error from downstream.
+		// for the labels API, but we want to get the actual error from downstream. In this case we just
+		// don't optimize any matchers set.
 		if len(matchers) == 0 {
-			optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(matchers))
-			continue
+			return nil, false, nil
 		}
 
 		optimizedMatchers := make([]*labels.Matcher, 0, len(matchers))

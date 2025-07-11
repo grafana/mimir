@@ -26,58 +26,86 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 		optimizerEnabled         bool
 		reqPath                  string
 		reqData                  url.Values
+		expectedOptimized        bool
 		expectedDownstreamParams url.Values
 	}{
-		// TODO add all other params to the reqData
 		"should optimize labels request when enabled": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        true,
 		},
 		"should optimize multiple matchers": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`, `{__name__!="", instance="localhost"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`, `{instance="localhost"}`}},
+			expectedOptimized:        true,
 		},
 		"should handle mixed optimizable and non-optimizable matchers": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{job="test"}`, `{__name__!="", env="prod"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="test"}`, `{env="prod"}`}},
+			expectedOptimized:        true,
+		},
+		"should handle matchers with quoted label names": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/labels",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", "strange-label"="value"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{"strange-label"="value"}`}},
+			expectedOptimized:        true,
+		},
+		"should handle matchers with unicode label values": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/labels",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="测试", env="🚀"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="测试",env="🚀"}`}},
+			expectedOptimized:        true,
 		},
 		"should pass through when optimization disabled": {
 			optimizerEnabled:         false,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedOptimized:        false,
 		},
 		"should pass through when no optimization needed": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{job="prometheus"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        false,
 		},
-		"should pass through non-labels requests": {
+		"should pass through when one of the matchers set is an empty matcher": {
 			optimizerEnabled:         true,
-			reqPath:                  "/api/v1/query",
-			reqData:                  url.Values{"query": []string{"up"}},
-			expectedDownstreamParams: url.Values{"query": []string{"up"}},
+			reqPath:                  "/api/v1/labels",
+			reqData:                  url.Values{"match[]": []string{`{}`, `{__name__!="", job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{}`, `{__name__!="", job="prometheus"}`}},
+			expectedOptimized:        false,
 		},
 		"should pass through when no matchers": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{},
 			expectedDownstreamParams: url.Values{},
+			expectedOptimized:        false,
 		},
 		"should pass through when malformed matchers": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{"{invalid syntax"}},
 			expectedDownstreamParams: url.Values{"match[]": []string{"{invalid syntax"}},
+			expectedOptimized:        false,
 		},
-		// TODO another path
+		"should pass through on a non supported API": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/series",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedOptimized:        false,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -110,6 +138,23 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 
 						return &http.Response{StatusCode: http.StatusOK}, nil
 					})
+
+					// Inject other parameters to the request and expected values, to ensure the request is serialized
+					// and deserialized correctly.
+					testData.reqData["start"] = []string{time.Now().Format(time.RFC3339)}
+					testData.reqData["end"] = []string{time.Now().Format(time.RFC3339)}
+					testData.reqData["limit"] = []string{"10"}
+
+					if testData.expectedOptimized {
+						// When we re-encode the start and end parameters we always use the epoch timestamp.
+						// It's fine, because it's idempotent.
+						testData.expectedDownstreamParams["start"] = []string{encodeTime(mustParseTime(testData.reqData["start"][0]))}
+						testData.expectedDownstreamParams["end"] = []string{encodeTime(mustParseTime(testData.reqData["end"][0]))}
+					} else {
+						testData.expectedDownstreamParams["start"] = testData.reqData["start"]
+						testData.expectedDownstreamParams["end"] = testData.reqData["end"]
+					}
+					testData.expectedDownstreamParams["limit"] = testData.reqData["limit"]
 
 					// Create the request.
 					switch reqMethod {
