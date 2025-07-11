@@ -51,7 +51,8 @@ func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQu
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(d.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "durationsMiddleware.Do")
+	var spanLog *spanlogger.SpanLogger
+	spanLog, ctx = spanlogger.New(ctx, logger, tracer, "durationsMiddleware.Do")
 	defer spanLog.Finish()
 
 	origQuery := req.GetQuery()
