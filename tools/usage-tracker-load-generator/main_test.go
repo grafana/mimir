@@ -13,9 +13,9 @@ func TestGenerateSeriesHashes_ShouldGenerateUniqueHashes(t *testing.T) {
 	hashes := make(map[uint64]bool)
 	duplicates := 0
 
-	for replicaID := 0; replicaID < 10; replicaID++ {
+	for replicaSeed := uint64(0); replicaSeed < 10; replicaSeed++ {
 		for workerID := 0; workerID < 300; workerID++ {
-			for _, hash := range generateSeriesHashes(replicaID, workerID, 10) {
+			for _, hash := range generateSeriesHashes(replicaSeed, workerID, 10) {
 				if _, ok := hashes[hash]; ok {
 					duplicates++
 				}
