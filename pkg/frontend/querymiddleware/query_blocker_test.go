@@ -35,7 +35,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks single line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -45,7 +45,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "not blocks single line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -54,7 +54,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks multiple line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `rate(metric_counter[5m]) / rate(other_counter[5m])`, Regex: false},
 				},
 			},
@@ -68,7 +68,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "not blocks multiple line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -81,7 +81,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks single line query regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*metric_counter.*", Regex: true},
 				},
 			},
@@ -91,7 +91,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks multiple line query regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					// We need to turn on the s flag to allow dot matches newlines.
 					{Pattern: "(?s).*metric_counter.*", Regex: true},
 				},
@@ -106,7 +106,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "invalid regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "[a-9}", Regex: true},
 				},
 			},
@@ -175,7 +175,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `{__name__="metric_counter",pod=~"app-.*"}`, Regex: false},
 				},
 			},
@@ -184,7 +184,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "not blocks query via non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `{__name__="another_metric",pod=~"app-.*"}`, Regex: false},
 				},
 			},
@@ -192,7 +192,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*metric_counter.*", Regex: true},
 				},
 			},
@@ -201,7 +201,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via regex pattern, with begin/end curly brackets used as a trick to match only remote read requests",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "\\{.*metric_counter.*\\}", Regex: true},
 				},
 			},
@@ -210,7 +210,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "not blocks query via regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*another_metric.*", Regex: true},
 				},
 			},
@@ -218,7 +218,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "invalid regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "[a-9}", Regex: true},
 				},
 			},
