@@ -75,6 +75,8 @@ const grafanaConfigWithDuplicateReceiverName = `{
   }
 }`
 
+var grafanaConfigWithTemplates = `{"template_files":{"first.tpl":"{{ define \"t1\" }}Gra-gra{{end}}"},"templates":[{"name":"def.tpl","kind":"mimir","content":"{{ define \"t1\" }}Mimi-mi{{end}}"}],"alertmanager_config":{"route":{"receiver":"default","group_by":["grafana_folder","alertname"]},"receivers":[{"name":"default","grafana_managed_receiver_configs":[{"name":"WH","type":"webhook","settings":{"url":"http://localhost:8080"}}],"webhook_configs":[{"url":"http://localhost:8081"}]}]}}`
+
 func TestCreateUsableGrafanaConfig(t *testing.T) {
 	defaultFromAddress := "grafana@example.com"
 	mimirConfig := fmt.Sprintf(`
@@ -108,6 +110,7 @@ receivers:
 		mimirConfig          string
 		expEmailSenderConfig receivers.EmailSenderConfig
 		expErr               string
+		expTemplates         []definition.PostableApiTemplate
 	}{
 		{
 			name: "empty grafana config",
@@ -260,6 +263,27 @@ receivers:
 				StaticHeaders:  map[string]string{"test": "test"},
 			},
 		},
+		{
+			name: "Grafana config with multiple templates",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfigWithTemplates,
+				SmtpConfig:  smtpConfig,
+			},
+			expEmailSenderConfig: baseEmailSenderConfig,
+			expTemplates: []definition.PostableApiTemplate{
+				{
+					Name:    "def.tpl",
+					Kind:    definition.MimirTemplateKind,
+					Content: `{{ define "t1" }}Mimi-mi{{end}}`,
+				},
+				{
+					Name:    "first.tpl",
+					Kind:    definition.GrafanaTemplateKind,
+					Content: `{{ define "t1" }}Gra-gra{{end}}`,
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -275,6 +299,7 @@ receivers:
 			require.Equal(t, test.grafanaConfig.User, cfg.User)
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.TmplExternalURL.String())
 			require.True(t, cfg.UsingGrafanaConfig)
+			require.EqualValues(t, cfg.Templates, test.expTemplates)
 
 			if test.grafanaConfig.SmtpConfig != nil {
 				require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.EmailConfig.StaticHeaders)
