@@ -5025,7 +5025,7 @@
           "kind": "field",
           "name": "labels_query_optimizer_enabled",
           "required": false,
-          "desc": "Enable labels query optimizations. When enabled, the query-frontend rewrites labels queries in an idempotent way to improve their performance.",
+          "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.labels-query-optimizer-enabled",

@@ -3759,8 +3759,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [subquery_spin_off_enabled: <boolean> | default = false]
 
 # (experimental) Enable labels query optimizations. When enabled, the
-# query-frontend rewrites labels queries in an idempotent way to improve their
-# performance.
+# query-frontend may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
 [labels_query_optimizer_enabled: <boolean> | default = false]
 
