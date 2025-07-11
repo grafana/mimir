@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -19,7 +20,7 @@ import (
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, st.hasSameLabels([]model.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {

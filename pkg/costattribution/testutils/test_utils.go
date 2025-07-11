@@ -3,6 +3,7 @@
 package testutils
 
 import (
+	"github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -15,7 +16,7 @@ func NewMockCostAttributionLimits(idx int, lvs ...string) *validation.Overrides 
 		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabels: []string{"platform"}},
 		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabels: []string{"a"}},
 		// user6 has opted to rename team to eng_team.
-		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabels: []string{"eng_team=team"}},
+		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []model.Label{{Input: "team", Output: "eng_team"}}},
 	}
 	if len(lvs) > 0 {
 		baseLimits[lvs[0]] = &validation.Limits{

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +17,7 @@ import (
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	ast := manager.ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels([]Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, ast.hasSameLabels([]model.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {

@@ -5086,6 +5086,43 @@
         },
         {
           "kind": "field",
+          "name": "cost_attribution_labels_structured",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_labels_structured",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "input",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "output",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "field",
           "name": "max_cost_attribution_cardinality",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",

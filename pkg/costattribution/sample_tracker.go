@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -32,7 +33,7 @@ type SampleTracker struct {
 	discardedSampleAttribution *prometheus.Desc
 	logger                     log.Logger
 
-	labels         []Label
+	labels         []model.Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -45,7 +46,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []Label, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTracker(userID string, trackedLabels []model.Label, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -68,7 +69,7 @@ func newSampleTracker(userID string, trackedLabels []Label, limit int, cooldown 
 
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
-		variableLabels = append(variableLabels, label.outputLabel())
+		variableLabels = append(variableLabels, label.OutputLabel())
 	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
@@ -84,7 +85,7 @@ func newSampleTracker(userID string, trackedLabels []Label, limit int, cooldown 
 	return tracker
 }
 
-func (st *SampleTracker) hasSameLabels(labels []Label) bool {
+func (st *SampleTracker) hasSameLabels(labels []model.Label) bool {
 	return slices.Equal(st.labels, labels)
 }
 

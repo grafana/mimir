@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
+	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -100,7 +101,15 @@ func (m *Manager) enabledForUser(userID string) bool {
 		return false
 	}
 
-	return len(m.limits.CostAttributionLabels(userID)) > 0
+	return len(m.limits.CostAttributionLabels(userID)) > 0 || len(m.limits.CostAttributionLabelsStructured(userID)) > 0
+}
+
+func (m *Manager) labels(userID string) []model.Label {
+	// We prefer the structured labels over the string labels, if provided.
+	if s := m.limits.CostAttributionLabelsStructured(userID); len(s) > 0 {
+		return s
+	}
+	return model.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -117,8 +126,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := parseCostAttributionLabels(labelStrings)
+	labels := m.labels(userID)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -129,7 +137,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// sort the labels to ensure the order is consistent.
-	slices.SortFunc(labels, func(a, b Label) int {
+	slices.SortFunc(labels, func(a, b model.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
@@ -152,8 +160,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := parseCostAttributionLabels(labelStrings)
+	labels := m.labels(userID)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -164,7 +171,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b Label) int {
+	slices.SortFunc(labels, func(a, b model.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
@@ -272,11 +279,10 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
-	labelStrings := m.limits.CostAttributionLabels(userID)
-	labels := parseCostAttributionLabels(labelStrings)
+	labels := m.labels(userID)
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b Label) int {
+	slices.SortFunc(labels, func(a, b model.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
