@@ -3758,6 +3758,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
+# (experimental) Enable labels query optimizations. When enabled, the
+# query-frontend rewrites labels queries in an idempotent way to improve their
+# performance.
+# CLI flag: -query-frontend.labels-query-optimizer-enabled
+[labels_query_optimizer_enabled: <boolean> | default = false]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
