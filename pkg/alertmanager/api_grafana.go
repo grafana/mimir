@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	errGettingFullState               = "error getting full state from the running Grafana Alertmanager"
 	errMalformedGrafanaConfigInStore  = "error unmarshalling Grafana configuration from storage"
 	errMarshallingState               = "error marshalling Grafana Alertmanager state"
 	errMarshallingStateJSON           = "error marshalling JSON Grafana Alertmanager state"
@@ -169,60 +168,6 @@ type successResult struct {
 type errorResult struct {
 	Status string `json:"status"`
 	Error  string `json:"error"`
-}
-
-func (am *MultitenantAlertmanager) GetUserState(w http.ResponseWriter, r *http.Request) {
-	logger := util_log.WithContext(r.Context(), am.logger)
-
-	userID, err := tenant.TenantID(r.Context())
-	if err != nil {
-		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
-		w.WriteHeader(http.StatusUnauthorized)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errNoOrgID, err.Error())})
-		return
-	}
-
-	// Try to get the full state from the running Alertmanager, using the database as a fallback.
-	var st *clusterpb.FullState
-	am.alertmanagersMtx.Lock()
-	userAM, ok := am.alertmanagers[userID]
-	if ok {
-		st, err = userAM.state.GetFullState()
-	} else {
-		var desc alertspb.FullStateDesc
-		desc, err = am.store.GetFullState(r.Context(), userID)
-		if err == nil {
-			st = desc.State
-		}
-	}
-	am.alertmanagersMtx.Unlock()
-
-	// Handle any errors without holding the lock.
-	if err != nil {
-		if errors.Is(err, alertspb.ErrNotFound) {
-			w.WriteHeader(http.StatusNotFound)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
-			return
-		}
-
-		level.Error(logger).Log("msg", errGettingFullState, "err", err, "user", userID)
-		w.WriteHeader(http.StatusInternalServerError)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errGettingFullState, err.Error())})
-		return
-	}
-
-	bytes, err := st.Marshal()
-	if err != nil {
-		level.Error(logger).Log("msg", errMarshallingState, "err", err, "user", userID)
-		w.WriteHeader(http.StatusInternalServerError)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errMarshallingState, err.Error())})
-		return
-	}
-
-	util.WriteJSONResponse(w, successResult{
-		Status: statusSuccess,
-		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
-	})
 }
 
 func (am *MultitenantAlertmanager) GetUserGrafanaState(w http.ResponseWriter, r *http.Request) {

@@ -15,8 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
-	"github.com/prometheus/alertmanager/featurecontrol"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -313,88 +311,6 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 		require.Len(t, storage.Objects(), 1)
-	}
-}
-
-func TestMultitenantAlertmanager_GetUserState(t *testing.T) {
-	userWithRunningAM := "test_user_1"
-	userWithoutRunningAM := "test_user_2"
-	storage := objstore.NewInMemBucket()
-	alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
-	require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
-		User:      userWithRunningAM,
-		RawConfig: simpleConfigOne,
-	}))
-
-	cfg := mockAlertmanagerConfig(t)
-	reg := prometheus.NewPedanticRegistry()
-	am := setupSingleMultitenantAlertmanager(t, cfg, alertStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
-
-	for _, u := range []string{userWithRunningAM, userWithoutRunningAM} {
-		require.NoError(t, alertStore.SetFullState(context.Background(), u, alertspb.FullStateDesc{
-			State: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
-					{
-						Key:  "nfl:" + u,
-						Data: []byte("somedata"),
-					},
-					{
-						Key:  "sil:" + u,
-						Data: []byte("somedata"),
-					},
-				},
-			},
-		}))
-	}
-	require.Len(t, storage.Objects(), 3) // Two full states, one config.
-	require.Len(t, am.alertmanagers, 1)  // Only one running Alertmanager.
-
-	// No OrgID.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/grafana/full_state", nil)
-	{
-		rec := httptest.NewRecorder()
-		am.GetUserState(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
-	}
-
-	// Get the state from the Alertmanager.
-	{
-		ctx := user.InjectOrgID(context.Background(), userWithRunningAM)
-		rec := httptest.NewRecorder()
-		am.GetUserState(rec, req.WithContext(ctx))
-		require.Equal(t, http.StatusOK, rec.Code)
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		json := `
-		{
-			"data": {
-				"state": "ChEKD25mbDp0ZXN0X3VzZXJfMQoRCg9zaWw6dGVzdF91c2VyXzE="
-			},
-			"status": "success"
-		}
-		`
-		require.JSONEq(t, json, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	}
-
-	// Get the state from the DB.
-	{
-		ctx := user.InjectOrgID(context.Background(), userWithoutRunningAM)
-		rec := httptest.NewRecorder()
-		am.GetUserState(rec, req.WithContext(ctx))
-		require.Equal(t, http.StatusOK, rec.Code)
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		json := `
-		{
-			"data": {
-				"state": "ChsKD25mbDp0ZXN0X3VzZXJfMhIIc29tZWRhdGEKGwoPc2lsOnRlc3RfdXNlcl8yEghzb21lZGF0YQ=="
-			},
-			"status": "success"
-		}
-		`
-		require.JSONEq(t, json, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	}
 }
 
