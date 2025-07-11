@@ -39,18 +39,27 @@ type durationsMiddleware struct {
 }
 
 func (d *durationsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	var err error
+	req, err = d.rewriteIfNeeded(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return d.next.Do(ctx, req)
+}
+
+func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQueryRequest) (MetricsQueryRequest, error) {
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(d.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "durationsMiddleware.Do")
 	defer spanLog.Finish()
 
-	expr, err := parser.ParseExpr(req.GetQuery())
+	origQuery := req.GetQuery()
+	expr, err := parser.ParseExpr(origQuery)
 	if err != nil {
-		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		// This middleware focuses on duration expressions, so if the query is
 		// not valid, we just fall through to the next handler.
-		return d.next.Do(ctx, req)
+		return req, nil
 	}
 
 	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Second)
@@ -65,13 +74,20 @@ func (d *durationsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
+	newQuery := expr.String()
+	if origQuery == newQuery {
+		return req, nil
+	}
+
+	level.Debug(spanLog).Log("msg", "query duration expressions have been rewritten", "rewritten", newQuery)
+
 	req, err = req.WithExpr(expr)
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to update the query expression after durations expressions were evaluated", "err", err)
 		return nil, apierror.New(apierror.TypeInternal, DecorateWithParamName(err, "query").Error())
 	}
 
-	return d.next.Do(ctx, req)
+	return req, nil
 }
 
 type durationVisitor struct{}

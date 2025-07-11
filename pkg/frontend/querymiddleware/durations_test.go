@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -40,7 +41,8 @@ func TestDurationMiddleware(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			capture := &captureMiddleware{}
-			middleware := newDurationsMiddleware(log.NewNopLogger())
+			logCapture := bytes.Buffer{}
+			middleware := newDurationsMiddleware(log.NewLogfmtLogger(&logCapture))
 			chain := middleware.Wrap(capture)
 
 			expr, err := parser.ParseExpr(tc.query)
@@ -58,10 +60,15 @@ func TestDurationMiddleware(t *testing.T) {
 					nil,
 					"",
 				)
-
+				logCapture.Reset()
 				_, err = chain.Do(context.Background(), req)
 				require.NoError(t, err)
 				require.Equal(t, tc.expectInstant, capture.query)
+				if tc.expectInstant != tc.query {
+					require.Contains(t, logCapture.String(), "rewritten")
+				} else {
+					require.NotContains(t, logCapture.String(), "rewritten")
+				}
 			}
 
 			{
@@ -78,9 +85,15 @@ func TestDurationMiddleware(t *testing.T) {
 					nil,
 					"",
 				)
+				logCapture.Reset()
 				_, err = chain.Do(context.Background(), req)
 				require.NoError(t, err)
 				require.Equal(t, tc.expectRange, capture.query)
+				if tc.expectInstant != tc.query {
+					require.Contains(t, logCapture.String(), "rewritten")
+				} else {
+					require.NotContains(t, logCapture.String(), "rewritten")
+				}
 			}
 		})
 	}
