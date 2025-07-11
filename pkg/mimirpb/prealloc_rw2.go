@@ -4,7 +4,7 @@ import "fmt"
 
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // TODO: It destroys the given write request?
-func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequest, error) {
+func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
 	}
@@ -46,10 +46,7 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 	rw1.TimeseriesRW2 = rw2Timeseries
 	rw1.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
 
-	rw1.UnmarshalFromRW2 = true
 	// TODO: Common symbols not yet supported.
-	rw1.RW2SymbolOffset = 0
-	rw1.RW2CommonSymbols = nil
 
 	return rw1, nil
 }
