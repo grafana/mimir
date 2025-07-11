@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -220,7 +221,147 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
 		require.Equal(t, expSymbols, rw2.SymbolsRW2)
 		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
 	})
+
+	t.Run("exemplars", func(t *testing.T) {
+		req := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: []PreallocTimeseries{
+					{
+						TimeSeries: &TimeSeries{
+							Labels: FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_histogram", "job": "foo/bar"})),
+							Exemplars: []Exemplar{
+								{
+									Labels:      FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"trace_id": "abc123", "span_id": "def456"})),
+									Value:       42.5,
+									TimestampMs: 1234567890,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req)
+
+		expSymbols := []string{"", "__name__", "my_cool_histogram", "job", "foo/bar", "span_id", "def456", "trace_id", "abc123"}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Exemplars: []ExemplarRW2{
+					{
+						LabelsRefs: []uint32{5, 6, 7, 8},
+						Value:      42.5,
+						Timestamp:  1234567890,
+					},
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
+}
+
+func TestExemplarConversion(t *testing.T) {
+	symbols := writev2.NewSymbolTable()
+	// Pre-populate symbols table with some common values
+	symbols.Symbolize("trace_id")
+	symbols.Symbolize("abc123")
+	symbols.Symbolize("span_id")
+	symbols.Symbolize("def456")
+
+	tests := []struct {
+		name string
+		v1   []Exemplar
+		v2   []ExemplarRW2
+	}{
+		{
+			name: "empty exemplars",
+			v1:   []Exemplar{},
+			v2:   []ExemplarRW2{},
+		},
+		{
+			name: "single exemplar with trace and span",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+						{Name: "span_id", Value: "def456"},
+					},
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+			},
+			v2: []ExemplarRW2{
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4},
+					Value:      42.5,
+					Timestamp:  1234567890,
+				},
+			},
+		},
+		{
+			name: "multiple exemplars",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+					},
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+				{
+					Labels: []LabelAdapter{
+						{Name: "span_id", Value: "def456"},
+					},
+					Value:       43.5,
+					TimestampMs: 1234567891,
+				},
+			},
+			v2: []ExemplarRW2{
+				{
+					LabelsRefs: []uint32{1, 2},
+					Value:      42.5,
+					Timestamp:  1234567890,
+				},
+				{
+					LabelsRefs: []uint32{3, 4},
+					Value:      43.5,
+					Timestamp:  1234567891,
+				},
+			},
+		},
+		{
+			name: "exemplar with zero value and timestamp",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+					},
+					Value:       0,
+					TimestampMs: 0,
+				},
+			},
+			v2: []ExemplarRW2{
+				{
+					LabelsRefs: []uint32{1, 2},
+					Value:      0,
+					Timestamp:  0,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotV2 := FromExemplarsToExemplarsV2(tt.v1, &symbols)
+			require.Equal(t, tt.v2, gotV2)
+		})
+	}
 }
