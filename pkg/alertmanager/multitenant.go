@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -336,7 +334,7 @@ type MultitenantAlertmanager struct {
 	alertmanagers    map[string]*Alertmanager
 	// Stores the current set of configurations we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
-	cfgs map[string]alertspb.AlertConfigDesc
+	cfgs map[string]amConfig
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -422,7 +420,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
-		cfgs:                map[string]alertspb.AlertConfigDesc{},
+		cfgs:                map[string]amConfig{},
 		alertmanagers:       map[string]*Alertmanager{},
 		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
@@ -964,7 +962,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg.AlertConfigDesc) {
+	} else if configChanged(am.cfgs[cfg.User], cfg) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
 		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
@@ -973,7 +971,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg.AlertConfigDesc
+	am.cfgs[cfg.User] = cfg
 	return nil
 }
 
@@ -1508,7 +1506,7 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	return true, nil
 }
 
-func configChanged(left, right alertspb.AlertConfigDesc) bool {
+func configChanged(left, right amConfig) bool {
 	if left.User != right.User {
 		return true
 	}
@@ -1518,19 +1516,22 @@ func configChanged(left, right alertspb.AlertConfigDesc) bool {
 
 	existing := make(map[string]string)
 	for _, tm := range left.Templates {
-		existing[tm.Filename] = tm.Body
+		existing[fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)] = tm.Content
 	}
 
 	for _, tm := range right.Templates {
-		corresponding, ok := existing[tm.Filename]
+		key := fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)
+		corresponding, ok := existing[key]
 		if !ok {
 			return true // Right has a template that left does not.
 		}
-		if corresponding != tm.Body {
+		if corresponding != tm.Content {
 			return true // The template content is different.
 		}
-		delete(existing, tm.Filename)
+		delete(existing, key)
 	}
+
+	// TODO add remaining fields to comparison
 
 	return len(existing) != 0 // Left has a template that right does not.
 }
