@@ -9,36 +9,10 @@ import (
 )
 
 func TestWriteRequestRW2Conversion(t *testing.T) {
-	t.Run("PreallocWriteRequest preserves Mimir meta options", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			SkipUnmarshalingExemplars: true,
-		}
-
-		rw2, err := FromWriteRequestToRW2Request(req)
-
-		require.NoError(t, err)
-		require.True(t, rw2.SkipUnmarshalingExemplars)
-	})
-
-	t.Run("Sets RW2-specific meta options", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			UnmarshalFromRW2: false,
-			RW2SymbolOffset:  0,
-		}
-
-		rw2, err := FromWriteRequestToRW2Request(req)
-
-		require.NoError(t, err)
-		require.True(t, rw2.UnmarshalFromRW2)
-		require.Equal(t, uint32(0), rw2.RW2SymbolOffset)
-	})
-
 	t.Run("WriteRequest preserves Mimir meta options", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				SkipLabelValidation:      true,
-				SkipLabelCountValidation: true,
-			},
+		req := &WriteRequest{
+			SkipLabelValidation:      true,
+			SkipLabelCountValidation: true,
 		}
 
 		rw2, err := FromWriteRequestToRW2Request(req)
@@ -49,7 +23,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("nil request turns into nil request", func(t *testing.T) {
-		var req *PreallocWriteRequest
+		var req *WriteRequest
 
 		rw2, err := FromWriteRequestToRW2Request(req)
 
@@ -81,10 +55,8 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		}
 
 		for _, tt := range tc {
-			req := &PreallocWriteRequest{
-				WriteRequest: WriteRequest{
-					Source: tt.in,
-				},
+			req := &WriteRequest{
+				Source: tt.in,
 			}
 
 			rw2, err := FromWriteRequestToRW2Request(req)
@@ -95,18 +67,16 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("TimeSeries CreatedTimestamp", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: []PreallocTimeseries{
-					{
-						TimeSeries: &TimeSeries{
-							CreatedTimestamp: 1234567890,
-						},
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						CreatedTimestamp: 1234567890,
 					},
-					{
-						TimeSeries: &TimeSeries{
-							CreatedTimestamp: 1234567900,
-						},
+				},
+				{
+					TimeSeries: &TimeSeries{
+						CreatedTimestamp: 1234567900,
 					},
 				},
 			},
@@ -121,26 +91,24 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("samples", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: []PreallocTimeseries{
-					{
-						TimeSeries: &TimeSeries{
-							Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
-							Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
-						},
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
+						Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
 					},
-					{
-						TimeSeries: &TimeSeries{
-							Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "asdf/jkl"})),
-							Samples: []Sample{{Value: 135, TimestampMs: 1234567890}, {Value: 246, TimestampMs: 1234567900}},
-						},
+				},
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "asdf/jkl"})),
+						Samples: []Sample{{Value: 135, TimestampMs: 1234567890}, {Value: 246, TimestampMs: 1234567900}},
 					},
-					{
-						TimeSeries: &TimeSeries{
-							Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_other_cool_series", "job": "foo/bar"})),
-							Samples: []Sample{{Value: 112, TimestampMs: 1234567890}, {Value: 358, TimestampMs: 1234567900}},
-						},
+				},
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_other_cool_series", "job": "foo/bar"})),
+						Samples: []Sample{{Value: 112, TimestampMs: 1234567890}, {Value: 358, TimestampMs: 1234567900}},
 					},
 				},
 			},
@@ -170,26 +138,24 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("histograms", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: []PreallocTimeseries{
-					{
-						TimeSeries: &TimeSeries{
-							Labels: FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_histogram", "job": "foo/bar"})),
-							Histograms: []Histogram{
-								{
-									Count:  &Histogram_CountInt{CountInt: 200},
-									Sum:    1000,
-									Schema: -1,
-									PositiveSpans: []BucketSpan{
-										{
-											Offset: 0,
-											Length: 2,
-										},
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels: FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_histogram", "job": "foo/bar"})),
+						Histograms: []Histogram{
+							{
+								Count:  &Histogram_CountInt{CountInt: 200},
+								Sum:    1000,
+								Schema: -1,
+								PositiveSpans: []BucketSpan{
+									{
+										Offset: 0,
+										Length: 2,
 									},
-									PositiveDeltas: []int64{150, -100},
-									Timestamp:      1234567890,
 								},
+								PositiveDeltas: []int64{150, -100},
+								Timestamp:      1234567890,
 							},
 						},
 					},
@@ -227,18 +193,16 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("exemplars", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: []PreallocTimeseries{
-					{
-						TimeSeries: &TimeSeries{
-							Labels: FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_histogram", "job": "foo/bar"})),
-							Exemplars: []Exemplar{
-								{
-									Labels:      FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"trace_id": "abc123", "span_id": "def456"})),
-									Value:       42.5,
-									TimestampMs: 1234567890,
-								},
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels: FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_histogram", "job": "foo/bar"})),
+						Exemplars: []Exemplar{
+							{
+								Labels:      FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"trace_id": "abc123", "span_id": "def456"})),
+								Value:       42.5,
+								TimestampMs: 1234567890,
 							},
 						},
 					},
@@ -268,23 +232,21 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("metadata", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: []PreallocTimeseries{
-					{
-						TimeSeries: &TimeSeries{
-							Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
-							Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
-						},
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
+						Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
 					},
 				},
-				Metadata: []*MetricMetadata{
-					{
-						Type:             COUNTER,
-						MetricFamilyName: "my_cool_series",
-						Help:             "It's a cool series.",
-						Unit:             "megawatts",
-					},
+			},
+			Metadata: []*MetricMetadata{
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
 				},
 			},
 		}
@@ -314,16 +276,14 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 
 	t.Run("metadata only", func(t *testing.T) {
-		req := &PreallocWriteRequest{
-			WriteRequest: WriteRequest{
-				Timeseries: nil,
-				Metadata: []*MetricMetadata{
-					{
-						Type:             COUNTER,
-						MetricFamilyName: "my_cool_series",
-						Help:             "It's a cool series.",
-						Unit:             "megawatts",
-					},
+		req := &WriteRequest{
+			Timeseries: nil,
+			Metadata: []*MetricMetadata{
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
 				},
 			},
 		}
