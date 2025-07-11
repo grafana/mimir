@@ -4,7 +4,9 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,7 +14,9 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
@@ -79,7 +83,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 
 		resp, err := store.LabelNames(ctx, req)
 		require.NoError(t, err)
-		require.Equal(t, []string{"__name__"}, resp.Names)
+		require.Equal(t, []string{"__name__", "series_id"}, resp.Names)
 
 		req = &storepb.LabelNamesRequest{
 			Start: 10,
@@ -329,4 +333,38 @@ func TestParquetBucketStores_RowLimits(t *testing.T) {
 		require.Empty(t, warnings)
 		require.GreaterOrEqual(t, len(seriesSet), 0)
 	})
+}
+
+func generateStorageBlockWithMultipleSeries(t *testing.T, storageDir, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+	// Create a directory for the user (if doesn't already exist).
+	userDir := filepath.Join(storageDir, userID)
+	if _, err := os.Stat(userDir); err != nil {
+		require.NoError(t, os.Mkdir(userDir, os.ModePerm))
+	}
+
+	// Create a temporary directory where the TSDB is opened,
+	// then it will be snapshotted to the storage directory.
+	tmpDir := t.TempDir()
+
+	db, err := tsdb.Open(tmpDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	app := db.Appender(context.Background())
+
+	// Generate multiple series with the specified numSeries
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		series := labels.FromStrings(labels.MetricName, metricName, "series_id", fmt.Sprintf("%d", seriesIdx))
+
+		for ts := minT; ts < maxT; ts += int64(step) {
+			_, err = app.Append(0, series, ts, 1)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Snapshot TSDB to the storage directory.
+	require.NoError(t, db.Snapshot(userDir, true))
 }
