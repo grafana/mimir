@@ -76,7 +76,7 @@ func (d *durationsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 
 type durationVisitor struct{}
 
-// Verify that duration expressions only contain durations that Mimir supports.
+// Visit verifies that duration expressions only contain durations that Mimir supports.
 // And also clear the original expressions to not confuse the frontend.
 func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
 	switch n := node.(type) {
