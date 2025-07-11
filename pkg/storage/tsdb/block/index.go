@@ -148,7 +148,6 @@ func (i HealthStats) AnyErr() error {
 	return nil
 }
 
-
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
