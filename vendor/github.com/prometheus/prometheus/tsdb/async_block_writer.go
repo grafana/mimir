@@ -78,7 +78,14 @@ func (bw *asyncBlockWriter) loop() (res asyncBlockWriterResult) {
 		stats.NumChunks += uint64(len(sw.chks))
 		stats.NumSeries++
 		for _, chk := range sw.chks {
-			stats.NumSamples += uint64(chk.Chunk.NumSamples())
+			samples := uint64(chk.Chunk.NumSamples())
+			stats.NumSamples += samples
+			switch chk.Chunk.Encoding() {
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+				stats.NumHistogramSamples += samples
+			case chunkenc.EncXOR:
+				stats.NumFloatSamples += samples
+			}
 		}
 
 		for _, chk := range sw.chks {

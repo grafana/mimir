@@ -17,6 +17,10 @@ func TestV2SymbolsCompat(t *testing.T) {
 	t.Run("v2 symbols cannot be larger than v2 offset", func(t *testing.T) {
 		require.LessOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
 	})
+
+	t.Run("the first symbol in v2 symbols must be empty string", func(t *testing.T) {
+		require.Empty(t, V2CommonSymbols[0])
+	})
 }
 
 func TestRecordVersionHeader(t *testing.T) {
@@ -158,7 +162,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 		}
 		reqv2.Symbols = syms.GetSymbols()
 		// Symbols should not contain common labels "__name__" and "job"
-		require.Equal(t, []string{"test_metric_total", "test_job", "traceID", "1234567890abcdef", "Help for test_metric_total", "seconds"}, reqv2.Symbols)
+		require.Equal(t, []string{"", "test_metric_total", "test_job", "traceID", "1234567890abcdef", "Help for test_metric_total", "seconds"}, reqv2.Symbols)
 		v2bytes, err := reqv2.Marshal()
 		require.NoError(t, err)
 

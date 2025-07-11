@@ -864,7 +864,7 @@ ha_tracker:
   [enable_elected_replica_metric: <boolean> | default = false]
 
   # Backend storage to use for the ring. Supported values are: consul, etcd,
-  # inmemory, memberlist, multi.
+  # inmemory, memberlist, multi. Note that etcd is deprecated.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.

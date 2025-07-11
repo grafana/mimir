@@ -72,6 +72,10 @@ func TestRewrite(t *testing.T) {
 		}
 		return false, nil
 	}}))
+	require.Equal(t, uint64(5), m.Stats.NumSeries)
+	require.Equal(t, uint64(269), m.Stats.NumSamples)
+	require.Equal(t, uint64(66), m.Stats.NumFloatSamples)
+	require.Equal(t, uint64(203), m.Stats.NumHistogramSamples)
 	require.Greater(t, ignoredChunks, 0)           // Sanity check.
 	require.Greater(t, totalChunks, ignoredChunks) // Sanity check.
 
