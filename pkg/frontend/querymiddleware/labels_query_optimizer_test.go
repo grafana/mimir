@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -173,8 +175,9 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					req = req.WithContext(user.InjectOrgID(context.Background(), userID))
 
 					// Create the labels query optimizer
+					reg := prometheus.NewPedanticRegistry()
 					codec := NewPrometheusCodec(prometheus.NewRegistry(), 0*time.Minute, formatJSON, nil)
-					optimizer := newLabelsQueryOptimizer(codec, limits, downstream, mimirtest.NewTestingLogger(t))
+					optimizer := newLabelsQueryOptimizer(codec, limits, downstream, mimirtest.NewTestingLogger(t), reg)
 
 					// Execute the request
 					_, err = optimizer.RoundTrip(req)
@@ -183,6 +186,30 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					// Ensure the downstream has been called with the expected params.
 					require.True(t, downstreamCalled)
 					require.Equal(t, testData.expectedDownstreamParams, downstreamReqParams)
+
+					// Assert on metrics.
+					expectedTotal := 0
+					expectedRewritten := 0
+					if testData.optimizerEnabled && testData.reqPath == "/api/v1/labels" {
+						expectedTotal = 1
+					}
+					if testData.expectedOptimized {
+						expectedRewritten = 1
+					}
+
+					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						# HELP cortex_query_frontend_labels_optimizer_queries_total Total number of label API requests processed by the optimizer when enabled.
+						# TYPE cortex_query_frontend_labels_optimizer_queries_total counter
+						cortex_query_frontend_labels_optimizer_queries_total %d
+
+						# HELP cortex_query_frontend_labels_optimizer_queries_rewritten_total Total number of label API requests that have been optimized.
+						# TYPE cortex_query_frontend_labels_optimizer_queries_rewritten_total counter
+						cortex_query_frontend_labels_optimizer_queries_rewritten_total %d
+
+						# HELP cortex_query_frontend_labels_optimizer_queries_failed_total Total number of label API requests that failed to get optimized.
+						# TYPE cortex_query_frontend_labels_optimizer_queries_failed_total counter
+						cortex_query_frontend_labels_optimizer_queries_failed_total 0
+					`, expectedTotal, expectedRewritten))))
 				})
 			}
 		})

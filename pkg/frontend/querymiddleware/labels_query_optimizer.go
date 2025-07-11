@@ -9,6 +9,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -23,14 +25,31 @@ type labelsQueryOptimizer struct {
 	codec  Codec
 	limits Limits
 	logger log.Logger
+
+	// Metrics.
+	totalQueries     prometheus.Counter
+	rewrittenQueries prometheus.Counter
+	failedQueries    prometheus.Counter
 }
 
-func newLabelsQueryOptimizer(codec Codec, limits Limits, next http.RoundTripper, logger log.Logger) http.RoundTripper {
+func newLabelsQueryOptimizer(codec Codec, limits Limits, next http.RoundTripper, logger log.Logger, registerer prometheus.Registerer) http.RoundTripper {
 	return &labelsQueryOptimizer{
 		next:   next,
 		codec:  codec,
 		limits: limits,
 		logger: logger,
+		totalQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_labels_optimizer_queries_total",
+			Help: "Total number of label API requests processed by the optimizer when enabled.",
+		}),
+		rewrittenQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_labels_optimizer_queries_rewritten_total",
+			Help: "Total number of label API requests that have been optimized.",
+		}),
+		failedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_labels_optimizer_queries_failed_total",
+			Help: "Total number of label API requests that failed to get optimized.",
+		}),
 	}
 }
 
@@ -66,6 +85,9 @@ func (l *labelsQueryOptimizer) RoundTrip(req *http.Request) (*http.Response, err
 func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, req *http.Request, parsedReq *PrometheusLabelNamesQueryRequest) (*http.Response, error) {
 	spanLog := spanlogger.FromContext(ctx, l.logger)
 
+	// Track the total number of requests processed when optimization is enabled.
+	l.totalQueries.Inc()
+
 	// Check if there are any matchers to optimize.
 	rawMatchers := parsedReq.GetLabelMatcherSets()
 	if len(rawMatchers) == 0 {
@@ -77,7 +99,6 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	if err != nil {
 		// Do not log an error because this error is typically caused by a malformed request, which wouldn't be actionable.
 		spanLog.DebugLog("msg", "failed to optimize label names matchers", "err", err)
-		// TODO track a metric with reason "skipped"
 		return l.next.RoundTrip(req)
 	}
 
@@ -89,7 +110,8 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	optimizedParsedReq, err := parsedReq.WithLabelMatcherSets(optimizedMatchers)
 	if err != nil {
 		level.Error(l.logger).Log("msg", "failed to clone label names request with optimized matchers", "err", err)
-		// TODO track a metric to count the number of failures
+		// Track failed optimization attempts.
+		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
 
@@ -97,13 +119,16 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	optimizedReq, err := l.codec.EncodeLabelsSeriesQueryRequest(ctx, optimizedParsedReq)
 	if err != nil {
 		level.Error(l.logger).Log("msg", "failed to encode label names request with optimized matchers", "err", err)
-		// TODO track a metric to count the number of failures
+		// Track failed optimization attempts.
+		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
 
 	// TODO DEBUG
 	level.Info(l.logger).Log("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
 
+	// Track successful optimization.
+	l.rewrittenQueries.Inc()
 	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
 	return l.next.RoundTrip(optimizedReq)
 }
