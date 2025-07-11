@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand/v2"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
@@ -98,6 +100,12 @@ func main() {
 	assertNoError(services.StartAndAwaitRunning(ctx, partitionRingWatcher))
 
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
+
+	router := http.NewServeMux()
+	router.Handle("/metrics", promhttp.Handler())
+	router.Handle("/usage-tracker/instance-ring", instanceRing)
+	router.Handle("/usage-tracker/partition-ring", ring.NewPartitionRingPageHandler(partitionRingWatcher, ring.NewPartitionRingEditor(usagetracker.PartitionRingKey, partitionKVClient)))
+	go http.ListenAndServe(":80", router)
 
 	// Create the usage-tracker client.
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, nil)
