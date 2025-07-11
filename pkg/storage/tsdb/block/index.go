@@ -148,38 +148,6 @@ func (i HealthStats) AnyErr() error {
 	return nil
 }
 
-type minMaxSumInt64 struct {
-	sum int64
-	min int64
-	max int64
-
-	cnt int64
-}
-
-func newMinMaxSumInt64() minMaxSumInt64 {
-	return minMaxSumInt64{
-		min: math.MaxInt64,
-		max: math.MinInt64,
-	}
-}
-
-func (n *minMaxSumInt64) Add(v int64) {
-	n.cnt++
-	n.sum += v
-	if n.min > v {
-		n.min = v
-	}
-	if n.max < v {
-		n.max = v
-	}
-}
-
-func (n *minMaxSumInt64) Avg() int64 {
-	if n.cnt == 0 {
-		return 0
-	}
-	return n.sum / n.cnt
-}
 
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
@@ -253,7 +221,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		}
 
 		ooo := 0
-		seriesLifeTimeMs := int64(0)
 		// Per chunk in series.
 		for i, c := range chks {
 			// Check if chunk data is valid.
@@ -263,9 +230,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 					return stats, errors.Wrapf(err, "verify chunk %d of series %d", i, id)
 				}
 			}
-
-			chkDur := c.MaxTime - c.MinTime
-			seriesLifeTimeMs += chkDur
 
 			// Chunk vs the block ranges.
 			if c.MinTime < minTime || c.MaxTime > maxTime {
