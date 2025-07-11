@@ -3720,20 +3720,44 @@ The `limits` block configures default and per-tenant limits imposed by component
 #   Setting the pattern to ".*" and regex to true blocks all queries.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
+#         regex: false
 #         reason: because the query is misconfigured
-[blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
+blocked_queries:
+  -
+    [pattern: <string> | default = ""]
+
+    [regex: <boolean> | default = ]
+
+    [reason: <string> | default = ""]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
 #   running, at most, every minute.
 #   limited_queries:
-#       - allowed_frequency: 1m
-#         query: rate(metric_counter[5m])
-[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
+#       - query: rate(metric_counter[5m])
+#         allowed_frequency: 1m0s
+limited_queries:
+  -
+    [query: <string> | default = ""]
+
+    [allowed_frequency: <duration> | default = ]
 
 # (experimental) List of http requests to block.
-[blocked_requests: <blocked_requests_config...> | default = ]
+# Example:
+#   The following configuration blocks all GET requests to /foo when the "limit"
+#   parameter is set to 100.
+#   blocked_requests:
+#       - path: /foo
+#         method: GET
+#         query_params:
+#           limit:
+#               value: "100"
+blocked_requests:
+  -
+    [path: <string> | default = ""]
+
+    [method: <string> | default = ""]
 
 # Mutate incoming queries to align their start and end with their step to
 # improve result caching.

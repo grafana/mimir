@@ -51,6 +51,8 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		if e.Root {
 			// Description
 			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
+			w.writeExample(e.FieldExample, indent)
+
 			if e.Block.FlagsPrefix != "" {
 				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), indent, 0)
 			}
@@ -60,6 +62,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		} else {
 			// Description
 			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
+			w.writeExample(e.FieldExample, indent)
 
 			// Name
 			w.out.WriteString(pad(indent) + e.Name + ":\n")
@@ -92,6 +95,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 	case parse.KindSlice:
 		// Description
 		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
+		w.writeExample(e.FieldExample, indent)
 
 		// Name
 		w.out.WriteString(pad(indent) + e.Name + ":\n")
