@@ -53,8 +53,8 @@ func (d *durationsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 		return d.next.Do(ctx, req)
 	}
 
-	evalVisitor := promql.NewDurationVisitor(time.Duration(req.GetStep()) * time.Second)
-	if err := parser.Walk(evalVisitor, expr, nil); err != nil {
+	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Second)
+	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to evaluate duration expressions in query", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}

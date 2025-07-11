@@ -26,12 +26,6 @@ type durationVisitor struct {
 	step time.Duration
 }
 
-func NewDurationVisitor(step time.Duration) parser.Visitor {
-	return &durationVisitor{
-		step: step,
-	}
-}
-
 func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
