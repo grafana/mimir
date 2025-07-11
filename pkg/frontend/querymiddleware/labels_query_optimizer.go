@@ -111,7 +111,6 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	optimizedParsedReq, err := parsedReq.WithLabelMatcherSets(optimizedMatchers)
 	if err != nil {
 		level.Error(l.logger).Log("msg", "failed to clone label names request with optimized matchers", "err", err)
-		// Track failed optimization attempts.
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
@@ -120,7 +119,6 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	optimizedReq, err := l.codec.EncodeLabelsSeriesQueryRequest(ctx, optimizedParsedReq)
 	if err != nil {
 		level.Error(l.logger).Log("msg", "failed to encode label names request with optimized matchers", "err", err)
-		// Track failed optimization attempts.
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
