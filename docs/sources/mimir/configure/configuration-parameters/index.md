@@ -3759,6 +3759,12 @@ blocked_requests:
 
     [method: <string> | default = ""]
 
+    [query_params:]
+      <string>:
+        [value: <string> | default = ""]
+
+        [is_regexp: <boolean> | default = ]
+
 # Mutate incoming queries to align their start and end with their step to
 # improve result caching.
 # CLI flag: -query-frontend.align-queries-with-step

@@ -71,7 +71,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 			w.writeConfigBlock(e.Block, indent+tabWidth)
 		}
 
-	case parse.KindField, parse.KindMap:
+	case parse.KindField:
 		// Description
 		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
 		w.writeExample(e.FieldExample, indent)
@@ -91,6 +91,22 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		} else {
 			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "]\n")
 		}
+
+	case parse.KindMap:
+		// Description
+		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
+		w.writeExample(e.FieldExample, indent)
+		w.writeFlag(e.FieldFlag, indent)
+
+		// Specification
+		if e.Required {
+			w.out.WriteString(pad(indent) + e.Name + ":\n")
+		} else {
+			w.out.WriteString(pad(indent) + "[" + e.Name + ":]\n")
+		}
+
+		w.out.WriteString(pad(indent+tabWidth) + "<" + e.FieldType + ">:\n")
+		w.writeConfigBlock(e.Element, indent+(2*tabWidth))
 
 	case parse.KindSlice:
 		// Description
