@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -124,12 +125,9 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 		return l.next.RoundTrip(req)
 	}
 
-	// TODO DEBUG
-	level.Info(l.logger).Log("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
-
 	// Track successful optimization.
 	l.rewrittenQueries.Inc()
-	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
+	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", strings.Join(parsedReq.LabelMatcherSets, " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))
 	return l.next.RoundTrip(optimizedReq)
 }
 

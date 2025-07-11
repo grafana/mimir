@@ -6,4 +6,4 @@ overrides:
       base_mimir_read:  '{job="mimir-read-write-mode/mimir-read"}'
     active_series_additional_custom_trackers:
       additional_mimir_backend: '{job="mimir-read-write-mode/mimir-backend"}'
-    labels_query_optimizer_enabled: false
+    labels_query_optimizer_enabled: true
