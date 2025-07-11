@@ -64,6 +64,8 @@ func (l *labelsQueryOptimizer) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, req *http.Request, parsedReq *PrometheusLabelNamesQueryRequest) (*http.Response, error) {
+	spanLog := spanlogger.FromContext(ctx, l.logger)
+
 	// Check if there are any matchers to optimize.
 	rawMatchers := parsedReq.GetLabelMatcherSets()
 	if len(rawMatchers) == 0 {
@@ -74,6 +76,7 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	optimizedMatchers, optimized, err := optimizeLabelNamesRequestMatchers(rawMatchers)
 	if err != nil {
 		// Do not log any error because this error is typically caused by a malformed request, which wouldn't be actionable.
+		// TODO a debuglog on the spanlog is fine
 		// TODO track a metric with reason "skipped"
 		return l.next.RoundTrip(req)
 	}
@@ -98,6 +101,11 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 		return l.next.RoundTrip(req)
 	}
 
+	// TODO log that it was optimized. Log the matchers before and after.
+	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
+
+	// TODO DEBUG
+	level.Info(l.logger).Log("msg", "optimized label names query", "original_matchers", parsedReq.LabelMatcherSets, "optimized_matchers", optimizedParsedReq.GetLabelMatcherSets())
 	return l.next.RoundTrip(optimizedReq)
 }
 
@@ -110,11 +118,18 @@ func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, opt
 	optimizedRawMatcherSets := make([]string, 0, len(rawMatcherSets))
 
 	for _, matchers := range matcherSets {
+		// If an empty matcher `{}` was provided we need to preserve it because it's an invalid matcher
+		// for the labels API, but we want to get the actual error from downstream.
+		if len(matchers) == 0 {
+			optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(matchers))
+			continue
+		}
+
 		optimizedMatchers := make([]*labels.Matcher, 0, len(matchers))
 
 		for _, matcher := range matchers {
-			// Filter out __name__!="" matchers because all series in Mimir have a metric name
-			// so this matcher is redundant (but very expensive to run).
+			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
+			// so this matcher matches all series but very expensive to run.
 			if matcher.Name == labels.MetricName && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
 				optimized = true
 				continue
@@ -126,6 +141,11 @@ func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, opt
 
 		if len(optimizedMatchers) > 0 {
 			optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(optimizedMatchers))
+		} else {
+			// It was not an empty matcher (see condition above), and all the matchers have been removed.
+			// It means that we should match all series. Since the matchers in different sets are in a "or" condition
+			// it practically means we want to query all series, so we just return no matchers at all.
+			return []string{}, true, nil
 		}
 	}
 

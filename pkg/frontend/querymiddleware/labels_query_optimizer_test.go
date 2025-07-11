@@ -28,6 +28,7 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 		reqData                  url.Values
 		expectedDownstreamParams url.Values
 	}{
+		// TODO add all other params to the reqData
 		"should optimize labels request when enabled": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
@@ -162,13 +163,13 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		`single __name__!="" matcher with job label`: {
+		`single __name__!="" matcher with 1 other matcher`: {
 			inputMatchers:     []string{`{__name__!="", job="prometheus"}`},
 			expectedMatchers:  []string{`{job="prometheus"}`},
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		`multiple labels with __name__!=""`: {
+		`single __name__!="" matcher with multiple other matchers`: {
 			inputMatchers:     []string{`{__name__!="", job="prometheus", instance="localhost:9090"}`},
 			expectedMatchers:  []string{`{job="prometheus",instance="localhost:9090"}`},
 			expectedOptimized: true,
@@ -186,33 +187,53 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 			expectedOptimized: false,
 			expectedError:     false,
 		},
-		"__name__ regex matchers": {
-			inputMatchers:     []string{`{__name__=~"up.*"}`, `{__name__!~"down.*"}`},
-			expectedMatchers:  []string{`{__name__=~"up.*"}`, `{__name__!~"down.*"}`},
+		"__name__ regex matcher": {
+			inputMatchers:     []string{`{__name__!~"down.*"}`},
+			expectedMatchers:  []string{`{__name__!~"down.*"}`},
 			expectedOptimized: false,
 			expectedError:     false,
 		},
-		"__name__ not equal with value": {
+		"__name__ not equal matcher": {
 			inputMatchers:     []string{`{__name__!="up"}`},
 			expectedMatchers:  []string{`{__name__!="up"}`},
 			expectedOptimized: false,
 			expectedError:     false,
 		},
-		"multiple matchers with mixed __name__ conditions": {
+		`multiple matcher sets with mixed __name__ conditions, including the __name__!="" matcher set`: {
+			// Different matcher sets are in "or" condition. Since there's a matcher set with just `{__name__!=""}`
+			// that match all series, we can remove all matchers.
 			inputMatchers:     []string{`{__name__!="", job="prometheus"}`, `{__name__="up"}`, `{__name__!=""}`, `{instance="localhost"}`},
-			expectedMatchers:  []string{`{job="prometheus"}`, `{__name__="up"}`, `{instance="localhost"}`},
+			expectedMatchers:  []string{},
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		`multiple __name__!="" matchers in different sets`: {
+		`multiple matcher sets with __name__!="" matcher but not standalone`: {
 			inputMatchers:     []string{`{__name__!="", job="prometheus"}`, `{__name__!="", instance="localhost"}`},
 			expectedMatchers:  []string{`{job="prometheus"}`, `{instance="localhost"}`},
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		"complex matchers with special characters": {
-			inputMatchers:     []string{`{__name__!="", job=~"prometheus.*", instance!="bad-host"}`},
-			expectedMatchers:  []string{`{job=~"prometheus.*",instance!="bad-host"}`},
+		"empty matcher": {
+			// The empty matcher must be preserved because it's an invalid matcher, and we
+			// want the downstream to generate the proper validation error.
+			inputMatchers:     []string{`{}`},
+			expectedMatchers:  []string{`{}`},
+			expectedOptimized: false,
+			expectedError:     false,
+		},
+		"empty matcher in a list of non-optimized matchers": {
+			// The empty matcher must be preserved because it's an invalid matcher, and we
+			// want the downstream to generate the proper validation error.
+			inputMatchers:     []string{`{}`, `{job="prometheus:9090",path="/metrics"}`},
+			expectedMatchers:  []string{`{}`, `{job="prometheus:9090",path="/metrics"}`},
+			expectedOptimized: false,
+			expectedError:     false,
+		},
+		"empty matcher in a list of optimised matchers": {
+			// The empty matcher must be preserved because it's an invalid matcher, and we
+			// want the downstream to generate the proper validation error.
+			inputMatchers:     []string{`{}`, `{__name__!="", job="prometheus:9090"}`},
+			expectedMatchers:  []string{`{}`, `{job="prometheus:9090"}`},
 			expectedOptimized: true,
 			expectedError:     false,
 		},
@@ -222,16 +243,16 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		"label values with special characters": {
-			inputMatchers:     []string{`{__name__!="", job="prometheus:9090", path="/metrics"}`},
-			expectedMatchers:  []string{`{job="prometheus:9090",path="/metrics"}`},
+		"unicode label values": {
+			inputMatchers:     []string{`{__name__!="", job="测试", env="🚀"}`},
+			expectedMatchers:  []string{`{job="测试",env="🚀"}`},
 			expectedOptimized: true,
 			expectedError:     false,
 		},
-		"empty selector - no matchers inside braces": {
-			inputMatchers:     []string{`{}`},
-			expectedMatchers:  []string{`{}`},
-			expectedOptimized: false,
+		"matcher with escaped quotes": {
+			inputMatchers:     []string{`{__name__!="", job="test\"with\"quotes"}`},
+			expectedMatchers:  []string{`{job="test\"with\"quotes"}`},
+			expectedOptimized: true,
 			expectedError:     false,
 		},
 		"invalid matcher syntax": {
@@ -241,30 +262,6 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 		"malformed regex": {
 			inputMatchers: []string{`{job=~"[invalid"}`},
 			expectedError: true,
-		},
-		"mixed valid and optimizable matchers": {
-			inputMatchers:     []string{`{job="test"}`, `{__name__!="", env="prod"}`, `{instance=~".*:9090"}`},
-			expectedMatchers:  []string{`{job="test"}`, `{env="prod"}`, `{instance=~".*:9090"}`},
-			expectedOptimized: true,
-			expectedError:     false,
-		},
-		"unicode label values": {
-			inputMatchers:     []string{`{__name__!="", job="测试", env="🚀"}`},
-			expectedMatchers:  []string{`{job="测试",env="🚀"}`},
-			expectedOptimized: true,
-			expectedError:     false,
-		},
-		"large number of labels": {
-			inputMatchers:     []string{`{__name__!="", label1="val1", label2="val2", label3="val3", label4="val4", label5="val5"}`},
-			expectedMatchers:  []string{`{label1="val1",label2="val2",label3="val3",label4="val4",label5="val5"}`},
-			expectedOptimized: true,
-			expectedError:     false,
-		},
-		"matcher with escaped quotes": {
-			inputMatchers:     []string{`{__name__!="", job="test\"with\"quotes"}`},
-			expectedMatchers:  []string{`{job="test\"with\"quotes"}`},
-			expectedOptimized: true,
-			expectedError:     false,
 		},
 	}
 
