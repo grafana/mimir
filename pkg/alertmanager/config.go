@@ -135,7 +135,7 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 
 	// The map can only contain templates of the Grafana kind.
-	tmpl := definition.TemplatesMapToPostableAPITemplates(amCfg.Templates, definition.GrafanaTemplateKind)
+	tmpl := definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)
 
 	return amConfig{
 		User:               gCfg.User,

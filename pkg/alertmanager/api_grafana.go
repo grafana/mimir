@@ -58,7 +58,7 @@ var (
 )
 
 type GrafanaAlertmanagerConfig struct {
-	Templates          map[string]string                    `json:"template_files"`
+	TemplateFiles      map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
 
 	// original is the string from which the config was parsed
