@@ -305,8 +305,8 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 			// The empty matcher must be preserved because it's an invalid matcher, and we
 			// want the downstream to generate the proper validation error.
 			inputMatchers:     []string{`{}`, `{__name__!="", job="prometheus:9090"}`},
-			expectedMatchers:  []string{`{}`, `{job="prometheus:9090"}`},
-			expectedOptimized: true,
+			expectedMatchers:  []string{`{}`, `{__name__!="", job="prometheus:9090"}`},
+			expectedOptimized: false,
 			expectedError:     false,
 		},
 		"quoted label names": {

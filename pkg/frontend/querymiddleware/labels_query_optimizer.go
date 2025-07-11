@@ -146,7 +146,7 @@ func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, opt
 		// for the labels API, but we want to get the actual error from downstream. In this case we just
 		// don't optimize any matchers set.
 		if len(matchers) == 0 {
-			return nil, false, nil
+			return rawMatcherSets, false, nil
 		}
 
 		optimizedMatchers := make([]*labels.Matcher, 0, len(matchers))
