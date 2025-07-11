@@ -5023,6 +5023,17 @@
         },
         {
           "kind": "field",
+          "name": "labels_query_optimizer_enabled",
+          "required": false,
+          "desc": "Enable labels query optimizations. When enabled, the query-frontend rewrites labels queries in an idempotent way to improve their performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
