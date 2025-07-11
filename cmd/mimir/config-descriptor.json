@@ -4954,9 +4954,45 @@
           "required": false,
           "desc": "List of queries to block.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "blocked_queries",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "pattern",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "regex",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              },
+              {
+                "kind": "field",
+                "name": "reason",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -4964,9 +5000,36 @@
           "required": false,
           "desc": "List of queries to limit and duration to limit them for.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of query (string) and allowed_frequency (duration)",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "limited_queries",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "query",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "allowed_frequency",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -4975,8 +5038,72 @@
           "desc": "List of http requests to block.",
           "fieldValue": null,
           "fieldDefaultValue": null,
-          "fieldType": "blocked_requests_config...",
-          "fieldCategory": "experimental"
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "blocked_requests",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "path",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "method",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "map",
+                "name": "query_params",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "string",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "query_params",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "value",
+                      "required": false,
+                      "desc": "",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "is_regexp",
+                      "required": false,
+                      "desc": "",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldType": "boolean"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
