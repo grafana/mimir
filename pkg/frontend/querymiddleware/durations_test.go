@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -39,63 +40,56 @@ func TestDurationMiddleware(t *testing.T) {
 		},
 	}
 	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			capture := &captureMiddleware{}
-			logCapture := bytes.Buffer{}
-			middleware := newDurationsMiddleware(log.NewLogfmtLogger(&logCapture))
-			chain := middleware.Wrap(capture)
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("name=%s instant=%v", name, instant), func(t *testing.T) {
+				var req MetricsQueryRequest
+				expr, err := parser.ParseExpr(tc.query)
+				require.NoError(t, err)
+				if instant {
+					req = NewPrometheusInstantQueryRequest(
+						"",
+						nil,
+						0,
+						0,
+						expr,
+						Options{},
+						nil,
+						"",
+					)
+				} else {
+					req = NewPrometheusRangeQueryRequest(
+						"",
+						nil,
+						0,
+						0,
+						60,
+						0,
+						expr,
+						Options{},
+						nil,
+						"",
+					)
+				}
 
-			expr, err := parser.ParseExpr(tc.query)
-			require.NoError(t, err)
+				capture := &captureMiddleware{}
+				logCapture := bytes.Buffer{}
+				middleware := newDurationsMiddleware(log.NewLogfmtLogger(&logCapture))
+				chain := middleware.Wrap(capture)
 
-			{
-				// Do instant query first.
-				req := NewPrometheusInstantQueryRequest(
-					"",
-					nil,
-					0,
-					0,
-					expr,
-					Options{},
-					nil,
-					"",
-				)
-				logCapture.Reset()
 				_, err = chain.Do(context.Background(), req)
 				require.NoError(t, err)
-				require.Equal(t, tc.expectInstant, capture.query)
+				if instant {
+					require.Equal(t, tc.expectInstant, capture.query)
+				} else {
+					require.Equal(t, tc.expectRange, capture.query)
+				}
 				if tc.expectInstant != tc.query {
 					require.Contains(t, logCapture.String(), "rewritten")
 				} else {
 					require.NotContains(t, logCapture.String(), "rewritten")
 				}
-			}
-
-			{
-				// Do range query next.
-				req := NewPrometheusRangeQueryRequest(
-					"",
-					nil,
-					0,
-					0,
-					60,
-					0,
-					expr,
-					Options{},
-					nil,
-					"",
-				)
-				logCapture.Reset()
-				_, err = chain.Do(context.Background(), req)
-				require.NoError(t, err)
-				require.Equal(t, tc.expectRange, capture.query)
-				if tc.expectInstant != tc.query {
-					require.Contains(t, logCapture.String(), "rewritten")
-				} else {
-					require.NotContains(t, logCapture.String(), "rewritten")
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
