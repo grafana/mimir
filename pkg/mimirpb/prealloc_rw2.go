@@ -26,7 +26,7 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 			LabelsRefs: refs,
 			Samples:    ts.Samples,
 			Histograms: ts.Histograms,
-			// TODO: Exemplars
+			Exemplars:  FromExemplarsToExemplarsV2(ts.Exemplars, symbols),
 			// TODO: Metadata
 			CreatedTimestamp: ts.CreatedTimestamp,
 		})
@@ -43,4 +43,26 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 	rw1.RW2CommonSymbols = nil
 
 	return rw1, nil
+}
+
+func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols StringSymbolizer) []ExemplarRW2 {
+	if exemplars == nil {
+		return nil
+	}
+
+	result := make([]ExemplarRW2, 0, len(exemplars)) // TODO: Pool-ify this allocation?
+	for _, ex := range exemplars {
+		refs := make([]uint32, 0, len(ex.Labels)*2)
+		for i := range ex.Labels {
+			refs = append(refs, symbols.Symbolize(ex.Labels[i].Name), symbols.Symbolize(ex.Labels[i].Value))
+		}
+
+		exv2 := ExemplarRW2{
+			LabelsRefs: refs,
+			Value:      ex.Value,
+			Timestamp:  ex.TimestampMs,
+		}
+		result = append(result, exv2)
+	}
+	return result
 }
