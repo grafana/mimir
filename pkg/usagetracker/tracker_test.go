@@ -380,6 +380,17 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		require.ElementsMatch(t, []string{"usage-tracker-zone-a-1"}, partitionRing.MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
 	})
 
+	t.Run("reconcile after scale down should not panic or fail", func(t *testing.T) {
+		t.Parallel()
+
+		trackers, pkv := prepareTwoUsageTrackersWithPartitionsReconciled(t)
+
+		// We're scaling down, so we need to call the prepare downscale endpoint first.
+		callPrepareDownscaleEndpoint(t, trackers["a1"], http.MethodPost)
+		require.NoError(t, trackers["a1"].reconcilePartitions(t.Context()))
+		stopService(t, trackers["a1"])
+	})
+
 	t.Run("scale down should lose partitions", func(t *testing.T) {
 		t.Parallel()
 

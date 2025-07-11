@@ -446,7 +446,7 @@ losingPartitions:
 
 	added := 0
 	skipped := 0
-	started := make(chan error, end-start)
+	started := make(chan error, max(0, end-start))
 	for pid := start; pid < end; pid++ {
 		if _, ok := t.partitions[pid]; ok {
 			// We already have this partition.
