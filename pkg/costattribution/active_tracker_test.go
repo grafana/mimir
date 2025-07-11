@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/costattribution/model"
 )
 
 func TestActiveTracker_hasSameLabels(t *testing.T) {

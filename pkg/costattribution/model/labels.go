@@ -2,8 +2,6 @@
 
 package model
 
-import "flag"
-
 // Label represents a label for cost attribution.
 type Label struct {
 	// Input is the source label name that exists in the input metrics.
@@ -13,12 +11,7 @@ type Label struct {
 	Output string `yaml:"output,omitempty" json:"output,omitempty"`
 }
 
-func (l Label) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&l.Input, "costattribution.label.input", "", "The input label name that exists in the input metrics.")
-	f.StringVar(&l.Output, "costattribution.label.output", "", "The label name that will be used at the output of the cost attribution. If empty, the input label should be used as the output label.")
-}
-
-// outputLabel returns the output label for the label.
+// OutputLabel returns the output label for the label.
 // If the output label is empty, the input label is returned.
 func (l Label) OutputLabel() string {
 	if l.Output == "" {

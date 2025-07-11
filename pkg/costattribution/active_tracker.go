@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	model "github.com/grafana/mimir/pkg/costattribution/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/costattribution/model"
 )
 
 type counters struct {
