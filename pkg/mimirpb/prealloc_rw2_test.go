@@ -266,6 +266,87 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.Equal(t, expSymbols, rw2.SymbolsRW2)
 		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
 	})
+
+	t.Run("metadata", func(t *testing.T) {
+		req := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: []PreallocTimeseries{
+					{
+						TimeSeries: &TimeSeries{
+							Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
+							Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+						},
+					},
+				},
+				Metadata: []*MetricMetadata{
+					{
+						Type:             COUNTER,
+						MetricFamilyName: "my_cool_series",
+						Help:             "It's a cool series.",
+						Unit:             "megawatts",
+					},
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req)
+
+		expSymbols := []string{"", "__name__", "my_cool_series", "job", "foo/bar", "It's a cool series.", "megawatts"}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+			},
+			{
+				LabelsRefs: []uint32{1, 2},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 5,
+					UnitRef: 6,
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Nil(t, rw2.Metadata)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
+
+	t.Run("metadata only", func(t *testing.T) {
+		req := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: nil,
+				Metadata: []*MetricMetadata{
+					{
+						Type:             COUNTER,
+						MetricFamilyName: "my_cool_series",
+						Help:             "It's a cool series.",
+						Unit:             "megawatts",
+					},
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req)
+
+		expSymbols := []string{"", "It's a cool series.", "megawatts", "__name__", "my_cool_series"}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{3, 4},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 1,
+					UnitRef: 2,
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Nil(t, rw2.Metadata)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
 }
 
 func TestExemplarConversion(t *testing.T) {
@@ -360,7 +441,58 @@ func TestExemplarConversion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotV2 := FromExemplarsToExemplarsV2(tt.v1, &symbols)
+			gotV2 := FromExemplarsToExemplarsRW2(tt.v1, &symbols)
+			require.Equal(t, tt.v2, gotV2)
+		})
+	}
+}
+
+func TestMetricMetadataConversion(t *testing.T) {
+	symbols := writev2.NewSymbolTable()
+	symbols.Symbolize("help text")
+	symbols.Symbolize("unit text")
+
+	tests := []struct {
+		name    string
+		v1      *MetricMetadata
+		v2      MetadataRW2
+		symbols []string
+	}{
+		{
+			name: "complete metadata",
+			v1: &MetricMetadata{
+				Type: COUNTER,
+				Help: "help text",
+				Unit: "unit text",
+			},
+			v2: MetadataRW2{
+				Type:    MetadataRW2_MetricType(COUNTER),
+				HelpRef: 1,
+				UnitRef: 2,
+			},
+			symbols: symbols.Symbols(),
+		},
+		{
+			name: "metadata without help and unit",
+			v1: &MetricMetadata{
+				Type: GAUGE,
+			},
+			v2: MetadataRW2{
+				Type: MetadataRW2_MetricType(GAUGE),
+			},
+			symbols: symbols.Symbols(),
+		},
+		{
+			name:    "nil metadata",
+			v1:      nil,
+			v2:      MetadataRW2{},
+			symbols: symbols.Symbols(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotV2 := FromMetricMetadataToMetadataRW2(tt.v1, &symbols)
 			require.Equal(t, tt.v2, gotV2)
 		})
 	}

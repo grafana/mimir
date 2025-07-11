@@ -5,7 +5,6 @@ import "fmt"
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // TODO: It destroys the given write request?
 func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequest, error) {
-	// Source - automatic
 	if rw1 == nil {
 		return nil, nil
 	}
@@ -15,7 +14,7 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 	symbols := symbolsTableFromPool()
 	defer reuseSymbolsTable(symbols) // TODO: is this safe because we leak the symbols slice by returning it? but this puts it back in a pool too early?
 
-	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)) // TODO: Pool-ify this allocation
+	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
 	for _, ts := range rw1.Timeseries {
 		refs := make([]uint32, 0, len(ts.Labels)*2) // TODO: Pool-ify this allocation
 		for i := range ts.Labels {
@@ -23,16 +22,26 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 		}
 
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
-			LabelsRefs: refs,
-			Samples:    ts.Samples,
-			Histograms: ts.Histograms,
-			Exemplars:  FromExemplarsToExemplarsV2(ts.Exemplars, symbols),
-			// TODO: Metadata
+			LabelsRefs:       refs,
+			Samples:          ts.Samples,
+			Histograms:       ts.Histograms,
+			Exemplars:        FromExemplarsToExemplarsRW2(ts.Exemplars, symbols),
+			Metadata:         MetadataRW2{},
 			CreatedTimestamp: ts.CreatedTimestamp,
 		})
 	}
 
-	// TODO: Metadata
+	// Represent metadata as extra, empty timeseries rather than attaching it to existing series.
+	// It prevents duplication, and removes the need to match metadata to series, with very low actual size overhead.
+	for _, meta := range rw1.Metadata {
+		rw2meta := FromMetricMetadataToMetadataRW2(meta, symbols)
+		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
+			LabelsRefs: []uint32{symbols.Symbolize("__name__"), symbols.Symbolize(meta.MetricFamilyName)},
+			Metadata:   rw2meta,
+		})
+	}
+	rw1.Metadata = nil // TODO: return to pool if we decide to pool it?? not currently pooled
+
 	rw1.Timeseries = nil // TODO: return to pool
 	rw1.TimeseriesRW2 = rw2Timeseries
 	rw1.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
@@ -45,7 +54,7 @@ func FromWriteRequestToRW2Request(rw1 *PreallocWriteRequest) (*PreallocWriteRequ
 	return rw1, nil
 }
 
-func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols StringSymbolizer) []ExemplarRW2 {
+func FromExemplarsToExemplarsRW2(exemplars []Exemplar, symbols StringSymbolizer) []ExemplarRW2 {
 	if exemplars == nil {
 		return nil
 	}
@@ -64,5 +73,24 @@ func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols StringSymbolizer) 
 		}
 		result = append(result, exv2)
 	}
+	return result
+}
+
+func FromMetricMetadataToMetadataRW2(metadata *MetricMetadata, symbols StringSymbolizer) MetadataRW2 {
+	if metadata == nil {
+		return MetadataRW2{}
+	}
+
+	result := MetadataRW2{
+		Type: MetadataRW2_MetricType(metadata.Type),
+	}
+
+	if metadata.Help != "" {
+		result.HelpRef = symbols.Symbolize(metadata.Help)
+	}
+	if metadata.Unit != "" {
+		result.UnitRef = symbols.Symbolize(metadata.Unit)
+	}
+
 	return result
 }
