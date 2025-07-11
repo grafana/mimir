@@ -66,35 +66,6 @@ type HealthStats struct {
 	// OutOfOrderLabels represents the number of postings that contained out
 	// of order labels, a bug present in Prometheus 2.8.0 and below.
 	OutOfOrderLabels int
-
-	// Debug Statistics.
-	SeriesMinLifeDuration time.Duration
-	SeriesAvgLifeDuration time.Duration
-	SeriesMaxLifeDuration time.Duration
-
-	SeriesMinLifeDurationWithoutSingleSampleSeries time.Duration
-	SeriesAvgLifeDurationWithoutSingleSampleSeries time.Duration
-	SeriesMaxLifeDurationWithoutSingleSampleSeries time.Duration
-
-	SeriesMinChunks int64
-	SeriesAvgChunks int64
-	SeriesMaxChunks int64
-
-	TotalChunks int64
-
-	ChunkMinDuration time.Duration
-	ChunkAvgDuration time.Duration
-	ChunkMaxDuration time.Duration
-
-	ChunkMinSize int64
-	ChunkAvgSize int64
-	ChunkMaxSize int64
-
-	SingleSampleSeries int64
-	SingleSampleChunks int64
-
-	LabelNamesCount        int64
-	MetricLabelValuesCount int64
 }
 
 // OutOfOrderLabelsErr returns an error if the HealthStats object indicates
@@ -235,12 +206,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		builder  labels.ScratchBuilder
 		chks     []chunks.Meta
 		cr       *chunks.Reader
-
-		seriesLifeDuration                          = newMinMaxSumInt64()
-		seriesLifeDurationWithoutSingleSampleSeries = newMinMaxSumInt64()
-		seriesChunks                                = newMinMaxSumInt64()
-		chunkDuration                               = newMinMaxSumInt64()
-		chunkSize                                   = newMinMaxSumInt64()
 	)
 
 	// chunk reader
@@ -251,18 +216,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		}
 		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
 	}
-
-	lnames, err := r.LabelNames(ctx)
-	if err != nil {
-		return stats, errors.Wrap(err, "label names")
-	}
-	stats.LabelNamesCount = int64(len(lnames))
-
-	lvals, err := r.LabelValues(ctx, "__name__", nil)
-	if err != nil {
-		return stats, errors.Wrap(err, "metric label values")
-	}
-	stats.MetricLabelValuesCount = int64(len(lvals))
 
 	// Per series.
 	for p.Next() {
@@ -311,19 +264,8 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 				}
 			}
 
-			stats.TotalChunks++
-
 			chkDur := c.MaxTime - c.MinTime
 			seriesLifeTimeMs += chkDur
-			chunkDuration.Add(chkDur)
-			if chkDur == 0 {
-				stats.SingleSampleChunks++
-			}
-
-			// Approximate size.
-			if i < len(chks)-2 {
-				chunkSize.Add(int64(chks[i+1].Ref - c.Ref))
-			}
 
 			// Chunk vs the block ranges.
 			if c.MinTime < minTime || c.MaxTime > maxTime {
@@ -361,39 +303,11 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 			stats.OutOfOrderChunks += ooo
 			level.Debug(logger).Log("msg", "found out of order series", "labels", lset)
 		}
-
-		seriesChunks.Add(int64(len(chks)))
-		seriesLifeDuration.Add(seriesLifeTimeMs)
-
-		if seriesLifeTimeMs == 0 {
-			stats.SingleSampleSeries++
-		} else {
-			seriesLifeDurationWithoutSingleSampleSeries.Add(seriesLifeTimeMs)
-		}
 	}
 	if p.Err() != nil {
 		return stats, errors.Wrap(err, "walk postings")
 	}
 
-	stats.SeriesMaxLifeDuration = time.Duration(seriesLifeDuration.max) * time.Millisecond
-	stats.SeriesAvgLifeDuration = time.Duration(seriesLifeDuration.Avg()) * time.Millisecond
-	stats.SeriesMinLifeDuration = time.Duration(seriesLifeDuration.min) * time.Millisecond
-
-	stats.SeriesMaxLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.max) * time.Millisecond
-	stats.SeriesAvgLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.Avg()) * time.Millisecond
-	stats.SeriesMinLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.min) * time.Millisecond
-
-	stats.SeriesMaxChunks = seriesChunks.max
-	stats.SeriesAvgChunks = seriesChunks.Avg()
-	stats.SeriesMinChunks = seriesChunks.min
-
-	stats.ChunkMaxSize = chunkSize.max
-	stats.ChunkAvgSize = chunkSize.Avg()
-	stats.ChunkMinSize = chunkSize.min
-
-	stats.ChunkMaxDuration = time.Duration(chunkDuration.max) * time.Millisecond
-	stats.ChunkAvgDuration = time.Duration(chunkDuration.Avg()) * time.Millisecond
-	stats.ChunkMinDuration = time.Duration(chunkDuration.min) * time.Millisecond
 	return stats, nil
 }
 
