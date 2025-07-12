@@ -779,10 +779,6 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, reqDecoded)
 					require.NoError(t, err)
 					require.EqualValues(t, testCase.expectedURL, reqEncoded.RequestURI)
-
-					actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(reqEncoded)
-					require.NoError(t, err)
-					require.Equal(t, userID, actualUserID)
 				})
 			}
 		})

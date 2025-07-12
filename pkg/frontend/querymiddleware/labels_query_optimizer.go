@@ -77,15 +77,13 @@ func (l *labelsQueryOptimizer) RoundTrip(req *http.Request) (*http.Response, err
 
 	switch parsedReq.(type) {
 	case *PrometheusLabelNamesQueryRequest:
-		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelNamesQueryRequest))
-	case *PrometheusLabelValuesQueryRequest:
-		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelValuesQueryRequest))
+		return l.optimizeLabelNamesRequest(ctx, req, parsedReq.(*PrometheusLabelNamesQueryRequest))
 	default:
 		return l.next.RoundTrip(req)
 	}
 }
 
-func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Request, parsedReq LabelsSeriesQueryRequest) (*http.Response, error) {
+func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, req *http.Request, parsedReq *PrometheusLabelNamesQueryRequest) (*http.Response, error) {
 	spanLog := spanlogger.FromContext(ctx, l.logger)
 
 	// Track the total number of requests processed when optimization is enabled.
@@ -98,10 +96,10 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 	}
 
 	// Optimize the matchers.
-	optimizedMatchers, optimized, err := optimizeLabelsRequestMatchers(rawMatchers)
+	optimizedMatchers, optimized, err := optimizeLabelNamesRequestMatchers(rawMatchers)
 	if err != nil {
 		// Do not log an error because this error is typically caused by a malformed request, which wouldn't be actionable.
-		spanLog.DebugLog("msg", "failed to optimize labels request matchers", "err", err)
+		spanLog.DebugLog("msg", "failed to optimize label names matchers", "err", err)
 		return l.next.RoundTrip(req)
 	}
 
@@ -112,7 +110,7 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 	// Create a new request with optimized matchers.
 	optimizedParsedReq, err := parsedReq.WithLabelMatcherSets(optimizedMatchers)
 	if err != nil {
-		level.Error(l.logger).Log("msg", "failed to clone labels request with optimized matchers", "err", err)
+		level.Error(l.logger).Log("msg", "failed to clone label names request with optimized matchers", "err", err)
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
@@ -120,18 +118,18 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 	// Encode the optimized request back to HTTP.
 	optimizedReq, err := l.codec.EncodeLabelsSeriesQueryRequest(ctx, optimizedParsedReq)
 	if err != nil {
-		level.Error(l.logger).Log("msg", "failed to encode labels request with optimized matchers", "err", err)
+		level.Error(l.logger).Log("msg", "failed to encode label names request with optimized matchers", "err", err)
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
 
 	// Track successful optimization.
 	l.rewrittenQueries.Inc()
-	spanLog.DebugLog("msg", "optimized labels query", "original_matchers", strings.Join(parsedReq.GetLabelMatcherSets(), " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))
+	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", strings.Join(parsedReq.LabelMatcherSets, " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))
 	return l.next.RoundTrip(optimizedReq)
 }
 
-func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
+func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
 	matcherSets, err := parser.ParseMetricSelectors(rawMatcherSets)
 	if err != nil {
 		return nil, false, err
@@ -140,23 +138,16 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 	optimizedRawMatcherSets := make([]string, 0, len(rawMatcherSets))
 
 	for _, matchers := range matcherSets {
+		// If an empty matcher `{}` was provided we need to preserve it because it's an invalid matcher
+		// for the labels API, but we want to get the actual error from downstream. In this case we just
+		// don't optimize any matchers set.
+		if len(matchers) == 0 {
+			return rawMatcherSets, false, nil
+		}
+
 		optimizedMatchers := make([]*labels.Matcher, 0, len(matchers))
-		hasNonEmptyMatchers := false
 
 		for _, matcher := range matchers {
-			// Before filtering out any matcher we should check if the among the original matchers
-			// there's anyone not matching the empty string. This will be used later to ensure there's
-			// at least one non-empty matcher.
-			if !matcher.Matches("") {
-				hasNonEmptyMatchers = true
-			}
-
-			// Filter out a matcher that matches any string because it matches all series.
-			if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
-				optimized = true
-				continue
-			}
-
 			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
 			// so this matcher matches all series but very expensive to run.
 			if matcher.Name == labels.MetricName && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
@@ -168,21 +159,14 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 			optimizedMatchers = append(optimizedMatchers, matcher)
 		}
 
-		if !hasNonEmptyMatchers {
-			// If the matchers set only contain empty matchers then we need to preserve them because it's an invalid case
-			// for the labels API, but we want to get the actual error from downstream. In this case we just
-			// don't optimize any matchers set.
-			return rawMatcherSets, false, nil
-		}
-
-		if len(optimizedMatchers) == 0 {
-			// It was not an empty matcher (see previous condition), and all the matchers have been removed.
+		if len(optimizedMatchers) > 0 {
+			optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(optimizedMatchers))
+		} else {
+			// It was not an empty matcher (see condition above), and all the matchers have been removed.
 			// It means that we should match all series. Since the matchers in different sets are in a "or" condition
 			// it practically means we want to query all series, so we just return no matchers at all.
 			return []string{}, true, nil
 		}
-
-		optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(optimizedMatchers))
 	}
 
 	return optimizedRawMatcherSets, optimized, nil
