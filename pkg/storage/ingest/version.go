@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -105,6 +106,8 @@ func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
 		return versionZeroRecordSerializer{}
 	case 1:
 		return versionOneRecordSerializer{}
+	case 2:
+		return versionTwoRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -137,6 +140,31 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 		r.Headers = append(r.Headers, RecordVersionHeader(1))
 	}
 	return records, nil
+}
+
+type versionTwoRecordSerializer struct{}
+
+func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
+	}
+
+	// TODO: The thing that v1 does to split across multiple records.
+	data := make([]byte, reqv2.Size())
+	n, err := reqv2.MarshalToSizedBuffer(data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to serialise write request")
+	}
+	data = data[:n]
+
+	rec := &kgo.Record{
+		Key:       []byte(tenantID),
+		Value:     data,
+		Partition: partitionID,
+		Headers:   []kgo.RecordHeader{RecordVersionHeader(2)},
+	}
+	return []*kgo.Record{rec}, nil
 }
 
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
