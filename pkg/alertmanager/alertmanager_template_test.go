@@ -48,7 +48,7 @@ func Test_withCustomFunctions(t *testing.T) {
 					GeneratorURL: "http://localhost:9090?foo=bar",
 				},
 			},
-			template:    `{{ queryFormGeneratorURL (index .Alerts 0).GeneratorURL }}`,
+			template:    `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
 			expectError: true,
 		},
 		{
@@ -58,7 +58,7 @@ func Test_withCustomFunctions(t *testing.T) {
 					GeneratorURL: "http://localhost:9090?g0.expr=up{foo=bar}",
 				},
 			},
-			template:    `{{ queryFormGeneratorURL (index .Alerts 0).GeneratorURL }}`,
+			template:    `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
 			expectError: true,
 		},
 		{
