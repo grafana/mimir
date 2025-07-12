@@ -95,15 +95,8 @@ spec:
             {{- toYaml .Values.query_frontend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.query_frontend.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.query_frontend.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.query_frontend.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "query-frontend") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.query_frontend.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

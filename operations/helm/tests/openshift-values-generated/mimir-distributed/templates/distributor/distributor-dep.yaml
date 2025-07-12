@@ -95,7 +95,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "8"
       topologySpreadConstraints:
       - maxSkew: 1

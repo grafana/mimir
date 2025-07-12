@@ -88,15 +88,8 @@ spec:
             {{- toYaml .Values.admin_api.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.admin_api.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.admin_api.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.admin_api.env }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "admin-api") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.admin_api.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

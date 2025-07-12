@@ -204,22 +204,15 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
-          {{- if or .Values.global.extraEnv .Values.ingester.env $cpu_request }}
-          env:
-            {{- if $cpu_request }}
-              {{- /* copy logic from operations/mimir/ingester.libsonnet */}}
-              {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
-            - name: "GOMAXPROCS"
-              value: {{ addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString | toYaml }}
-            {{- end }}
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ingester.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- if $cpu_request }}
+            {{- /* copy logic from operations/mimir/ingester.libsonnet */}}
+            {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString)) }}
           {{- end }}
+          env:
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ingester" "env" $defaultEnv) | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.ingester.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

@@ -68,6 +68,8 @@ spec:
             - name: admin-token
               mountPath: /bootstrap/token
               subPath: token
+          env:
+            []
       containers:
         - name: create-secret
           image: bitnami/kubectl:latest

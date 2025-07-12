@@ -82,6 +82,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            []
           envFrom:
       topologySpreadConstraints:
       - maxSkew: 1

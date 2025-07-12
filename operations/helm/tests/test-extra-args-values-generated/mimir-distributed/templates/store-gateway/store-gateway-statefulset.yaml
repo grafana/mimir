@@ -141,9 +141,9 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
@@ -289,9 +289,9 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
@@ -437,7 +437,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
