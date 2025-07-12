@@ -133,6 +133,8 @@ type UserGrafanaState struct {
 
 type PostableUserGrafanaState struct {
 	UserGrafanaState
+
+	// Deprecated: This field is not used.
 	Promoted bool `json:"promoted"`
 }
 

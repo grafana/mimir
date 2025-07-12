@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -753,4 +754,41 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Kind:     alertingTemplates.GrafanaKind,
 	}
 	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
+}
+
+func TestGetFullStateHandler(t *testing.T) {
+	am, err := New(&Config{
+		UserID:            "test",
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// Get the state from the Alertmanager.
+	{
+		rec := httptest.NewRecorder()
+		am.GetFullStateHandler(rec, nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		require.NoError(t, err)
+		json := `
+		{
+			"data": {
+				"state": "CgoKCG5mbDp0ZXN0CgoKCHNpbDp0ZXN0"
+			},
+			"status": "success"
+		}
+		`
+		require.JSONEq(t, json, string(body))
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	}
 }
