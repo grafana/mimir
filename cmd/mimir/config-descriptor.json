@@ -14510,6 +14510,27 @@
               "fieldDefaultValue": null
             },
             {
+              "kind": "block",
+              "name": "http_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "Timeout for establishing a connection to the query frontend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler.query-frontend.http-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
               "kind": "field",
               "name": "query_result_response_format",
               "required": false,
