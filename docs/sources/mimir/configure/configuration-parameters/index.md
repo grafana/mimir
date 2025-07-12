@@ -3797,6 +3797,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
+# (experimental)
+cost_attribution_labels_structured:
+  -
+    [input: <string> | default = ""]
+
+    [output: <string> | default = ""]
+
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality
