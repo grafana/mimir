@@ -104,13 +104,13 @@ type Limits interface {
 	Prom2RangeCompat(userID string) bool
 
 	// BlockedQueries returns the blocked queries.
-	BlockedQueries(userID string) []*validation.BlockedQuery
+	BlockedQueries(userID string) []validation.BlockedQuery
 
 	// BlockedRequests returns the blocked http requests.
-	BlockedRequests(userID string) []*validation.BlockedRequest
+	BlockedRequests(userID string) []validation.BlockedRequest
 
 	// LimitedQueries returns the limited queries.
-	LimitedQueries(userID string) []*validation.LimitedQuery
+	LimitedQueries(userID string) []validation.LimitedQuery
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool

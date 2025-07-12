@@ -22,7 +22,7 @@ func TestRequestBlocker_IsBlocked(t *testing.T) {
 	limits := multiTenantMockLimits{
 		byTenant: map[string]mockLimits{
 			userID: {
-				blockedRequests: []*validation.BlockedRequest{
+				blockedRequests: []validation.BlockedRequest{
 					{Path: "/blocked-by-path"},
 					{Method: "POST"},
 					{

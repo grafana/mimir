@@ -507,7 +507,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		multiTenantMockLimits{
 			byTenant: map[string]mockLimits{
 				"user-1": {
-					blockedRequests: []*validation.BlockedRequest{
+					blockedRequests: []validation.BlockedRequest{
 						{
 							Path: "/api/v1/series",
 							QueryParams: map[string]validation.BlockedRequestQueryParam{

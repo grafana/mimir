@@ -8,14 +8,14 @@ type BlockedQuery struct {
 	Reason  string `yaml:"reason"`
 }
 
-type BlockedQueriesConfig []*BlockedQuery
+type BlockedQueriesConfig []BlockedQuery
 
 func (lq *BlockedQueriesConfig) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration blocks the query "rate(metric_counter[5m])". Setting the pattern to ".*" and regex to true blocks all queries.`,
-		[]map[string]string{
+		[]BlockedQuery{
 			{
-				"pattern": "rate(metric_counter[5m])",
-				"reason":  "because the query is misconfigured",
+				Pattern: "rate(metric_counter[5m])",
+				Reason:  "because the query is misconfigured",
 			},
 		}
 }
