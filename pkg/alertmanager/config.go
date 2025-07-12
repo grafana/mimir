@@ -134,10 +134,27 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		}
 	}
 
+	// the map can only contain templates of Grafana kind.
+	tmpl := definition.TemplatesMapToPostableAPITemplates(amCfg.Templates, definition.GrafanaTemplateKind)
+
 	return amConfig{
-		AlertConfigDesc:    alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
+		User:               gCfg.User,
+		RawConfig:          string(rawCfg),
+		Templates:          tmpl,
 		tmplExternalURL:    externalURL,
 		usingGrafanaConfig: true,
 		emailConfig:        emailCfg,
 	}, nil
+}
+
+func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
+	result := make([]definition.PostableApiTemplate, 0, len(t))
+	for _, desc := range t {
+		result = append(result, definition.PostableApiTemplate{
+			Name:    desc.Filename,
+			Content: desc.Body,
+			Kind:    kind,
+		})
+	}
+	return result
 }
