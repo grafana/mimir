@@ -7,14 +7,13 @@ syntax = "proto3";
 
 package distributor;
 
-option go_package = "distributorpb";
-
-import "gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
 
+option go_package = "distributorpb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Distributor {
-  rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {};
+  rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
 }

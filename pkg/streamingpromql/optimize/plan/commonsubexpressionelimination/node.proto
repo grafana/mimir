@@ -6,10 +6,10 @@ package commonsubexpressionelimination;
 
 import "gogoproto/gogo.proto";
 
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
 option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
 
 message DuplicateDetails {
   // No fields yet.

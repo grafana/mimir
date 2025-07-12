@@ -9,19 +9,18 @@ syntax = "proto3";
 // in order to not break backward compatibility.
 package frontend;
 
-option go_package = "frontendv1pb";
-
-import "gogoproto/gogo.proto";
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
+import "gogoproto/gogo.proto";
 
+option go_package = "frontendv1pb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Frontend {
   // After calling this method, client enters a loop, in which it waits for
   // a "FrontendToClient" message and replies with single "ClientToFrontend" message.
-  rpc Process(stream ClientToFrontend) returns (stream FrontendToClient) {};
+  rpc Process(stream ClientToFrontend) returns (stream FrontendToClient) {}
 
   // The client notifies the query-frontend that it started a graceful shutdown.
   rpc NotifyClientShutdown(NotifyClientShutdownRequest) returns (NotifyClientShutdownResponse);
@@ -47,7 +46,7 @@ message FrontendToClient {
 message ClientToFrontend {
   httpgrpc.HTTPResponse httpResponse = 1;
   string clientID = 2;
-  stats.Stats stats = 3[(gogoproto.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"];
+  stats.Stats stats = 3 [(gogoproto.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"];
 }
 
 message NotifyClientShutdownRequest {

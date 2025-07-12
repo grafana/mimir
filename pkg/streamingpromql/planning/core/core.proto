@@ -4,16 +4,16 @@ syntax = "proto3";
 
 package core;
 
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functions.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functions.proto";
 
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
 option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
 
 message PositionRange {
   int64 start = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
@@ -91,7 +91,10 @@ message FunctionCallDetails {
   functions.Function function = 1;
 
   // Labels used by absent() or absent_over_time(). Only populated if this instance is for either of these two functions.
-  repeated cortexpb.LabelPair absentLabels = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair absentLabels = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
 
   PositionRange expressionPosition = 3 [(gogoproto.nullable) = false];
 }
@@ -124,7 +127,10 @@ enum UnaryOperation {
 message VectorSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
@@ -133,17 +139,32 @@ message VectorSelectorDetails {
 message MatrixSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration range = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
   bool skipHistogramBuckets = 6;
 }
 
 message SubqueryDetails {
   google.protobuf.Timestamp timestamp = 1 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 2 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration range = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration step = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 2 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration step = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
 
