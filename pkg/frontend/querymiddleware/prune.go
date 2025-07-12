@@ -10,22 +10,24 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type pruneMiddleware struct {
 	next   MetricsQueryHandler
 	logger log.Logger
+	cfg    Config
 }
 
 // newPruneMiddleware creates a middleware that optimises queries by rewriting them to prune away
 // unnecessary computations.
-func newPruneMiddleware(logger log.Logger) MetricsQueryMiddleware {
+func newPruneMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &pruneMiddleware{
 			next:   next,
 			logger: logger,
+			cfg:    cfg,
 		}
 	})
 }
@@ -62,12 +64,16 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 	origQueryString := expr.String()
+	prunedQuery := expr
 
-	mapper := astmapper.NewQueryPruner(ctx, p.logger)
-	prunedQuery, err := mapper.Map(expr)
-	if err != nil {
-		return "", false, err
+	if p.cfg.PruneQueriesHistogram {
+		mapperHistogram := ast.NewMapperReorderHistogramAgg(ctx)
+		prunedQuery, err = mapperHistogram.Map(prunedQuery)
+		if err != nil {
+			return "", false, err
+		}
 	}
+
 	prunedQueryString := prunedQuery.String()
 
 	return prunedQueryString, origQueryString != prunedQueryString, nil
