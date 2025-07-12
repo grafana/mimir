@@ -327,6 +327,9 @@ func newQueryTripperware(
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
+		// Optimize labels queries after validation.
+		labels = newLabelsQueryOptimizer(codec, limits, labels, log, registerer)
+
 		// Validate the request before any processing.
 		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
 		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
