@@ -77,6 +77,10 @@ message SeriesRequest {
 message Stats {
   // This is the sum of all fetched index bytes (postings + series) for a series request.
   uint64 fetched_index_bytes = 1;
+  
+  // Concurrency gate timing in nanoseconds since epoch
+  int64 concurrency_gate_request_time_ns = 2;   // When request started waiting for gate
+  int64 concurrency_gate_acquired_time_ns = 3;  // When gate was acquired
 }
 
 message SeriesResponse {

@@ -77,6 +77,10 @@ type queryStats struct {
 	streamingSeriesIndexHeaderLoadDuration      time.Duration
 	streamingSeriesConcurrencyLimitWaitDuration time.Duration
 
+	// Concurrency gate timing as time.Time values.
+	concurrencyGateRequestTime  time.Time // When request started waiting for gate
+	concurrencyGateAcquiredTime time.Time // When gate was acquired
+
 	// streamingSeriesAmbientTime is the total wall clock time spent serving the request. It includes all other durations.
 	streamingSeriesAmbientTime time.Duration
 }
@@ -171,6 +175,14 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 	s.streamingSeriesConcurrencyLimitWaitDuration += o.streamingSeriesConcurrencyLimitWaitDuration
+
+	// For timestamps, take the latest one (not sum). This should only be set once for each request, so merging doesn't make a lot of sense anyways.
+	if o.concurrencyGateRequestTime.After(s.concurrencyGateRequestTime) {
+		s.concurrencyGateRequestTime = o.concurrencyGateRequestTime
+	}
+	if o.concurrencyGateAcquiredTime.After(s.concurrencyGateAcquiredTime) {
+		s.concurrencyGateAcquiredTime = o.concurrencyGateAcquiredTime
+	}
 
 	return &s
 }

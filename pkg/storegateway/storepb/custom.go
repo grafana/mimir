@@ -32,10 +32,14 @@ func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
 	}
 }
 
-func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
+func NewStatsResponse(indexBytesFetched int, requestTimeNs, acquiredTimeNs int64) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_Stats{
-			Stats: &Stats{FetchedIndexBytes: uint64(indexBytesFetched)},
+			Stats: &Stats{
+				FetchedIndexBytes:             uint64(indexBytesFetched),
+				ConcurrencyGateRequestTimeNs:  requestTimeNs,
+				ConcurrencyGateAcquiredTimeNs: acquiredTimeNs,
+			},
 		},
 	}
 }
