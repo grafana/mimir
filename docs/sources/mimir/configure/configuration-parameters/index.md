@@ -3723,8 +3723,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         regex: false
 #         reason: because the query is misconfigured
 blocked_queries:
-  -
-    # PromQL expression pattern to match.
+  - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
 
     # If true, pattern is treated as a regular expression. If false, pattern is
@@ -3742,8 +3741,7 @@ blocked_queries:
 #       - query: rate(metric_counter[5m])
 #         allowed_frequency: 1m0s
 limited_queries:
-  -
-    # Literal PromQL expression to match.
+  - # Literal PromQL expression to match.
     [query: <string> | default = ""]
 
     # Minimum duration between matching queries. If a matching query arrives
@@ -3761,9 +3759,7 @@ limited_queries:
 #           limit:
 #               value: "100"
 blocked_requests:
-  -
-    # Path to match, including leading slash (/). Leave blank to match all
-    # paths.
+  - # Path to match, including leading slash (/). Leave blank to match all paths.
     [path: <string> | default = ""]
 
     # HTTP method to match. Leave blank to match all methods.

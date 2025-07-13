@@ -28,54 +28,56 @@ type specWriter struct {
 	modifyDescriptions func(string) string
 }
 
-func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int) {
+func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, firstLineIndent, subsequentLineIndent int) {
 	if len(b.Entries) == 0 {
 		return
 	}
 
 	for i, entry := range b.Entries {
-		// Add a new line to separate from the previous entry
 		if i > 0 {
+			// Add a new line to separate from the previous entry, and reset indentation
 			w.out.WriteString("\n")
+			firstLineIndent = subsequentLineIndent
 		}
 
-		w.writeConfigEntry(entry, indent)
+		w.writeConfigEntry(entry, firstLineIndent, subsequentLineIndent)
 	}
 }
 
-func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
+func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, firstLineIndent, subsequentLineIndent int) {
 	switch e.Kind {
 	case parse.KindBlock:
 		// If the block is a root block it will have its dedicated section in the doc,
 		// so here we've just to write down the reference without re-iterating on it.
 		if e.Root {
 			// Description
-			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
-			w.writeExample(e.FieldExample, indent)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, 0)
+			w.writeExample(e.FieldExample, subsequentLineIndent)
 
 			if e.Block.FlagsPrefix != "" {
-				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), indent, 0)
+				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), subsequentLineIndent, 0)
 			}
 
 			// Block reference without entries, because it's a root block
-			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
+			w.out.WriteString(pad(subsequentLineIndent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
 		} else {
 			// Description
-			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
-			w.writeExample(e.FieldExample, indent)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, 0)
+			w.writeExample(e.FieldExample, subsequentLineIndent)
 
 			// Name
-			w.out.WriteString(pad(indent) + e.Name + ":\n")
+			w.out.WriteString(pad(subsequentLineIndent) + e.Name + ":\n")
 
 			// Entries
-			w.writeConfigBlock(e.Block, indent+tabWidth)
+			nextIndent := subsequentLineIndent + tabWidth
+			w.writeConfigBlock(e.Block, nextIndent, nextIndent)
 		}
 
 	case parse.KindField:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
-		w.writeExample(e.FieldExample, indent)
-		w.writeFlag(e.FieldFlag, indent)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeExample(e.FieldExample, subsequentLineIndent)
+		w.writeFlag(e.FieldFlag, subsequentLineIndent)
 
 		// Specification
 		fieldDefault := e.FieldDefault
@@ -87,38 +89,39 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		}
 
 		if e.Required {
-			w.out.WriteString(pad(indent) + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "\n")
+			w.out.WriteString(pad(subsequentLineIndent) + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "\n")
 		} else {
-			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "]\n")
+			w.out.WriteString(pad(subsequentLineIndent) + "[" + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "]\n")
 		}
 
 	case parse.KindMap:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
-		w.writeExample(e.FieldExample, indent)
-		w.writeFlag(e.FieldFlag, indent)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeExample(e.FieldExample, subsequentLineIndent)
+		w.writeFlag(e.FieldFlag, subsequentLineIndent)
 
 		// Specification
 		if e.Required {
-			w.out.WriteString(pad(indent) + e.Name + ":\n")
+			w.out.WriteString(pad(subsequentLineIndent) + e.Name + ":\n")
 		} else {
-			w.out.WriteString(pad(indent) + "[" + e.Name + ":]\n")
+			w.out.WriteString(pad(subsequentLineIndent) + "[" + e.Name + ":]\n")
 		}
 
-		w.out.WriteString(pad(indent+tabWidth) + "<" + e.FieldType + ">:\n")
-		w.writeConfigBlock(e.Element, indent+(2*tabWidth))
+		w.out.WriteString(pad(subsequentLineIndent+tabWidth) + "<" + e.FieldType + ">:\n")
+		nextIndent := subsequentLineIndent + (2 * tabWidth)
+		w.writeConfigBlock(e.Element, nextIndent, nextIndent)
 
 	case parse.KindSlice:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
-		w.writeExample(e.FieldExample, indent)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeExample(e.FieldExample, subsequentLineIndent)
 
 		// Name
-		w.out.WriteString(pad(indent) + e.Name + ":\n")
+		w.out.WriteString(pad(subsequentLineIndent) + e.Name + ":\n")
 
 		// Element
-		w.out.WriteString(pad(indent+tabWidth) + "-\n")
-		w.writeConfigBlock(e.Element, indent+(2*tabWidth))
+		w.out.WriteString(pad(subsequentLineIndent+tabWidth) + "- ") // Don't add a trailing new line: we want the first line of the first element to appear directly after the "-"
+		w.writeConfigBlock(e.Element, 0, subsequentLineIndent+(2*tabWidth))
 	}
 }
 
@@ -254,7 +257,7 @@ func (w *MarkdownWriter) WriteConfigBlock(block *parse.ConfigBlock) {
 		spec.modifyDescriptions = func(s string) string { return s }
 	}
 
-	spec.writeConfigBlock(block, 0)
+	spec.writeConfigBlock(block, 0, 0)
 
 	w.out.WriteString("```yaml\n")
 	w.out.WriteString(spec.string() + "\n")
