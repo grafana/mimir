@@ -1836,7 +1836,7 @@ user1:
 
 	blockedRequests := ov.BlockedRequests("user1")
 	require.Len(t, blockedRequests, 2)
-	require.Equal(t, &BlockedRequest{
+	require.Equal(t, BlockedRequest{
 		Path:   "/api/v1/query",
 		Method: "POST",
 		QueryParams: map[string]BlockedRequestQueryParam{
@@ -1845,7 +1845,7 @@ user1:
 			},
 		},
 	}, blockedRequests[0])
-	require.Equal(t, &BlockedRequest{
+	require.Equal(t, BlockedRequest{
 		QueryParams: map[string]BlockedRequestQueryParam{
 			"first": {
 				Value:    "bar.*",
