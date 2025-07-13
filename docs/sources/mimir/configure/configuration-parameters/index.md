@@ -3724,10 +3724,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         reason: because the query is misconfigured
 blocked_queries:
   -
+    # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
 
+    # If true, pattern is treated as a regular expression. If false, pattern is
+    # treated as a literal match.
     [regex: <boolean> | default = ]
 
+    # Reason returned to clients when rejecting matching queries.
     [reason: <string> | default = ""]
 
 # (experimental) List of queries to limit and duration to limit them for.
@@ -3739,11 +3743,14 @@ blocked_queries:
 #         allowed_frequency: 1m0s
 limited_queries:
   -
+    # Literal PromQL expression to match.
     [query: <string> | default = ""]
 
+    # Minimum duration between matching queries. If a matching query arrives
+    # more often than this, it is rejected.
     [allowed_frequency: <duration> | default = ]
 
-# (experimental) List of http requests to block.
+# (experimental) List of HTTP requests to block.
 # Example:
 #   The following configuration blocks all GET requests to /foo when the "limit"
 #   parameter is set to 100.
@@ -3755,14 +3762,22 @@ limited_queries:
 #               value: "100"
 blocked_requests:
   -
+    # Path to match, including leading slash (/). Leave blank to match all
+    # paths.
     [path: <string> | default = ""]
 
+    # HTTP method to match. Leave blank to match all methods.
     [method: <string> | default = ""]
 
+    # Query parameters to match. Requests must have all of the provided query
+    # parameters to be considered a match.
     [query_params:]
       <string>:
+        # Value to match.
         [value: <string> | default = ""]
 
+        # If true, value is treated as a regexp pattern. If false, value is
+        # treated as a literal match.
         [is_regexp: <boolean> | default = ]
 
 # Mutate incoming queries to align their start and end with their step to

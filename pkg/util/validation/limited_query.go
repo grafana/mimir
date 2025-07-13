@@ -5,8 +5,8 @@ package validation
 import "time"
 
 type LimitedQuery struct {
-	Query            string        `yaml:"query"`
-	AllowedFrequency time.Duration `yaml:"allowed_frequency"` // query may only be run once per this duration
+	Query            string        `yaml:"query" doc:"description=Literal PromQL expression to match."`
+	AllowedFrequency time.Duration `yaml:"allowed_frequency" doc:"description=Minimum duration between matching queries. If a matching query arrives more often than this, it is rejected."`
 }
 
 type LimitedQueriesConfig []LimitedQuery
