@@ -40,17 +40,19 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	params *InstantVectorFunctionOperatorParams,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	f FunctionOverInstantVectorDefinition,
+	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
 		ScalarArgs:               scalarArgs,
-		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
 
-		expressionPosition: params.ExpressionPosition,
-		timeRange:          params.TimeRange,
+		expressionPosition: expressionPosition,
+		timeRange:          timeRange,
 	}
 }
 

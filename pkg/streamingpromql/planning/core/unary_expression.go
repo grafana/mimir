@@ -73,14 +73,7 @@ func (u *UnaryExpression) OperatorFactory(children []types.Operator, timeRange t
 
 	switch child := children[0].(type) {
 	case types.InstantVectorOperator:
-		functionParams := &functions.InstantVectorFunctionOperatorParams{
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-			Annotations:              params.Annotations,
-			NameValidationScheme:     params.NameValidationScheme,
-			ExpressionPosition:       u.ExpressionPosition.ToPrometheusType(),
-			TimeRange:                timeRange,
-		}
-		o := functions.UnaryNegationOfInstantVectorOperatorFactory(child, functionParams)
+		o := functions.UnaryNegationOfInstantVectorOperatorFactory(child, params.MemoryConsumptionTracker, u.ExpressionPosition.ToPrometheusType(), timeRange)
 		return planning.NewSingleUseOperatorFactory(o), nil
 	case types.ScalarOperator:
 		o := scalars.NewUnaryNegationOfScalar(child, u.ExpressionPosition.ToPrometheusType())

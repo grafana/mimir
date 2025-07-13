@@ -1379,6 +1379,11 @@ func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
 }
 
+// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
+}
+
 // ValidationScheme returns the validation scheme to use for a particular tenant.
 func (o *Overrides) ValidationScheme(_ string) model.ValidationScheme {
 	// TODO(juliusmh): make this configurable by tenant
