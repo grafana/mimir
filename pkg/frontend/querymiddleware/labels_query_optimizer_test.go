@@ -31,6 +31,10 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 		expectedOptimized        bool
 		expectedDownstreamParams url.Values
 	}{
+		//
+		// Label names API
+		//
+
 		"should optimize labels request when enabled": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
@@ -101,6 +105,86 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 			expectedDownstreamParams: url.Values{"match[]": []string{"{invalid syntax"}},
 			expectedOptimized:        false,
 		},
+
+		//
+		// Label values API
+		//
+
+		"should optimize label values request when enabled": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        true,
+		},
+		"should optimize multiple matchers for label values": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`, `{__name__!="", instance="localhost"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`, `{instance="localhost"}`}},
+			expectedOptimized:        true,
+		},
+		"should handle mixed optimizable and non-optimizable matchers for label values": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{job="test"}`, `{__name__!="", env="prod"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="test"}`, `{env="prod"}`}},
+			expectedOptimized:        true,
+		},
+		"should handle matchers with quoted label names for label values": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", "strange-label"="value"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{"strange-label"="value"}`}},
+			expectedOptimized:        true,
+		},
+		"should handle matchers with unicode label values for label values": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="测试", env="🚀"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="测试",env="🚀"}`}},
+			expectedOptimized:        true,
+		},
+		"should pass through label values when optimization disabled": {
+			optimizerEnabled:         false,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
+			expectedOptimized:        false,
+		},
+		"should pass through label values when no optimization needed": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        false,
+		},
+		"should pass through label values when one of the matchers set is an empty matcher": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{}`, `{__name__!="", job="prometheus"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{}`, `{__name__!="", job="prometheus"}`}},
+			expectedOptimized:        false,
+		},
+		"should pass through label values when no matchers": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{},
+			expectedDownstreamParams: url.Values{},
+			expectedOptimized:        false,
+		},
+		"should pass through label values when malformed matchers": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{"{invalid syntax"}},
+			expectedDownstreamParams: url.Values{"match[]": []string{"{invalid syntax"}},
+			expectedOptimized:        false,
+		},
+
+		//
+		// Unsupported APIs
+		//
+
 		"should pass through on a non supported API": {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/series",
@@ -190,7 +274,7 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					// Assert on metrics.
 					expectedTotal := 0
 					expectedRewritten := 0
-					if testData.optimizerEnabled && testData.reqPath == "/api/v1/labels" {
+					if testData.optimizerEnabled && (testData.reqPath == "/api/v1/labels" || strings.HasPrefix(testData.reqPath, "/api/v1/label/")) {
 						expectedTotal = 1
 					}
 					if testData.expectedOptimized {
@@ -216,7 +300,7 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
+func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 	tests := map[string]struct {
 		inputMatchers     []string
 		expectedMatchers  []string
@@ -339,7 +423,7 @@ func TestOptimizeLabelNamesRequestMatchers(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actualMatchers, actualOptimized, err := optimizeLabelNamesRequestMatchers(testData.inputMatchers)
+			actualMatchers, actualOptimized, err := optimizeLabelsRequestMatchers(testData.inputMatchers)
 
 			if testData.expectedError {
 				require.Error(t, err)
