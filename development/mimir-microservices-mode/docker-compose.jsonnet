@@ -40,7 +40,7 @@ std.manifestYamlDoc({
     enable_query_tee: false,
 
     // If true, start parquet-converter
-    enable_parquet: true,
+    enable_parquet: false,
     // If true, emulate classic store-gateway behavior by loading the Parquet labels file to disk
     parquet_store_gateway_load_index_to_disk: false,
   },
