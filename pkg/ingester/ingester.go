@@ -3243,6 +3243,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval()
 
+	// After the first interval, we want the compaction to run at a specified interval for the partial zone if we have multiple zones,
+	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
+	// If the criteria to have staggered compactions is not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
 	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
@@ -3313,8 +3316,6 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	return
 }
 
-<<<<<<< Updated upstream
-=======
 // calculateHeadCompactionInterval calculates the head compaction interval based on the number of zones
 // and the configured head compaction interval to ensure we can stagger the compaction across zones.
 // If zone awareness is not enabled, it returns the configured interval as-is.
@@ -3351,27 +3352,6 @@ func (i *Ingester) calculateHeadCompactionInterval() time.Duration {
 	return i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
 }
 
-// prepareCompaction is incrementing the atomic counter of the number of compactions in progress.
-// It also exposes a metric tracking the number of compactions in progress.
-// It returns a callback that should be called when the compaction is finished, e.g. in defer statement.
-// This callback is decrementing the atomic counter of the number of compactions in progress.
-func (i *Ingester) prepareCompaction() func() {
-	// Increment the number of compactions in progress.
-	// This is used to ensure that the ingester will never leave the read-only state.
-	// (See [Ingester.PrepareInstanceRingDownscaleHandler])
-	i.numCompactionsInProgress.Inc()
-
-	// Expose a metric tracking whether there's a TSDB head compaction in progress.
-	// This metric can be used in alerts and when troubleshooting.
-	i.metrics.numCompactionsInProgress.Inc()
-
-	return func() {
-		i.numCompactionsInProgress.Dec()
-		i.metrics.numCompactionsInProgress.Dec()
-	}
-}
-
->>>>>>> Stashed changes
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
 	// Expose a metric tracking whether there's a forced head compaction in progress.
