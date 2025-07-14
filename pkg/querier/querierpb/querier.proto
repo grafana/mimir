@@ -30,6 +30,7 @@ message EvaluateQueryResponse {
     EvaluateQueryResponseScalarValue scalarValue = 4;
     EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 5;
     EvaluateQueryResponseRangeVectorSeriesData rangeVectorData = 6;
+    EvaluateQueryResponseEvaluationCompleted evaluationCompleted = 7;
   }
 }
 
@@ -52,7 +53,7 @@ message EvaluateQueryResponseStringValue {
 
 message EvaluateQueryResponseScalarValue {
   int64 nodeIndex = 1;
-  double value = 2;
+  repeated cortexpb.Sample values = 2 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponseInstantVectorSeriesData {
@@ -71,6 +72,21 @@ message EvaluateQueryResponseRangeVectorSeriesData {
 }
 
 message Error {
-  // TODO: some kind of error code?
-  string message = 1;
+  cortexpb.QueryErrorType type = 1;
+  string message = 2;
+}
+
+message EvaluateQueryResponseEvaluationCompleted {
+  Annotations annotations = 1 [(gogoproto.nullable) = false];
+  QueryStats stats = 2 [(gogoproto.nullable) = false];
+}
+
+message Annotations {
+  repeated string warnings = 1;
+  repeated string infos = 2;
+}
+
+message QueryStats {
+  int64 totalSamples = 1;
+  repeated int64 totalSamplesPerStep = 2;
 }

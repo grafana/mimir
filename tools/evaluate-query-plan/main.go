@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/flagext"
 
@@ -130,9 +129,6 @@ func (a *app) Run() error {
 	defer resp.Body.Close()
 
 	decoder := &streamingResponseDecoder{resp.Body}
-	marshaler := &jsonpb.Marshaler{
-		Indent: "  ",
-	}
 
 	for {
 		msg, err := decoder.Next()
@@ -145,9 +141,8 @@ func (a *app) Run() error {
 			return nil
 		}
 
-		if err := marshaler.Marshal(os.Stdout, msg); err != nil {
-			return fmt.Errorf("could not marshal response to JSON for display: %w", err)
-		}
+		fmt.Println(proto.MarshalTextString(msg))
+		fmt.Println("----")
 	}
 }
 

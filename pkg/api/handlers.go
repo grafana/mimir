@@ -214,6 +214,7 @@ func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
 func NewQuerierHandler(
 	cfg Config,
 	querierCfg querier.Config,
+	dispatcher *querier.Dispatcher,
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
@@ -341,6 +342,10 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
+
+	if dispatcher != nil {
+		router.Path("/api/v1/evaluate").Methods("POST").Handler(dispatcher)
+	}
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)
