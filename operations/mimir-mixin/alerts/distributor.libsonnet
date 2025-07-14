@@ -29,6 +29,22 @@
             message: '%(product)s distributors in %(alert_aggregation_variables)s GC CPU utilization is too high.' % $._config,
           },
         },
+        {
+          // Alert if HA tracker elected replica changes too often.
+          alert: $.alertName('HATrackerElectedReplicaChangesTooOften'),
+          'for': '10m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, user) (rate(cortex_ha_tracker_elected_replica_changes_total[1m])) 
+            >
+            5 * max_over_time(sum by (%(alert_aggregation_labels)s, user) (rate(cortex_ha_tracker_elected_replica_changes_total[1m] offset 24h))[30m:])
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s HA Tracker for tenant {{ $labels.user }} in %(alert_aggregation_variables)s is changing its elected replica too often.' % $._config,
+          },
+        },
       ],
     },
   ],

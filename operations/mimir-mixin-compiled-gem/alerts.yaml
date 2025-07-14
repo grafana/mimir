@@ -1119,6 +1119,14 @@ groups:
           for: 10m
           labels:
             severity: warning
+        - alert: MimirHATrackerElectedReplicaChangesTooOften
+          annotations:
+            message: GEM HA Tracker for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} is changing its elected replica too often.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhatrackerelectedreplicachangestoooften
+          expr: "sum by (cluster, namespace, user) (rate(cortex_ha_tracker_elected_replica_changes_total[1m])) \n>\n5 * max_over_time(sum by (cluster, namespace, user) (rate(cortex_ha_tracker_elected_replica_changes_total[1m] offset 24h))[30m:])\n"
+          for: 10m
+          labels:
+            severity: warning
     - name: mimir_autoscaling
       rules:
         - alert: MimirAutoscalerNotActive
@@ -1290,6 +1298,14 @@ groups:
             increase(cortex_ingest_storage_reader_missed_records_total[10m]) > 0
           labels:
             severity: critical
+        - alert: MimirIngesterTooManyDiscardedSamples
+          annotations:
+            message: GEM Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} is discarding too many samples.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertoomanydiscardedsamples
+          expr: "sum by (cluster, namespace) (rate(cortex_discarded_samples_total{job=~\".*/ingester.*\"}[1m])) \n>\n5 * max_over_time(sum by (cluster, namespace) (rate(cortex_discarded_samples_total{job=~\".*/ingester.*\"}[1m] offset 24h))[30m:])\n"
+          for: 10m
+          labels:
+            severity: warning
         - alert: MimirStrongConsistencyEnforcementFailed
           annotations:
             message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to enforce strong-consistency on read-path.
