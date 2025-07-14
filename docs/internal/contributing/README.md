@@ -18,7 +18,7 @@ Before a piece of work is finished:
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
-- If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
+- If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 
 ## Grafana Mimir Helm chart
 
@@ -124,6 +124,8 @@ To add a new error:
 
 ## Changelog
 
+### Changelog scope
+
 When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
 
 The ordering of entries in the changelog should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`.
@@ -146,3 +148,7 @@ The ENHANCEMENT scope denotes a change that improves upon the current functional
 #### [BUGFIX]
 
 The BUGFIX scope denotes a change that fixes an issue with the project in question. A BUGFIX should align the behaviour of the service with the current expected behaviour of the service. If a BUGFIX introduces new unexpected behaviour to ameliorate the issue, a corresponding FEATURE or ENHANCEMENT scope should also be added to the changelog.
+
+### Referencing the PR number in the changelog entry
+
+When adding an entry to the changelog, the first line of the entry must end with `#<PR>` where `<PR>` is the GitHub pull request ID. You get get the next `<PR>` ID right before opening the PR by executing the script `./tools/hub-next-pr-number.sh`.
