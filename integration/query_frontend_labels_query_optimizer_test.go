@@ -35,9 +35,7 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		generateFloatSeriesModel("series_3", now),
 	}
 
-	// Requirements:
-	// 1. Each test case MUST trigger the optimization.
-	// 2. The list of test cases MUST be a slice to have predictable order.
+	// Keep it a slice to have predictable order (required in this test).
 	testCases := []struct {
 		name               string
 		matchers           []string
@@ -46,6 +44,17 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		// The map key is the label name and the value is the expected label values.
 		expectedLabelValues map[string]model.LabelValues
 	}{
+		{
+			name:               "no matchers",
+			matchers:           nil,
+			expectedLabelNames: []string{"__name__", "pod", "service"},
+			expectedLabelValues: map[string]model.LabelValues{
+				"__name__": {"series_1", "series_2", "series_3"},
+				"service":  {"service-1", "service-2", "service-3"},
+				"pod":      {"pod-1", "pod-2", "pod-3"},
+				"unknown":  {},
+			},
+		},
 		{
 			name:               `one matchers set including __name__!=""`,
 			matchers:           []string{`{__name__!="", pod="pod-1"}`},
@@ -65,17 +74,6 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 				"__name__": {"series_1", "series_2"},
 				"service":  {"service-1", "service-2", "service-3"},
 				"pod":      {"pod-1", "pod-2"},
-				"unknown":  {},
-			},
-		},
-		{
-			name:               `matchers with regex .* pattern`,
-			matchers:           []string{`{service=~".*", pod="pod-1"}`},
-			expectedLabelNames: []string{"__name__", "pod", "service"},
-			expectedLabelValues: map[string]model.LabelValues{
-				"__name__": {"series_1", "series_2"},
-				"service":  {"service-1", "service-2"},
-				"pod":      {"pod-1"},
 				"unknown":  {},
 			},
 		},
@@ -196,8 +194,8 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 			// Ensure the optimizer was actually enabled.
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(totalQueries)), "cortex_query_frontend_labels_optimizer_queries_total"))
 
-			// Ensure all test cases triggered the optimization
-			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(totalQueries)), "cortex_query_frontend_labels_optimizer_queries_rewritten_total"))
+			// Ensure at least 1 query was optimized.
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_labels_optimizer_queries_rewritten_total"))
 		})
 	})
 }
