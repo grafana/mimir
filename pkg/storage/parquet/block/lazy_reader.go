@@ -70,6 +70,19 @@ func NewLazyParquetReaderMetrics(reg prometheus.Registerer) *LazyParquetReaderMe
 	}
 }
 
+type LazyReader interface {
+	Reader
+	UsedAt() int64
+
+	// IsIdleSince returns true if the reader is idle since given time (as unix nano).
+	IsIdleSince(tsNano int64) bool
+
+	// UnloadIfIdleSince closes underlying Reader if the reader is idle since given time (as unix nano).
+	// If idleSince is 0, the check on the last usage is skipped.
+	// Calling this function on an already-unloaded reader is a no-op.
+	UnloadIfIdleSince(tsNano int64) error
+}
+
 type readerRequest struct {
 	response chan loadedReader
 }
@@ -196,6 +209,7 @@ func (r *lazyReaderLoader) getOrLoadReader(ctx context.Context) loadedReader {
 
 // loadReader is called from getOrLoadReader, without any locks.
 func (r *lazyReaderLoader) loadReader() (Reader, error) {
+	level.Debug(r.logger).Log("msg", "load reader for block", "block_id", r.blockID)
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
@@ -214,7 +228,7 @@ func (r *lazyReaderLoader) loadReader() (Reader, error) {
 
 	reader, err := NewBasicReader(
 		r.ctx,
-		r.blockID.String(),
+		r.blockID,
 		r.shardIdx,
 		r.labelsFileOpener,
 		r.chunksFileOpener,
@@ -279,7 +293,125 @@ type LazyReaderBucketLabelsAndChunks struct {
 	// bkt to open the labels and chunks files from
 	bkt objstore.InstrumentedBucketReader
 
-	logger log.Logger
+	onClosed     func(LazyReader)
+	readerLoader *lazyReaderLoader
+	logger       log.Logger
+}
+
+// NewLazyReaderBucketLabelsAndChunks initializes a parquet block Reader from the bucket.
+func NewLazyReaderBucketLabelsAndChunks(
+	ctx context.Context,
+	blockID ulid.ULID,
+	bkt objstore.InstrumentedBucketReader,
+	localDir string,
+	fileOpts []storage.FileOption,
+	metrics *LazyParquetReaderMetrics,
+	onClosed func(LazyReader),
+	lazyLoadingGate gate.Gate,
+	earlyValidation bool,
+	logger log.Logger,
+) (*LazyReaderBucketLabelsAndChunks, error) {
+	shardIdx := FirstShardIndex
+
+	bucketOpener := storage.NewParquetBucketOpener(bkt)
+
+	reader := &LazyReaderBucketLabelsAndChunks{
+		ctx:      ctx,
+		blockID:  blockID,
+		bkt:      bkt,
+		onClosed: onClosed,
+
+		readerLoader: &lazyReaderLoader{
+			ctx:              ctx,
+			blockID:          blockID,
+			shardIdx:         shardIdx,
+			labelsFileOpener: bucketOpener,
+			chunksFileOpener: bucketOpener,
+
+			fileOpts: append(fileOpts,
+				storage.WithFileOptions(parquet.SkipBloomFilters(false)),
+			),
+
+			lazyLoadingGate: lazyLoadingGate,
+			loadedReader:    make(chan readerRequest),
+			unloadReq:       make(chan unloadRequest),
+			usedAt:          atomic.NewInt64(0),
+			done:            make(chan struct{}),
+
+			metrics: metrics,
+			logger:  logger,
+		},
+
+		logger: logger,
+	}
+
+	go reader.readerLoader.controlLoop()
+	return reader, nil
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) BlockID() ulid.ULID {
+	return r.blockID
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) LabelsFile() *storage.ParquetFile {
+	loaded := r.readerLoader.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		// TODO: the current interface does not allow to return an error
+		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
+		return nil
+	}
+	return loaded.reader.LabelsFile()
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) ChunksFile() *storage.ParquetFile {
+	loaded := r.readerLoader.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		// TODO: the current interface does not allow to return an error
+		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
+		return nil
+	}
+	return loaded.reader.ChunksFile()
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) TSDBSchema() (*schema.TSDBSchema, error) {
+	loaded := r.readerLoader.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
+	}
+	return loaded.reader.TSDBSchema()
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) UsedAt() int64 {
+	return r.readerLoader.usedAt.Load()
+}
+
+// IsIdleSince returns true if the reader is idle since given time (as unix nano).
+func (r *LazyReaderBucketLabelsAndChunks) IsIdleSince(ts int64) bool {
+	return r.readerLoader.IsIdleSince(ts)
+}
+
+func (r *LazyReaderBucketLabelsAndChunks) UnloadIfIdleSince(tsNano int64) error {
+	return r.readerLoader.unloadIfIdleSince(tsNano)
+}
+
+// Close implements Reader.
+func (r *LazyReaderBucketLabelsAndChunks) Close() error {
+	select {
+	case <-r.readerLoader.done:
+		return nil // already closed
+	default:
+	}
+	if r.onClosed != nil {
+		defer r.onClosed(r)
+	}
+
+	// Unload without checking if idle.
+	if err := r.UnloadIfIdleSince(0); err != nil {
+		return fmt.Errorf("unload index-header: %w", err)
+	}
+
+	close(r.readerLoader.done)
+	return nil
 }
 
 // LazyReaderLocalLabelsBucketChunks implements the parquet block Reader interface.
@@ -294,7 +426,7 @@ type LazyReaderLocalLabelsBucketChunks struct {
 	// bkt to download the labels file to local disk and open the chunks file from the bucket
 	bkt objstore.InstrumentedBucketReader
 
-	onClosed     func(*LazyReaderLocalLabelsBucketChunks)
+	onClosed     func(LazyReader)
 	readerLoader *lazyReaderLoader
 	logger       log.Logger
 }
@@ -308,7 +440,7 @@ func NewLazyReaderLocalLabelsBucketChunks(
 	localDir string,
 	fileOpts []storage.FileOption,
 	metrics *LazyParquetReaderMetrics,
-	onClosed func(*LazyReaderLocalLabelsBucketChunks),
+	onClosed func(LazyReader),
 	lazyLoadingGate gate.Gate,
 	earlyValidation bool,
 	logger log.Logger,
@@ -350,11 +482,10 @@ func NewLazyReaderLocalLabelsBucketChunks(
 		bkt:      bkt,
 		onClosed: onClosed,
 
-		//lazyLoadingGate: lazyLoadingGate,
 		readerLoader: &lazyReaderLoader{
 			ctx:              ctx,
 			blockID:          blockID,
-			shardIdx:         FirstShardIndex,
+			shardIdx:         shardIdx,
 			labelsFileOpener: labelsLocalFileOpener,
 			chunksFileOpener: chunksBucketOpener,
 
@@ -454,6 +585,10 @@ func downloadLabelsFileToLocalDisk(
 	return nil
 }
 
+func (r *LazyReaderLocalLabelsBucketChunks) BlockID() ulid.ULID {
+	return r.blockID
+}
+
 func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
 	loaded := r.readerLoader.getOrLoadReader(r.ctx)
 	if loaded.err != nil {
@@ -482,18 +617,15 @@ func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, er
 	return loaded.reader.TSDBSchema()
 }
 
-// IsIdleSince returns true if the reader is idle since given time (as unix nano).
-func (r *LazyReaderLocalLabelsBucketChunks) IsIdleSince(ts int64) bool {
-	return r.readerLoader.IsIdleSince(ts)
-}
-
 func (r *LazyReaderLocalLabelsBucketChunks) UsedAt() int64 {
 	return r.readerLoader.usedAt.Load()
 }
 
-// unloadIfIdleSince closes underlying BinaryReader if the reader is idle since given time (as unix nano). If idleSince is 0,
-// the check on the last usage is skipped. Calling this function on a already unloaded reader is a no-op.
-func (r *LazyReaderLocalLabelsBucketChunks) unloadIfIdleSince(tsNano int64) error {
+func (r *LazyReaderLocalLabelsBucketChunks) IsIdleSince(tsNano int64) bool {
+	return r.readerLoader.IsIdleSince(tsNano)
+}
+
+func (r *LazyReaderLocalLabelsBucketChunks) UnloadIfIdleSince(tsNano int64) error {
 	return r.readerLoader.unloadIfIdleSince(tsNano)
 }
 

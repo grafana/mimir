@@ -433,10 +433,11 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		ss.syncDirForUser(userID),
 		userBkt,
 		ss.cfg.BucketStore,
-		nil,
 		fetcher,
 		ss.queryGate,
 		ss.lazyLoadingGate,
+		ss.cfg.BucketStore.ParquetLoadIndexToDisk,
+		nil,
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(ss.limits.MaxChunksPerQuery(userID))
 		}),

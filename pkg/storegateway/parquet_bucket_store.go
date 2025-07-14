@@ -77,6 +77,8 @@ type ParquetBucketStore struct {
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
+	loadIndexToDisk bool
+	fileOpts        []parquetStorage.FileOption
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -88,8 +90,6 @@ type ParquetBucketStore struct {
 	// This is not restricted to the Series() RPC.
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
-
-	fileOpts []parquetStorage.FileOption
 
 	// querierOpts holds the options for the parquet querier. These opts are passed down to the Materializer which is
 	// the one that has information about the row count, chunk size and data size limits.
@@ -103,10 +103,11 @@ func NewParquetBucketStore(
 	localDir string,
 	bkt objstore.InstrumentedBucketReader,
 	bucketStoreConfig tsdb.BucketStoreConfig,
-	fileOpts []parquetStorage.FileOption,
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
+	loadIndexToDisk bool,
+	fileOpts []parquetStorage.FileOption,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	metrics *ParquetBucketStoreMetrics,
@@ -127,14 +128,14 @@ func NewParquetBucketStore(
 
 		queryGate:       queryGate,
 		lazyLoadingGate: lazyLoadingGate,
+		loadIndexToDisk: loadIndexToDisk,
+		fileOpts: append(fileOpts,
+			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
+		),
 
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
-
-		fileOpts: append(fileOpts,
-			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
-		),
 	}
 
 	var querierOpts []parquet.QuerierOpts
@@ -985,12 +986,12 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	// TODO get shard reader from pool
 	blockReader, err := s.readerPool.GetReader(
 		ctx,
 		meta.ULID,
 		s.bkt,
 		blockLocalDir,
+		s.loadIndexToDisk,
 		s.fileOpts,
 		s.logger,
 	)
