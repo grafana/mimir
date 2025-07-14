@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -38,9 +39,11 @@ type Scheduler struct {
 	cfg          Config
 
 	subservicesManager *services.Manager
-	jobQueue           *JobQueue
+	jobQueue           *JobQueue[string, *Job]
 	planSpawner        *PlanSpawner
 	leaseManager       LeaseManager[string]
+
+	jobTransferMtx *sync.Mutex
 
 	logger log.Logger
 }
@@ -55,7 +58,9 @@ func NewScheduler(
 		compactorCfg: compactorCfg,
 		cfg:          cfg,
 
-		jobQueue: NewJobQueue(),
+		jobQueue: NewJobQueue(func(j *Job) string {
+			return j.key
+		}),
 
 		logger: logger,
 	}
@@ -90,7 +95,7 @@ func (s *Scheduler) start(ctx context.Context) error {
 }
 
 func (s *Scheduler) run(ctx context.Context) error {
-
+	return nil
 }
 
 func (s *Scheduler) stop(err error) error {
@@ -98,12 +103,12 @@ func (s *Scheduler) stop(err error) error {
 }
 
 func (s *Scheduler) poll() {
-	job := s.jobQueue.Poll(func(_ *Job) bool {
+	job, ok := s.jobQueue.Poll(func(_ *Job) bool {
 		// TODO: Is this a plan job and does the requesting worker own the tenant in the ring?
 		return true
 	})
 
-	if job == nil {
+	if !ok {
 		return
 	}
 
@@ -111,4 +116,22 @@ func (s *Scheduler) poll() {
 		// When the lease expires, push the job back to the front so it can be retried
 		s.jobQueue.PushFront(job)
 	})
+}
+
+func (s *Scheduler) heartbeat(jobID string) bool {
+	return s.leaseManager.RenewLease(jobID, s.cfg.leaseDuration)
+}
+
+func (s *Scheduler) fail(jobID string) error {
+	ok := s.leaseManager.ExpireLease(jobID)
+
+}
+
+func (s *Scheduler) complete(jobID string) error {
+	if s.leaseManager.CancelLease(jobID) {
+		return nil
+	}
+
+	// Lease must have expired, may have been resubmitted
+
 }
