@@ -27,7 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/costattribution"
-	costattributionmodel "github.com/grafana/mimir/pkg/costattribution/model"
+	costattributionmodel "github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	catestutils "github.com/grafana/mimir/pkg/costattribution/testutils"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )

@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/costattribution/model"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
 
 type counters struct {
@@ -31,7 +31,7 @@ type ActiveSeriesTracker struct {
 	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
 	logger                                         log.Logger
 
-	labels         []model.Label
+	labels         []costattributionmodel.Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -44,7 +44,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []model.Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -82,7 +82,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []model.Label, limit in
 	return ast
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels []model.Label) bool {
+func (at *ActiveSeriesTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
 	return slices.Equal(at.labels, labels)
 }
 

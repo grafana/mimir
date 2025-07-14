@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package model
+package costattributionmodel
 
 // Label represents a label for cost attribution.
 type Label struct {

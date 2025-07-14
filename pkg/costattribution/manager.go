@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
-	model "github.com/grafana/mimir/pkg/costattribution/model"
+	model "github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
