@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 
@@ -100,6 +101,7 @@ func (p *ReaderPool) GetReader(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
+	fileOpts []storage.FileOption,
 	logger log.Logger,
 ) (Reader, error) {
 	var reader Reader
@@ -110,6 +112,7 @@ func (p *ReaderPool) GetReader(
 		blockID,
 		bkt,
 		localDir,
+		fileOpts,
 		p.metrics.lazyReader,
 		p.onLazyReaderClosed,
 		p.lazyLoadingGate,
@@ -172,7 +175,7 @@ func (p *ReaderPool) LoadedBlocks() []ulid.ULID {
 
 	blocks := make([]ulid.ULID, 0, len(p.lazyReaders))
 	for r := range p.lazyReaders {
-		usedAt := r.usedAt.Load()
+		usedAt := r.UsedAt()
 		if usedAt != 0 {
 			blocks = append(blocks, r.blockID)
 		}

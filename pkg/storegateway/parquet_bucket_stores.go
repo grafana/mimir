@@ -433,6 +433,7 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		ss.syncDirForUser(userID),
 		userBkt,
 		ss.cfg.BucketStore,
+		nil,
 		fetcher,
 		ss.queryGate,
 		ss.lazyLoadingGate,

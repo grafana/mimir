@@ -22,10 +22,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
+	parquetGo "github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
-	parquetstorage "github.com/prometheus-community/parquet-common/storage"
+	parquetStorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -88,6 +89,8 @@ type ParquetBucketStore struct {
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
 
+	fileOpts []parquetStorage.FileOption
+
 	// querierOpts holds the options for the parquet querier. These opts are passed down to the Materializer which is
 	// the one that has information about the row count, chunk size and data size limits.
 	querierOpts []parquet.QuerierOpts
@@ -100,6 +103,7 @@ func NewParquetBucketStore(
 	localDir string,
 	bkt objstore.InstrumentedBucketReader,
 	bucketStoreConfig tsdb.BucketStoreConfig,
+	fileOpts []parquetStorage.FileOption,
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
@@ -127,6 +131,10 @@ func NewParquetBucketStore(
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
+
+		fileOpts: append(fileOpts,
+			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
+		),
 	}
 
 	var querierOpts []parquet.QuerierOpts
@@ -345,8 +353,8 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+			return []parquetStorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
@@ -450,8 +458,8 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+			return []parquetStorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
@@ -577,8 +585,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 ) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
 	spanLogger := spanlogger.FromContext(ctx, s.logger)
 
-	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-		var parquetShards []parquetstorage.ParquetShard
+	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+		var parquetShards []parquetStorage.ParquetShard
 		for _, shardReader := range shardReaders {
 			parquetShards = append(parquetShards, shardReader)
 		}
@@ -983,6 +991,7 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 		meta.ULID,
 		s.bkt,
 		blockLocalDir,
+		s.fileOpts,
 		s.logger,
 	)
 

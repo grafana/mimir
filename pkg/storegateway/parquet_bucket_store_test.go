@@ -248,6 +248,7 @@ func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Buck
 		localDir,
 		userBkt,
 		cfg,
+		nil,
 		fetcher,
 		gate.NewNoop(),
 		gate.NewNoop(),
