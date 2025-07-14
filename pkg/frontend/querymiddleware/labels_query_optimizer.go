@@ -77,13 +77,15 @@ func (l *labelsQueryOptimizer) RoundTrip(req *http.Request) (*http.Response, err
 
 	switch parsedReq.(type) {
 	case *PrometheusLabelNamesQueryRequest:
-		return l.optimizeLabelNamesRequest(ctx, req, parsedReq.(*PrometheusLabelNamesQueryRequest))
+		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelNamesQueryRequest))
+	case *PrometheusLabelValuesQueryRequest:
+		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelValuesQueryRequest))
 	default:
 		return l.next.RoundTrip(req)
 	}
 }
 
-func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, req *http.Request, parsedReq *PrometheusLabelNamesQueryRequest) (*http.Response, error) {
+func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Request, parsedReq LabelsSeriesQueryRequest) (*http.Response, error) {
 	spanLog := spanlogger.FromContext(ctx, l.logger)
 
 	// Track the total number of requests processed when optimization is enabled.
@@ -96,10 +98,10 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	}
 
 	// Optimize the matchers.
-	optimizedMatchers, optimized, err := optimizeLabelNamesRequestMatchers(rawMatchers)
+	optimizedMatchers, optimized, err := optimizeLabelsRequestMatchers(rawMatchers)
 	if err != nil {
 		// Do not log an error because this error is typically caused by a malformed request, which wouldn't be actionable.
-		spanLog.DebugLog("msg", "failed to optimize label names matchers", "err", err)
+		spanLog.DebugLog("msg", "failed to optimize labels request matchers", "err", err)
 		return l.next.RoundTrip(req)
 	}
 
@@ -110,7 +112,7 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	// Create a new request with optimized matchers.
 	optimizedParsedReq, err := parsedReq.WithLabelMatcherSets(optimizedMatchers)
 	if err != nil {
-		level.Error(l.logger).Log("msg", "failed to clone label names request with optimized matchers", "err", err)
+		level.Error(l.logger).Log("msg", "failed to clone labels request with optimized matchers", "err", err)
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
@@ -118,18 +120,18 @@ func (l *labelsQueryOptimizer) optimizeLabelNamesRequest(ctx context.Context, re
 	// Encode the optimized request back to HTTP.
 	optimizedReq, err := l.codec.EncodeLabelsSeriesQueryRequest(ctx, optimizedParsedReq)
 	if err != nil {
-		level.Error(l.logger).Log("msg", "failed to encode label names request with optimized matchers", "err", err)
+		level.Error(l.logger).Log("msg", "failed to encode labels request with optimized matchers", "err", err)
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
 	}
 
 	// Track successful optimization.
 	l.rewrittenQueries.Inc()
-	spanLog.DebugLog("msg", "optimized label names query", "original_matchers", strings.Join(parsedReq.LabelMatcherSets, " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))
+	spanLog.DebugLog("msg", "optimized labels query", "original_matchers", strings.Join(parsedReq.GetLabelMatcherSets(), " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))
 	return l.next.RoundTrip(optimizedReq)
 }
 
-func optimizeLabelNamesRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
+func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
 	matcherSets, err := parser.ParseMetricSelectors(rawMatcherSets)
 	if err != nil {
 		return nil, false, err
