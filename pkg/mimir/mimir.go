@@ -793,6 +793,7 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader

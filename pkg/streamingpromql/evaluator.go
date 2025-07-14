@@ -25,10 +25,11 @@ type Evaluator struct {
 	engine                     *Engine
 	activityTrackerDescription string
 
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	annotations              *annotations.Annotations
-	stats                    *types.QueryStats
-	cancel                   context.CancelCauseFunc
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	annotations *annotations.Annotations
+	stats       *types.QueryStats
+	cancel      context.CancelCauseFunc
 }
 
 func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, activityTrackerDescription string) (*Evaluator, error) {
@@ -42,12 +43,16 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 		engine:                     engine,
 		activityTrackerDescription: activityTrackerDescription,
 
-		memoryConsumptionTracker: params.MemoryConsumptionTracker,
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
 		stats:                    stats,
 	}, nil
 }
 
+// Evaluate evaluates the query.
+//
+// Evaluate will always call observer.EvaluationCompleted before returning nil.
+// It may return a non-nil error after calling observer.EvaluationCompleted if observer.EvaluationCompleted returned a non-nil error.
 func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) error {
 	defer e.root.Close()
 
@@ -59,7 +64,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
 	// chunks from store-gateways or ingesters.
-	ctx = limiter.AddMemoryTrackerToContext(ctx, e.memoryConsumptionTracker)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, e.MemoryConsumptionTracker)
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	e.cancel = cancel
