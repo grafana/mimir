@@ -4906,6 +4906,22 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
   [series_fetch_preference: <float> | default = 0.75]
 
+  # (advanced) Maximum number of rows in a parquet file. If the number of rows
+  # exceeds this value the query will stop with limit error.
+  # CLI flag: -blocks-storage.bucket-store.parquet-max-row-count
+  [parquet_max_row_count: <int> | default = 0]
+
+  # (advanced) Maximum size in bytes that can be fetched from the parquet chunks
+  # file. If the size exceeds this value the query will stop with limit error.
+  # CLI flag: -blocks-storage.bucket-store.parquet-max-chunk-size-bytes
+  [parquet_max_chunk_size_bytes: <int> | default = 0]
+
+  # (advanced) Maximum size in bytes that can be fetched from the parquet labels
+  # and chunks data files combined in a single query. If the size exceeds this
+  # value the query will stop with limit error.
+  # CLI flag: -blocks-storage.bucket-store.parquet-max-data-size-bytes
+  [parquet_max_data_size_bytes: <int> | default = 0]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.

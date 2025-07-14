@@ -11378,6 +11378,39 @@
               "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
               "fieldType": "float",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_max_row_count",
+              "required": false,
+              "desc": "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-max-row-count",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_max_chunk_size_bytes",
+              "required": false,
+              "desc": "Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-max-chunk-size-bytes",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_max_data_size_bytes",
+              "required": false,
+              "desc": "Maximum size in bytes that can be fetched from the parquet labels and chunks data files combined in a single query. If the size exceeds this value the query will stop with limit error.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-max-data-size-bytes",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
