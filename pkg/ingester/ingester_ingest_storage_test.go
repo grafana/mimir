@@ -573,19 +573,84 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
 
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	t.Run("with default compaction interval without jittering enabled", func(t *testing.T) {
+		// Default compaction interval is 1 minute.
+		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
+		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	firstInterval, standardInterval := ingester.compactionServiceInterval()
-	assert.Equal(t, time.Minute, firstInterval)
-	assert.Equal(t, time.Minute, standardInterval)
+		firstInterval, standardInterval := ingester.compactionServiceInterval()
+		assert.Equal(t, time.Minute, firstInterval)
+		assert.Equal(t, time.Minute, standardInterval)
+	})
 
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = true
+	t.Run("with default compaction interval and jittering enabled", func(t *testing.T) {
+		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
+		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = true
 
-	firstInterval, standardInterval = ingester.compactionServiceInterval()
-	assert.Less(t, firstInterval, time.Minute)
-	assert.Equal(t, time.Minute, standardInterval)
+		firstInterval, standardInterval := ingester.compactionServiceInterval()
+		assert.Less(t, firstInterval, time.Minute)
+		assert.Equal(t, time.Minute, standardInterval)
+	})
+}
+
+func TestIngester_calculateHeadCompactionInterval(t *testing.T) {
+	defaultConfig := defaultIngesterTestConfig(t)
+	tc := map[string]struct {
+		zoneAwarenessEnabled bool
+		instanceZone         string
+		zones                []string
+		expected             time.Duration
+		err                  error
+	}{
+		"zone awareness not enabled": {
+			zoneAwarenessEnabled: false,
+			expected:             defaultConfig.BlocksStorageConfig.TSDB.HeadCompactionInterval,
+		},
+		"no zone defined": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "",
+			expected:             defaultConfig.BlocksStorageConfig.TSDB.HeadCompactionInterval,
+		},
+		"less or equal to 1 zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a"},
+			expected:             defaultConfig.BlocksStorageConfig.TSDB.HeadCompactionInterval,
+		},
+		"no zone matching instance zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-b", "zone-c"},
+			expected:             defaultConfig.BlocksStorageConfig.TSDB.HeadCompactionInterval,
+		},
+		"zone awareness enabled, more than 1 zone, instance zone defined": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             defaultConfig.BlocksStorageConfig.TSDB.HeadCompactionInterval / 2,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				cfg       = defaultIngesterTestConfig(t)
+				overrides = validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			)
+
+			cfg.IngesterRing.ZoneAwarenessEnabled = tt.zoneAwarenessEnabled
+			cfg.IngesterRing.InstanceZone = tt.instanceZone
+			// TODO: figure out how to mock the zones in the ingester ring.
+
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+
+			// Calculate the head compaction interval.
+			headCompactionInterval := ingester.calculateHeadCompactionInterval()
+			require.Equal(t, tt.expected, headCompactionInterval)
+		})
+	}
 }
 
 // Returned ingester is NOT started.
