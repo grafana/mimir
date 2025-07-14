@@ -260,7 +260,9 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					}
 
 					// Inject the tenant ID in the request
-					req = req.WithContext(user.InjectOrgID(context.Background(), userID))
+					reqCtx := user.InjectOrgID(context.Background(), userID)
+					req = req.WithContext(reqCtx)
+					require.NoError(t, user.InjectOrgIDIntoHTTPRequest(reqCtx, req))
 
 					// Create the labels query optimizer
 					reg := prometheus.NewPedanticRegistry()
