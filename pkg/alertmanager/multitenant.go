@@ -760,12 +760,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
-	cfg := amConfig{
-		User:            cfgs.Mimir.User,
-		RawConfig:       cfgs.Mimir.RawConfig,
-		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
-		TmplExternalURL: am.cfg.ExternalURL.URL,
-	}
+	cfg := newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
 	// Check if tenants can be skipped (strict initialization enabled).
 	skippable := am.cfg.StrictInitializationEnabled
@@ -901,6 +896,15 @@ type amConfig struct {
 	EmailConfig        alertingReceivers.EmailSenderConfig
 }
 
+func newMimirAmConfigFromDesc(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
+	return amConfig{
+		User:               dec.User,
+		RawConfig:          dec.RawConfig,
+		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
+		TmplExternalURL:    url,
+		UsingGrafanaConfig: false,
+	}
+}
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
@@ -1175,11 +1179,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfig{
-		User:            cfgDesc.User,
-		RawConfig:       cfgDesc.RawConfig,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
-	}
+	amConfig := newMimirAmConfigFromDesc(cfgDesc, am.cfg.ExternalURL.URL)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
