@@ -28,6 +28,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"github.com/grafana/alerting/definition"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
@@ -3624,8 +3626,8 @@ func TestComputeConfig(t *testing.T) {
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
+	const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
-		const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
 			t := reflect.TypeOf(v)
@@ -3642,6 +3644,131 @@ func Test_amConfigFingerprint(t *testing.T) {
 		totalFields += getFieldCount(amConfig{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
+	})
+
+	url, err := url.Parse("http://localhost")
+	require.NoError(t, err)
+
+	fullConfig := amConfig{
+		User:      "user-grafana",
+		RawConfig: simpleConfigOne,
+		Templates: []definition.PostableApiTemplate{
+			{
+				Name:    "test",
+				Content: "test",
+				Kind:    definition.MimirTemplateKind,
+			},
+			{
+				Name:    "test2",
+				Content: "test2",
+				Kind:    definition.GrafanaTemplateKind,
+			},
+			{
+				Name:    "test3",
+				Content: "test3",
+				Kind:    definition.GrafanaTemplateKind,
+			},
+		},
+		TmplExternalURL: url,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
+			AuthPassword:   "custom-password",
+			AuthUser:       "custom-user",
+			ContentTypes:   []string{"text/html", "text/plain"},
+			EhloIdentity:   "custom-identity",
+			ExternalURL:    "http://custom-url",
+			FromAddress:    "custom@address.com",
+			FromName:       "Custom From Name",
+			Host:           "custom-host",
+			SentBy:         "Mimir vunknown",
+			SkipVerify:     true,
+			StartTLSPolicy: "custom-policy",
+			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
+		},
+	}
+
+	jsonCfg, err := json.Marshal(fullConfig)
+	require.NoError(t, err)
+
+	t.Run("fingerprint should be stable", func(t *testing.T) {
+		expected := fullConfig.fingerprint()
+
+		// do it many times to make sure order of elements in the map does not affect fingerprint
+		for i := 0; i < 100; i++ {
+			cfg2 := amConfig{}
+			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
+				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
+			})
+			require.Equal(t, expected, cfg2.fingerprint())
+		}
+	})
+
+	t.Run("fingerprint should change", func(t *testing.T) {
+		cfg := amConfig{}
+		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
+		notChecked := expectedTotalFields
+		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
+			t := val.Type()
+			for i := 0; i < t.NumField(); i++ {
+				field := val.Field(i)
+				// Skip unexported fields (cannot be set via reflection)
+				if !field.CanSet() {
+					continue
+				}
+				switch field.Kind() {
+				case reflect.String:
+					field.SetString(uuid.NewString())
+				case reflect.Bool:
+					field.SetBool(!field.Bool())
+				default:
+					continue
+				}
+				callback(t.Field(i).Name)
+				notChecked--
+			}
+		}
+
+		lastFingerprint := cfg.fingerprint()
+		assertField := func(prefix string) func(fieldName string) {
+			return func(fieldName string) {
+				newFP := cfg.fingerprint()
+				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
+				lastFingerprint = newFP
+			}
+		}
+
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
+			Name:    "test3",
+			Content: "test3",
+			Kind:    definition.GrafanaTemplateKind,
+		})
+		assertField("")("Templates")
+		notChecked--
+
+		cfg.TmplExternalURL = nil
+		assertField("")("TmplExternalURL")
+		cfg.TmplExternalURL, err = url.Parse("http://new-url")
+		require.NoError(t, err)
+		assertField("")("TmplExternalURL")
+		notChecked--
+
+		cfg.EmailConfig.ContentTypes = []string{"text/plain", "text/html"}
+		assertField("EmailConfig.")("ContentTypes")
+		notChecked--
+
+		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
+		assertField("EmailConfig.")("StaticHeaders")
+		notChecked--
+
+		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
+		assertField("")("EmailConfig")
+		notChecked--
+
+		require.Equal(t, 0, notChecked)
 	})
 }
 
