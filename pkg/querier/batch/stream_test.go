@@ -303,11 +303,11 @@ func TestResolveTimestampConflict_DeterministicBehavior(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := resolveTimestampConflict(tc.aType, tc.bType, tc.aBatch, tc.bBatch)
+			result := decideTimestampConflict(tc.aType, tc.bType, tc.aBatch, tc.bBatch)
 			require.Equal(t, tc.expectedPickA, result)
 
 			// Test with reversed order to ensure deterministic behavior
-			resultReversed := resolveTimestampConflict(tc.bType, tc.aType, tc.bBatch, tc.aBatch)
+			resultReversed := decideTimestampConflict(tc.bType, tc.aType, tc.bBatch, tc.aBatch)
 			require.Equal(t, !tc.expectedPickA, resultReversed)
 		})
 	}
@@ -440,7 +440,7 @@ func TestBatchStream_EdgeCases(t *testing.T) {
 				rightBatch := mkGenericFloatBatch(100, 1)
 				rightBatch.Values[0] = tc.rightValue
 
-				result := resolveTimestampConflict(chunkenc.ValFloat, chunkenc.ValFloat, &leftBatch, &rightBatch)
+				result := decideTimestampConflict(chunkenc.ValFloat, chunkenc.ValFloat, &leftBatch, &rightBatch)
 				require.Equal(t, tc.expectLeft, result, "Expected %v but got %v for %f vs %f", tc.expectLeft, result, tc.leftValue, tc.rightValue)
 			})
 		}

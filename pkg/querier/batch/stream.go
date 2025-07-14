@@ -95,9 +95,9 @@ func (bs *batchStream) curr() *chunk.Batch {
 	return &bs.batches[0]
 }
 
-// resolveTimestampConflict determines which batch to pick when two samples have the same timestamp.
+// decideTimestampConflict determines which batch to pick when two samples have the same timestamp.
 // It returns true if the left batch should be picked, false if the right batch should be picked.
-func resolveTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *chunk.Batch) bool {
+func decideTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *chunk.Batch) bool {
 	switch {
 	// If the sample types are the same, we pick the highest value.
 	case lt == rt:
@@ -231,6 +231,20 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		b.Index++
 	}
 
+	resolveTimestampConflict := func(selected, discarded *chunk.Batch, selectedType chunkenc.ValueType, discardedType chunkenc.ValueType, iteratorID int) {
+		populate(selected, selectedType, iteratorID)
+		// if bs.hPool is not nil, we put there the discarded histogram.Histogram object, so it can be reused.
+		if discardedType == chunkenc.ValHistogram && bs.hPool != nil {
+			_, h := discarded.AtHistogram()
+			bs.hPool.Put((*histogram.Histogram)(h))
+		}
+		// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object, so it can be reused.
+		if discardedType == chunkenc.ValFloatHistogram && bs.fhPool != nil {
+			_, fh := discarded.AtFloatHistogram()
+			bs.fhPool.Put((*histogram.FloatHistogram)(fh))
+		}
+	}
+
 	for lt, rt := bs.hasNext(), batch.HasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = bs.hasNext(), batch.HasNext() {
 		t1, t2 := bs.curr().AtTime(), batch.AtTime()
 		if t1 < t2 {
@@ -243,33 +257,12 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			// The two samples have the same timestamp. They may be the same exact sample or different one
 			// (e.g. we ingested an in-order sample and then OOO sample with same timestamp but different value).
 			// We want query results to be deterministic, so we select one of the two side deterministically.
-			pickLeftSide := resolveTimestampConflict(lt, rt, bs.curr(), batch)
+			pickLeftSide := decideTimestampConflict(lt, rt, bs.curr(), batch)
 
 			if pickLeftSide {
-				populate(bs.curr(), lt, -1)
-				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
-				if rt == chunkenc.ValHistogram && bs.hPool != nil {
-					_, h := batch.AtHistogram()
-					bs.hPool.Put((*histogram.Histogram)(h))
-				}
-				// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
-				if rt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
-					_, fh := batch.AtFloatHistogram()
-					bs.fhPool.Put((*histogram.FloatHistogram)(fh))
-				}
+				resolveTimestampConflict(bs.curr(), batch, lt, rt, -1)
 			} else {
-				populate(batch, rt, iteratorID)
-
-				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
-				if lt == chunkenc.ValHistogram && bs.hPool != nil {
-					_, h := bs.curr().AtHistogram()
-					bs.hPool.Put((*histogram.Histogram)(h))
-				}
-				// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
-				if lt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
-					_, fh := bs.curr().AtFloatHistogram()
-					bs.fhPool.Put((*histogram.FloatHistogram)(fh))
-				}
+				resolveTimestampConflict(batch, bs.curr(), rt, lt, iteratorID)
 			}
 
 			// Advance both iterators.

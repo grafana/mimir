@@ -148,7 +148,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 1000, v: 1000, hint: histogram.NotCounterReset},     // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
 						{t: 2000, v: 2000, hint: histogram.NotCounterReset},     // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
 						{t: 3000, v: 3000, hint: histogram.UnknownCounterReset}, // 1 sample from c1
-						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c1
+						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c0
 						{t: 5000, v: 5000, hint: histogram.NotCounterReset},
 						{t: 6000, v: 6000, hint: histogram.NotCounterReset},
 						{t: 7000, v: 7000, hint: histogram.NotCounterReset},
