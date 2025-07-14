@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -123,6 +124,10 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 		level.Error(l.logger).Log("msg", "failed to encode labels request with optimized matchers", "err", err)
 		l.failedQueries.Inc()
 		return l.next.RoundTrip(req)
+	}
+
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, optimizedReq); err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	// Track successful optimization.

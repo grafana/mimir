@@ -211,6 +211,7 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 						req                 *http.Request
 						downstreamCalled    = false
 						downstreamReqParams url.Values
+						downstreamHeaders   http.Header
 						err                 error
 					)
 
@@ -221,6 +222,9 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 						// Parse the request form to capture parameters.
 						require.NoError(t, req.ParseForm())
 						downstreamReqParams = req.Form
+
+						// Capture the headers too.
+						downstreamHeaders = req.Header.Clone()
 
 						return &http.Response{StatusCode: http.StatusOK}, nil
 					})
@@ -256,7 +260,9 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					}
 
 					// Inject the tenant ID in the request
-					req = req.WithContext(user.InjectOrgID(context.Background(), userID))
+					reqCtx := user.InjectOrgID(context.Background(), userID)
+					req = req.WithContext(reqCtx)
+					require.NoError(t, user.InjectOrgIDIntoHTTPRequest(reqCtx, req))
 
 					// Create the labels query optimizer
 					reg := prometheus.NewPedanticRegistry()
@@ -267,9 +273,10 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 					_, err = optimizer.RoundTrip(req)
 					require.NoError(t, err)
 
-					// Ensure the downstream has been called with the expected params.
+					// Ensure the downstream has been called with the expected params and headers.
 					require.True(t, downstreamCalled)
 					require.Equal(t, testData.expectedDownstreamParams, downstreamReqParams)
+					require.Equal(t, userID, downstreamHeaders.Get(user.OrgIDHeaderName))
 
 					// Assert on metrics.
 					expectedTotal := 0
