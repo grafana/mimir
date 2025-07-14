@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1198,6 +1199,21 @@ func TestHandlerOTLPPush(t *testing.T) {
 			errMessage:          "received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
 			expectedLogs:        []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits" insight=true`},
 			expectedRetryHeader: false,
+		},
+		{
+			name:       "Unexpected gRPC status error",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return grpcstatus.New(codes.Unknown, "unexpected error calling some dependency").Err()
+			},
+			responseCode:          http.StatusServiceUnavailable,
+			responseContentType:   pbContentType,
+			responseContentLength: 44,
+			errMessage:            "unexpected error calling some dependency",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=503 err="rpc error: code = Unknown desc = unexpected error calling some dependency"`},
+			expectedRetryHeader:   true,
 		},
 	}
 	for _, tt := range tests {
