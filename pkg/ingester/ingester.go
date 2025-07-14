@@ -340,7 +340,7 @@ type Ingester struct {
 	seriesCount atomic.Int64
 
 	// Tracks if a forced compaction is in progress
-	numCompactionsInProgress atomic.Uint32
+	forcedCompactionInProgress atomic.Bool
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -1544,6 +1544,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+
 		for _, s := range ts.Samples {
 			var err error
 
@@ -1554,6 +1556,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			} else if s.TimestampMs < minTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
 				continue
+			}
+
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				}
+				if err == nil {
+					stats.succeededSamplesCount++
+				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -1603,6 +1621,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
 				} else {
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
+				}
+
+				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					if ref != 0 {
+						_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					}
+					if err == nil {
+						stats.succeededSamplesCount++
+					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					}
+					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
 
 				// If the cached reference exists, we try to use it.
@@ -3218,10 +3252,6 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
-			// Prepare compaction before the periodic head compaction is triggered.
-			cleanup := i.prepareCompaction()
-			defer cleanup()
-
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
@@ -3239,12 +3269,6 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			}
 
 		case req := <-i.forceCompactTrigger:
-			// Note:
-			// Prepare compaction is not done here but before the force compaction is triggered.
-			// This is because we want to track the number of compactions accurately before the
-			// downscale handler is called. This ensures that the ingester will never leave the
-			// read-only state. (See [Ingester.FlushHandler])
-
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			i.compactBlocks(ctx, true, math.MaxInt64, req.users)
 			close(req.callback) // Notify back.
@@ -3277,28 +3301,19 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	return
 }
 
-// prepareCompaction is incrementing the atomic counter of the number of compactions in progress.
-// It also exposes a metric tracking the number of compactions in progress.
-// It returns a callback that should be called when the compaction is finished, e.g. in defer statement.
-// This callback is decrementing the atomic counter of the number of compactions in progress.
-func (i *Ingester) prepareCompaction() func() {
-	// Increment the number of compactions in progress.
-	// This is used to ensure that the ingester will never leave the read-only state.
-	// (See [Ingester.PrepareInstanceRingDownscaleHandler])
-	i.numCompactionsInProgress.Inc()
-
-	// Expose a metric tracking whether there's a TSDB head compaction in progress.
-	// This metric can be used in alerts and when troubleshooting.
-	i.metrics.numCompactionsInProgress.Inc()
-
-	return func() {
-		i.numCompactionsInProgress.Dec()
-		i.metrics.numCompactionsInProgress.Dec()
-	}
-}
-
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		i.forcedCompactionInProgress.Store(true)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+			i.forcedCompactionInProgress.Store(false)
+		}()
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3625,10 +3640,6 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: ingester not running, ignoring flush request")
 			return
 		}
-
-		// Prepare compaction before the force compaction is triggered.
-		cleanup := i.prepareCompaction()
-		defer cleanup()
 
 		compactionCallbackCh := make(chan struct{})
 

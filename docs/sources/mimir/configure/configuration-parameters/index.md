@@ -1842,7 +1842,7 @@ ha_tracker:
   [enable_elected_replica_metric: <boolean> | default = false]
 
   # Backend storage to use for the ring. Supported values are: consul, etcd,
-  # inmemory, memberlist, multi.
+  # inmemory, memberlist, multi. Note that etcd is deprecated.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -4829,6 +4829,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
+# (experimental) Enable labels query optimizations. When enabled, the
+# query-frontend may rewrite labels queries to improve their performance.
+# CLI flag: -query-frontend.labels-query-optimizer-enabled
+[labels_query_optimizer_enabled: <boolean> | default = false]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -5261,6 +5266,13 @@ ruler_alertmanager_client_config:
 # otel_scope_.
 # CLI flag: -distributor.otel-promote-scope-metadata
 [otel_promote_scope_metadata: <boolean> | default = false]
+
+# (experimental) Whether to enable native ingestion of delta OTLP metrics, which
+# will store the raw delta sample values without conversion. If disabled, delta
+# metrics will be rejected. Delta support is in an early stage of development.
+# The ingestion and querying process is likely to change over time.
+# CLI flag: -distributor.otel-native-delta-ingestion
+[otel_native_delta_ingestion: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.

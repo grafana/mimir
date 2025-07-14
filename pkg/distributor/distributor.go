@@ -98,6 +98,11 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
+
+	// Multiplier used to estimate the decompressed size from compressed size of an incoming request. It prevents
+	// decompressing requests when the distributor is near the inflight bytes limit and the uncompressed request
+	// will likely exceed the limit.
+	decompressionEstMultiplier = 8
 )
 
 type usageTrackerGenericClient interface {
@@ -1676,10 +1681,9 @@ func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequest
 	if rs.httpgrpcRequestSize > 0 {
 		return nil
 	}
-
 	rs.httpgrpcRequestSize = httpgrpcRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
-	return d.checkInflightBytes(inflightBytes)
+	return d.checkInflightBytes(inflightBytes + decompressionEstMultiplier*httpgrpcRequestSize)
 }
 
 func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {
@@ -1738,8 +1742,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return newUnavailableError(s)
 		}
 
-		// We don't know request size yet, will check it later.
-		ctx, rs, err := d.startPushRequest(ctx, -1)
+		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}

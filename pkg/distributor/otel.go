@@ -60,6 +60,7 @@ type OTLPHandlerLimits interface {
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
 	OTelPromoteScopeMetadata(id string) bool
+	OTelNativeDeltaIngestion(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -112,6 +113,7 @@ func OTLPHandler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -143,11 +145,17 @@ func OTLPHandler(
 			errorMsg string
 		)
 		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-			// This code is needed for a correct handling of errors returned by the supplier function.
-			// These errors are created by using the httpgrpc package.
-			httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 			grpcCode = st.Code()
 			errorMsg = st.Message()
+
+			// This code is needed for a correct handling of errors returned by the supplier function.
+			// These errors are usually created by using the httpgrpc package.
+			// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
+			if util.IsHTTPStatusCode(grpcCode) {
+				httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
+			} else {
+				httpCode = http.StatusServiceUnavailable
+			}
 		} else {
 			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
 			errorMsg = pushErr.Error()
@@ -283,6 +291,7 @@ func newOTLPParser(
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
+		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
@@ -299,6 +308,7 @@ func newOTLPParser(
 				convertHistogramsToNHCB:           convertHistogramsToNHCB,
 				promoteScopeMetadata:              promoteScopeMetadata,
 				promoteResourceAttributes:         promoteResourceAttributes,
+				allowDeltaTemporality:             allowDeltaTemporality,
 			},
 			spanLogger,
 		)
@@ -509,6 +519,7 @@ type conversionOptions struct {
 	convertHistogramsToNHCB           bool
 	promoteScopeMetadata              bool
 	promoteResourceAttributes         []string
+	allowDeltaTemporality             bool
 }
 
 func otelMetricsToTimeseries(
@@ -526,6 +537,7 @@ func otelMetricsToTimeseries(
 		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
 		PromoteScopeMetadata:                opts.promoteScopeMetadata,
+		AllowDeltaTemporality:               opts.allowDeltaTemporality,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 

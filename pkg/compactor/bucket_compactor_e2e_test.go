@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -264,9 +265,10 @@ func TestGroupCompactE2E(t *testing.T) {
 		// Test label name with slash, regression: https://github.com/thanos-io/thanos/issues/1661.
 		extLabels := labels.FromStrings("e1", "1/weird")
 		extLabels2 := labels.FromStrings("e1", "1")
+		extLabels3 := labels.FromStrings("e1", "histograms")
 		metas := createAndUpload(t, bkt, []blockgenSpec{
 			{
-				numSamples: 100, mint: 500, maxt: 1000, extLset: extLabels, res: 124,
+				numFloatSamples: 100, mint: 500, maxt: 1000, extLset: extLabels, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "1"),
 					labels.FromStrings("a", "2", "b", "2"),
@@ -275,7 +277,7 @@ func TestGroupCompactE2E(t *testing.T) {
 				},
 			},
 			{
-				numSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels, res: 124,
+				numFloatSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "3"),
 					labels.FromStrings("a", "4"),
@@ -292,28 +294,28 @@ func TestGroupCompactE2E(t *testing.T) {
 			},
 			// Due to TSDB compaction delay (not compacting fresh block), we need one more block to be pushed to trigger compaction.
 			{
-				numSamples: 100, mint: 3000, maxt: 4000, extLset: extLabels, res: 124,
+				numFloatSamples: 100, mint: 3000, maxt: 4000, extLset: extLabels, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "7"),
 				},
 			},
 			// Extra block for "distraction" for different resolution and one for different labels.
 			{
-				numSamples: 100, mint: 5000, maxt: 6000, extLset: labels.FromStrings("e1", "2"), res: 124,
+				numFloatSamples: 100, mint: 5000, maxt: 6000, extLset: labels.FromStrings("e1", "2"), res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "7"),
 				},
 			},
 			// Extra block for "distraction" for different resolution and one for different labels.
 			{
-				numSamples: 100, mint: 4000, maxt: 5000, extLset: extLabels, res: 0,
+				numFloatSamples: 100, mint: 4000, maxt: 5000, extLset: extLabels, res: 0,
 				series: []labels.Labels{
 					labels.FromStrings("a", "7"),
 				},
 			},
 			// Second group (extLabels2).
 			{
-				numSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels2, res: 124,
+				numFloatSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels2, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "3"),
 					labels.FromStrings("a", "4"),
@@ -321,7 +323,7 @@ func TestGroupCompactE2E(t *testing.T) {
 				},
 			},
 			{
-				numSamples: 100, mint: 0, maxt: 1000, extLset: extLabels2, res: 124,
+				numFloatSamples: 100, mint: 0, maxt: 1000, extLset: extLabels2, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "1"),
 					labels.FromStrings("a", "2", "b", "2"),
@@ -331,7 +333,33 @@ func TestGroupCompactE2E(t *testing.T) {
 			},
 			// Due to TSDB compaction delay (not compacting fresh block), we need one more block to be pushed to trigger compaction.
 			{
-				numSamples: 100, mint: 3000, maxt: 4000, extLset: extLabels2, res: 124,
+				numFloatSamples: 100, mint: 3000, maxt: 4000, extLset: extLabels2, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "7"),
+				},
+			},
+			// Third group (extLabels3) for native histograms.
+			{
+				numHistogramSamples: 100, mint: 500, maxt: 1000, extLset: extLabels3, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "1"),
+					labels.FromStrings("a", "2", "b", "2"),
+					labels.FromStrings("a", "3"),
+					labels.FromStrings("a", "4"),
+				},
+			},
+			{
+				numHistogramSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels3, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "3"),
+					labels.FromStrings("a", "4"),
+					labels.FromStrings("a", "5"),
+					labels.FromStrings("a", "6"),
+				},
+			},
+			// Due to TSDB compaction delay (not compacting fresh block), we need one more block to be pushed to trigger compaction.
+			{
+				numFloatSamples: 100, mint: 3000, maxt: 4000, extLset: extLabels3, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "7"),
 				},
@@ -339,14 +367,14 @@ func TestGroupCompactE2E(t *testing.T) {
 		})
 
 		require.NoError(t, bComp.Compact(ctx, 0), 0)
-		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
+		assert.Equal(t, 7.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
-		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactions))
-		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
-		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.groupCompactions))
+		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
+		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
-		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.blockUploadsStarted))
+		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.blockUploadsStarted))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -399,8 +427,8 @@ func TestGroupCompactE2E(t *testing.T) {
 			assert.True(t, found, "not found expected block %s", id.String())
 		}
 
-		// We expect two compacted blocks only outside of what we expected in `nonCompactedExpected`.
-		assert.Equal(t, 2, len(others))
+		// We expect three compacted blocks only outside of what we expected in `nonCompactedExpected`.
+		assert.Equal(t, 3, len(others))
 		{
 			meta, ok := others[defaultGroupKey(124, extLabels)]
 			assert.True(t, ok, "meta not found")
@@ -408,7 +436,9 @@ func TestGroupCompactE2E(t *testing.T) {
 			assert.Equal(t, int64(500), meta.MinTime)
 			assert.Equal(t, int64(3000), meta.MaxTime)
 			assert.Equal(t, uint64(6), meta.Stats.NumSeries)
-			assert.Equal(t, uint64(2*4*100), meta.Stats.NumSamples) // Only 2 times 4*100 because one block was empty.
+			assert.Equal(t, uint64(2*4*100), meta.Stats.NumSamples)      // Only 2 times 4*100 because one block was empty.
+			assert.Equal(t, uint64(2*4*100), meta.Stats.NumFloatSamples) // Only float samples.
+			assert.Equal(t, uint64(0), meta.Stats.NumHistogramSamples)   // Only float samples.
 			assert.Equal(t, 2, meta.Compaction.Level)
 			assert.Equal(t, []ulid.ULID{metas[0].ULID, metas[1].ULID, metas[2].ULID}, meta.Compaction.Sources)
 
@@ -425,6 +455,8 @@ func TestGroupCompactE2E(t *testing.T) {
 			assert.Equal(t, int64(3000), meta.MaxTime)
 			assert.Equal(t, uint64(5), meta.Stats.NumSeries)
 			assert.Equal(t, uint64(2*4*100-100), meta.Stats.NumSamples)
+			assert.Equal(t, uint64(2*4*100-100), meta.Stats.NumFloatSamples)
+			assert.Equal(t, uint64(0), meta.Stats.NumHistogramSamples)
 			assert.Equal(t, 2, meta.Compaction.Level)
 			assert.Equal(t, []ulid.ULID{metas[6].ULID, metas[7].ULID}, meta.Compaction.Sources)
 
@@ -433,15 +465,35 @@ func TestGroupCompactE2E(t *testing.T) {
 			assert.Equal(t, int64(124), meta.Thanos.Downsample.Resolution)
 			assert.True(t, len(meta.Thanos.SegmentFiles) > 0, "compacted blocks have segment files set")
 		}
+		{
+			meta, ok := others[defaultGroupKey(124, extLabels3)]
+			assert.True(t, ok, "meta not found")
+
+			assert.Equal(t, int64(500), meta.MinTime)
+			assert.Equal(t, int64(3000), meta.MaxTime)
+			assert.Equal(t, uint64(6), meta.Stats.NumSeries)
+			assert.Equal(t, uint64(2*4*100), meta.Stats.NumSamples)
+			assert.Equal(t, uint64(0), meta.Stats.NumFloatSamples)
+			assert.Equal(t, uint64(2*4*100), meta.Stats.NumHistogramSamples) // Only histogram samples.
+			assert.Equal(t, 2, meta.Compaction.Level)
+			assert.Equal(t, []ulid.ULID{metas[9].ULID, metas[10].ULID}, meta.Compaction.Sources)
+
+			// Check thanos meta.
+			assert.True(t, labels.Equal(extLabels3, labels.FromMap(meta.Thanos.Labels)), "ext labels does not match")
+			assert.Equal(t, int64(124), meta.Thanos.Downsample.Resolution)
+			assert.True(t, len(meta.Thanos.SegmentFiles) > 0, "compacted blocks have segment files set")
+
+		}
 	})
 }
 
 type blockgenSpec struct {
-	mint, maxt int64
-	series     []labels.Labels
-	numSamples int
-	extLset    labels.Labels
-	res        int64
+	mint, maxt          int64
+	series              []labels.Labels
+	numFloatSamples     int
+	numHistogramSamples int
+	extLset             labels.Labels
+	res                 int64
 }
 
 func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec) (metas []*block.Meta) {
@@ -461,10 +513,10 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec) (
 
 func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockgenSpec) (id ulid.ULID, meta *block.Meta) {
 	var err error
-	if b.numSamples == 0 {
+	if b.numFloatSamples == 0 && b.numHistogramSamples == 0 {
 		id, err = createEmptyBlock(prepareDir, b.mint, b.maxt, b.extLset, b.res)
 	} else {
-		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numSamples, b.mint, b.maxt, b.extLset, b.res, false)
+		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numFloatSamples, b.numHistogramSamples, b.mint, b.maxt, b.extLset, b.res, false)
 	}
 	require.NoError(t, err)
 
@@ -654,13 +706,20 @@ func createBlockWithOptions(
 	ctx context.Context,
 	dir string,
 	series []labels.Labels,
-	numSamples int,
+	numFloatSamples int,
+	numHistogramSamples int,
 	mint, maxt int64,
 	extLset labels.Labels,
 	resolution int64,
 	tombstones bool,
 ) (id ulid.ULID, err error) {
+	if numFloatSamples > 0 && numHistogramSamples > 0 {
+		return id, errors.New("not creating block with both float and histogram samples")
+	}
+	numSamples := numFloatSamples + numHistogramSamples
+
 	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = 10000000000
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
@@ -693,7 +752,18 @@ func createBlockWithOptions(
 				app := h.Appender(ctx)
 
 				for _, lset := range batch {
-					_, err := app.Append(0, lset, t, rand.Float64())
+					var err error
+					if numFloatSamples > 0 {
+						_, err = app.Append(0, lset, t, rand.Float64())
+					} else {
+						count := rand.Int63()
+						// Append a minimal histogram with a single bucket.
+						_, err = app.AppendHistogram(0, lset, t, &histogram.Histogram{
+							Count:           uint64(count),
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []int64{count},
+						}, nil)
+					}
 					if err != nil {
 						if rerr := app.Rollback(); rerr != nil {
 							err = errors.Wrapf(err, "rollback failed: %v", rerr)

@@ -288,6 +288,27 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to compact and upload blocks.' % $._config,
           },
         },
+
+        // Alert if block-builder didn't ship blocks in the past hours.
+        // This is similar to the blocks shipment alerts from the ingesters.
+        {
+          alert: $.alertName('BlockBuilderHasNotShippedBlocks'),
+          'for': '15m',
+          expr: |||
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 60 * 60 * 4)
+            and
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
+            # Only if blocks aren't shipped by ingesters.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
+          },
+        },
       ],
     },
   ],

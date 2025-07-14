@@ -15,6 +15,7 @@
         <th>Blocks</th>
         <th>Head MinT</th>
         <th>Head MaxT</th>
+        <th>Grace interval</th>
         <th>Warning</th>
     </tr>
     </thead>
@@ -25,6 +26,7 @@
             <td>{{.Blocks}}</td>
             <td>{{.MinTime}}</td>
             <td>{{.MaxTime}}</td>
+            <td>(-{{.PastGracePeriod}}, +{{.FutureGracePeriod}})</td>
             <td>{{.Warning}}</td>
         </tr>
     {{ end }}

@@ -174,6 +174,10 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
+	if math.IsNaN(v) {
+		return fmt.Errorf("parameter value is NaN for %v", t.functionName())
+	}
+
 	if !convertibleToInt64(v) {
 		return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
 	}

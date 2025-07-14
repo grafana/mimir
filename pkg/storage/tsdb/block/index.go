@@ -66,35 +66,6 @@ type HealthStats struct {
 	// OutOfOrderLabels represents the number of postings that contained out
 	// of order labels, a bug present in Prometheus 2.8.0 and below.
 	OutOfOrderLabels int
-
-	// Debug Statistics.
-	SeriesMinLifeDuration time.Duration
-	SeriesAvgLifeDuration time.Duration
-	SeriesMaxLifeDuration time.Duration
-
-	SeriesMinLifeDurationWithoutSingleSampleSeries time.Duration
-	SeriesAvgLifeDurationWithoutSingleSampleSeries time.Duration
-	SeriesMaxLifeDurationWithoutSingleSampleSeries time.Duration
-
-	SeriesMinChunks int64
-	SeriesAvgChunks int64
-	SeriesMaxChunks int64
-
-	TotalChunks int64
-
-	ChunkMinDuration time.Duration
-	ChunkAvgDuration time.Duration
-	ChunkMaxDuration time.Duration
-
-	ChunkMinSize int64
-	ChunkAvgSize int64
-	ChunkMaxSize int64
-
-	SingleSampleSeries int64
-	SingleSampleChunks int64
-
-	LabelNamesCount        int64
-	MetricLabelValuesCount int64
 }
 
 // OutOfOrderLabelsErr returns an error if the HealthStats object indicates
@@ -177,39 +148,6 @@ func (i HealthStats) AnyErr() error {
 	return nil
 }
 
-type minMaxSumInt64 struct {
-	sum int64
-	min int64
-	max int64
-
-	cnt int64
-}
-
-func newMinMaxSumInt64() minMaxSumInt64 {
-	return minMaxSumInt64{
-		min: math.MaxInt64,
-		max: math.MinInt64,
-	}
-}
-
-func (n *minMaxSumInt64) Add(v int64) {
-	n.cnt++
-	n.sum += v
-	if n.min > v {
-		n.min = v
-	}
-	if n.max < v {
-		n.max = v
-	}
-}
-
-func (n *minMaxSumInt64) Avg() int64 {
-	if n.cnt == 0 {
-		return 0
-	}
-	return n.sum / n.cnt
-}
-
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
@@ -235,12 +173,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		builder  labels.ScratchBuilder
 		chks     []chunks.Meta
 		cr       *chunks.Reader
-
-		seriesLifeDuration                          = newMinMaxSumInt64()
-		seriesLifeDurationWithoutSingleSampleSeries = newMinMaxSumInt64()
-		seriesChunks                                = newMinMaxSumInt64()
-		chunkDuration                               = newMinMaxSumInt64()
-		chunkSize                                   = newMinMaxSumInt64()
 	)
 
 	// chunk reader
@@ -251,18 +183,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		}
 		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
 	}
-
-	lnames, err := r.LabelNames(ctx)
-	if err != nil {
-		return stats, errors.Wrap(err, "label names")
-	}
-	stats.LabelNamesCount = int64(len(lnames))
-
-	lvals, err := r.LabelValues(ctx, "__name__", nil)
-	if err != nil {
-		return stats, errors.Wrap(err, "metric label values")
-	}
-	stats.MetricLabelValuesCount = int64(len(lvals))
 
 	// Per series.
 	for p.Next() {
@@ -300,7 +220,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		}
 
 		ooo := 0
-		seriesLifeTimeMs := int64(0)
 		// Per chunk in series.
 		for i, c := range chks {
 			// Check if chunk data is valid.
@@ -309,20 +228,6 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 				if err != nil {
 					return stats, errors.Wrapf(err, "verify chunk %d of series %d", i, id)
 				}
-			}
-
-			stats.TotalChunks++
-
-			chkDur := c.MaxTime - c.MinTime
-			seriesLifeTimeMs += chkDur
-			chunkDuration.Add(chkDur)
-			if chkDur == 0 {
-				stats.SingleSampleChunks++
-			}
-
-			// Approximate size.
-			if i < len(chks)-2 {
-				chunkSize.Add(int64(chks[i+1].Ref - c.Ref))
 			}
 
 			// Chunk vs the block ranges.
@@ -361,39 +266,11 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 			stats.OutOfOrderChunks += ooo
 			level.Debug(logger).Log("msg", "found out of order series", "labels", lset)
 		}
-
-		seriesChunks.Add(int64(len(chks)))
-		seriesLifeDuration.Add(seriesLifeTimeMs)
-
-		if seriesLifeTimeMs == 0 {
-			stats.SingleSampleSeries++
-		} else {
-			seriesLifeDurationWithoutSingleSampleSeries.Add(seriesLifeTimeMs)
-		}
 	}
 	if p.Err() != nil {
 		return stats, errors.Wrap(err, "walk postings")
 	}
 
-	stats.SeriesMaxLifeDuration = time.Duration(seriesLifeDuration.max) * time.Millisecond
-	stats.SeriesAvgLifeDuration = time.Duration(seriesLifeDuration.Avg()) * time.Millisecond
-	stats.SeriesMinLifeDuration = time.Duration(seriesLifeDuration.min) * time.Millisecond
-
-	stats.SeriesMaxLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.max) * time.Millisecond
-	stats.SeriesAvgLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.Avg()) * time.Millisecond
-	stats.SeriesMinLifeDurationWithoutSingleSampleSeries = time.Duration(seriesLifeDurationWithoutSingleSampleSeries.min) * time.Millisecond
-
-	stats.SeriesMaxChunks = seriesChunks.max
-	stats.SeriesAvgChunks = seriesChunks.Avg()
-	stats.SeriesMinChunks = seriesChunks.min
-
-	stats.ChunkMaxSize = chunkSize.max
-	stats.ChunkAvgSize = chunkSize.Avg()
-	stats.ChunkMinSize = chunkSize.min
-
-	stats.ChunkMaxDuration = time.Duration(chunkDuration.max) * time.Millisecond
-	stats.ChunkAvgDuration = time.Duration(chunkDuration.Avg()) * time.Millisecond
-	stats.ChunkMinDuration = time.Duration(chunkDuration.min) * time.Millisecond
 	return stats, nil
 }
 
@@ -750,12 +627,7 @@ func rewrite(
 			return errors.Wrap(err, "add series")
 		}
 
-		meta.Stats.NumChunks += uint64(len(s.chks))
-		meta.Stats.NumSeries++
-
-		for _, chk := range s.chks {
-			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
-		}
+		updateStats(&meta.Stats, 1, s.chks)
 
 		s.lset.Range(func(l labels.Label) {
 			valset, ok := values[l.Name]
@@ -770,6 +642,21 @@ func rewrite(
 		lastSet = s.lset
 	}
 	return nil
+}
+
+func updateStats(stats *tsdb.BlockStats, series uint64, chks []chunks.Meta) {
+	stats.NumSeries += series
+	stats.NumChunks += uint64(len(chks))
+	for _, chk := range chks {
+		numSamples := uint64(chk.Chunk.NumSamples())
+		stats.NumSamples += numSamples
+		switch chk.Chunk.Encoding() {
+		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			stats.NumHistogramSamples += numSamples
+		case chunkenc.EncXOR:
+			stats.NumFloatSamples += numSamples
+		}
+	}
 }
 
 // clampChunk returns a chunk that contains only samples within [mint, maxt),

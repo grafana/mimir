@@ -442,8 +442,8 @@ func (prometheusCodec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http
 	limit := uint64(0) // 0 means unlimited
 	if limitStr := reqValues.Get("limit"); limitStr != "" {
 		limit, err = strconv.ParseUint(limitStr, 10, 64)
-		if err != nil || limit == 0 {
-			return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("limit parameter must be a positive number: %s", limitStr))
+		if err != nil {
+			return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("limit parameter must be greater than or equal to 0, got %s", limitStr))
 		}
 	}
 	headers := httpHeadersToProm(r.Header)

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -42,6 +43,7 @@ import (
 
 func init() {
 	// Install OTel tracing, we need it for the tests.
+	os.Setenv("OTEL_TRACES_EXPORTER", "none")
 	_, err := tracing.NewOTelFromEnv("test", log.NewNopLogger())
 	if err != nil {
 		panic(err)

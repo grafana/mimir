@@ -30,6 +30,8 @@ type Request struct {
 	// artificialDelay is the artificial delay for the request.
 	// Negative values are treated as "not set".
 	artificialDelay time.Duration
+
+	contentLength int64
 }
 
 func newRequest(p supplierFunc) *Request {
