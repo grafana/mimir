@@ -70,6 +70,16 @@ services:
     ports:
       - 9092:9092
 
+  grafana-alloy-otlp:
+    profiles:
+      - grafana-alloy-otlp
+    image: grafana/alloy:v1.9.2
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./config/config-otlp.alloy:/etc/alloy/config.alloy
+    ports:
+      - 9092:9092
+
   jaeger:
     # Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
     image: jaegertracing/all-in-one:1.62.0
