@@ -101,11 +101,12 @@ func resolveTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *
 	switch {
 	// If the sample types are the same, we pick the highest value.
 	case lt == rt:
-		if lt == chunkenc.ValFloat {
+		switch lt {
+		case chunkenc.ValFloat:
 			_, lValue := leftBatch.At()
 			_, rValue := rightBatch.At()
 			return lValue > rValue
-		} else if lt == chunkenc.ValHistogram {
+		case chunkenc.ValHistogram:
 			_, lValue := leftBatch.AtHistogram()
 			_, rValue := rightBatch.AtHistogram()
 			lHist := (*histogram.Histogram)(lValue)
@@ -114,7 +115,7 @@ func resolveTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *
 				return lHist.Sum > rHist.Sum
 			}
 			return lHist.Count > rHist.Count
-		} else if lt == chunkenc.ValFloatHistogram {
+		case chunkenc.ValFloatHistogram:
 			_, lValue := leftBatch.AtFloatHistogram()
 			_, rValue := rightBatch.AtFloatHistogram()
 			lHist := (*histogram.FloatHistogram)(lValue)
@@ -123,7 +124,7 @@ func resolveTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *
 				return lHist.Sum > rHist.Sum
 			}
 			return lHist.Count > rHist.Count
-		} else {
+		default:
 			// We should never reach this point.
 			return true
 		}
