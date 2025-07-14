@@ -764,7 +764,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		User:            cfgs.Mimir.User,
 		RawConfig:       cfgs.Mimir.RawConfig,
 		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
 	// Check if tenants can be skipped (strict initialization enabled).
@@ -840,7 +840,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 
 	// If we're not using Grafana configuration, we shouldn't use Grafana state.
 	// Update the flag accordingly.
-	if !cfg.usingGrafanaConfig {
+	if !cfg.UsingGrafanaConfig {
 		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
 			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
 		}
@@ -896,9 +896,9 @@ type amConfig struct {
 	User               string
 	RawConfig          string
 	Templates          []definition.PostableApiTemplate
-	tmplExternalURL    *url.URL
-	usingGrafanaConfig bool
-	emailConfig        alertingReceivers.EmailSenderConfig
+	TmplExternalURL    *url.URL
+	UsingGrafanaConfig bool
+	EmailConfig        alertingReceivers.EmailSenderConfig
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
@@ -957,7 +957,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
 		if err != nil {
 			return err
 		}
@@ -965,7 +965,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	} else if configChanged(am.cfgs[cfg.User], cfg) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
@@ -1134,7 +1134,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanag
 		User:            userID,
 		RawConfig:       "",
 		Templates:       nil,
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
@@ -1178,7 +1178,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	amConfig := amConfig{
 		User:            cfgDesc.User,
 		RawConfig:       cfgDesc.RawConfig,
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	err = am.setConfig(amConfig)
 	if err != nil {

@@ -23,7 +23,7 @@ import (
 
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
-// The amConfig.emailConfig field can be used to create Grafana email integrations.
+// The amConfig.EmailConfig field can be used to create Grafana email integrations.
 func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
@@ -141,9 +141,9 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		User:               gCfg.User,
 		RawConfig:          string(rawCfg),
 		Templates:          tmpl,
-		tmplExternalURL:    externalURL,
-		usingGrafanaConfig: true,
-		emailConfig:        emailCfg,
+		TmplExternalURL:    externalURL,
+		UsingGrafanaConfig: true,
+		EmailConfig:        emailCfg,
 	}, nil
 }
 

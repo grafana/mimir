@@ -423,7 +423,7 @@ templates:
 	require.NoError(t, err)
 	emptyMimirAmConfig := amConfig{
 		User:            "user4",
-		tmplExternalURL: url,
+		TmplExternalURL: url,
 		Templates:       []definition.PostableApiTemplate{},
 	}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
@@ -480,7 +480,7 @@ templates:
 		User:            defaultConfig.User,
 		RawConfig:       defaultConfig.RawConfig,
 		Templates:       []definition.PostableApiTemplate{},
-		tmplExternalURL: url,
+		TmplExternalURL: url,
 	}
 
 	require.NoError(t, store.SetAlertConfig(ctx, defaultConfig))
@@ -502,9 +502,9 @@ templates:
 		User:               "user4",
 		RawConfig:          string(rawCfg),
 		Templates:          []definition.PostableApiTemplate{},
-		usingGrafanaConfig: true,
-		tmplExternalURL:    externalUrl,
-		emailConfig: alertingReceivers.EmailSenderConfig{
+		UsingGrafanaConfig: true,
+		TmplExternalURL:    externalUrl,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
 			AuthPassword: "",
 			AuthUser:     "",
 			CertFile:     "",
@@ -2623,7 +2623,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2638,7 +2638,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2651,7 +2651,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            testTenant,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2667,7 +2667,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2683,7 +2683,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2697,7 +2697,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequests,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2713,7 +2713,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2728,7 +2728,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2741,7 +2741,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequestsExpired,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2762,7 +2762,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2782,7 +2782,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2800,7 +2800,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            testTenant,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2821,7 +2821,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2842,7 +2842,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2861,7 +2861,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequests,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2882,7 +2882,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2902,7 +2902,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2920,7 +2920,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequestsExpired,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2942,7 +2942,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2963,7 +2963,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2982,7 +2982,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            testTenant,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3004,7 +3004,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3026,7 +3026,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3046,7 +3046,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequests,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3068,7 +3068,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3089,7 +3089,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3108,7 +3108,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequestsExpired,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3131,7 +3131,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3153,7 +3153,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            testTenant,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3173,7 +3173,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            testTenant,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3196,7 +3196,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3219,7 +3219,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3240,7 +3240,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequests,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3263,7 +3263,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3285,7 +3285,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequestsExpired,
 				RawConfig:       am.fallbackConfig,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3305,7 +3305,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:            tenantReceivingRequestsExpired,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3328,9 +3328,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3352,9 +3352,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3377,9 +3377,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3401,9 +3401,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3426,9 +3426,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3450,9 +3450,9 @@ func TestComputeConfig(t *testing.T) {
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
 				Templates:          []definition.PostableApiTemplate{},
-				emailConfig:        baseEmailCfg,
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3484,7 +3484,7 @@ func TestComputeConfig(t *testing.T) {
 				User:      tenantReceivingRequestsExpired,
 				RawConfig: string(combinedCfg),
 				Templates: []definition.PostableApiTemplate{},
-				emailConfig: alertingReceivers.EmailSenderConfig{
+				EmailConfig: alertingReceivers.EmailSenderConfig{
 					AuthPassword:   "test-password",
 					AuthUser:       "test-user",
 					ContentTypes:   []string{"text/html"},
@@ -3498,8 +3498,8 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders:  nil,
 					SentBy:         "Mimir vunknown",
 				},
-				tmplExternalURL:    grafanaExternalURLParsed,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3523,7 +3523,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            "user-grafana",
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3547,7 +3547,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3571,7 +3571,7 @@ func TestComputeConfig(t *testing.T) {
 				User:            tenantReceivingRequests,
 				RawConfig:       simpleConfigOne,
 				Templates:       []definition.PostableApiTemplate{},
-				tmplExternalURL: mimirExternalURL,
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 	}
@@ -3584,14 +3584,14 @@ func TestComputeConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			// require.Equal(t, test.expEmailCfg, cfg.emailConfig)
+			// require.Equal(t, test.expEmailCfg, cfg.EmailConfig)
 
 			require.True(t, startAM)
 			require.Equal(t, test.expCfg, cfg)
 			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
+			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
 			// } else {
-			// 	require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
 			// }
 		})
 
@@ -3605,11 +3605,11 @@ func TestComputeConfig(t *testing.T) {
 
 			require.Equal(t, test.expStartAM, startAM)
 			require.Equal(t, test.expCfg, cfg)
-			// require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
+			// require.Equal(t, test.expHeaders, cfg.EmailConfig.StaticHeaders)
 			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
+			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
 			// } else {
-			// 	require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
 			// }
 		})
 	}
@@ -3911,7 +3911,7 @@ func TestSyncStates(t *testing.T) {
 			name: "no grafana state should be a no-op",
 			cfg: amConfig{
 				User:               user,
-				usingGrafanaConfig: true,
+				UsingGrafanaConfig: true,
 			},
 			expNoNewAlertmanager: true,
 		},
@@ -3920,8 +3920,8 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:               user,
 				RawConfig:          "invalid",
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"notifications": grafanaNflog},
 			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
@@ -3931,8 +3931,8 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:               user,
 				RawConfig:          simpleConfigOne,
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"invalid": []byte("invalid")},
 			expErr: "unknown part key \"invalid\"",
@@ -3942,8 +3942,8 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:               user,
 				RawConfig:          simpleConfigOne,
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts: map[string][]byte{"notifications": grafanaNflog},
 		},
@@ -3952,8 +3952,8 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:               user,
 				RawConfig:          simpleConfigOne,
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			mimirState: &testMimirState,
 			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
@@ -4062,7 +4062,7 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:            user,
 				RawConfig:       simpleConfigOne,
-				tmplExternalURL: externalURL,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: true,
 			expPromoted:     false,
@@ -4072,7 +4072,7 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:            user,
 				RawConfig:       simpleConfigOne,
-				tmplExternalURL: externalURL,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: false,
 			expPromoted:     false,
@@ -4082,8 +4082,8 @@ func TestSyncStates(t *testing.T) {
 			cfg: amConfig{
 				User:               user,
 				RawConfig:          simpleConfigOne,
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			initialPromoted: true,
 			expPromoted:     true,
@@ -4107,7 +4107,7 @@ func TestSyncStates(t *testing.T) {
 			require.NoError(t, am.setConfig(amConfig{
 				User:            test.cfg.User,
 				RawConfig:       simpleConfigOne,
-				tmplExternalURL: externalURL,
+				TmplExternalURL: externalURL,
 			}))
 			require.NotNil(t, am.alertmanagers[test.cfg.User])
 			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
