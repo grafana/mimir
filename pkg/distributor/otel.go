@@ -113,6 +113,7 @@ func OTLPHandler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -144,11 +145,17 @@ func OTLPHandler(
 			errorMsg string
 		)
 		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-			// This code is needed for a correct handling of errors returned by the supplier function.
-			// These errors are created by using the httpgrpc package.
-			httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 			grpcCode = st.Code()
 			errorMsg = st.Message()
+
+			// This code is needed for a correct handling of errors returned by the supplier function.
+			// These errors are usually created by using the httpgrpc package.
+			// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
+			if util.IsHTTPStatusCode(grpcCode) {
+				httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
+			} else {
+				httpCode = http.StatusServiceUnavailable
+			}
 		} else {
 			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
 			errorMsg = pushErr.Error()

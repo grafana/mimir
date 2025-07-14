@@ -646,6 +646,15 @@ func TestAlertmanagerSharding(t *testing.T) {
 				}
 			}
 
+			// Endpoint: GET /api/v1/grafana/full_state
+			{
+				for _, c := range clients {
+					fs, err := c.GetFullState(context.Background())
+					assert.NoError(t, err)
+					assert.NotEmpty(t, fs.State)
+				}
+			}
+
 			// Endpoint: GET /api/v1/grafana/receivers
 			{
 				for _, c := range clients {
