@@ -17,11 +17,15 @@ import (
 	"context"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus-community/parquet-common/convert"
@@ -30,6 +34,8 @@ import (
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus-community/parquet-common/util"
 )
+
+var tracer = otel.Tracer("parquet-common")
 
 type ShardsFinderFunction func(ctx context.Context, mint, maxt int64) ([]storage.ParquetShard, error)
 
@@ -124,7 +130,26 @@ type parquetQuerier struct {
 	opts         *queryableOpts
 }
 
-func (p parquetQuerier) LabelValues(ctx context.Context, name string, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (p parquetQuerier) LabelValues(ctx context.Context, name string, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) (result []string, annotations annotations.Annotations, err error) {
+	ctx, span := tracer.Start(ctx, "parquetQuerier.LabelValues")
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.String("label_name", name),
+		attribute.Int64("mint", p.mint),
+		attribute.Int64("maxt", p.maxt),
+		attribute.String("matchers", matchersToString(matchers)),
+	)
+	if hints != nil {
+		span.SetAttributes(attribute.Int("limit", hints.Limit))
+	}
+
 	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
 	if err != nil {
 		return nil, nil, err
@@ -152,10 +177,27 @@ func (p parquetQuerier) LabelValues(ctx context.Context, name string, hints *pro
 		return nil, nil, err
 	}
 
-	return util.MergeUnsortedSlices(int(limit), resNameValues...), nil, nil
+	result = util.MergeUnsortedSlices(int(limit), resNameValues...)
+	span.SetAttributes(attribute.Int("result_count", len(result)))
+	return result, nil, nil
 }
 
-func (p parquetQuerier) LabelNames(ctx context.Context, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (p parquetQuerier) LabelNames(ctx context.Context, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) (result []string, annotations annotations.Annotations, err error) {
+	ctx, span := tracer.Start(ctx, "parquetQuerier.LabelNames")
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Int64("mint", p.mint),
+		attribute.Int64("maxt", p.maxt),
+		attribute.String("matchers", matchersToString(matchers)),
+	)
+
 	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
 	if err != nil {
 		return nil, nil, err
@@ -165,6 +207,7 @@ func (p parquetQuerier) LabelNames(ctx context.Context, hints *prom_storage.Labe
 
 	if hints != nil {
 		limit = int64(hints.Limit)
+		span.SetAttributes(attribute.Int("limit", hints.Limit))
 	}
 
 	resNameSets := make([][]string, len(shards))
@@ -183,7 +226,9 @@ func (p parquetQuerier) LabelNames(ctx context.Context, hints *prom_storage.Labe
 		return nil, nil, err
 	}
 
-	return util.MergeUnsortedSlices(int(limit), resNameSets...), nil, nil
+	result = util.MergeUnsortedSlices(int(limit), resNameSets...)
+	span.SetAttributes(attribute.Int("result_count", len(result)))
+	return result, nil, nil
 }
 
 func (p parquetQuerier) Close() error {
@@ -191,6 +236,30 @@ func (p parquetQuerier) Close() error {
 }
 
 func (p parquetQuerier) Select(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, matchers ...*labels.Matcher) prom_storage.SeriesSet {
+	ctx, span := tracer.Start(ctx, "parquetQuerier.Select")
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Bool("sorted", sorted),
+		attribute.Int64("mint", p.mint),
+		attribute.Int64("maxt", p.maxt),
+		attribute.String("matchers", matchersToString(matchers)),
+	)
+	if sp != nil {
+		span.SetAttributes(
+			attribute.Int64("select_start", sp.Start),
+			attribute.Int64("select_end", sp.End),
+			attribute.String("select_func", sp.Func),
+		)
+	}
+
 	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
 	if err != nil {
 		return prom_storage.ErrSeriesSet(err)
@@ -213,9 +282,14 @@ func (p parquetQuerier) Select(ctx context.Context, sorted bool, sp *prom_storag
 		})
 	}
 
-	if err := errGroup.Wait(); err != nil {
+	if err = errGroup.Wait(); err != nil {
 		return prom_storage.ErrSeriesSet(err)
 	}
+
+	span.SetAttributes(
+		attribute.Int("shards_count", len(shards)),
+		attribute.Bool("skip_chunks", skipChunks),
+	)
 
 	ss := convert.NewMergeChunkSeriesSet(seriesSet, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
 
@@ -420,3 +494,14 @@ type byLabels []prom_storage.ChunkSeries
 func (b byLabels) Len() int           { return len(b) }
 func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels(), b[j].Labels()) < 0 }
+
+func matchersToString(matchers []*labels.Matcher) string {
+	if len(matchers) == 0 {
+		return "[]"
+	}
+	var matcherStrings []string
+	for _, m := range matchers {
+		matcherStrings = append(matcherStrings, m.String())
+	}
+	return "[" + strings.Join(matcherStrings, ",") + "]"
+}

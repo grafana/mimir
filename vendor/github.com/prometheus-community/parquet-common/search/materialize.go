@@ -27,12 +27,17 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus-community/parquet-common/util"
 )
+
+var tracer = otel.Tracer("parquet-common")
 
 type Materializer struct {
 	b           storage.ParquetShard
@@ -102,7 +107,24 @@ func NewMaterializer(s *schema.TSDBSchema,
 
 // Materialize reconstructs the ChunkSeries that belong to the specified row ranges (rr).
 // It uses the row group index (rgi) and time bounds (mint, maxt) to filter and decode the series.
-func (m *Materializer) Materialize(ctx context.Context, rgi int, mint, maxt int64, skipChunks bool, rr []RowRange) ([]prom_storage.ChunkSeries, error) {
+func (m *Materializer) Materialize(ctx context.Context, rgi int, mint, maxt int64, skipChunks bool, rr []RowRange) (results []prom_storage.ChunkSeries, err error) {
+	ctx, span := tracer.Start(ctx, "Materializer.Materialize")
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Int("row_group_index", rgi),
+		attribute.Int64("mint", mint),
+		attribute.Int64("maxt", maxt),
+		attribute.Bool("skip_chunks", skipChunks),
+		attribute.Int("row_ranges_count", len(rr)),
+	)
+
 	if err := m.checkRowCountQuota(rr); err != nil {
 		return nil, err
 	}
@@ -111,7 +133,7 @@ func (m *Materializer) Materialize(ctx context.Context, rgi int, mint, maxt int6
 		return nil, errors.Wrapf(err, "error materializing labels")
 	}
 
-	results := make([]prom_storage.ChunkSeries, len(sLbls))
+	results = make([]prom_storage.ChunkSeries, len(sLbls))
 	for i, s := range sLbls {
 		results[i] = &concreteChunksSeries{
 			lbls: labels.New(s...),
@@ -137,6 +159,8 @@ func (m *Materializer) Materialize(ctx context.Context, rgi int, mint, maxt int6
 	if err := m.materializedSeriesCallback(ctx, results); err != nil {
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.Int("materialized_series_count", len(results)))
 	return results, err
 }
 
@@ -237,6 +261,21 @@ func (m *Materializer) MaterializeAllLabelValues(ctx context.Context, name strin
 }
 
 func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []RowRange) ([][]labels.Label, error) {
+	ctx, span := tracer.Start(ctx, "Materializer.materializeAllLabels")
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Int("row_group_index", rgi),
+		attribute.Int("row_ranges_count", len(rr)),
+	)
+
 	labelsRg := m.b.LabelsFile().RowGroups()[rgi]
 	cc := labelsRg.ColumnChunks()[m.colIdx]
 	colsIdxs, err := m.materializeColumn(ctx, m.b.LabelsFile(), rgi, cc, rr, false)
@@ -272,7 +311,7 @@ func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []R
 		})
 	}
 
-	if err := errGroup.Wait(); err != nil {
+	if err = errGroup.Wait(); err != nil {
 		return nil, err
 	}
 
@@ -292,6 +331,7 @@ func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []R
 		}
 	}
 
+	span.SetAttributes(attribute.Int("materialized_labels_count", len(results)))
 	return results, nil
 }
 
@@ -303,11 +343,33 @@ func totalRows(rr []RowRange) int64 {
 	return res
 }
 
-func (m *Materializer) materializeChunks(ctx context.Context, rgi int, mint, maxt int64, rr []RowRange) ([][]chunks.Meta, error) {
+func (m *Materializer) materializeChunks(ctx context.Context, rgi int, mint, maxt int64, rr []RowRange) (r [][]chunks.Meta, err error) {
+	ctx, span := tracer.Start(ctx, "Materializer.materializeChunks")
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Int("row_group_index", rgi),
+		attribute.Int64("mint", mint),
+		attribute.Int64("maxt", maxt),
+		attribute.Int("row_ranges_count", len(rr)),
+	)
+
 	minDataCol := m.s.DataColumIdx(mint)
 	maxDataCol := m.s.DataColumIdx(maxt)
 	rg := m.b.ChunksFile().RowGroups()[rgi]
-	r := make([][]chunks.Meta, totalRows(rr))
+	r = make([][]chunks.Meta, totalRows(rr))
+
+	span.SetAttributes(
+		attribute.Int("min_data_col", minDataCol),
+		attribute.Int("max_data_col", maxDataCol),
+		attribute.Int("total_rows", int(totalRows(rr))),
+	)
 
 	for i := minDataCol; i <= min(maxDataCol, len(m.dataColToIndex)-1); i++ {
 		values, err := m.materializeColumn(ctx, m.b.ChunksFile(), rgi, rg.ColumnChunks()[m.dataColToIndex[i]], rr, true)
@@ -324,6 +386,7 @@ func (m *Materializer) materializeChunks(ctx context.Context, rgi int, mint, max
 		}
 	}
 
+	span.SetAttributes(attribute.Int("materialized_chunks_count", len(r)))
 	return r, nil
 }
 

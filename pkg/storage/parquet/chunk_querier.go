@@ -5,6 +5,7 @@ package parquet
 import (
 	"context"
 	"runtime"
+	"strings"
 
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus-community/parquet-common/queryable"
@@ -13,8 +14,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 )
+
+var tracer = otel.Tracer("pkg/storage/parquet")
 
 type querierOpts struct {
 	concurrency                int
@@ -107,6 +113,31 @@ func (p parquetChunkQuerier) Close() error {
 }
 
 func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) prom_storage.ChunkSeriesSet {
+	ctx, span := tracer.Start(ctx, "parquetChunkQuerier.Select")
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Bool("sorted", sortSeries),
+		attribute.Int64("mint", p.mint),
+		attribute.Int64("maxt", p.maxt),
+		attribute.String("matchers", matchersToString(matchers)),
+	)
+
+	if hints != nil {
+		span.SetAttributes(
+			attribute.Int64("select_start", hints.Start),
+			attribute.Int64("select_end", hints.End),
+			attribute.String("select_func", hints.Func),
+		)
+	}
+
 	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
 	if err != nil {
 		return prom_storage.ErrChunkSeriesSet(err)
@@ -133,6 +164,11 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 		return prom_storage.ErrChunkSeriesSet(err)
 	}
 
+	span.SetAttributes(
+		attribute.Int("shards_count", len(shards)),
+		attribute.Bool("skip_chunks", skipChunks),
+	)
+
 	return convert.NewMergeChunkSeriesSet(seriesSet, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
 }
 
@@ -153,4 +189,15 @@ func (p parquetChunkQuerier) queryableShards(ctx context.Context, mint, maxt int
 		qBlocks[i] = qb
 	}
 	return qBlocks, nil
+}
+
+func matchersToString(matchers []*labels.Matcher) string {
+	if len(matchers) == 0 {
+		return "[]"
+	}
+	var matcherStrings []string
+	for _, m := range matchers {
+		matcherStrings = append(matcherStrings, m.String())
+	}
+	return "[" + strings.Join(matcherStrings, ",") + "]"
 }
