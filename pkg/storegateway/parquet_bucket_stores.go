@@ -427,31 +427,7 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		fetcherReg,
 		filters,
 	)
-	//bucketStoreOpts := []BucketStoreOption{
-	//	WithLogger(userLogger),
-	//	//WithIndexCache(ss.indexCache),
-	//	WithQueryGate(ss.queryGate),
-	//	WithLazyLoadingGate(ss.lazyLoadingGate),
-	//}
 
-	//bs, err := NewBucketStore(
-	//	userID,
-	//	userBkt,
-	//	fetcher,
-	//	ss.syncDirForUser(userID),
-	//	ss.cfg.BucketStore,
-	//	worstCaseFetchedDataStrategy{postingListActualSizeFactor: ss.cfg.BucketStore.SeriesFetchPreference},
-	//	NewChunksLimiterFactory(func() uint64 {
-	//		return uint64(ss.limits.MaxChunksPerQuery(userID))
-	//	}),
-	//	NewSeriesLimiterFactory(func() uint64 {
-	//		return uint64(ss.limits.MaxFetchedSeriesPerQuery(userID))
-	//	}),
-	//	ss.partitioners,
-	//	ss.seriesHashCache,
-	//	ss.bucketStoreMetrics,
-	//	bucketStoreOpts...,
-	//)
 	bs, err := NewParquetBucketStore(
 		userID,
 		ss.syncDirForUser(userID),

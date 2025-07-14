@@ -4,7 +4,9 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,7 +14,9 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
@@ -22,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestParquetBucketStore_InitialSync(t *testing.T) {
@@ -34,7 +39,7 @@ func TestParquetBucketStore_InitialSync(t *testing.T) {
 	require.NoError(t, err)
 	store := createTestParquetBucketStore(t, userID, bkt)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
@@ -59,7 +64,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 	require.NoError(t, err)
 	store := createTestParquetBucketStore(t, userID, bkt)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
@@ -78,7 +83,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 
 		resp, err := store.LabelNames(ctx, req)
 		require.NoError(t, err)
-		require.Equal(t, []string{"__name__"}, resp.Names)
+		require.Equal(t, []string{"__name__", "series_id"}, resp.Names)
 
 		req = &storepb.LabelNamesRequest{
 			Start: 10,
@@ -253,4 +258,113 @@ func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Buck
 	)
 	require.NoError(t, err)
 	return store
+}
+func TestParquetBucketStores_RowLimits(t *testing.T) {
+	userID := "test-user"
+	metricName := "test_metric"
+	ctx := context.Background()
+	storageDir := t.TempDir()
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 3, 10, 100, 15)
+	createBucketIndex(t, bkt, userID)
+
+	t.Run("RowCountLimitEnforcesLimit", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		cfg.BucketStore.ParquetMaxRowCount = 1
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		// Query should fail due to row limit (we have 3 series but limit is 1)
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "would fetch too many rows")
+		require.Empty(t, warnings)
+		require.Empty(t, seriesSet)
+	})
+
+	t.Run("RowCountLimitAllowsNormalOperation", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		cfg.BucketStore.ParquetMaxRowCount = 1000
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		// Query should succeed
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.GreaterOrEqual(t, len(seriesSet), 0)
+	})
+
+	t.Run("RowCountLimitDisabledWhenZero", func(t *testing.T) {
+		cfg := prepareParquetStorageConfig(t)
+		// cfg.BucketStore.ParquetMaxRowCount = 0  already the default
+
+		var allowedTenants *util.AllowList
+		reg := prometheus.NewPedanticRegistry()
+		stores, err := NewParquetBucketStores(cfg, defaultLimitsOverrides(t), allowedTenants, newNoShardingStrategy(), bkt, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+		})
+
+		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.GreaterOrEqual(t, len(seriesSet), 0)
+	})
+}
+
+func generateStorageBlockWithMultipleSeries(t *testing.T, storageDir, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+	// Create a directory for the user (if doesn't already exist).
+	userDir := filepath.Join(storageDir, userID)
+	if _, err := os.Stat(userDir); err != nil {
+		require.NoError(t, os.Mkdir(userDir, os.ModePerm))
+	}
+
+	// Create a temporary directory where the TSDB is opened,
+	// then it will be snapshotted to the storage directory.
+	tmpDir := t.TempDir()
+
+	db, err := tsdb.Open(tmpDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	app := db.Appender(context.Background())
+
+	// Generate multiple series with the specified numSeries
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		series := labels.FromStrings(labels.MetricName, metricName, "series_id", fmt.Sprintf("%d", seriesIdx))
+
+		for ts := minT; ts < maxT; ts += int64(step) {
+			_, err = app.Append(0, series, ts, 1)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Snapshot TSDB to the storage directory.
+	require.NoError(t, db.Snapshot(userDir, true))
 }

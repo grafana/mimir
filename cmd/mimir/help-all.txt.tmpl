@@ -771,6 +771,12 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
+  -blocks-storage.bucket-store.parquet-max-chunk-size-bytes uint
+    	Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.
+  -blocks-storage.bucket-store.parquet-max-data-size-bytes uint
+    	Maximum size in bytes that can be fetched from the parquet labels and chunks data files combined in a single query. If the size exceeds this value the query will stop with limit error.
+  -blocks-storage.bucket-store.parquet-max-row-count uint
+    	Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.
   -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
