@@ -715,6 +715,20 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	err = a.store.SetRuleGroup(ctx, userID, namespace, rgProto)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to store rule group", "err", err.Error())
+
+		// If the error is an object mutation rate limit error from GCS, a 429 is returned instead of a 500. This is a
+		// user issue rather than a server error, as it indicates the user is trying to update that specific rule group
+		// too fast (the rate limit is per-object).
+		// This is a simple way of returning the correct response code for a problem we've seen in practice, a more
+		// advanced solution would be to actually implement rate limiting for the ruler API.
+		// We don't return 429s for all object storage rate limiterrors, since we can't guarantee of them are user
+		// issues.
+		if isGCSObjectMutationRateLimitError(err) {
+			level.Warn(logger).Log("msg", "per-rule group rate limit exceeded", "userID", userID, "namespace", namespace, "err", err.Error())
+			respondError(logger, w, http.StatusTooManyRequests, v1.ErrServer, "per-rule group rate limit exceeded")
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -814,4 +828,12 @@ func alertStateDescToPrometheusAlert(d *AlertStateDesc) *Alert {
 	}
 
 	return a
+}
+
+// isGCSObjectMutationRateLimitError checks whether the error message is from GCS and is an object mutation rate limit.
+// This is a per-object limit and is limited to 1 mutation per second (https://cloud.google.com/storage/quotas).
+func isGCSObjectMutationRateLimitError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, "googleapi: Error 429") &&
+		strings.Contains(errStr, "exceeded the rate limit for object mutation operations")
 }

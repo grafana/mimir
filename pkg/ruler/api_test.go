@@ -1556,6 +1556,89 @@ rules:
 
 }
 
+func TestAPI_CreateRuleGroup_GCSRateLimit_ErrorDetection(t *testing.T) {
+	testCases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "GCS rate limit error",
+			err:      errors.New("googleapi: Error 429: The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."),
+			expected: true,
+		},
+		{
+			name:     "GCS rate limit error with different message",
+			err:      errors.New("googleapi: Error 429: rate limited in some other way"),
+			expected: false,
+		},
+		{
+			name:     "GCS rate limit error but not 429",
+			err:      errors.New("googleapi: Error 500: server down"),
+			expected: false,
+		},
+
+		{
+			name:     "other error",
+			err:      errors.New("pow"),
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isGCSObjectMutationRateLimitError(tc.err)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestCreateRuleGroup_GCSObjectMutationRateLimit(t *testing.T) {
+	const (
+		userID    = "user1"
+		namespace = "test-namespace"
+	)
+
+	// Create a mock rule store that returns GCS rate limit error
+	store := &gcsObjRateLimitStore{
+		mockRuleStore: newMockRuleStore(make(map[string]rulespb.RuleGroupList)),
+	}
+
+	cfg := defaultRulerConfig(t)
+	r := prepareRuler(t, cfg, store)
+	api := NewAPI(r, store, log.NewNopLogger())
+
+	ruleGroupPayload := `
+name: test-group
+interval: 15s
+rules:
+- record: up_rule
+  expr: up
+`
+
+	// Create request with mux vars for namespace parameter
+	req := requestFor(t, "POST", fmt.Sprintf("https://localhost:8080/prometheus/config/v1/rules/%s", namespace), strings.NewReader(ruleGroupPayload), userID)
+	req = mux.SetURLVars(req, map[string]string{"namespace": namespace})
+	w := httptest.NewRecorder()
+
+	// Call CreateRuleGroup directly
+	api.CreateRuleGroup(w, req)
+
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+
+	// Verify the response contains the rate limit error message
+	responseBody := w.Body.String()
+	assert.Contains(t, responseBody, "per-rule group rate limit exceeded")
+}
+
+type gcsObjRateLimitStore struct {
+	*mockRuleStore
+}
+
+func (r *gcsObjRateLimitStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
+	return errors.New("googleapi: Error 429: The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate.")
+}
+
 func TestAPI_DeleteNamespace(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
