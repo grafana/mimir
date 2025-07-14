@@ -519,7 +519,12 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	// Validate template files.
-	factory, err := alertingTemplates.NewFactory(alertingNotify.PostableAPITemplatesToTemplateDefinitions(grafanaConfig.Templates), logger, "http://localhost", user) // use fake URL to avoid errors.
+	factory, err := alertingTemplates.NewFactory(
+		alertingNotify.PostableAPITemplatesToTemplateDefinitions(grafanaConfig.Templates),
+		logger,
+		"http://localhost", // Use a fake URL to avoid errors.
+		user,
+	)
 	if err != nil {
 		return err
 	}
