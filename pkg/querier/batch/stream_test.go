@@ -7,6 +7,7 @@ package batch
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -179,4 +180,359 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		}
 	}
+}
+
+func TestResolveTimestampConflict_DeterministicBehavior(t *testing.T) {
+	testCases := []struct {
+		name          string
+		aType         chunkenc.ValueType
+		bType         chunkenc.ValueType
+		aBatch        *chunk.Batch
+		bBatch        *chunk.Batch
+		expectedPickA bool
+	}{
+		{
+			name:  "Float vs Float - higher value wins",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 10.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 5.0
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Histogram vs Histogram - higher count wins",
+			aType: chunkenc.ValHistogram,
+			bType: chunkenc.ValHistogram,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericHistogramBatch(100, 1)
+				h := (*histogram.Histogram)(b.PointerValues[0])
+				h.Count = 100
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericHistogramBatch(100, 1)
+				h := (*histogram.Histogram)(b.PointerValues[0])
+				h.Count = 50
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "FloatHistogram vs FloatHistogram - higher count wins",
+			aType: chunkenc.ValFloatHistogram,
+			bType: chunkenc.ValFloatHistogram,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatHistogramBatch(100, 1)
+				h := (*histogram.FloatHistogram)(b.PointerValues[0])
+				h.Count = 75
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatHistogramBatch(100, 1)
+				h := (*histogram.FloatHistogram)(b.PointerValues[0])
+				h.Count = 90
+				return &b
+			}(),
+			expectedPickA: false,
+		},
+		{
+			name:          "Histogram vs Float - histogram wins",
+			aType:         chunkenc.ValHistogram,
+			bType:         chunkenc.ValFloat,
+			aBatch:        func() *chunk.Batch { b := mkGenericHistogramBatch(100, 1); return &b }(),
+			bBatch:        func() *chunk.Batch { b := mkGenericFloatBatch(100, 1); return &b }(),
+			expectedPickA: true,
+		},
+		{
+			name:          "FloatHistogram vs Float - float histogram wins",
+			aType:         chunkenc.ValFloatHistogram,
+			bType:         chunkenc.ValFloat,
+			aBatch:        func() *chunk.Batch { b := mkGenericFloatHistogramBatch(100, 1); return &b }(),
+			bBatch:        func() *chunk.Batch { b := mkGenericFloatBatch(100, 1); return &b }(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Histogram vs Histogram - equal count, higher sum wins",
+			aType: chunkenc.ValHistogram,
+			bType: chunkenc.ValHistogram,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericHistogramBatch(100, 1)
+				h := (*histogram.Histogram)(b.PointerValues[0])
+				h.Count = 50
+				h.Sum = 200.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericHistogramBatch(100, 1)
+				h := (*histogram.Histogram)(b.PointerValues[0])
+				h.Count = 50
+				h.Sum = 100.0
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "FloatHistogram vs FloatHistogram - equal count, higher sum wins",
+			aType: chunkenc.ValFloatHistogram,
+			bType: chunkenc.ValFloatHistogram,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatHistogramBatch(100, 1)
+				h := (*histogram.FloatHistogram)(b.PointerValues[0])
+				h.Count = 50.0
+				h.Sum = 150.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatHistogramBatch(100, 1)
+				h := (*histogram.FloatHistogram)(b.PointerValues[0])
+				h.Count = 50.0
+				h.Sum = 180.0
+				return &b
+			}(),
+			expectedPickA: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := resolveTimestampConflict(tc.aType, tc.bType, tc.aBatch, tc.bBatch)
+			require.Equal(t, tc.expectedPickA, result)
+
+			// Test with reversed order to ensure deterministic behavior
+			resultReversed := resolveTimestampConflict(tc.bType, tc.aType, tc.bBatch, tc.aBatch)
+			require.Equal(t, !tc.expectedPickA, resultReversed)
+		})
+	}
+}
+
+func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
+	t.Run("same timestamp different float values", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// Create batch with value 10.0 at timestamp 100
+		leftBatch := mkGenericFloatBatch(100, 1)
+		leftBatch.Values[0] = 10.0
+		s.batches = []chunk.Batch{leftBatch}
+
+		// Create batch with value 5.0 at same timestamp 100
+		rightBatch := mkGenericFloatBatch(100, 1)
+		rightBatch.Values[0] = 5.0
+
+		s.merge(&rightBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, len(s.batches))
+		require.Equal(t, 1, s.batches[0].Length)
+		require.Equal(t, int64(100), s.batches[0].Timestamps[0])
+		require.Equal(t, 10.0, s.batches[0].Values[0]) // Higher value should win
+	})
+
+	t.Run("multiple timestamp conflicts", func(t *testing.T) {
+		s := newBatchStream(3, nil, nil)
+
+		// Create batch with values at timestamps 100, 200, 300
+		leftBatch := mkGenericFloatBatch(100, 3)
+		leftBatch.Values[0] = 10.0 // ts 100
+		leftBatch.Values[1] = 20.0 // ts 101
+		leftBatch.Values[2] = 30.0 // ts 102
+		s.batches = []chunk.Batch{leftBatch}
+
+		// Create batch with conflicting values at same timestamps
+		rightBatch := mkGenericFloatBatch(100, 3)
+		rightBatch.Values[0] = 15.0 // ts 100 - higher, should win
+		rightBatch.Values[1] = 15.0 // ts 101 - lower, should lose
+		rightBatch.Values[2] = 25.0 // ts 102 - lower, should lose
+
+		s.merge(&rightBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, len(s.batches))
+		require.Equal(t, 3, s.batches[0].Length)
+		require.Equal(t, 15.0, s.batches[0].Values[0]) // Right wins (15.0 > 10.0)
+		require.Equal(t, 20.0, s.batches[0].Values[1]) // Left wins (20.0 > 15.0)
+		require.Equal(t, 30.0, s.batches[0].Values[2]) // Left wins (30.0 > 25.0)
+	})
+}
+
+func mkGenericFloatHistogramBatch(from int64, size int) chunk.Batch {
+	batch := chunk.Batch{ValueType: chunkenc.ValFloatHistogram}
+	for i := 0; i < size; i++ {
+		batch.Timestamps[i] = from + int64(i)
+		h := test.GenerateTestFloatHistogram(int(from) + i)
+		batch.PointerValues[i] = unsafe.Pointer(h)
+	}
+	batch.Length = size
+	return batch
+}
+
+func TestBatchStream_EdgeCases(t *testing.T) {
+	t.Run("empty batch merge", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// Start with empty stream
+		require.Equal(t, 0, s.len())
+
+		// Merge with empty batch
+		emptyBatch := chunk.Batch{ValueType: chunkenc.ValFloat, Length: 0}
+		s.merge(&emptyBatch, chunk.BatchSize, 0)
+		// Empty batches might still get added, but they should not contain data
+		if s.len() > 0 {
+			require.Equal(t, 0, s.batches[0].Length)
+		}
+
+		// Merge non-empty batch with empty stream
+		batch := mkGenericFloatBatch(100, 2)
+		s.merge(&batch, chunk.BatchSize, 0)
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 2, s.batches[0].Length)
+
+		// Merge empty batch with non-empty stream
+		s.merge(&emptyBatch, chunk.BatchSize, 0)
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 2, s.batches[0].Length)
+	})
+
+	t.Run("single sample batches with conflicts", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// Create single sample batch
+		batch1 := mkGenericFloatBatch(100, 1)
+		batch1.Values[0] = 5.0
+		s.batches = []chunk.Batch{batch1}
+
+		// Merge another single sample batch with same timestamp but higher value
+		batch2 := mkGenericFloatBatch(100, 1)
+		batch2.Values[0] = 10.0
+		s.merge(&batch2, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+		require.Equal(t, 10.0, s.batches[0].Values[0]) // Higher value should win
+	})
+
+	t.Run("extreme float values", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			leftValue  float64
+			rightValue float64
+			expectLeft bool
+		}{
+			{"positive infinity vs finite", math.Inf(1), 100.0, true},
+			{"finite vs positive infinity", 100.0, math.Inf(1), false},
+			{"negative infinity vs finite", math.Inf(-1), -100.0, false},
+			{"finite vs negative infinity", -100.0, math.Inf(-1), true},
+			{"positive vs negative infinity", math.Inf(1), math.Inf(-1), true},
+			{"very large vs very small", 1e308, 1e-308, true},
+			{"zero vs negative zero", 0.0, math.Copysign(0, -1), false}, // Go treats 0.0 == -0.0
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				leftBatch := mkGenericFloatBatch(100, 1)
+				leftBatch.Values[0] = tc.leftValue
+
+				rightBatch := mkGenericFloatBatch(100, 1)
+				rightBatch.Values[0] = tc.rightValue
+
+				result := resolveTimestampConflict(chunkenc.ValFloat, chunkenc.ValFloat, &leftBatch, &rightBatch)
+				require.Equal(t, tc.expectLeft, result, "Expected %v but got %v for %f vs %f", tc.expectLeft, result, tc.leftValue, tc.rightValue)
+			})
+		}
+	})
+
+	t.Run("nan handling", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// NaN vs finite value
+		leftBatch := mkGenericFloatBatch(100, 1)
+		leftBatch.Values[0] = math.NaN()
+		s.batches = []chunk.Batch{leftBatch}
+
+		rightBatch := mkGenericFloatBatch(100, 1)
+		rightBatch.Values[0] = 5.0
+		s.merge(&rightBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+
+		// Result should be deterministic, even with NaN
+		// NaN > 5.0 should be false, so right side should win
+		require.Equal(t, 5.0, s.batches[0].Values[0])
+	})
+
+	t.Run("histogram with zero count", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// Create histogram with zero count
+		leftBatch := mkGenericHistogramBatch(100, 1)
+		leftHist := (*histogram.Histogram)(leftBatch.PointerValues[0])
+		leftHist.Count = 0
+		s.batches = []chunk.Batch{leftBatch}
+
+		// Create histogram with non-zero count
+		rightBatch := mkGenericHistogramBatch(100, 1)
+		rightHist := (*histogram.Histogram)(rightBatch.PointerValues[0])
+		rightHist.Count = 10
+		s.merge(&rightBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+
+		// Right histogram should win (higher count)
+		resultHist := (*histogram.Histogram)(s.batches[0].PointerValues[0])
+		require.Equal(t, uint64(10), resultHist.Count)
+	})
+
+	t.Run("float histogram with zero count", func(t *testing.T) {
+		s := newBatchStream(2, nil, nil)
+
+		// Create float histogram with zero count
+		leftBatch := mkGenericFloatHistogramBatch(100, 1)
+		leftHist := (*histogram.FloatHistogram)(leftBatch.PointerValues[0])
+		leftHist.Count = 0.0
+		s.batches = []chunk.Batch{leftBatch}
+
+		// Create float histogram with non-zero count
+		rightBatch := mkGenericFloatHistogramBatch(100, 1)
+		rightHist := (*histogram.FloatHistogram)(rightBatch.PointerValues[0])
+		rightHist.Count = 10.5
+		s.merge(&rightBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+
+		// Right histogram should win (higher count)
+		resultHist := (*histogram.FloatHistogram)(s.batches[0].PointerValues[0])
+		require.Equal(t, 10.5, resultHist.Count)
+	})
+
+	t.Run("mixed sample types at boundary timestamps", func(t *testing.T) {
+		s := newBatchStream(3, nil, nil)
+
+		// Start with float at timestamp 100
+		floatBatch := mkGenericFloatBatch(100, 1)
+		s.batches = []chunk.Batch{floatBatch}
+
+		// Merge histogram at same timestamp (histogram should win)
+		histBatch := mkGenericHistogramBatch(100, 1)
+		s.merge(&histBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+		require.Equal(t, chunkenc.ValHistogram, s.batches[0].ValueType)
+
+		// Merge float histogram at same timestamp (histogram should still win)
+		fhistBatch := mkGenericFloatHistogramBatch(100, 1)
+		s.merge(&fhistBatch, chunk.BatchSize, 0)
+
+		require.Equal(t, 1, s.len())
+		require.Equal(t, 1, s.batches[0].Length)
+		require.Equal(t, chunkenc.ValHistogram, s.batches[0].ValueType)
+	})
 }
