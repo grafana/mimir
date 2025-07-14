@@ -47280,6 +47280,67 @@ data:
                 "showTitle": true,
                 "title": "",
                 "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Elected replica changes\nThe total number of times the elected replica has changed for a user ID/cluster.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "changes/s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 37,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by (user) (rate(cortex_ha_tracker_elected_replica_changes_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{user}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Elected replica changes",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "HA Tracker",
+                "titleSize": "h6"
              }
           ],
           "schemaVersion": 14,

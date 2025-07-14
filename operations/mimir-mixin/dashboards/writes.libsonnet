@@ -847,5 +847,24 @@ local filename = 'mimir-writes.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', max: '1' } } }
       ),
+    )
+    .addRow(
+      $.row('HA Tracker')
+      .addPanel(
+        local title = 'Elected replica changes';
+        $.timeseriesPanel('Elected replica changes') +
+        $.queryPanel(
+          'sum by (user) (rate(cortex_ha_tracker_elected_replica_changes_total{%s}[$__rate_interval]))'
+          % $.namespaceMatcher(),
+          '{{user}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'changes/s' } } } +
+        $.panelDescription(
+          title,
+          |||
+            The total number of times the elected replica has changed for a user ID/cluster.
+          |||
+        )
+      ),
     ),
 }
