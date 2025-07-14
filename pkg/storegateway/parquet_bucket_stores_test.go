@@ -44,7 +44,7 @@ func TestParquetBucketStores_InitialSync(t *testing.T) {
 	require.NoError(t, err)
 
 	for userID, metricName := range userToMetric {
-		generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 10, 100, 15)
+		generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 1, 10, 100, 15)
 	}
 
 	var allowedTenants *util.AllowList
@@ -106,7 +106,7 @@ func TestParquetBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
-	generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 10, 100, 15)
+	generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bucket, userID)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
 	t.Cleanup(func() {
@@ -120,7 +120,7 @@ func TestParquetBucketStores_SyncBlocks(t *testing.T) {
 	assert.Empty(t, seriesSet)
 
 	// Generate another block and sync blocks again.
-	generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 100, 200, 15)
+	generateParquetStorageBlock(t, storageDir, bucket, userID, metricName, 1, 100, 200, 15)
 	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
@@ -140,8 +140,8 @@ func prepareParquetStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	return cfg
 }
 
-func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.Bucket, userID string, metricName string, minT, maxT int64, step int) {
-	generateStorageBlock(t, storageDir, userID, metricName, minT, maxT, step)
+func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.Bucket, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+	generateStorageBlockWithMultipleSeries(t, storageDir, userID, metricName, numSeries, minT, maxT, step)
 	userDir := filepath.Join(storageDir, userID)
 	bkt = bucket.NewPrefixedBucketClient(bkt, userID)
 	entries, err := os.ReadDir(userDir)
