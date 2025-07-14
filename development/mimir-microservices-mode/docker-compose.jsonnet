@@ -181,9 +181,10 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  local extraStoreGatewayArgs = std.join(' ', [
-        (if $._config.enable_parquet then '-log.level=debug -store-gateway.parquet-enabled=true' else null),
-        (if !$._config.parquet_store_gateway_load_index_to_disk then '-blocks-storage.bucket-store.parquet-load-index-to-disk=false' else null),
+  local extraStoreGatewayArgs = std.join(
+    ' ', [
+      (if $._config.enable_parquet then '-log.level=debug -store-gateway.parquet-enabled=true' else null),
+      (if !$._config.parquet_store_gateway_load_index_to_disk then '-blocks-storage.bucket-store.parquet-load-index-to-disk=false' else null),
     ]
   ),
 
