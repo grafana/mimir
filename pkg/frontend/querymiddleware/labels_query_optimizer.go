@@ -145,16 +145,18 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 	optimizedRawMatcherSets := make([]string, 0, len(rawMatcherSets))
 
 	for _, matchers := range matcherSets {
-		// If an empty matcher `{}` was provided we need to preserve it because it's an invalid matcher
-		// for the labels API, but we want to get the actual error from downstream. In this case we just
-		// don't optimize any matchers set.
-		if len(matchers) == 0 {
-			return rawMatcherSets, false, nil
-		}
-
 		optimizedMatchers := make([]*labels.Matcher, 0, len(matchers))
+		hasNonEmptyMatchers := false
 
 		for _, matcher := range matchers {
+			// Filter out a matcher that matches any string because it matches all series.
+			if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
+				optimized = true
+				continue
+			}
+
+			hasNonEmptyMatchers = true
+
 			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
 			// so this matcher matches all series but very expensive to run.
 			if matcher.Name == labels.MetricName && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
@@ -166,14 +168,21 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 			optimizedMatchers = append(optimizedMatchers, matcher)
 		}
 
-		if len(optimizedMatchers) > 0 {
-			optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(optimizedMatchers))
-		} else {
-			// It was not an empty matcher (see condition above), and all the matchers have been removed.
+		if !hasNonEmptyMatchers {
+			// If the matchers set only contain empty matchers then we need to preserve them because it's an invalid case
+			// for the labels API, but we want to get the actual error from downstream. In this case we just
+			// don't optimize any matchers set.
+			return rawMatcherSets, false, nil
+		}
+
+		if len(optimizedMatchers) == 0 {
+			// It was not an empty matcher (see previous condition), and all the matchers have been removed.
 			// It means that we should match all series. Since the matchers in different sets are in a "or" condition
 			// it practically means we want to query all series, so we just return no matchers at all.
 			return []string{}, true, nil
 		}
+
+		optimizedRawMatcherSets = append(optimizedRawMatcherSets, util.LabelMatchersToString(optimizedMatchers))
 	}
 
 	return optimizedRawMatcherSets, optimized, nil
