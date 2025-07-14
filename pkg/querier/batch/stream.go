@@ -95,6 +95,53 @@ func (bs *batchStream) curr() *chunk.Batch {
 	return &bs.batches[0]
 }
 
+// resolveTimestampConflict determines which batch to pick when two samples have the same timestamp.
+// It returns true if the left batch should be picked, false if the right batch should be picked.
+func resolveTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *chunk.Batch) bool {
+	switch {
+	// If the sample types are the same, we pick the highest value.
+	case lt == rt:
+		if lt == chunkenc.ValFloat {
+			_, lValue := leftBatch.At()
+			_, rValue := rightBatch.At()
+			return lValue > rValue
+		} else if lt == chunkenc.ValHistogram {
+			_, lValue := leftBatch.AtHistogram()
+			_, rValue := rightBatch.AtHistogram()
+			lHist := (*histogram.Histogram)(lValue)
+			rHist := (*histogram.Histogram)(rValue)
+			if lHist.Count == rHist.Count {
+				return lHist.Sum > rHist.Sum
+			}
+			return lHist.Count > rHist.Count
+		} else if lt == chunkenc.ValFloatHistogram {
+			_, lValue := leftBatch.AtFloatHistogram()
+			_, rValue := rightBatch.AtFloatHistogram()
+			lHist := (*histogram.FloatHistogram)(lValue)
+			rHist := (*histogram.FloatHistogram)(rValue)
+			if lHist.Count == rHist.Count {
+				return lHist.Sum > rHist.Sum
+			}
+			return lHist.Count > rHist.Count
+		} else {
+			// We should never reach this point.
+			return true
+		}
+
+	// Otherwise, give preference to histogram.
+	case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
+		return lt == chunkenc.ValHistogram
+
+	// Otherwise, give preference to float histogram.
+	case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
+		return lt == chunkenc.ValFloatHistogram
+
+	default:
+		// We should never reach this point.
+		return true
+	}
+}
+
 // merge merges this streams of chunk.Batch objects and the given chunk.Batch of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
@@ -195,42 +242,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			// The two samples have the same timestamp. They may be the same exact sample or different one
 			// (e.g. we ingested an in-order sample and then OOO sample with same timestamp but different value).
 			// We want query results to be deterministic, so we select one of the two side deterministically.
-			var pickLeftSide bool
-
-			switch {
-			// If the sample types are the same, we pick the highest value.
-			case lt == rt:
-				if lt == chunkenc.ValFloat {
-					_, lValue := bs.curr().At()
-					_, rValue := batch.At()
-					pickLeftSide = lValue > rValue
-				} else if lt == chunkenc.ValHistogram {
-					_, lValue := bs.curr().AtHistogram()
-					_, rValue := batch.AtHistogram()
-
-					pickLeftSide = (*histogram.Histogram)(lValue).Sum > (*histogram.Histogram)(rValue).Sum
-				} else if lt == chunkenc.ValFloatHistogram {
-					_, lValue := bs.curr().AtFloatHistogram()
-					_, rValue := batch.AtFloatHistogram()
-
-					pickLeftSide = (*histogram.FloatHistogram)(lValue).Sum > (*histogram.FloatHistogram)(rValue).Sum
-				} else {
-					// We should never reach this point.
-					pickLeftSide = true
-				}
-
-			// Otherwise, give preference to histogram.
-			case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
-				pickLeftSide = lt == chunkenc.ValHistogram
-
-			// Otherwise, give preference to float histogram.
-			case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
-				pickLeftSide = lt == chunkenc.ValFloatHistogram
-
-			default:
-				// We should never reach this point.
-				pickLeftSide = true
-			}
+			pickLeftSide := resolveTimestampConflict(lt, rt, bs.curr(), batch)
 
 			if pickLeftSide {
 				populate(bs.curr(), lt, -1)
