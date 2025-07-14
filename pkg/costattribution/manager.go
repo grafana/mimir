@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
-	model "github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -104,12 +104,12 @@ func (m *Manager) enabledForUser(userID string) bool {
 	return len(m.limits.CostAttributionLabels(userID)) > 0 || len(m.limits.CostAttributionLabelsStructured(userID)) > 0
 }
 
-func (m *Manager) labels(userID string) []model.Label {
+func (m *Manager) labels(userID string) []costattributionmodel.Label {
 	// We prefer the structured labels over the string labels, if provided.
 	if s := m.limits.CostAttributionLabelsStructured(userID); len(s) > 0 {
 		return s
 	}
-	return model.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
+	return costattributionmodel.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -137,7 +137,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// sort the labels to ensure the order is consistent.
-	slices.SortFunc(labels, func(a, b model.Label) int {
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
@@ -171,7 +171,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b model.Label) int {
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
@@ -282,7 +282,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	labels := m.labels(userID)
 
 	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b model.Label) int {
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
 		return strings.Compare(a.Input, b.Input)
 	})
 
