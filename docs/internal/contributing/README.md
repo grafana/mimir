@@ -151,4 +151,4 @@ The BUGFIX scope denotes a change that fixes an issue with the project in questi
 
 ### Referencing the PR number in the changelog entry
 
-When adding an entry to the changelog, the first line of the entry must end with `#<PR>` where `<PR>` is the GitHub pull request ID. You get get the next `<PR>` ID right before opening the PR by executing the script `./tools/hub-next-pr-number.sh`.
+When adding an entry to the changelog, the first line of the entry must end with `#<PR>` where `<PR>` is the GitHub pull request ID. You get get the next `<PR>` ID right before opening the PR by executing the script `./tools/github-next-pr-number.sh`.
