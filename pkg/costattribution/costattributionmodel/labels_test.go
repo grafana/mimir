@@ -35,7 +35,7 @@ func TestParseCostAttributionLabels(t *testing.T) {
 	}
 }
 
-func TestLabel_outputLabel(t *testing.T) {
+func TestLabel_OutputLabel(t *testing.T) {
 	tc := map[string]struct {
 		input    Label
 		expected string
