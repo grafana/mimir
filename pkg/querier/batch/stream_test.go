@@ -182,7 +182,7 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 	}
 }
 
-func TestResolveTimestampConflict_DeterministicBehavior(t *testing.T) {
+func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 	testCases := []struct {
 		name          string
 		aType         chunkenc.ValueType
