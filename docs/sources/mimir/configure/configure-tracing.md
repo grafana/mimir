@@ -48,8 +48,8 @@ OpenTelemetry configuration follows the standard documentation from [OpenTelemet
 
 The `OTEL_TRACES_EXPORTER` environment variable specifies which trace exporter to use:
 
-- `otlp` (default): OpenTelemetry Protocol exporter
-- `none`: No trace exporter
+- `otlp` (default): OpenTelemetry Protocol exporter.
+- `none`: No trace exporter. You can set this value if you want to configure the tracing library to propagate trace context without exporting traces.
 
 {{< admonition type="note" >}}
 The `jaeger` exporter option is not available, as it was deprecated by the OpenTelemetry project in 2023. Instead, use the `otlp` exporter, since Jaeger supports OTLP ingestion natively.

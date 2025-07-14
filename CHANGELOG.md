@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Tracing: Skip tracing configuration when no tracing environment variables were provided. #12074
+
 ## 2.17.0-rc.0
 
 ### Grafana Mimir
