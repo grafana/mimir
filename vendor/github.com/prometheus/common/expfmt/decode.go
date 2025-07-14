@@ -14,7 +14,6 @@
 package expfmt
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +28,7 @@ import (
 
 // Decoder types decode an input stream into metric families.
 type Decoder interface {
-	Decode(*dto.MetricFamily, model.ValidationScheme) error
+	Decode(*dto.MetricFamily) error
 }
 
 // DecodeOptions contains options used by the Decoder and in sample extraction.
@@ -70,30 +69,15 @@ func ResponseFormat(h http.Header) Format {
 	return FmtUnknown
 }
 
-// NewDecoder returns a new decoder based on the given input format.
-// If the input format does not imply otherwise, a text format decoder is returned.
-func NewDecoder(r io.Reader, format Format) Decoder {
-	switch format.FormatType() {
-	case TypeProtoDelim:
-		return &protoDecoder{r: bufio.NewReader(r)}
-	}
-	return &textDecoder{r: r}
-}
-
-// protoDecoder implements the Decoder interface for protocol buffers.
-type protoDecoder struct {
-	r protodelim.Reader
-}
-
 // Decode implements the Decoder interface.
-func (d *protoDecoder) Decode(v *dto.MetricFamily, nameValidationScheme model.ValidationScheme) error {
+func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 	opts := protodelim.UnmarshalOptions{
 		MaxSize: -1,
 	}
 	if err := opts.UnmarshalFrom(d.r, v); err != nil {
 		return err
 	}
-	if !model.IsValidMetricName(model.LabelValue(v.GetName()), nameValidationScheme) {
+	if !d.isValidMetricName(v.GetName()) {
 		return fmt.Errorf("invalid metric name %q", v.GetName())
 	}
 	for _, m := range v.GetMetric() {
@@ -107,7 +91,7 @@ func (d *protoDecoder) Decode(v *dto.MetricFamily, nameValidationScheme model.Va
 			if !model.LabelValue(l.GetValue()).IsValid() {
 				return fmt.Errorf("invalid label value %q", l.GetValue())
 			}
-			if !model.LabelName(l.GetName()).IsValid(nameValidationScheme) {
+			if !d.isValidLabelName(l.GetName()) {
 				return fmt.Errorf("invalid label name %q", l.GetName())
 			}
 		}
@@ -123,7 +107,7 @@ type textDecoder struct {
 }
 
 // Decode implements the Decoder interface.
-func (d *textDecoder) Decode(v *dto.MetricFamily, _ model.ValidationScheme) error {
+func (d *textDecoder) Decode(v *dto.MetricFamily) error {
 	if d.err == nil {
 		// Read all metrics in one shot.
 		var p TextParser
@@ -156,8 +140,8 @@ type SampleDecoder struct {
 
 // Decode calls the Decode method of the wrapped Decoder and then extracts the
 // samples from the decoded MetricFamily into the provided model.Vector.
-func (sd *SampleDecoder) Decode(s *model.Vector, nameValidationScheme model.ValidationScheme) error {
-	err := sd.Dec.Decode(&sd.f, nameValidationScheme)
+func (sd *SampleDecoder) Decode(s *model.Vector) error {
+	err := sd.Dec.Decode(&sd.f)
 	if err != nil {
 		return err
 	}

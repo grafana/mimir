@@ -670,7 +670,8 @@ func addExemplars[N int64 | float64](m prometheus.Metric, exemplars []metricdata
 			Labels:    labels,
 		}
 	}
-	metricWithExemplar, err := prometheus.NewMetricWithExemplars(m, promExemplars...)
+	// TODO: Parameterize name validation scheme.
+	metricWithExemplar, err := newMetricWithExemplars(m, model.UTF8Validation, promExemplars...)
 	if err != nil {
 		// If there are errors creating the metric with exemplars, just warn
 		// and return the metric without exemplars.

@@ -204,9 +204,7 @@ func (m Metric) FastFingerprint() Fingerprint {
 	return LabelSet(m).FastFingerprint()
 }
 
-// IsValidMetricName returns true iff name matches the pattern of MetricNameRE
-// for legacy names, and iff it's valid UTF-8 if scheme is UTF8Validation.
-func IsValidMetricName(n LabelValue, scheme ValidationScheme) bool {
+func isValidMetricName(n LabelValue, scheme ValidationScheme) bool {
 	switch scheme {
 	case LegacyValidation:
 		return IsValidLegacyMetricName(string(n))
@@ -216,7 +214,7 @@ func IsValidMetricName(n LabelValue, scheme ValidationScheme) bool {
 		}
 		return utf8.ValidString(string(n))
 	default:
-		panic(fmt.Sprintf("Invalid name validation scheme requested: %s", scheme.String()))
+		panic(fmt.Sprintf("Invalid name validation scheme requested: %s", scheme))
 	}
 }
 
