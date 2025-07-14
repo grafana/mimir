@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,6 +40,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -332,9 +335,9 @@ type MultitenantAlertmanager struct {
 
 	alertmanagersMtx sync.Mutex
 	alertmanagers    map[string]*Alertmanager
-	// Stores the current set of configurations we're running in each tenant's Alertmanager.
+	// Stores the current set of configurations hashes we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
-	cfgs map[string]amConfig
+	cfgs map[string]model.Fingerprint
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -420,7 +423,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
-		cfgs:                map[string]amConfig{},
+		cfgs:                map[string]model.Fingerprint{},
 		alertmanagers:       map[string]*Alertmanager{},
 		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
@@ -1027,6 +1030,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
+	cfgFp := cfg.fingerprint()
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
@@ -1035,16 +1039,20 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg) {
-		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
-		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
-		if err != nil {
-			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+	} else {
+		curFp := am.cfgs[cfg.User]
+		if curFp != cfgFp {
+			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
+			am.cfgs[cfg.User] = cfgFp
+			// If the config changed, apply the new one.
+			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
+			if err != nil {
+				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+			}
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg
+	am.cfgs[cfg.User] = cfgFp
 	return nil
 }
 
@@ -1573,34 +1581,4 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func configChanged(left, right amConfig) bool {
-	if left.User != right.User {
-		return true
-	}
-	if left.RawConfig != right.RawConfig {
-		return true
-	}
-
-	existing := make(map[string]string)
-	for _, tm := range left.Templates {
-		existing[fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)] = tm.Content
-	}
-
-	for _, tm := range right.Templates {
-		key := fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)
-		corresponding, ok := existing[key]
-		if !ok {
-			return true // Right has a template that left does not.
-		}
-		if corresponding != tm.Content {
-			return true // The template content is different.
-		}
-		delete(existing, key)
-	}
-
-	// TODO add remaining fields to comparison
-
-	return len(existing) != 0 // Left has a template that right does not.
 }

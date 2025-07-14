@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -290,16 +291,19 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg := alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+
+	user2Cfg := alertspb.AlertConfigDesc{
 		User:      "user2",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
@@ -310,9 +314,9 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 2)
 
-	currentConfig, cfgExists := am.cfgs["user1"]
+	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigOne, currentConfig.RawConfig)
+	require.Equal(t, newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -350,11 +354,14 @@ templates:
 	user3Dir := dirs["user3"]
 	require.NotZero(t, user3Dir)
 	require.True(t, dirExists(t, user3Dir))
-	finalUser3Cfg, ok := am.cfgs["user3"]
+	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Len(t, finalUser3Cfg.Templates, 2)
-	require.Equal(t, "first.tpl", finalUser3Cfg.Templates[0].Name)
-	require.Equal(t, "second.tpl", finalUser3Cfg.Templates[1].Name)
+	require.Equal(t, newMimirAmConfigFromDesc(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	user3Am, ok := am.alertmanagers["user3"]
+	require.True(t, ok)
+	require.Len(t, user3Am.templates, 2)
+	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
+	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -364,41 +371,50 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
-	// Ensure the config is updated
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg = alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigTwo,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	// Ensure the config is updated
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
-	require.Empty(t, currentConfig.Templates)
+	expectedFp := newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User:      "user1",
-		RawConfig: simpleConfigTwo,
+	user1Cfg = alertspb.AlertConfigDesc{
+		User: "user1",
+		RawConfig: simpleConfigTwo + `
+templates:
+- 'some-template.tmpl'
+`,
 		Templates: []*alertspb.TemplateDesc{
 			{
 				Filename: "some-template.tmpl",
 				Body:     simpleTemplateOne,
 			},
 		},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Len(t, currentConfig.Templates, 1)
-	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Name)
-	require.Contains(t, currentConfig.Templates[0].Content, "some.template")
+	expectedFp = newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
+	user1Am, ok := am.alertmanagers["user1"]
+	require.True(t, ok)
+	require.Len(t, user1Am.templates, 1)
+	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
+	require.Contains(t, user1Am.templates[0].Template, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
 	testSmtpFrom := "test@grafana.com"
@@ -439,7 +455,7 @@ templates:
 	amCfg, err := createUsableGrafanaConfig(am.logger, userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
 	grafanaAlertConfigDesc := amCfg
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -461,7 +477,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirAmConfig, am.cfgs["user4"])
+	require.Equal(t, emptyMimirAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is used when it's promoted again.
 	userGrafanaCfg.Promoted = true
@@ -469,7 +485,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	// Add a Mimir fallback config for the same user.
 	defaultConfig := alertspb.AlertConfigDesc{
@@ -518,7 +534,7 @@ templates:
 			SentBy:        "Mimir vunknown",
 		},
 	}
-	require.Equal(t, expCfg, am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's marked as default.
 	userGrafanaCfg.Default = true
@@ -526,7 +542,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, expectedDefaultAmConfig, am.cfgs["user4"])
+	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -535,15 +551,14 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, expectedDefaultAmConfig, am.cfgs["user4"])
+	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	currentConfig, cfgExists = am.cfgs["user3"]
+	_, cfgExists = am.cfgs["user3"]
 	require.False(t, cfgExists)
-	require.Equal(t, "", currentConfig.RawConfig)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.False(t, cfgExists)
@@ -567,9 +582,10 @@ templates:
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user3"]
+	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	require.Equal(t, user3Cfg.RawConfig, currentConfig.RawConfig)
+	expectedFp = newMimirAmConfigFromDesc(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.True(t, cfgExists)
@@ -3607,207 +3623,26 @@ func TestComputeConfig(t *testing.T) {
 	}
 }
 
-func Test_configChanged(t *testing.T) {
-	type tc struct {
-		name    string
-		left    amConfig
-		right   amConfig
-		changed bool
-	}
+func Test_amConfigFingerprint(t *testing.T) {
+	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
+		const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
+		// Helper function to get field count of a struct
+		getFieldCount := func(v interface{}) int {
+			t := reflect.TypeOf(v)
+			if t.Kind() == reflect.Ptr {
+				t = t.Elem()
+			}
+			return t.NumField()
+		}
 
-	cases := []tc{
-		{
-			name: "matching",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-					{
-						Name:    "template-two.tmpl",
-						Content: simpleTemplateTwo,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-					{
-						Name:    "template-two.tmpl",
-						Content: simpleTemplateTwo,
-					},
-				},
-			},
-			changed: false,
-		},
-		{
-			name: "user changed",
-			left: amConfig{
-				User:      "user2",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "config changed",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigTwo,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template Content changed",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template name changed",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-two.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template added",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-					{
-						Name:    "template-two.tmpl",
-						Content: simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template removed",
-			left: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-					{
-						Name:    "template-two.tmpl",
-						Content: simpleTemplateTwo,
-					},
-				},
-			},
-			right: amConfig{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []definition.PostableApiTemplate{
-					{
-						Name:    "template-one.tmpl",
-						Content: simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-	}
+		// Calculate total fields across all structs
+		totalFields := 0
+		totalFields += getFieldCount(definition.PostableApiTemplate{})
+		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
+		totalFields += getFieldCount(amConfig{})
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			r := configChanged(c.left, c.right)
-			assert.Equal(t, c.changed, r)
-		})
-	}
+		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
+	})
 }
 
 func TestSyncStates(t *testing.T) {
