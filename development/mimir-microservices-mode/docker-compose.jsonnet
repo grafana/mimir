@@ -41,6 +41,8 @@ std.manifestYamlDoc({
 
     // If true, start parquet-converter
     enable_parquet: false,
+    // If true, emulate classic store-gateway behavior by loading the Parquet labels file to disk
+    parquet_store_gateway_load_index_to_disk: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -179,14 +181,20 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
+  local extraStoreGatewayArgs = std.join(
+    ' ', [
+      (if $._config.enable_parquet then '-log.level=debug -store-gateway.parquet-enabled=true' else null),
+      (if ($._config.enable_parquet && !$._config.parquet_store_gateway_load_index_to_disk) then '-blocks-storage.bucket-store.parquet-load-index-to-disk=false' else null),
+    ]
+  ),
+
   store_gateways(count):: {
     ['store-gateway-%d' % id]: mimirService({
       name: 'store-gateway-' + id,
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
-      extraArguments:
-        if $._config.enable_parquet then '-store-gateway.parquet-enabled=true' else '',
+      extraArguments: extraStoreGatewayArgs,
     })
     for id in std.range(1, count)
   },

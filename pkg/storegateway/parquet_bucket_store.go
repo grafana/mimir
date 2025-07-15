@@ -22,10 +22,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
+	parquetGo "github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
-	parquetstorage "github.com/prometheus-community/parquet-common/storage"
+	parquetStorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -76,6 +77,8 @@ type ParquetBucketStore struct {
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
+	loadIndexToDisk bool
+	fileOpts        []parquetStorage.FileOption
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -103,6 +106,8 @@ func NewParquetBucketStore(
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
+	loadIndexToDisk bool,
+	fileOpts []parquetStorage.FileOption,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	metrics *ParquetBucketStoreMetrics,
@@ -123,6 +128,10 @@ func NewParquetBucketStore(
 
 		queryGate:       queryGate,
 		lazyLoadingGate: lazyLoadingGate,
+		loadIndexToDisk: loadIndexToDisk,
+		fileOpts: append(fileOpts,
+			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
+		),
 
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
@@ -345,8 +354,8 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+			return []parquetStorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
@@ -450,8 +459,8 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+			return []parquetStorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
@@ -577,8 +586,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 ) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
 	spanLogger := spanlogger.FromContext(ctx, s.logger)
 
-	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-		var parquetShards []parquetstorage.ParquetShard
+	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+		var parquetShards []parquetStorage.ParquetShard
 		for _, shardReader := range shardReaders {
 			parquetShards = append(parquetShards, shardReader)
 		}
@@ -977,12 +986,13 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	// TODO get shard reader from pool
 	blockReader, err := s.readerPool.GetReader(
 		ctx,
 		meta.ULID,
 		s.bkt,
 		blockLocalDir,
+		s.loadIndexToDisk,
+		s.fileOpts,
 		s.logger,
 	)
 
