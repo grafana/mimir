@@ -3726,8 +3726,8 @@ blocked_queries:
   - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
 
-    # If true, pattern is treated as a regular expression. If false, pattern is
-    # treated as a literal match.
+    # If true, the pattern is treated as a regular expression. If false, the
+    # pattern is treated as a literal match.
     [regex: <boolean> | default = ]
 
     # Reason returned to clients when rejecting matching queries.
@@ -3772,8 +3772,8 @@ blocked_requests:
         # Value to match.
         [value: <string> | default = ""]
 
-        # If true, value is treated as a regexp pattern. If false, value is
-        # treated as a literal match.
+        # If true, the value is treated as a regular expression. If false, the
+        # value is treated as a literal match.
         [is_regexp: <boolean> | default = ]
 
 # Mutate incoming queries to align their start and end with their step to

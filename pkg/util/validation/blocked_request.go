@@ -10,7 +10,7 @@ type BlockedRequest struct {
 
 type BlockedRequestQueryParam struct {
 	Value    string `yaml:"value" doc:"description=Value to match."`
-	IsRegexp bool   `yaml:"is_regexp,omitempty" doc:"description=If true, value is treated as a regexp pattern. If false, value is treated as a literal match."`
+	IsRegexp bool   `yaml:"is_regexp,omitempty" doc:"description=If true, the value is treated as a regular expression. If false, the value is treated as a literal match."`
 }
 
 type BlockedRequestsConfig []BlockedRequest

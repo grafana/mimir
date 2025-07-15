@@ -4,7 +4,7 @@ package validation
 
 type BlockedQuery struct {
 	Pattern string `yaml:"pattern" doc:"description=PromQL expression pattern to match."`
-	Regex   bool   `yaml:"regex" doc:"description=If true, pattern is treated as a regular expression. If false, pattern is treated as a literal match."`
+	Regex   bool   `yaml:"regex" doc:"description=If true, the pattern is treated as a regular expression. If false, the pattern is treated as a literal match."`
 	Reason  string `yaml:"reason" doc:"description=Reason returned to clients when rejecting matching queries."`
 }
 

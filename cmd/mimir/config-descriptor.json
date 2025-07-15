@@ -4975,7 +4975,7 @@
                 "kind": "field",
                 "name": "regex",
                 "required": false,
-                "desc": "If true, pattern is treated as a regular expression. If false, pattern is treated as a literal match.",
+                "desc": "If true, the pattern is treated as a regular expression. If false, the pattern is treated as a literal match.",
                 "fieldValue": null,
                 "fieldDefaultValue": false,
                 "fieldType": "boolean"
@@ -5090,7 +5090,7 @@
                       "kind": "field",
                       "name": "is_regexp",
                       "required": false,
-                      "desc": "If true, value is treated as a regexp pattern. If false, value is treated as a literal match.",
+                      "desc": "If true, the value is treated as a regular expression. If false, the value is treated as a literal match.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
                       "fieldType": "boolean"
