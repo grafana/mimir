@@ -11,8 +11,7 @@ weight: 10
 
 # Grafana Mimir listblocks
 
-The listblocks tool lists blocks and show the block details of a tenant.
-Listblocks requires at least configuration to access the bucket and tenant.
+The listblocks tool lists blocks and shows the block details of a tenant.
 
 ## Download and configure listblocks
 
