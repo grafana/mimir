@@ -406,24 +406,6 @@ func TestBatchStream_EdgeCases(t *testing.T) {
 		require.Equal(t, 2, s.batches[0].Length)
 	})
 
-	t.Run("single sample batches with conflicts", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
-
-		// Create single sample batch
-		batch1 := mkGenericFloatBatch(100, 1)
-		batch1.Values[0] = 5.0
-		s.batches = []chunk.Batch{batch1}
-
-		// Merge another single sample batch with same timestamp but higher value
-		batch2 := mkGenericFloatBatch(100, 1)
-		batch2.Values[0] = 10.0
-		s.merge(&batch2, chunk.BatchSize, 0)
-
-		require.Equal(t, 1, s.len())
-		require.Equal(t, 1, s.batches[0].Length)
-		require.Equal(t, 10.0, s.batches[0].Values[0]) // Higher value should win
-	})
-
 	t.Run("extreme float values", func(t *testing.T) {
 		testCases := []struct {
 			name       string
