@@ -4791,20 +4791,61 @@ The `limits` block configures default and per-tenant limits imposed by component
 #   Setting the pattern to ".*" and regex to true blocks all queries.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
+#         regex: false
 #         reason: because the query is misconfigured
-[blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
+blocked_queries:
+  - # PromQL expression pattern to match.
+    [pattern: <string> | default = ""]
+
+    # If true, the pattern is treated as a regular expression. If false, the
+    # pattern is treated as a literal match.
+    [regex: <boolean> | default = ]
+
+    # Reason returned to clients when rejecting matching queries.
+    [reason: <string> | default = ""]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
 #   running, at most, every minute.
 #   limited_queries:
-#       - allowed_frequency: 1m
-#         query: rate(metric_counter[5m])
-[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
+#       - query: rate(metric_counter[5m])
+#         allowed_frequency: 1m0s
+limited_queries:
+  - # Literal PromQL expression to match.
+    [query: <string> | default = ""]
 
-# (experimental) List of http requests to block.
-[blocked_requests: <blocked_requests_config...> | default = ]
+    # Minimum duration between matching queries. If a matching query arrives
+    # more often than this, it is rejected.
+    [allowed_frequency: <duration> | default = ]
+
+# (experimental) List of HTTP requests to block.
+# Example:
+#   The following configuration blocks all GET requests to /foo when the "limit"
+#   parameter is set to 100.
+#   blocked_requests:
+#       - path: /foo
+#         method: GET
+#         query_params:
+#           limit:
+#               value: "100"
+blocked_requests:
+  - # Path to match, including leading slash (/). Leave blank to match all paths.
+    [path: <string> | default = ""]
+
+    # HTTP method to match. Leave blank to match all methods.
+    [method: <string> | default = ""]
+
+    # Query parameters to match. Requests must have all of the provided query
+    # parameters to be considered a match.
+    [query_params:]
+      <string>:
+        # Value to match.
+        [value: <string> | default = ""]
+
+        # If true, the value is treated as a regular expression. If false, the
+        # value is treated as a literal match.
+        [is_regexp: <boolean> | default = ]
 
 # Mutate incoming queries to align their start and end with their step to
 # improve result caching.

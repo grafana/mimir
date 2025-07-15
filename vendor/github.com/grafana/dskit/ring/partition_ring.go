@@ -370,7 +370,7 @@ func (r *PartitionRing) MultiPartitionOwnerIDs(partitionID int32, buf []string) 
 	}
 
 	for i, ownerID := range ids {
-		if p := strings.IndexByte(ownerID, '/'); p != -1 {
+		if p := strings.LastIndexByte(ownerID, '/'); p != -1 {
 			buf[i] = ownerID[:p]
 		} else {
 			// This isn't expected here: all owner IDs should have a suffix when multiple partitions can be owned.

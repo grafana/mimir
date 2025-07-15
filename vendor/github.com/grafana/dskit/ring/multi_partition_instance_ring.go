@@ -62,7 +62,6 @@ func (r *MultiPartitionInstanceRing) GetReplicationSetForPartitionAndOperation(p
 
 		instances = append(instances, instance)
 		// Store this in the same position as the instance, so we can use it to compare later.
-		// We only need this when r.pickHighestZoneOwner=true, but it's probably cheaper to do it than to check it.
 		ownerIDs[len(instances)-1] = instanceID
 	}
 
@@ -74,7 +73,7 @@ func (r *MultiPartitionInstanceRing) GetReplicationSetForPartitionAndOperation(p
 	zonesBuffer = uniqueZonesFromInstances(instances, zonesBuffer[:0])
 	uniqueZones := len(zonesBuffer)
 
-	instances = highestPreferrablyNonReadOnlyFromEachZone(instances, ownerIDs, zonesBuffer)
+	instances = highestPreferablyNonReadOnlyFromEachZone(instances, ownerIDs, zonesBuffer)
 
 	return ReplicationSet{
 		Instances: instances,
@@ -92,7 +91,8 @@ func (r *MultiPartitionInstanceRing) GetReplicationSetForPartitionAndOperation(p
 
 // this method expects instanceIDs to be in the same order as instances.
 // instanceIDs should hold the parsed multi-partition owner IDs.
-func highestPreferrablyNonReadOnlyFromEachZone(instances []InstanceDesc, instanceIDs []string, instanceZones []string) []InstanceDesc {
+// instances input slice is updated in place and returned.
+func highestPreferablyNonReadOnlyFromEachZone(instances []InstanceDesc, instanceIDs []string, instanceZones []string) []InstanceDesc {
 	var stackAllInstances [16]InstanceDesc
 	allInstances := append(stackAllInstances[:0], instances...)
 	instances = instances[:0] // Reset, this is what we're going to return.

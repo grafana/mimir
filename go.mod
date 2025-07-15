@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250714110327-9c6da3f1e284
+	github.com/grafana/dskit v0.0.0-20250715115838-7fac058e0e7b
 	github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -345,7 +345,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250709154606-832330026356
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250715103124-73cbc98c25ff
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -377,9 +377,6 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
-
-// TODO: usage-tracker specific: Vendoring the "usage-tracker" branch in dskit.
-replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250714143558-f922d4bb9be2
 
 // TODO: usage-tracker specific: Replacing client_golang with https://github.com/prometheus/client_golang/pull/1766
 replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e

@@ -337,10 +337,15 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 			registeredAt = time.Now()
 		}
 
+		readOnly, readOnlyUpdatedTimestamp := instanceDesc.GetReadOnlyState()
+		if readOnlyUpdatedTimestamp.IsZero() {
+			// Store the zero timestamp as 0 in the ring, not as -62135596800.
+			readOnlyUpdatedTimestamp = time.Unix(0, 0)
+		}
 		// Always overwrite the instance in the ring (even if already exists) because some properties
 		// may have changed (stated, tokens, zone, address) and even if they didn't the heartbeat at
 		// least did.
-		instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, tokens, state, registeredAt, false, time.Time{})
+		instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, tokens, state, registeredAt, readOnly, readOnlyUpdatedTimestamp)
 		return ringDesc, true, nil
 	})
 
@@ -467,7 +472,8 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 			// a resharding of tenants among instances: to guarantee query correctness we need to update the
 			// registration timestamp to current time.
 			registeredAt := time.Now()
-			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, false, time.Time{})
+			readOnly, readOnlyUpdatedTimestamp := l.GetReadOnlyState()
+			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, readOnly, readOnlyUpdatedTimestamp)
 		}
 
 		prevTimestamp := instanceDesc.Timestamp
@@ -541,13 +547,8 @@ func (l *BasicLifecycler) changeReadOnlyState(ctx context.Context, readOnly bool
 			return false
 		}
 
-		if readOnly {
-			i.ReadOnly = true
-			i.ReadOnlyUpdatedTimestamp = time.Now().Unix()
-		} else {
-			i.ReadOnly = false
-			i.ReadOnlyUpdatedTimestamp = time.Now().Unix()
-		}
+		i.ReadOnly = readOnly
+		i.ReadOnlyUpdatedTimestamp = time.Now().Unix()
 		return true
 	})
 
