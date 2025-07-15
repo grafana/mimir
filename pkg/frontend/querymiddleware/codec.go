@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/user"
 	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -80,24 +81,36 @@ const (
 // Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
 type Codec interface {
 	Merger
+
 	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
 	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
+
 	// DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
 	DecodeLabelsSeriesQueryRequest(context.Context, *http.Request) (LabelsSeriesQueryRequest, error)
+
 	// DecodeMetricsQueryResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeMetricsQueryResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
+
 	// DecodeLabelsSeriesQueryResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeLabelsSeriesQueryResponse(context.Context, *http.Response, LabelsSeriesQueryRequest, log.Logger) (Response, error)
-	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+
+	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into a http request.
+	// This function propagates only HTTP request headers that are defined in the prometheusCodecPropagateHeadersMetrics
+	// allow list. The authentication is injected from provided context.
 	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
-	// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
+
+	// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into a http request.
+	// This function propagates only HTTP request headers that are defined in the prometheusCodecPropagateHeadersLabels
+	// allow list. The authentication is injected from provided context.
 	EncodeLabelsSeriesQueryRequest(context.Context, LabelsSeriesQueryRequest) (*http.Request, error)
+
 	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 	EncodeMetricsQueryResponse(context.Context, *http.Request, Response) (*http.Response, error)
+
 	// EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 	EncodeLabelsSeriesQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
 }
@@ -768,6 +781,11 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		}
 	}
 
+	// Inject auth from context.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
 	return req.WithContext(ctx), nil
 }
 
@@ -866,6 +884,11 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req
 			// There should only be one value, but add all of them for completeness.
 			r.Header.Add(h.Name, v)
 		}
+	}
+
+	// Inject auth from context.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, r); err != nil {
+		return nil, err
 	}
 
 	return r.WithContext(ctx), nil
