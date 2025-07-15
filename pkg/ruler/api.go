@@ -724,7 +724,6 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		// We don't return 429s for all object storage rate limit errors, since we can't guarantee all of them are user
 		// issues.
 		if isGCSObjectMutationRateLimitError(err) {
-			level.Warn(logger).Log("msg", "per-rule group rate limit exceeded", "userID", userID, "namespace", namespace, "err", err.Error())
 			respondError(logger, w, http.StatusTooManyRequests, v1.ErrServer, "per-rule group rate limit exceeded")
 			return
 		}
