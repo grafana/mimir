@@ -184,12 +184,13 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 
 func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 	testCases := []struct {
-		name          string
-		aType         chunkenc.ValueType
-		bType         chunkenc.ValueType
-		aBatch        *chunk.Batch
-		bBatch        *chunk.Batch
-		expectedPickA bool
+		name               string
+		aType              chunkenc.ValueType
+		bType              chunkenc.ValueType
+		aBatch             *chunk.Batch
+		bBatch             *chunk.Batch
+		expectedPickA      bool
+		expectedPickEither bool
 	}{
 		{
 			name:  "Float vs Float - higher value wins",
@@ -307,6 +308,120 @@ func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 			}(),
 			expectedPickA: false,
 		},
+		{
+			name:  "Float vs Float - positive infinity vs finite",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(1)
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 100.0
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Float vs Float - finite vs positive infinity",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 100.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(1)
+				return &b
+			}(),
+			expectedPickA: false,
+		},
+		{
+			name:  "Float vs Float - negative infinity vs finite",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(-1)
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = -100.0
+				return &b
+			}(),
+			expectedPickA: false,
+		},
+		{
+			name:  "Float vs Float - finite vs negative infinity",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = -100.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(-1)
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Float vs Float - positive vs negative infinity",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(1)
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Inf(-1)
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Float vs Float - very large vs very small",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 1e308
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 1e-308
+				return &b
+			}(),
+			expectedPickA: true,
+		},
+		{
+			name:  "Float vs Float - zero vs negative zero",
+			aType: chunkenc.ValFloat,
+			bType: chunkenc.ValFloat,
+			aBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = 0.0
+				return &b
+			}(),
+			bBatch: func() *chunk.Batch {
+				b := mkGenericFloatBatch(100, 1)
+				b.Values[0] = math.Copysign(0, -1)
+				return &b
+			}(),
+			// In go -0 and 0 are the same number, so we end up picking the left-hand side always.
+			// We don't bother picking one of them because it's complicated, so this test case is mosty for documentation.
+			expectedPickEither: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -316,7 +431,9 @@ func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 
 			// Test with reversed order to ensure deterministic behavior
 			resultReversed := decideTimestampConflict(tc.bType, tc.aType, tc.bBatch, tc.aBatch)
-			require.Equal(t, !tc.expectedPickA, resultReversed)
+			if !tc.expectedPickEither {
+				require.Equal(t, !tc.expectedPickA, resultReversed)
+			}
 		})
 	}
 }
@@ -391,36 +508,6 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 		s.merge(&emptyBatch, chunk.BatchSize, 0)
 		require.Equal(t, 1, s.len())
 		require.Equal(t, 2, s.batches[0].Length)
-	})
-
-	t.Run("extreme float values", func(t *testing.T) {
-		testCases := []struct {
-			name       string
-			leftValue  float64
-			rightValue float64
-			expectLeft bool
-		}{
-			{"positive infinity vs finite", math.Inf(1), 100.0, true},
-			{"finite vs positive infinity", 100.0, math.Inf(1), false},
-			{"negative infinity vs finite", math.Inf(-1), -100.0, false},
-			{"finite vs negative infinity", -100.0, math.Inf(-1), true},
-			{"positive vs negative infinity", math.Inf(1), math.Inf(-1), true},
-			{"very large vs very small", 1e308, 1e-308, true},
-			{"zero vs negative zero", 0.0, math.Copysign(0, -1), false}, // Go treats 0.0 == -0.0
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				leftBatch := mkGenericFloatBatch(100, 1)
-				leftBatch.Values[0] = tc.leftValue
-
-				rightBatch := mkGenericFloatBatch(100, 1)
-				rightBatch.Values[0] = tc.rightValue
-
-				result := decideTimestampConflict(chunkenc.ValFloat, chunkenc.ValFloat, &leftBatch, &rightBatch)
-				require.Equal(t, tc.expectLeft, result, "Expected %v but got %v for %f vs %f", tc.expectLeft, result, tc.leftValue, tc.rightValue)
-			})
-		}
 	})
 
 	t.Run("nan handling", func(t *testing.T) {
