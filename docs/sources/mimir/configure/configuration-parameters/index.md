@@ -6020,6 +6020,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
   [series_fetch_preference: <float> | default = 0.75]
 
+  # (advanced) True to download the Parquet labels file to disk before opening
+  # it. False to open it directly from the bucket.
+  # CLI flag: -blocks-storage.bucket-store.parquet-load-index-to-disk
+  [parquet_load_index_to_disk: <boolean> | default = true]
+
   # (advanced) Maximum number of rows in a parquet file. If the number of rows
   # exceeds this value the query will stop with limit error.
   # CLI flag: -blocks-storage.bucket-store.parquet-max-row-count
