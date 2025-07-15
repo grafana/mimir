@@ -37,21 +37,29 @@ func TestParquetBucketStore_InitialSync(t *testing.T) {
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
-	store := createTestParquetBucketStore(t, userID, bkt)
 
 	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
-	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), store))
-	})
+	loadIndexToDisk := []bool{true, false}
+	for _, loadIndex := range loadIndexToDisk {
 
-	err = store.InitialSync(ctx)
-	require.NoError(t, err)
+		t.Run("InitialSync"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			store := createTestParquetBucketStore(t, userID, bkt, loadIndex)
 
-	stats := store.Stats()
-	require.Greater(t, stats.BlocksLoadedTotal, 0)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), store))
+			})
+
+			err = store.InitialSync(ctx)
+			require.NoError(t, err)
+
+			stats := store.Stats()
+			require.Greater(t, stats.BlocksLoadedTotal, 0)
+		})
+	}
+
 }
 
 func TestParquetBucketStore_Queries(t *testing.T) {
@@ -62,102 +70,80 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
-	store := createTestParquetBucketStore(t, userID, bkt)
 
 	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
 	createBucketIndex(t, bkt, userID)
 
-	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), store))
-	})
+	loadIndexToDisk := []bool{true, false}
+	for _, loadIndex := range loadIndexToDisk {
+		store := createTestParquetBucketStore(t, userID, bkt, loadIndex)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), store))
+		})
 
-	err = store.SyncBlocks(ctx)
-	require.NoError(t, err)
-
-	t.Run("LabelNames", func(t *testing.T) {
-		req := &storepb.LabelNamesRequest{
-			Start: 10,
-			End:   100,
-		}
-
-		resp, err := store.LabelNames(ctx, req)
+		err = store.SyncBlocks(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"__name__", "series_id"}, resp.Names)
 
-		req = &storepb.LabelNamesRequest{
-			Start: 10,
-			End:   100,
-			Matchers: []storepb.LabelMatcher{
-				{
-					Name:  "foo",
-					Value: "bar",
-					Type:  storepb.LabelMatcher_EQ,
+		t.Run("LabelNames"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			req := &storepb.LabelNamesRequest{
+				Start: 10,
+				End:   100,
+			}
+
+			resp, err := store.LabelNames(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, []string{"__name__", "series_id"}, resp.Names)
+
+			req = &storepb.LabelNamesRequest{
+				Start: 10,
+				End:   100,
+				Matchers: []storepb.LabelMatcher{
+					{
+						Name:  "foo",
+						Value: "bar",
+						Type:  storepb.LabelMatcher_EQ,
+					},
 				},
-			},
-		}
+			}
 
-		resp, err = store.LabelNames(ctx, req)
-		require.NoError(t, err)
-		require.Empty(t, resp.Names)
-	})
+			resp, err = store.LabelNames(ctx, req)
+			require.NoError(t, err)
+			require.Empty(t, resp.Names)
+		})
 
-	t.Run("LabelValues", func(t *testing.T) {
-		req := &storepb.LabelValuesRequest{
-			Label: labels.MetricName,
-			Start: 10,
-			End:   100,
-		}
+		t.Run("LabelValues"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			req := &storepb.LabelValuesRequest{
+				Label: labels.MetricName,
+				Start: 10,
+				End:   100,
+			}
 
-		resp, err := store.LabelValues(ctx, req)
-		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.Contains(t, resp.Values, metricName)
-	})
+			resp, err := store.LabelValues(ctx, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.Contains(t, resp.Values, metricName)
+		})
 
-	t.Run("Series_NonStreaming", func(t *testing.T) {
-		req := &storepb.SeriesRequest{
-			MinTime: 0,
-			MaxTime: 100,
-			Matchers: []storepb.LabelMatcher{
-				{
-					Type:  storepb.LabelMatcher_EQ,
-					Name:  labels.MetricName,
-					Value: metricName,
+		t.Run("Series_NonStreaming"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			req := &storepb.SeriesRequest{
+				MinTime: 0,
+				MaxTime: 100,
+				Matchers: []storepb.LabelMatcher{
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  labels.MetricName,
+						Value: metricName,
+					},
 				},
-			},
-		}
-		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
-		require.NoError(t, err)
-		require.Empty(t, warnings)
-		require.Len(t, seriesSet, 1)
-	})
+			}
+			seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+			require.NoError(t, err)
+			require.Empty(t, warnings)
+			require.Len(t, seriesSet, 1)
+		})
 
-	t.Run("Series_Streaming", func(t *testing.T) {
-		req := &storepb.SeriesRequest{
-			MinTime:                  0,
-			MaxTime:                  100,
-			StreamingChunksBatchSize: 10,
-			Matchers: []storepb.LabelMatcher{
-				{
-					Type:  storepb.LabelMatcher_EQ,
-					Name:  labels.MetricName,
-					Value: metricName,
-				},
-			},
-		}
-		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
-		require.NoError(t, err)
-		require.Empty(t, warnings)
-		require.Len(t, seriesSet, 1)
-	})
-
-	t.Run("Series_Sharding", func(t *testing.T) {
-		const shardCount = 3
-
-		seriesResultCount := 0
-		for shardID := range shardCount {
-			shardLabelValue := sharding.FormatShardIDLabelValue(uint64(shardID), shardCount)
+		t.Run("Series_Streaming"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
 			req := &storepb.SeriesRequest{
 				MinTime:                  0,
 				MaxTime:                  100,
@@ -168,58 +154,89 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 						Name:  labels.MetricName,
 						Value: metricName,
 					},
-					{
-						Type:  storepb.LabelMatcher_EQ,
-						Name:  sharding.ShardLabel,
-						Value: shardLabelValue,
-					},
 				},
 			}
 			seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 			require.NoError(t, err)
 			require.Empty(t, warnings)
-			require.LessOrEqual(t, len(seriesSet), 1, "Expected at most one series result per shard")
-			seriesResultCount += len(seriesSet)
-		}
-		require.Equal(t, seriesResultCount, 1, "Expected only one series result across all shards")
-	})
+			require.Len(t, seriesSet, 1)
+		})
 
-	t.Run("Series_SkipChunks", func(t *testing.T) {
-		for _, tc := range []struct {
-			name  string
-			batch uint64
-		}{
-			{name: "NonStreaming", batch: 0},
-			{name: "Streaming", batch: 10},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
+		t.Run("Series_Sharding"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			const shardCount = 3
+
+			seriesResultCount := 0
+			for shardID := range shardCount {
+				shardLabelValue := sharding.FormatShardIDLabelValue(uint64(shardID), shardCount)
 				req := &storepb.SeriesRequest{
 					MinTime:                  0,
 					MaxTime:                  100,
-					SkipChunks:               true,
-					StreamingChunksBatchSize: tc.batch,
+					StreamingChunksBatchSize: 10,
 					Matchers: []storepb.LabelMatcher{
 						{
 							Type:  storepb.LabelMatcher_EQ,
 							Name:  labels.MetricName,
 							Value: metricName,
 						},
+						{
+							Type:  storepb.LabelMatcher_EQ,
+							Name:  sharding.ShardLabel,
+							Value: shardLabelValue,
+						},
 					},
 				}
 				seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 				require.NoError(t, err)
 				require.Empty(t, warnings)
-				require.Len(t, seriesSet, 1)
-				series := seriesSet[0]
-				require.NotEmpty(t, series.Labels)
-				require.Empty(t, series.Chunks)
-				require.Equal(t, metricName, series.Labels[0].Value)
-			})
-		}
-	})
+				require.LessOrEqual(t, len(seriesSet), 1, "Expected at most one series result per shard")
+				seriesResultCount += len(seriesSet)
+			}
+			require.Equal(t, seriesResultCount, 1, "Expected only one series result across all shards")
+		})
+
+		t.Run("Series_SkipChunks"+fmt.Sprintf("/IndexToDisk=%t", loadIndexToDisk), func(t *testing.T) {
+			for _, tc := range []struct {
+				name  string
+				batch uint64
+			}{
+				{name: "NonStreaming", batch: 0},
+				{name: "Streaming", batch: 10},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					req := &storepb.SeriesRequest{
+						MinTime:                  0,
+						MaxTime:                  100,
+						SkipChunks:               true,
+						StreamingChunksBatchSize: tc.batch,
+						Matchers: []storepb.LabelMatcher{
+							{
+								Type:  storepb.LabelMatcher_EQ,
+								Name:  labels.MetricName,
+								Value: metricName,
+							},
+						},
+					}
+					seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+					require.NoError(t, err)
+					require.Empty(t, warnings)
+					require.Len(t, seriesSet, 1)
+					series := seriesSet[0]
+					require.NotEmpty(t, series.Labels)
+					require.Empty(t, series.Chunks)
+					require.Equal(t, metricName, series.Labels[0].Value)
+				})
+			}
+		})
+	}
+
 }
 
-func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Bucket) *ParquetBucketStore {
+func createTestParquetBucketStore(
+	t *testing.T,
+	userID string,
+	bkt objstore.Bucket,
+	loadIndexToDisk bool,
+) *ParquetBucketStore {
 	localDir := t.TempDir()
 	cfg := mimir_tsdb.BucketStoreConfig{
 		StreamingBatchSize:   1000,
@@ -251,6 +268,8 @@ func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Buck
 		fetcher,
 		gate.NewNoop(),
 		gate.NewNoop(),
+		loadIndexToDisk,
+		nil,
 		newStaticChunksLimiterFactory(0),
 		newStaticSeriesLimiterFactory(0),
 		metrics,
