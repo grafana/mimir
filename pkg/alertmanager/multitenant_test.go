@@ -501,7 +501,6 @@ templates:
 	expCfg := amConfig{
 		User:               "user4",
 		RawConfig:          string(rawCfg),
-		Templates:          []definition.PostableApiTemplate{},
 		UsingGrafanaConfig: true,
 		TmplExternalURL:    externalUrl,
 		EmailConfig: alertingReceivers.EmailSenderConfig{
