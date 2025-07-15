@@ -129,13 +129,13 @@ func decideTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *c
 			return true
 		}
 
-	// Otherwise, give preference to histogram.
-	case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
-		return lt == chunkenc.ValHistogram
-
 	// Otherwise, give preference to float histogram.
 	case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
 		return lt == chunkenc.ValFloatHistogram
+
+	// Otherwise, give preference to histogram.
+	case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
+		return lt == chunkenc.ValHistogram
 
 	default:
 		// We should never reach this point.

@@ -260,6 +260,14 @@ func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 			expectedPickA: true,
 		},
 		{
+			name:          "FloatHistogram vs Histogram - float histogram wins",
+			aType:         chunkenc.ValFloatHistogram,
+			bType:         chunkenc.ValHistogram,
+			aBatch:        func() *chunk.Batch { b := mkGenericFloatHistogramBatch(100, 1); return &b }(),
+			bBatch:        func() *chunk.Batch { b := mkGenericHistogramBatch(100, 1); return &b }(),
+			expectedPickA: true,
+		},
+		{
 			name:  "Histogram vs Histogram - equal count, higher sum wins",
 			aType: chunkenc.ValHistogram,
 			bType: chunkenc.ValHistogram,
@@ -527,12 +535,12 @@ func TestBatchStream_EdgeCases(t *testing.T) {
 		require.Equal(t, 1, s.batches[0].Length)
 		require.Equal(t, chunkenc.ValHistogram, s.batches[0].ValueType)
 
-		// Merge float histogram at same timestamp (histogram should still win)
+		// Merge float histogram at same timestamp (float histogram should win)
 		fhistBatch := mkGenericFloatHistogramBatch(100, 1)
 		s.merge(&fhistBatch, chunk.BatchSize, 0)
 
 		require.Equal(t, 1, s.len())
 		require.Equal(t, 1, s.batches[0].Length)
-		require.Equal(t, chunkenc.ValHistogram, s.batches[0].ValueType)
+		require.Equal(t, chunkenc.ValFloatHistogram, s.batches[0].ValueType)
 	})
 }
