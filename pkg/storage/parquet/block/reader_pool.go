@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 
@@ -54,7 +55,7 @@ type ReaderPool struct {
 
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
-	lazyReaders   map[*LazyReaderLocalLabelsBucketChunks]struct{}
+	lazyReaders   map[LazyReader]struct{}
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers.
@@ -87,7 +88,7 @@ func newReaderPool(
 		lazyReaderEnabled:      indexHeaderConfig.LazyLoadingEnabled,
 		earlyValidationEnabled: false,
 		lazyReaderIdleTimeout:  indexHeaderConfig.LazyLoadingIdleTimeout,
-		lazyReaders:            make(map[*LazyReaderLocalLabelsBucketChunks]struct{}),
+		lazyReaders:            make(map[LazyReader]struct{}),
 		lazyLoadingGate:        lazyLoadingGate,
 	}
 }
@@ -100,22 +101,40 @@ func (p *ReaderPool) GetReader(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
+	loadIndexToDisk bool,
+	fileOpts []storage.FileOption,
 	logger log.Logger,
 ) (Reader, error) {
-	var reader Reader
+	var reader LazyReader
 	var err error
 
-	reader, err = NewLazyReaderLocalLabelsBucketChunks(
-		ctx,
-		blockID,
-		bkt,
-		localDir,
-		p.metrics.lazyReader,
-		p.onLazyReaderClosed,
-		p.lazyLoadingGate,
-		p.earlyValidationEnabled,
-		logger,
-	)
+	if loadIndexToDisk {
+		reader, err = NewLazyReaderLocalLabelsBucketChunks(
+			ctx,
+			blockID,
+			bkt,
+			localDir,
+			fileOpts,
+			p.metrics.lazyReader,
+			p.onLazyReaderClosed,
+			p.lazyLoadingGate,
+			p.earlyValidationEnabled,
+			logger,
+		)
+	} else {
+		reader, err = NewLazyReaderBucketLabelsAndChunks(
+			ctx,
+			blockID,
+			bkt,
+			localDir,
+			fileOpts,
+			p.metrics.lazyReader,
+			p.onLazyReaderClosed,
+			nil,
+			p.earlyValidationEnabled,
+			logger,
+		)
+	}
 
 	if err != nil {
 		return nil, err
@@ -124,7 +143,7 @@ func (p *ReaderPool) GetReader(
 	// Keep track of lazy readers only if required.
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
 		p.lazyReadersMx.Lock()
-		p.lazyReaders[reader.(*LazyReaderLocalLabelsBucketChunks)] = struct{}{}
+		p.lazyReaders[reader] = struct{}{}
 		p.lazyReadersMx.Unlock()
 	}
 
@@ -135,18 +154,18 @@ func (p *ReaderPool) unloadIdleReaders(context.Context) error {
 	idleTimeoutAgo := time.Now().Add(-p.lazyReaderIdleTimeout).UnixNano()
 
 	for _, r := range p.getIdleReadersSince(idleTimeoutAgo) {
-		if err := r.unloadIfIdleSince(idleTimeoutAgo); err != nil && !errors.Is(err, errNotIdle) {
+		if err := r.UnloadIfIdleSince(idleTimeoutAgo); err != nil && !errors.Is(err, errNotIdle) {
 			level.Warn(p.logger).Log("msg", "failed to close idle index-header reader", "err", err)
 		}
 	}
 	return nil // always return nil to avoid stopping the service
 }
 
-func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyReaderLocalLabelsBucketChunks {
+func (p *ReaderPool) getIdleReadersSince(ts int64) []LazyReader {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
-	var idle []*LazyReaderLocalLabelsBucketChunks
+	var idle []LazyReader
 	for r := range p.lazyReaders {
 		if r.IsIdleSince(ts) {
 			idle = append(idle, r)
@@ -156,7 +175,7 @@ func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyReaderLocalLabelsBucke
 	return idle
 }
 
-func (p *ReaderPool) onLazyReaderClosed(r *LazyReaderLocalLabelsBucketChunks) {
+func (p *ReaderPool) onLazyReaderClosed(r LazyReader) {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
@@ -172,9 +191,9 @@ func (p *ReaderPool) LoadedBlocks() []ulid.ULID {
 
 	blocks := make([]ulid.ULID, 0, len(p.lazyReaders))
 	for r := range p.lazyReaders {
-		usedAt := r.usedAt.Load()
+		usedAt := r.UsedAt()
 		if usedAt != 0 {
-			blocks = append(blocks, r.blockID)
+			blocks = append(blocks, r.BlockID())
 		}
 	}
 
