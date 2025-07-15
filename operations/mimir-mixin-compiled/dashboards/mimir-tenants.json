@@ -1438,6 +1438,67 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Elected replica changes\nThe total number of times the elected replica has changed for this tenant.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "/s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 24,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_ha_tracker_elected_replica_changes_total{cluster=~\"$cluster\", namespace=~\"$namespace\", user=\"$user\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "changes",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Elected replica changes",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "HA Tracker",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "description": "### Number of groups\nTotal number of rule groups for a tenant.\n\n",
                   "fieldConfig": {
                      "defaults": {
@@ -1481,7 +1542,7 @@
                         }
                      ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1536,7 +1597,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1584,7 +1645,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1632,7 +1693,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1714,7 +1775,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 28,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1834,7 +1895,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 29,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1944,7 +2005,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2008,7 +2069,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2068,7 +2129,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2153,7 +2214,7 @@
                         }
                      ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2207,7 +2268,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2273,7 +2334,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2322,7 +2383,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2382,7 +2443,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2431,7 +2492,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2492,7 +2553,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2541,7 +2602,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {

@@ -1182,7 +1182,7 @@
                            "properties": [
                               {
                                  "id": "displayName",
-                                 "value": "rules"
+                                 "value": "changes/s"
                               },
                               {
                                  "id": "decimals",
@@ -1218,6 +1218,158 @@
                   },
                   "fill": 1,
                   "id": 11,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 2,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 12,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "topk($limit, sum by (user) (rate(cortex_ha_tracker_elected_replica_changes_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[5m])))",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "",
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Top $limit users by rate of elected replica changes in last 5m",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By elected replica changes",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "rules"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 12,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1369,7 +1521,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 12,
+                  "id": 13,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1521,7 +1673,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 13,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,

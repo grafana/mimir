@@ -1881,7 +1881,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
@@ -1930,7 +1930,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval])) by (le)) * 1e3",
@@ -1971,13 +1971,62 @@
                         "show": false
                      }
                   ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Elected replica changes\nThe total number of times the elected replica has changed for all tenants combined.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "/s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 19,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_ha_tracker_elected_replica_changes_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "changes",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Elected replica changes",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Distributor - key-value store for high-availability (HA) deduplication",
+            "title": "HA tracker",
             "titleSize": "h6"
          },
          {
@@ -2160,7 +2209,7 @@
                         }
                      ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2208,7 +2257,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 21,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2450,7 +2499,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2498,7 +2547,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2621,7 +2670,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2676,7 +2725,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2799,7 +2848,7 @@
                         }
                      ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2854,7 +2903,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2977,7 +3026,7 @@
                         }
                      ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3063,7 +3112,7 @@
                         }
                      ]
                   },
-                  "id": 28,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3119,7 +3168,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3199,7 +3248,7 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3266,7 +3315,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3315,7 +3364,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3364,7 +3413,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3413,7 +3462,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3473,7 +3522,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3521,7 +3570,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3550,67 +3599,6 @@
             "repeatRowId": null,
             "showTitle": true,
             "title": "",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "description": "### Elected replica changes\nThe total number of times the elected replica has changed for a user ID/cluster.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "changes/s"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 37,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 12,
-                  "targets": [
-                     {
-                        "expr": "sum by (user) (rate(cortex_ha_tracker_elected_replica_changes_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
-                        "format": "time_series",
-                        "legendFormat": "{{user}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Elected replica changes",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "HA Tracker",
             "titleSize": "h6"
          }
       ],

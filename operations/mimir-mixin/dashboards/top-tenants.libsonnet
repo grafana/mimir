@@ -256,6 +256,22 @@ local filename = 'mimir-top-tenants.json';
       ),
     )
 
+    .addRow(
+      ($.row('By elected replica changes') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by rate of elected replica changes in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (user) (rate(cortex_ha_tracker_elected_replica_changes_total{%s}[5m])))'
+            % $.namespaceMatcher(),
+          ], {
+            user: { alias: 'user', unit: 'string' },
+            Value: { alias: 'changes/s' },
+          }
+        )
+      ),
+    )
 
     .addRow(
       ($.row('By rule group size') + { collapse: true })
