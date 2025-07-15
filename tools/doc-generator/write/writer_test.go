@@ -41,8 +41,7 @@ nested_struct:
 
 # The nested list
 nested_slice:
-  -
-    # The username
+  - # The username
     [username: <string> | default = ""]
 
     # The password

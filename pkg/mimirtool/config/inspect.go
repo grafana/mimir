@@ -36,6 +36,7 @@ type EntryKind string
 const (
 	KindBlock EntryKind = "block"
 	KindField EntryKind = "field"
+	KindMap   EntryKind = "map"
 )
 
 type InspectedEntry struct {
@@ -524,6 +525,12 @@ func convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry {
 		e.FieldType = entry.FieldType
 		e.FieldCategory = entry.FieldCategory
 		e.FieldDefaultValue = parseDefaultValue(e, entry.FieldDefault)
+	case parse.KindMap:
+		e.Kind = KindMap
+		e.FieldType = entry.FieldType
+		e.FieldCategory = entry.FieldCategory
+		element := convertBlockToEntry(entry.Element)
+		e.FieldElement = element
 	default:
 		panic(fmt.Sprintf("cannot handle parse kind %q, entry name: %s", entry.Kind, entry.Name))
 	}
