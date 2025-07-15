@@ -149,13 +149,18 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 		hasNonEmptyMatchers := false
 
 		for _, matcher := range matchers {
+			// Before filtering out any matcher we should check if the among the original matchers
+			// there's anyone not matching the empty string. This will be used later to ensure there's
+			// at least one non-empty matcher.
+			if !matcher.Matches("") {
+				hasNonEmptyMatchers = true
+			}
+
 			// Filter out a matcher that matches any string because it matches all series.
 			if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
 				optimized = true
 				continue
 			}
-
-			hasNonEmptyMatchers = true
 
 			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
 			// so this matcher matches all series but very expensive to run.
