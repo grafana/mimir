@@ -653,23 +653,31 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	return kadm.Offsets{}, lastErr
 }
 
-func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
+// snapCommitted returns a snapshot of the committed offsets and whether any were dirty.
+func (s *BlockBuilderScheduler) snapCommitted() (kadm.Offsets, bool) {
 	cp := make(kadm.Offsets)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	anyDirty := false
+
 	for _, ps := range s.partState {
 		cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		anyDirty = anyDirty || ps.committed.dirty
+		ps.committed.dirty = false
 	}
 
-	return cp
+	return cp, anyDirty
 }
 
 // flushOffsetsToKafka flushes the committed offsets to Kafka and updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
-	// TODO: only flush if dirty.
-	offsets := s.snapCommitted()
+	offsets, dirty := s.snapCommitted()
+	if !dirty {
+		// If none were dirty, we skip flushing.
+		return nil
+	}
 
 	offsets.Each(func(o kadm.Offset) {
 		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
@@ -681,7 +689,6 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	}
 
 	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(offsets))
-
 	return nil
 }
 
@@ -953,6 +960,7 @@ var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPol
 // monotonically based on job progression.
 type advancingOffset struct {
 	off     int64
+	dirty   bool
 	name    string
 	metrics *schedulerMetrics
 	logger  log.Logger
@@ -977,7 +985,7 @@ func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
 		o.metrics.jobGapDetected.WithLabelValues(o.name, fmt.Sprint(spec.Partition)).Inc()
 	}
 
-	o.off = spec.EndOffset
+	o.set(spec.EndOffset)
 }
 
 func (o *advancingOffset) offset() int64 {
@@ -985,6 +993,7 @@ func (o *advancingOffset) offset() int64 {
 }
 
 func (o *advancingOffset) set(offset int64) {
+	o.dirty = true
 	o.off = offset
 }
 
