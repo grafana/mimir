@@ -74,7 +74,11 @@ func TestParquetBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+		expectedLabels := []mimirpb.LabelAdapter{
+			{Name: labels.MetricName, Value: metricName},
+			{Name: "series_id", Value: "0"},
+		}
+		assert.Equal(t, expectedLabels, seriesSet[0].Labels)
 	}
 
 	// Query series of another user.
@@ -128,7 +132,12 @@ func TestParquetBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+
+	expectedLabels := []mimirpb.LabelAdapter{
+		{Name: labels.MetricName, Value: metricName},
+		{Name: "series_id", Value: "0"},
+	}
+	assert.Equal(t, expectedLabels, seriesSet[0].Labels)
 
 	// TODO: assert metrics
 }
