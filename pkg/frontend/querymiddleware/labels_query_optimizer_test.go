@@ -35,11 +35,18 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 		// Label names API
 		//
 
-		"should optimize labels request when enabled": {
+		`should optimize labels request with __name__!="" matcher`: {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/labels",
 			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        true,
+		},
+		"should optimize labels request with '.*' regex matcher": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/labels",
+			reqData:                  url.Values{"match[]": []string{`{job=~".*", env="prod"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{env="prod"}`}},
 			expectedOptimized:        true,
 		},
 		"should optimize multiple matchers": {
@@ -110,11 +117,18 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 		// Label values API
 		//
 
-		"should optimize label values request when enabled": {
+		`should optimize label values request with __name__!="" matcher`: {
 			optimizerEnabled:         true,
 			reqPath:                  "/api/v1/label/job/values",
 			reqData:                  url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}},
 			expectedDownstreamParams: url.Values{"match[]": []string{`{job="prometheus"}`}},
+			expectedOptimized:        true,
+		},
+		"should optimize label values request with '.*' regex matcher": {
+			optimizerEnabled:         true,
+			reqPath:                  "/api/v1/label/job/values",
+			reqData:                  url.Values{"match[]": []string{`{job=~".*", env="prod"}`}},
+			expectedDownstreamParams: url.Values{"match[]": []string{`{env="prod"}`}},
 			expectedOptimized:        true,
 		},
 		"should optimize multiple matchers for label values": {
@@ -425,6 +439,26 @@ func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 		"malformed regex": {
 			inputMatchers: []string{`{job=~"[invalid"}`},
 			expectedError: true,
+		},
+		"regex matcher with '.*' value": {
+			// The .* matcher must be preserved because it's an invalid matcher when it's the only one in a set,
+			// and we want the downstream to generate the proper validation error.
+			inputMatchers:     []string{`{job=~".*"}`},
+			expectedMatchers:  []string{`{job=~".*"}`},
+			expectedOptimized: false,
+			expectedError:     false,
+		},
+		"regex matcher with '.*' value combined with other matchers": {
+			inputMatchers:     []string{`{job=~".*", env="prod"}`},
+			expectedMatchers:  []string{`{env="prod"}`},
+			expectedOptimized: true,
+			expectedError:     false,
+		},
+		`regex matcher with '.*' value and __name__!="" matcher`: {
+			inputMatchers:     []string{`{__name__!="", job=~".*", env="prod"}`},
+			expectedMatchers:  []string{`{env="prod"}`},
+			expectedOptimized: true,
+			expectedError:     false,
 		},
 	}
 
