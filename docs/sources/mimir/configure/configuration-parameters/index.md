@@ -3352,7 +3352,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # write requests are delayed such that the sample time is earlier than the
 # current time.
 # CLI flag: -distributor.ha-tracker.use-sample-time-for-failover
-[ha_tracker_use_sample_time_for_failover: <boolean> | default = false]
+[ha_tracker_use_sample_time_for_failover: <boolean> | default = true]
 
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop

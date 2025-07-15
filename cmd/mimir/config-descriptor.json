@@ -4371,7 +4371,7 @@
           "required": false,
           "desc": "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.ha-tracker.use-sample-time-for-failover",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
