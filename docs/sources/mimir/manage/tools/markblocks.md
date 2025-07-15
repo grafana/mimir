@@ -17,7 +17,7 @@ Use markblocks for the following purposes:
 - Mark blocks for non-compaction. This is useful for corrupted blocks, preventing them from being processed by the compactor and potentially causing issues. Newer Mimir versions might automatically mark corrupted blocks.
 - Mark blocks for deletion. Use the tool to explicitly mark specific blocks for deletion from the object storage.
 
-The markblocks tool helps in maintaining data integrity and managing storage effectively, especially in scenarios involving data corruption or manual cleanup.
+The markblocks tool helps to maintain data integrity and to manage storage effectively, especially in scenarios involving data corruption or manual cleanup.
 
 ## Download markblocks
 
