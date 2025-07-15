@@ -611,6 +611,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
+  -blocks-storage.bucket-store.parquet-load-index-to-disk
+    	True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket. (default true)
   -blocks-storage.bucket-store.parquet-max-chunk-size-bytes uint
     	Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.
   -blocks-storage.bucket-store.parquet-max-data-size-bytes uint

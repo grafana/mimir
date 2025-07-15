@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/thanos-io/objstore"
@@ -32,6 +33,7 @@ const FirstShardIndex = 0
 // Reader wraps access to a TSDB block's storage.ParquetShard interface.
 
 type Reader interface {
+	BlockID() ulid.ULID
 	storage.ParquetShard
 	io.Closer
 }
@@ -73,6 +75,7 @@ func (o *ParquetLocalFileOpener) Open(
 // Parquet labels and chunks files are opened immediately in the constructor;
 // lazy-loading or other lifecycle management can be implemented by wrapping this type.
 type BasicReader struct {
+	blockID                ulid.ULID
 	labelsFile, chunksFile *storage.ParquetFile
 	schema                 *schema.TSDBSchema
 	o                      sync.Once
@@ -80,14 +83,14 @@ type BasicReader struct {
 
 func NewBasicReader(
 	ctx context.Context,
-	blockID string,
+	blockID ulid.ULID,
 	shard int,
 	labelsFileOpener storage.ParquetOpener,
 	chunksFileOpener storage.ParquetOpener,
 	opts ...storage.FileOption,
 ) (*BasicReader, error) {
-	labelsFileName := schema.LabelsPfileNameForShard(blockID, shard)
-	chunksFileName := schema.ChunksPfileNameForShard(blockID, shard)
+	labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shard)
+	chunksFileName := schema.ChunksPfileNameForShard(blockID.String(), shard)
 
 	errGroup := errgroup.Group{}
 
@@ -108,9 +111,14 @@ func NewBasicReader(
 	}
 
 	return &BasicReader{
+		blockID:    blockID,
 		labelsFile: labelsFile,
 		chunksFile: chunksFile,
 	}, nil
+}
+
+func (r *BasicReader) BlockID() ulid.ULID {
+	return r.blockID
 }
 
 func (r *BasicReader) LabelsFile() *storage.ParquetFile {
