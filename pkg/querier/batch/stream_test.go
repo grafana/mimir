@@ -366,20 +366,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 		require.Equal(t, 20.0, s.batches[0].Values[1]) // Left wins (20.0 > 15.0)
 		require.Equal(t, 30.0, s.batches[0].Values[2]) // Left wins (30.0 > 25.0)
 	})
-}
 
-func mkGenericFloatHistogramBatch(from int64, size int) chunk.Batch {
-	batch := chunk.Batch{ValueType: chunkenc.ValFloatHistogram}
-	for i := 0; i < size; i++ {
-		batch.Timestamps[i] = from + int64(i)
-		h := test.GenerateTestFloatHistogram(int(from) + i)
-		batch.PointerValues[i] = unsafe.Pointer(h)
-	}
-	batch.Length = size
-	return batch
-}
-
-func TestBatchStream_EdgeCases(t *testing.T) {
 	t.Run("empty batch merge", func(t *testing.T) {
 		s := newBatchStream(2, nil, nil)
 
@@ -525,4 +512,15 @@ func TestBatchStream_EdgeCases(t *testing.T) {
 		require.Equal(t, 1, s.batches[0].Length)
 		require.Equal(t, chunkenc.ValFloatHistogram, s.batches[0].ValueType)
 	})
+}
+
+func mkGenericFloatHistogramBatch(from int64, size int) chunk.Batch {
+	batch := chunk.Batch{ValueType: chunkenc.ValFloatHistogram}
+	for i := 0; i < size; i++ {
+		batch.Timestamps[i] = from + int64(i)
+		h := test.GenerateTestFloatHistogram(int(from) + i)
+		batch.PointerValues[i] = unsafe.Pointer(h)
+	}
+	batch.Length = size
+	return batch
 }
