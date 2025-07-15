@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"google.golang.org/api/googleapi"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1564,17 +1565,17 @@ func TestAPI_CreateRuleGroup_GCSRateLimit_ErrorDetection(t *testing.T) {
 	}{
 		{
 			name:     "GCS rate limit error",
-			err:      errors.New("googleapi: Error 429: The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."),
+			err:      &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."},
 			expected: true,
 		},
 		{
 			name:     "GCS rate limit error with different message",
-			err:      errors.New("googleapi: Error 429: rate limited in some other way"),
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited in some other way"},
 			expected: false,
 		},
 		{
 			name:     "GCS rate limit error but not 429",
-			err:      errors.New("googleapi: Error 500: server down"),
+			err:      &googleapi.Error{Code: 500, Message: "Server down"},
 			expected: false,
 		},
 
@@ -1632,7 +1633,7 @@ type gcsObjRateLimitStore struct {
 }
 
 func (r *gcsObjRateLimitStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
-	return errors.New("googleapi: Error 429: The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate.")
+	return &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."}
 }
 
 func TestAPI_DeleteNamespace(t *testing.T) {

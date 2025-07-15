@@ -8,6 +8,7 @@ package ruler
 import (
 	"encoding/json"
 	"fmt"
+	"google.golang.org/api/googleapi"
 	"io"
 	"net/http"
 	"net/url"
@@ -832,7 +833,10 @@ func alertStateDescToPrometheusAlert(d *AlertStateDesc) *Alert {
 // isGCSObjectMutationRateLimitError checks whether the error message is from GCS and is an object mutation rate limit.
 // This is a per-object limit and is limited to 1 mutation per second (https://cloud.google.com/storage/quotas).
 func isGCSObjectMutationRateLimitError(err error) bool {
-	errStr := err.Error()
-	return strings.Contains(errStr, "googleapi: Error 429") &&
-		strings.Contains(errStr, "exceeded the rate limit for object mutation operations")
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) {
+		return gErr.Code == 429 &&
+			strings.Contains(gErr.Message, "exceeded the rate limit for object mutation operations")
+	}
+	return false
 }
