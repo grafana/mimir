@@ -10175,6 +10175,17 @@
             },
             {
               "kind": "field",
+              "name": "parquet_load_index_to_disk",
+              "required": false,
+              "desc": "True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-load-index-to-disk",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "parquet_max_row_count",
               "required": false,
               "desc": "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.",
