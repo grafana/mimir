@@ -14,6 +14,24 @@ weight: 10
 The listblocks tool lists blocks and show the block details of a tenant.
 Listblocks requires at least configuration to access the bucket and tenant.
 
+## Download and configure listblocks
+
+Download listblocks as part of the Mimir binary. To download the binary, refer to [Grafana Mimir releases](https://github.com/grafana/mimir/releases) on GitHub.
+
+To configure listblocks, you need to provide access to the object storage bucket and specify the tenant ID. For example:
+
+```bash
+mimir listblocks --config.file=/path/to/mimir.yaml --tenant-id=<your-tenant-id>
+```
+
+You can also specify bucket details directly if they aren't in your configuration file. For example:
+
+```bash
+mimir listblocks --tenant-id=<your-tenant-id> --blocks-storage.backend=s3 --blocks-storage.s3.bucket-name=<your-bucket> --blocks-storage.s3.endpoint=<your-s3-endpoint>
+```
+
+## Use listblocks
+
 Listblocks doesn't use the bucket index; instead, it downloads the `meta.json` file of every block in the tenant.
 This means that listblocks has an up-to-date view of the blocks in the bucket.
 
