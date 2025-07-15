@@ -1599,7 +1599,6 @@ func TestCreateRuleGroup_GCSObjectMutationRateLimit(t *testing.T) {
 		namespace = "test-namespace"
 	)
 
-	// Create a mock rule store that returns GCS rate limit error
 	store := &gcsObjRateLimitStore{
 		mockRuleStore: newMockRuleStore(make(map[string]rulespb.RuleGroupList)),
 	}
@@ -1616,17 +1615,14 @@ rules:
   expr: up
 `
 
-	// Create request with mux vars for namespace parameter
 	req := requestFor(t, "POST", fmt.Sprintf("https://localhost:8080/prometheus/config/v1/rules/%s", namespace), strings.NewReader(ruleGroupPayload), userID)
 	req = mux.SetURLVars(req, map[string]string{"namespace": namespace})
 	w := httptest.NewRecorder()
 
-	// Call CreateRuleGroup directly
 	api.CreateRuleGroup(w, req)
 
 	require.Equal(t, http.StatusTooManyRequests, w.Code)
 
-	// Verify the response contains the rate limit error message
 	responseBody := w.Body.String()
 	assert.Contains(t, responseBody, "per-rule group rate limit exceeded")
 }
