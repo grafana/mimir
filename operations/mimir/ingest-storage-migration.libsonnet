@@ -15,6 +15,12 @@
     ingest_storage_migration_write_to_partition_ingesters_enabled: false,
     ingest_storage_migration_write_to_classic_ingesters_enabled: false,
 
+    // Controls whether write path components should ignore errors from partition ingesters.
+    // This is used to test out the partition ingesters write path without affecting the classic ingesters.
+    // It can also be used to warm up components in the partition ingesters write path.
+    ingest_storage_migration_ignore_ingest_storage_errors: false,
+    ingest_storage_migration_ingest_storage_max_wait_time: '',
+
     // Controls whether reads path components should read from partition ingesters instead of classic ones.
     ingest_storage_migration_querier_enabled: false,
 
@@ -145,17 +151,24 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ingester_ring_client_args,
 
-  local writeToClassicIngestersArgs = {
-    'ingest-storage.migration.distributor-send-to-ingesters-enabled': true,
-  },
+  local writePathIngestStorageMigrationArgs =
+    (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else {
+       'ingest-storage.migration.distributor-send-to-ingesters-enabled': true,
+     })
+    + (if !$._config.ingest_storage_migration_ignore_ingest_storage_errors then {} else {
+         'ingest-storage.migration.ignore-ingest-storage-errors': true,
+       })
+    + (if !$._config.ingest_storage_migration_ignore_ingest_storage_errors || $._config.ingest_storage_migration_ingest_storage_max_wait_time == '' then {} else {
+         'ingest-storage.migration.ingest-storage-max-wait-time': $._config.ingest_storage_migration_ingest_storage_max_wait_time,
+       }),
 
   distributor_args+::
     (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_distributor_args)) +
-    (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
+    writePathIngestStorageMigrationArgs,
 
   ruler_args+::
     (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_ruler_args)) +
-    (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
+    writePathIngestStorageMigrationArgs,
 
   //
   // Read path. Affected components:
