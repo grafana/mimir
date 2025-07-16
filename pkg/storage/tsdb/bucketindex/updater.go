@@ -128,25 +128,33 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 	// Remaining blocks are new ones and we have to fetch the meta.json for each of them, in order
 	// to find out if their upload has been completed (meta.json is uploaded last) and get the block
 	// information to store in the bucket index.
+	discoveredSlice := make([]ulid.ULID, 0, len(discovered))
 	for id := range discovered {
+		discoveredSlice = append(discoveredSlice, id)
+	}
+
+	updatedBlocks, err := concurrency.ForEachJobMergeResults(ctx, discoveredSlice, w.getDeletionMarkersConcurrency, func(ctx context.Context, id ulid.ULID) ([]*Block, error) {
 		b, err := w.updateBlockIndexEntry(ctx, id)
 		if err == nil {
-			blocks = append(blocks, b)
-			continue
+			return []*Block{b}, nil
 		}
 
 		if errors.Is(err, ErrBlockMetaNotFound) {
 			partials[id] = err
 			level.Warn(w.logger).Log("msg", "skipped partial block when updating bucket index", "block", id.String())
-			continue
+			return nil, nil
 		}
 		if errors.Is(err, ErrBlockMetaCorrupted) {
 			partials[id] = err
 			level.Error(w.logger).Log("msg", "skipped block with corrupted meta.json when updating bucket index", "block", id.String(), "err", err)
-			continue
+			return nil, nil
 		}
+		return nil, err
+	})
+	if err != nil {
 		return nil, nil, err
 	}
+	blocks = append(blocks, updatedBlocks...)
 	level.Info(w.logger).Log("msg", "fetched blocks metas for newly discovered blocks", "total_blocks", len(blocks), "partial_errors", len(partials))
 
 	return blocks, partials, nil
