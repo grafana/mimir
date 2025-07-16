@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -92,6 +93,7 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
+	ValidationScheme         model.ValidationScheme
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

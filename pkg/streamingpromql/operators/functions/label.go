@@ -18,17 +18,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
+func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator, validationScheme model.ValidationScheme) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if isValid, err := isValidLabelName(dst, validationScheme); err != nil {
+			return nil, err
+		} else if !isValid {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
-			if !model.LabelName(src).IsValid() {
+			if isValid, err := isValidLabelName(src, validationScheme); err != nil {
+				return nil, err
+			} else if !isValid {
 				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
 			}
 			srcLabels[i] = src
@@ -63,7 +67,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 	}
 }
 
-func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
+func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator, validationScheme model.ValidationScheme) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
@@ -71,7 +75,9 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if isValid, err := isValidLabelName(dst, validationScheme); err != nil {
+			return nil, err
+		} else if !isValid {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()
@@ -96,5 +102,17 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 		}
 
 		return seriesMetadata, nil
+	}
+}
+
+func isValidLabelName(name string, validationScheme model.ValidationScheme) (bool, error) {
+	labelName := model.LabelName(name)
+	switch validationScheme {
+	case model.LegacyValidation:
+		return labelName.IsValidLegacy(), nil
+	case model.UTF8Validation:
+		return labelName.IsValid(), nil
+	default:
+		return false, fmt.Errorf("invalid validation scheme in label_replace(): %s", validationScheme)
 	}
 }

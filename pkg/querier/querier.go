@@ -203,6 +203,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
+	eng = compat.NameValidationEngine(eng, limits)
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
 }
 

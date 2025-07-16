@@ -441,7 +441,7 @@ func findFunction(name string) (functions.Function, bool) {
 // Materialize converts a query plan into an executable query.
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.DefaultQueryOpts()
 	}
 
 	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
@@ -467,6 +467,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
 		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
+		ValidationScheme:         q.validationScheme,
 	}
 
 	q.statement = &parser.EvalStmt{

@@ -94,7 +94,15 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
+	functionParams := &functions.InstantVectorFunctionOperatorParams{
+		AbsentLabels:             absentLabels,
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Annotations:              params.Annotations,
+		ExpressionPosition:       f.ExpressionPosition.ToPrometheusType(),
+		TimeRange:                timeRange,
+		ValidationScheme:         params.ValidationScheme,
+	}
+	o, err := fnc.OperatorFactory(children, functionParams)
 	if err != nil {
 		return nil, err
 	}

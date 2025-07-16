@@ -32,6 +32,7 @@ type CountValues struct {
 	expressionPosition posrange.PositionRange
 
 	resolvedLabelName string
+	validationScheme  model.ValidationScheme
 
 	series [][]promql.FPoint
 
@@ -51,6 +52,7 @@ func NewCountValues(
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
+	validationScheme model.ValidationScheme,
 ) *CountValues {
 	if without {
 		grouping = append(grouping, labels.MetricName)
@@ -66,6 +68,7 @@ func NewCountValues(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
+		validationScheme:         validationScheme,
 	}
 }
 
@@ -154,10 +157,19 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	labelName := model.LabelName(c.resolvedLabelName)
+	isValid := false
+	switch c.validationScheme {
+	case model.LegacyValidation:
+		isValid = labelName.IsValidLegacy()
+	case model.UTF8Validation:
+		isValid = labelName.IsValid()
+	default:
+		return fmt.Errorf("invalid validation scheme %q", c.validationScheme)
+	}
+	if !isValid {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
-
 	return nil
 }
 
