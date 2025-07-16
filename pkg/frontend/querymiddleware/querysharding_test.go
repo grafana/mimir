@@ -1914,7 +1914,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					false, // Since cache is disabled, we don't need to cache queryable samples stats.
 					splitInterval,
 					mockLimits{},
-					newTestPrometheusCodec(),
+					newTestCodec(),
 					nil,
 					nil,
 					nil,
