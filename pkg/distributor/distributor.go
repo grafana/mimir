@@ -1059,11 +1059,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 					}
 				}
 			}
-			delta := now.UnixMilli() - earliestSampleTimestamp
-			if delta > 10000 {
-				delta2 := sampleTimestamp - earliestSampleTimestamp
-				delta3 := latestSampleTimestamp - now.UnixMilli()
-				level.Warn(d.log).Log("msg", "earliest sample timestamp is a lot earlier than now", "delta", delta, "delta2", delta2, "delta3", delta3, "user", userID, "cluster", cluster, "replica", replica, "earliestSampleTime", timestamp.Time(earliestSampleTimestamp), "sampleTime", timestamp.Time(sampleTimestamp), "latestSampleTime", timestamp.Time(latestSampleTimestamp), "now", now)
+			if deltaBetweenEarliestAndNow := now.UnixMilli() - earliestSampleTimestamp; deltaBetweenEarliestAndNow > 10000 {
+				deltaBetweenLatestAndNow := latestSampleTimestamp - now.UnixMilli()
+				level.Warn(d.log).Log("msg", "earliest sample timestamp is a lot earlier than now", "deltaBetweenEarliestAndNow", deltaBetweenEarliestAndNow, "deltaBetweenLatestAndNow", deltaBetweenLatestAndNow, "user", userID, "cluster", cluster, "replica", replica, "earliestSampleTime", timestamp.Time(earliestSampleTimestamp), "sampleTime", timestamp.Time(sampleTimestamp), "latestSampleTime", timestamp.Time(latestSampleTimestamp), "now", now)
 			}
 			sampleTimestamp = earliestSampleTimestamp
 		}
