@@ -1390,6 +1390,13 @@ func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
+// ValidationScheme returns the validation scheme to use for a particular tenant.
+// Defaults to LegacyValidation.
+func (o *Overrides) ValidationScheme(userID string) model.ValidationScheme {
+	// TODO(juliusmh): make this configurable by tenant
+	return model.LegacyValidation
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
