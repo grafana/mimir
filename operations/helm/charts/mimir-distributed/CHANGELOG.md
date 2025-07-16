@@ -43,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
 * [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
+* [ENHANCEMENT] Add value for setting the Mimir image registry. #5449
 
 ## 5.7.0
 
