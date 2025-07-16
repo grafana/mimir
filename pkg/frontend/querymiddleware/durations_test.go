@@ -33,6 +33,16 @@ func TestDurationMiddleware(t *testing.T) {
 			expectInstant: "rate(http_requests_total[5m10s] offset 4s)",
 			expectRange:   "rate(http_requests_total[5m10s] offset 4s)",
 		},
+		"valid duration expression with start() should be rewritten": {
+			query: 	   "http_requests_total @ start()",
+			expectInstant: "http_requests_total @ 1.000",
+			expectRange:   "http_requests_total @ 2.000",
+		},
+		"valid duration expression with end() should be rewritten": {
+			query: 	   "http_requests_total @ end()",
+			expectInstant: "http_requests_total @ 1.000",
+			expectRange:   "http_requests_total @ 3.000",
+		},
 		"valid duration expression with step() should be rewritten": {
 			query:         "rate(http_requests_total[5m + step()])",
 			expectInstant: "rate(http_requests_total[5m])",
@@ -49,7 +59,7 @@ func TestDurationMiddleware(t *testing.T) {
 					req = NewPrometheusInstantQueryRequest(
 						"",
 						nil,
-						0,
+						1000,
 						0,
 						expr,
 						Options{},
@@ -60,8 +70,8 @@ func TestDurationMiddleware(t *testing.T) {
 					req = NewPrometheusRangeQueryRequest(
 						"",
 						nil,
-						0,
-						0,
+						2000,
+						3000,
 						60,
 						0,
 						expr,
