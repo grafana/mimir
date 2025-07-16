@@ -50,6 +50,11 @@
           "docker",
         ],
         "enabled": false
+      },
+      {
+        "description": "Prevent renovate from updating dependencies in flaky tests workflow",
+        "matchFileNames": [".github/workflows/flaky-tests.yml"],
+        "enabled": false
       }
     ],
     "branchPrefix": "deps-update/",
