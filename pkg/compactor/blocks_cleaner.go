@@ -36,6 +36,7 @@ import (
 const (
 	defaultDeleteBlocksConcurrency       = 16
 	defaultGetDeletionMarkersConcurrency = 16
+	defaultUpdateBlocksConcurrency       = 16
 	cleanUsersServiceStarting            = "clean_up_users_during_startup"
 	cleanUsersServiceTick                = "clean_up_users"
 )
@@ -47,6 +48,7 @@ type BlocksCleanerConfig struct {
 	TenantCleanupDelay            time.Duration // Delay before removing tenant deletion mark and "debug".
 	DeleteBlocksConcurrency       int
 	GetDeletionMarkersConcurrency int
+	UpdateBlocksConcurrency       int
 	NoBlocksFileCleanupEnabled    bool
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
@@ -458,7 +460,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, userLogger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
