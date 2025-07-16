@@ -12,9 +12,9 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -25,7 +25,6 @@ var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Evaluator struct {
 	root                       types.Operator
-	queryable                  storage.Queryable
 	engine                     *Engine
 	activityTrackerDescription string
 
@@ -35,20 +34,19 @@ type Evaluator struct {
 	cancel                   context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, queryable storage.Queryable, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, originalExpression string) (*Evaluator, error) {
-	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
+func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, originalExpression string) (*Evaluator, error) {
+	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Evaluator{
 		root:                       root,
-		queryable:                  queryable,
 		engine:                     engine,
 		activityTrackerDescription: originalExpression,
 
-		memoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations.New(),
+		memoryConsumptionTracker: params.MemoryConsumptionTracker,
+		annotations:              params.Annotations,
 		stats:                    stats,
 	}, nil
 }

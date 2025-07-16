@@ -174,7 +174,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		return nil, err
 	}
 
-	evaluator, err := NewEvaluator(root, queryable, plan.TimeRange, e, opts, memoryConsumptionTracker, plan.OriginalExpression)
+	evaluator, err := NewEvaluator(root, operatorParams, plan.TimeRange, e, opts, plan.OriginalExpression)
 	if err != nil {
 		return nil, err
 	}

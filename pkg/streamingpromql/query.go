@@ -243,10 +243,7 @@ func (q *Query) StringEvaluated(evaluator *Evaluator, data string) error {
 }
 
 func (q *Query) EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations) error {
-	if annotations != nil {
-		q.annotations = annotations
-	}
-
+	q.annotations = annotations
 	return nil
 }
 
