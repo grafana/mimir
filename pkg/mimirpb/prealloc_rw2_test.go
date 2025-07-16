@@ -11,21 +11,23 @@ import (
 func TestWriteRequestRW2Conversion(t *testing.T) {
 	t.Run("WriteRequest preserves Mimir meta options", func(t *testing.T) {
 		req := &WriteRequest{
-			SkipLabelValidation:      true,
-			SkipLabelCountValidation: true,
+			SkipLabelValidation:       true,
+			SkipLabelCountValidation:  true,
+			skipUnmarshalingExemplars: true,
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		require.NoError(t, err)
 		require.True(t, rw2.SkipLabelValidation)
 		require.True(t, rw2.SkipLabelCountValidation)
+		require.True(t, rw2.skipUnmarshalingExemplars)
 	})
 
 	t.Run("nil request turns into nil request", func(t *testing.T) {
 		var req *WriteRequest
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		require.NoError(t, err)
 		require.Nil(t, rw2)
@@ -59,7 +61,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 				Source: tt.in,
 			}
 
-			rw2, err := FromWriteRequestToRW2Request(req)
+			rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 			require.NoError(t, err)
 			require.Equal(t, tt.out, rw2.Source)
@@ -82,7 +84,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		require.NoError(t, err)
 		require.Len(t, rw2.TimeseriesRW2, 2)
@@ -114,7 +116,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		expSymbols := []string{"", "__name__", "my_cool_series", "job", "foo/bar", "asdf/jkl", "my_other_cool_series"}
 		expTimeseries := []TimeSeriesRW2{
@@ -163,7 +165,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		expSymbols := []string{"", "__name__", "my_cool_histogram", "job", "foo/bar"}
 		expTimeseries := []TimeSeriesRW2{
@@ -210,7 +212,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		expSymbols := []string{"", "__name__", "my_cool_histogram", "job", "foo/bar", "span_id", "def456", "trace_id", "abc123"}
 		expTimeseries := []TimeSeriesRW2{
@@ -251,7 +253,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		expSymbols := []string{"", "__name__", "my_cool_series", "job", "foo/bar", "It's a cool series.", "megawatts"}
 		expTimeseries := []TimeSeriesRW2{
@@ -288,7 +290,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			},
 		}
 
-		rw2, err := FromWriteRequestToRW2Request(req)
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
 		expSymbols := []string{"", "It's a cool series.", "megawatts", "__name__", "my_cool_series"}
 		expTimeseries := []TimeSeriesRW2{

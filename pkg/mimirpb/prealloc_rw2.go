@@ -4,7 +4,7 @@ import "fmt"
 
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
-func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
+func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, offset uint32) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
 	}
@@ -12,10 +12,16 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
 		return nil, fmt.Errorf("the provided request is already rw2")
 	}
 
-	rw2 := &WriteRequest{}
+	rw2 := &WriteRequest{
+		Source:                    rw1.Source,
+		SkipLabelValidation:       rw1.SkipLabelValidation,
+		SkipLabelCountValidation:  rw1.SkipLabelCountValidation,
+		skipUnmarshalingExemplars: rw1.skipUnmarshalingExemplars,
+	}
 
 	symbols := symbolsTableFromPool()
 	defer reuseSymbolsTable(symbols) // TODO: is this safe because we leak the symbols slice by returning it? but this puts it back in a pool too early?
+	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
 	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
 	for _, ts := range rw1.Timeseries {

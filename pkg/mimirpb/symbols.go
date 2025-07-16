@@ -54,6 +54,8 @@ type FastSymbolsTable struct {
 	symbolsMap     map[string]uint32
 	cachedSymbols  *[]string
 	usedSymbolRefs int
+	commonSymbols  []string
+	offset         uint32
 }
 
 func NewFastSymbolsTable(capacityHint int) *FastSymbolsTable {
@@ -63,14 +65,20 @@ func NewFastSymbolsTable(capacityHint int) *FastSymbolsTable {
 	}
 }
 
+func (t *FastSymbolsTable) ConfigureCommonSymbols(offset uint32, commonSymbols []string) {
+	t.offset = offset
+	t.commonSymbols = commonSymbols
+}
+
 func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 	if str == "" {
+		// 0 means empty string, even if an offset is provided.
 		return 0
 	}
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
-	ref := uint32(len(t.symbolsMap)) + 1
+	ref := uint32(len(t.symbolsMap)) + t.offset + 1
 	t.symbolsMap[str] = ref
 	if t.cachedSymbols != nil {
 		reuseSymbolsSlice(t.cachedSymbols)
@@ -92,7 +100,7 @@ func (t *FastSymbolsTable) Symbols() []string {
 	}
 
 	for k, v := range t.symbolsMap {
-		(*syms)[v] = k
+		(*syms)[v-t.offset] = k
 	}
 	t.cachedSymbols = syms
 	return *t.cachedSymbols
@@ -105,4 +113,6 @@ func (t *FastSymbolsTable) Reset() {
 		t.cachedSymbols = nil
 	}
 	t.usedSymbolRefs = 0
+	t.offset = 0
+	t.commonSymbols = nil
 }
