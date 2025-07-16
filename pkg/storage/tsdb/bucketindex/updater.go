@@ -37,12 +37,14 @@ type Updater struct {
 	bkt                           objstore.InstrumentedBucket
 	logger                        log.Logger
 	getDeletionMarkersConcurrency int
+	updateBlocksConcurrency       int
 }
 
-func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, logger log.Logger) *Updater {
+func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, updateBlocksConcurrency int, logger log.Logger) *Updater {
 	return &Updater{
 		bkt:                           bucket.NewUserBucketClient(userID, bkt, cfgProvider),
 		getDeletionMarkersConcurrency: getDeletionMarkersConcurrency,
+		updateBlocksConcurrency:       updateBlocksConcurrency,
 		logger:                        logger,
 	}
 }
@@ -133,7 +135,7 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		discoveredSlice = append(discoveredSlice, id)
 	}
 
-	updatedBlocks, err := concurrency.ForEachJobMergeResults(ctx, discoveredSlice, w.getDeletionMarkersConcurrency, func(ctx context.Context, id ulid.ULID) ([]*Block, error) {
+	updatedBlocks, err := concurrency.ForEachJobMergeResults(ctx, discoveredSlice, w.updateBlocksConcurrency, func(ctx context.Context, id ulid.ULID) ([]*Block, error) {
 		b, err := w.updateBlockIndexEntry(ctx, id)
 		if err == nil {
 			return []*Block{b}, nil
