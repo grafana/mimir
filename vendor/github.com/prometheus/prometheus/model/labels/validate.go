@@ -11,17 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build localvalidationscheme
-
-package prometheus
+package labels
 
 import "github.com/prometheus/common/model"
 
-// ObserveWithExemplar should not be called in a high-frequency setting
-// for a native histogram with configured exemplars. For this case,
-// the implementation isn't lock-free and might suffer from lock contention.
-func (h *histogram) ObserveWithExemplar(v float64, e Labels, scheme model.ValidationScheme) {
-	i := h.findBucket(v)
-	h.observe(v, i)
-	h.updateExemplar(v, i, e, scheme)
+// IsValidMetricName returns whether name is a valid metric name, depending on the validation scheme.
+func IsValidMetricName(name string, scheme model.ValidationScheme) bool {
+	if scheme == model.LegacyValidation {
+		return model.IsValidLegacyMetricName(name)
+	}
+	return model.IsValidMetricName(model.LabelValue(name))
+}
+
+// IsValidLabelName returns whether name is a valid label name, depending on the validation scheme.
+func IsValidLabelName(name string, scheme model.ValidationScheme) bool {
+	if scheme == model.LegacyValidation {
+		return model.LabelName(name).IsValidLegacy()
+	}
+	return model.LabelName(name).IsValid()
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -197,7 +196,7 @@ func (e *errorCachingHandler) isCacheable(apiErr *apierror.APIError) (bool, stri
 
 func addWithExemplar(ctx context.Context, counter prometheus.Counter, val float64) {
 	if traceID, traceOK := tracing.ExtractSampledTraceID(ctx); traceOK {
-		counter.(prometheus.ExemplarAdder).AddWithExemplar(val, prometheus.Labels{"trace_id": traceID, "traceID": traceID}, model.UTF8Validation)
+		counter.(prometheus.ExemplarAdder).AddWithExemplar(val, prometheus.Labels{"trace_id": traceID, "traceID": traceID})
 	} else {
 		// If there is no trace ID, just add to the counter.
 		counter.Add(val)
