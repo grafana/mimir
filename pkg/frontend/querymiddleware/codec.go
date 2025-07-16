@@ -78,43 +78,6 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-// Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
-type Codec interface {
-	Merger
-
-	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
-	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
-
-	// DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
-	DecodeLabelsSeriesQueryRequest(context.Context, *http.Request) (LabelsSeriesQueryRequest, error)
-
-	// DecodeMetricsQueryResponse decodes a Response from an http response.
-	// The original request is also passed as a parameter this is useful for implementation that needs the request
-	// to merge result or build the result correctly.
-	DecodeMetricsQueryResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-
-	// DecodeLabelsSeriesQueryResponse decodes a Response from an http response.
-	// The original request is also passed as a parameter this is useful for implementation that needs the request
-	// to merge result or build the result correctly.
-	DecodeLabelsSeriesQueryResponse(context.Context, *http.Response, LabelsSeriesQueryRequest, log.Logger) (Response, error)
-
-	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into a http request.
-	// This function propagates only HTTP request headers that are defined in the prometheusCodecPropagateHeadersMetrics
-	// allow list. The authentication is injected from provided context.
-	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
-
-	// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into a http request.
-	// This function propagates only HTTP request headers that are defined in the prometheusCodecPropagateHeadersLabels
-	// allow list. The authentication is injected from provided context.
-	EncodeLabelsSeriesQueryRequest(context.Context, LabelsSeriesQueryRequest) (*http.Request, error)
-
-	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
-	EncodeMetricsQueryResponse(context.Context, *http.Request, Response) (*http.Response, error)
-
-	// EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
-	EncodeLabelsSeriesQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
-}
-
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
 type Merger interface {
 	// MergeResponse merges responses from multiple requests into a single Response
