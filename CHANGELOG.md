@@ -17,7 +17,7 @@
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054
 * [BUGFIX] Distributor: Fix a possible panic in the OTLP push path while handling a gRPC status error. #12072
 * [BUGFIX] Tracing: Skip tracing configuration when no tracing environment variables were provided. #12074
-* [BUGFIX] Querier: Samples with the same timestamp are now merged deterministically. Previously this might lead to flapping query results when an out-of-order sample has been ingested which conflicts with a previously ingested in-order sample's value. #8673
+* [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 
 ### Mixin
 
