@@ -3,7 +3,7 @@ package mimirpb
 import "fmt"
 
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
-// TODO: It destroys the given write request?
+// It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
 func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
@@ -11,6 +11,9 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
 	if len(rw1.SymbolsRW2) > 0 || len(rw1.TimeseriesRW2) > 0 {
 		return nil, fmt.Errorf("the provided request is already rw2")
 	}
+
+	rw2 := &WriteRequest{}
+
 	symbols := symbolsTableFromPool()
 	defer reuseSymbolsTable(symbols) // TODO: is this safe because we leak the symbols slice by returning it? but this puts it back in a pool too early?
 
@@ -40,15 +43,13 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest) (*WriteRequest, error) {
 			Metadata:   rw2meta,
 		})
 	}
-	rw1.Metadata = nil // TODO: return to pool if we decide to pool it?? not currently pooled
 
-	rw1.Timeseries = nil // TODO: return to pool
-	rw1.TimeseriesRW2 = rw2Timeseries
-	rw1.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
+	rw2.TimeseriesRW2 = rw2Timeseries
+	rw2.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
 
 	// TODO: Common symbols not yet supported.
 
-	return rw1, nil
+	return rw2, nil
 }
 
 func FromExemplarsToExemplarsRW2(exemplars []Exemplar, symbols StringSymbolizer) []ExemplarRW2 {

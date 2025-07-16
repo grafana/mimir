@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -202,6 +203,47 @@ func TestDeserializeRecordContent(t *testing.T) {
 			Unit:             "seconds",
 		}}
 		require.Equal(t, expMetadata, wr.Metadata)
+	})
+}
+
+func TestRecordSerializer(t *testing.T) {
+	t.Run("v2", func(t *testing.T) {
+		req := &mimirpb.WriteRequest{
+			Source:              mimirpb.RULE,
+			SkipLabelValidation: true,
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+					Samples:    []mimirpb.Sample{{TimestampMs: 20}},
+					Exemplars:  []mimirpb.Exemplar{{TimestampMs: 30}},
+					Histograms: []mimirpb.Histogram{{Timestamp: 10}},
+				}},
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+					Samples: []mimirpb.Sample{{TimestampMs: 30}},
+				}},
+			},
+			Metadata: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+
+		serializer := versionTwoRecordSerializer{}
+		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		require.NoError(t, err)
+		require.Len(t, records, 1)
+		record := records[0]
+
+		require.Equal(t, 2, ParseRecordVersion(record))
+
+		resultReq := &mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(record.Value, resultReq, 2)
+		require.NoError(t, err)
+
+		require.Equal(t, req.Metadata, resultReq.Metadata)
+		// TODO: other fields
 	})
 }
 
