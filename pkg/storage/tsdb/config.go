@@ -78,9 +78,12 @@ const (
 	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
 	BytesPerPostingInAPostingList = 4
 
-	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
+	// DefaultPostingOffsetInMemorySampling represents default value for -blocks-storage.bucket-store.posting-offsets-in-mem-sampling.
 	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
 	// not too small (too much memory).
+	//
+	// This also matches the in-memory sampling of postings offsets of the prometheus TSDB for on-disk blocks.
+	// At the time of writing, this is the symbolFactor (misnomer) in /prometheus/tsdb/index/index.go.
 	DefaultPostingOffsetInMemorySampling = 32
 
 	// DefaultPostingsForMatchersCacheMaxBytes setting puts a limit cap on the per-TSDB head/block max PostingsForMatchers() cache size in bytes.
