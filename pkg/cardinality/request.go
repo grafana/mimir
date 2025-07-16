@@ -263,7 +263,7 @@ func extractLabelNames(values url.Values) ([]model.LabelName, error) {
 	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
 	for _, labelNameParam := range labelNamesParams {
 		labelName := model.LabelName(labelNameParam)
-		if !labelName.IsValid(model.UTF8Validation) {
+		if !labelName.IsValid() {
 			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelNameParam)
 		}
 		labelNames = append(labelNames, labelName)

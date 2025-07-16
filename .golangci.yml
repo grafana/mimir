@@ -10,7 +10,6 @@ run:
     - stringlabels
     - requires_docker
     - requires_libpcap
-    - localvalidationscheme
 output:
   formats:
     text:

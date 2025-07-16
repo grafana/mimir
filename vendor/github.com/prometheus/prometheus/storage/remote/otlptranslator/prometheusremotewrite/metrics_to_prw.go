@@ -53,10 +53,10 @@ type Settings struct {
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
-	// LookbackDelta is the PromQL engine lookback delta.
-	LookbackDelta time.Duration
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata bool
+	// LookbackDelta is the PromQL engine lookback delta.
+	LookbackDelta time.Duration
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool

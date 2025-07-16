@@ -600,16 +600,15 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	otlpCfg := rw.config().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
-
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
-		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
+		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
+		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
-		LookbackDelta:                     rw.lookbackDelta,
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		LookbackDelta:                     rw.lookbackDelta,
 
 		// Mimir specifics.
 		EnableCreatedTimestampZeroIngestion:        rw.enableCTZeroIngestion,

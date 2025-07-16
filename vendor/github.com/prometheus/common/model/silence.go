@@ -45,8 +45,9 @@ func (m *Matcher) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (m *Matcher) validate(scheme ValidationScheme) error {
-	if !m.Name.isValid(scheme) {
+// Validate returns true iff all fields of the matcher have valid values.
+func (m *Matcher) Validate() error {
+	if !m.Name.IsValid() {
 		return fmt.Errorf("invalid name %q", m.Name)
 	}
 	if m.IsRegex {
@@ -75,12 +76,12 @@ type Silence struct {
 }
 
 // Validate returns true iff all fields of the silence have valid values.
-func (s *Silence) validate(scheme ValidationScheme) error {
+func (s *Silence) Validate() error {
 	if len(s.Matchers) == 0 {
 		return errors.New("at least one matcher required")
 	}
 	for _, m := range s.Matchers {
-		if err := m.validate(scheme); err != nil {
+		if err := m.Validate(); err != nil {
 			return fmt.Errorf("invalid matcher: %w", err)
 		}
 	}

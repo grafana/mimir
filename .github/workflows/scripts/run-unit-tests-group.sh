@@ -47,4 +47,4 @@ echo "$GROUP_TESTS"
 echo ""
 
 # shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -tags=netgo,stringlabels,localvalidationscheme -timeout 30m -race ${GROUP_TESTS}
+exec go test -tags=netgo,stringlabels -timeout 30m -race ${GROUP_TESTS}
