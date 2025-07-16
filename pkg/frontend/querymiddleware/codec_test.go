@@ -71,8 +71,8 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
-	codec := newTestPrometheusCodec()
+func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
+	codec := newTestCodec()
 
 	for i, tc := range []struct {
 		url         string
@@ -499,7 +499,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
+func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                      string
 		propagateHeaders          []string
@@ -732,7 +732,7 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 						}
 					}
 
-					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
+					codec := newTestCodecWithHeaders(testCase.propagateHeaders)
 					reqDecoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, r)
 					if err != nil || testCase.expectedErr != "" {
 						require.EqualError(t, err, testCase.expectedErr)
@@ -753,10 +753,10 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
+			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
 			req := PrometheusInstantQueryRequest{}
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
 			require.NoError(t, err)
@@ -773,11 +773,11 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
-			ctx := api.ContextWithReadConsistencyLevel(context.Background(), consistencyLevel)
+			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
@@ -785,10 +785,10 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T)
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
 	const notAllowedHeader = "X-Some-Name"
 
-	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+	codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
 	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
 	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
@@ -818,7 +818,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 	}
 }
 
-func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
+func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 	testResponse := &PrometheusResponse{
 		Status:    statusError,
 		ErrorType: string(v1Client.ErrExec),
@@ -872,7 +872,7 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		},
 	}
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
@@ -931,7 +931,7 @@ func jsonErrorResponse(t *testing.T, errType apierror.Type, message string) *htt
 	}
 }
 
-func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
+func TestCodec_DecodeResponse_Errors(t *testing.T) {
 	scenarios := map[string]struct {
 		response                    *http.Response
 		expectedResponseContentType string
@@ -981,7 +981,7 @@ func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
 
 	for name, testCase := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			codec := newTestPrometheusCodec()
+			codec := newTestCodec()
 
 			_, err := codec.DecodeMetricsQueryResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
 			require.Error(t, err)
@@ -993,7 +993,7 @@ func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
+func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		responseHeaders http.Header
@@ -1012,7 +1012,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -1031,7 +1031,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 }
 
 func TestMergeAPIResponses(t *testing.T) {
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	histogram1 := mimirpb.FloatHistogram{
 		CounterResetHint: histogram.GaugeType,
@@ -1495,13 +1495,13 @@ func mustParse(t *testing.T, response string) Response {
 	return &resp
 }
 
-func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
+func BenchmarkCodec_DecodeResponse(b *testing.B) {
 	const (
 		numSeries           = 1000
 		numSamplesPerSeries = 1000
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
@@ -1525,13 +1525,13 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 	}
 }
 
-func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
+func BenchmarkCodec_EncodeResponse(b *testing.B) {
 	const (
 		numSeries           = 1000
 		numSamplesPerSeries = 1000
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	req, err := http.NewRequest(http.MethodGet, "/something", nil)
 	require.NoError(b, err)
 
@@ -1755,10 +1755,10 @@ func Test_DecodeOptions(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
+// TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
 // metrics query request does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
-	codec := newTestPrometheusCodec().(prometheusCodec)
+func TestCodec_DecodeEncode_Metrics(t *testing.T) {
+	codec := newTestCodec()
 	for _, tt := range []struct {
 		name    string
 		headers http.Header
@@ -1815,14 +1815,14 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
+// TestCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
 // labels query request multiple times does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
+func TestCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 
 	defaultHeaders := httpHeadersToProm(http.Header{
 		"Accept": {"application/json"},
 	})
-	codec := newTestPrometheusCodec().(prometheusCodec)
+	codec := newTestCodec()
 	for _, tc := range []struct {
 		name     string
 		queryURL string
@@ -1942,7 +1942,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
+func TestCodec_DecodeMultipleTimes(t *testing.T) {
 	const query = "sum by (namespace) (container_memory_rss)"
 	t.Run("instant query", func(t *testing.T) {
 		params := url.Values{
@@ -1955,7 +1955,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, query, decoded.GetQuery())
@@ -1980,7 +1980,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, query, decoded.GetQuery())
@@ -1994,7 +1994,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 	})
 }
 
-func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
+func TestCodec_DecodeEncode_Stats(t *testing.T) {
 	const query = "sum by (namespace) (container_memory_rss)"
 	const allStats = "all"
 	t.Run("instant query", func(t *testing.T) {
@@ -2009,7 +2009,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, allStats, decoded.GetStats())
@@ -2028,7 +2028,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, allStats, decoded.GetStats())
@@ -2044,7 +2044,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, "", decoded.GetStats())
@@ -2062,19 +2062,19 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, "", decoded.GetStats())
 	})
 }
 
-func newTestPrometheusCodec() Codec {
-	return newTestPrometheusCodecWithHeaders(nil)
+func newTestCodec() Codec {
+	return newTestCodecWithHeaders(nil)
 }
 
-func newTestPrometheusCodecWithHeaders(propagateHeaders []string) Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
+func newTestCodecWithHeaders(propagateHeaders []string) Codec {
+	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
 }
 
 func mustSucceed[T any](value T, err error) T {

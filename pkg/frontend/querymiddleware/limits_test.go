@@ -892,7 +892,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -936,7 +936,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -977,7 +977,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -1034,7 +1034,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 		}, nil
 	})
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
