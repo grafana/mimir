@@ -333,7 +333,7 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.PrometheusEngine:
 		return promOpts, promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
+		limits := streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation)
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
 		planner := streamingpromql.NewQueryPlanner(mqeOpts)
 		logger := log.NewNopLogger()

@@ -291,7 +291,7 @@ type MultiTenantManager interface {
 	Stop()
 
 	// ValidateRuleGroup validates a rulegroup
-	ValidateRuleGroup(userID string, ruleGroup rulefmt.RuleGroup, ruleGroupNode rulefmt.RuleGroupNode) []error
+	ValidateRuleGroup(string, rulefmt.RuleGroup, rulefmt.RuleGroupNode) []error
 
 	// Start evaluating rules.
 	Start()
@@ -1351,6 +1351,11 @@ func tokenGreaterThanOrEqual(tokenA string, tokenB string) bool {
 // number of rule groups for the tenant and namespace.
 func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
 	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
+}
+
+// NameValidationScheme returns the validation scheme to use for a particular tenant.
+func (r *Ruler) NameValidationScheme(userID string) model.ValidationScheme {
+	return r.limits.ValidationScheme(userID)
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current

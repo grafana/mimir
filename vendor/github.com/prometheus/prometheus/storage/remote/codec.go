@@ -173,34 +173,12 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 	return resp, ss.Warnings(), ss.Err()
 }
 
-type fromQueryResultArgs struct {
-	validationScheme model.ValidationScheme
-}
-
-// FromQueryResultOption is an option for creating QueryResults.
-type FromQueryResultOption func(*fromQueryResultArgs)
-
-// WithValidationScheme sets the metric/label name validation scheme.
-// Defaults to UTF8Validation.
-func WithValidationScheme(scheme model.ValidationScheme) FromQueryResultOption {
-	return func(args *fromQueryResultArgs) {
-		args.validationScheme = scheme
-	}
-}
-
 // FromQueryResult unpacks and sorts a QueryResult proto.
-func FromQueryResult(sortSeries bool, res *prompb.QueryResult, opts ...FromQueryResultOption) storage.SeriesSet {
-	args := &fromQueryResultArgs{
-		validationScheme: model.UTF8Validation,
-	}
-	for _, opt := range opts {
-		opt(args)
-	}
-
+func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	b := labels.NewScratchBuilder(0)
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		if err := validateLabelsAndMetricName(ts.Labels, args.validationScheme); err != nil {
+		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
 		lbls := ts.ToLabels(&b, nil)
@@ -786,12 +764,12 @@ func (it *chunkedSeriesIterator) Err() error {
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names.
-func validateLabelsAndMetricName(ls []prompb.Label, validationScheme model.ValidationScheme) error {
+func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value), validationScheme) {
+		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
-		if !model.LabelName(l.Name).IsValid(validationScheme) {
+		if !model.LabelName(l.Name).IsValid() {
 			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {

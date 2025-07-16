@@ -14,6 +14,7 @@
 package expfmt
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -69,6 +70,21 @@ func ResponseFormat(h http.Header) Format {
 	return FmtUnknown
 }
 
+// NewDecoder returns a new decoder based on the given input format.
+// If the input format does not imply otherwise, a text format decoder is returned.
+func NewDecoder(r io.Reader, format Format) Decoder {
+	switch format.FormatType() {
+	case TypeProtoDelim:
+		return &protoDecoder{r: bufio.NewReader(r)}
+	}
+	return &textDecoder{r: r}
+}
+
+// protoDecoder implements the Decoder interface for protocol buffers.
+type protoDecoder struct {
+	r protodelim.Reader
+}
+
 // Decode implements the Decoder interface.
 func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 	opts := protodelim.UnmarshalOptions{
@@ -77,7 +93,7 @@ func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 	if err := opts.UnmarshalFrom(d.r, v); err != nil {
 		return err
 	}
-	if !d.isValidMetricName(v.GetName()) {
+	if !model.IsValidMetricName(model.LabelValue(v.GetName())) {
 		return fmt.Errorf("invalid metric name %q", v.GetName())
 	}
 	for _, m := range v.GetMetric() {
@@ -91,7 +107,7 @@ func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 			if !model.LabelValue(l.GetValue()).IsValid() {
 				return fmt.Errorf("invalid label value %q", l.GetValue())
 			}
-			if !d.isValidLabelName(l.GetName()) {
+			if !model.LabelName(l.GetName()).IsValid() {
 				return fmt.Errorf("invalid label name %q", l.GetName())
 			}
 		}

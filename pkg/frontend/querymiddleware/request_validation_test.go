@@ -208,9 +208,9 @@ func TestCardinalityQueryRequestValidationRoundTripper(t *testing.T) {
 			expectedErrType: apierror.TypeBadData,
 		},
 		{
-			// non-legacy label name will be accepted
+			// non-utf8 label name will be rejected even when we transition to UTF-8 label names
 			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=\\xbd\\xb2\\x3d\\xbc\\x20\\xe2\\x8c\\x98",
-			expectedErrType: "",
+			expectedErrType: apierror.TypeBadData,
 		},
 		{
 			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=foo",

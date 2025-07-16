@@ -74,6 +74,11 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	validationScheme, err := e.limitsProvider.GetValidationScheme(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get validation scheme for query: %w", err)
+	}
+
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, originalExpression)
 	stats, err := types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
 	if err != nil {
@@ -88,7 +93,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 		originalExpression:       originalExpression,
-		nameValidationScheme:     opts.ValidationScheme(),
+		nameValidationScheme:     validationScheme,
 	}
 
 	return q, nil

@@ -261,7 +261,7 @@ GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo,stringlabels,localvalidationscheme
+		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -318,7 +318,7 @@ lint: check-makefiles
 	golangci-lint run
 
 	# Ensure no blocklisted package is imported.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
@@ -328,31 +328,31 @@ lint: check-makefiles
 		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure clean pkg structure.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "\
+	faillint -paths "\
 		github.com/grafana/mimir/pkg/scheduler,\
 		github.com/grafana/mimir/pkg/frontend,\
 		github.com/grafana/mimir/pkg/frontend/transport,\
 		github.com/grafana/mimir/pkg/frontend/v1,\
 		github.com/grafana/mimir/pkg/frontend/v2" \
 		./pkg/querier/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
+	faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
+	faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
 	# Ensure all errors are reported as APIError
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
+	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
 	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
 	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
 	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
 	# question whether the usage is safe or not.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+	faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# gogo/status allows to easily customize error details while grpc/status doesn't:
 	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
@@ -361,13 +361,13 @@ lint: check-makefiles
 	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
 	# on which status package is imported, we don't allow .FromError() from both packages
 	# and we require to use grpcutil.ErrorToStatus() instead.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "\
+	faillint -paths "\
 		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
 		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure the query path is supporting multiple tenants
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "\
+	faillint -paths "\
 		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \
 		./pkg/scheduler/... \
 		./pkg/frontend/... \
@@ -375,7 +375,7 @@ lint: check-makefiles
 		./pkg/frontend/querymiddleware/...
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
+	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
 		./pkg/alertmanager/... \
 		./pkg/compactor/... \
 		./pkg/distributor/... \
@@ -390,22 +390,22 @@ lint: check-makefiles
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "github.com/NYTimes/gziphandler" \
+	faillint -paths "github.com/NYTimes/gziphandler" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
 	# and UnamrshalYAML signature is not compatible between them.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths "gopkg.in/yaml.v2" \
+	faillint -paths "gopkg.in/yaml.v2" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure packages we imported from Thanos are no longer used.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths \
 		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
 	# Also, ensure we use promauto.With() to reduce the chances we forget to register metrics.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/prometheus/client_golang/prometheus/promauto.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
@@ -414,7 +414,7 @@ lint: check-makefiles
 	# Use the faster slices.Sort where we can.
 	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"sort.{Strings,Ints}=slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
@@ -425,44 +425,44 @@ lint: check-makefiles
 
 	# Don't use generic ring.Read operation.
 	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/grafana/dskit/ring.{Read}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we use our custom gRPC clients.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -ignore-tests -paths \
+	faillint -ignore-tests -paths \
 		"context.{WithCancel}=context.WithCancelCause" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Do not use the object storage client intended only for tools within Mimir itself
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/grafana/mimir/pkg/util/objtools" \
 		./pkg/... ./cmd/... ./integration/...
 
 	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
 	# a lint ignore directive to skip linting).
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
 		./pkg/... ./cmd/... ./integration/...
 
 	# We don't use topic auto-creation because we don't control the num.partitions.
 	# As a result the topic can be created with the wrong number of partitions.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# We don't use opentracing anymore.
-	GOFLAGS="-tags=requires_docker,stringlabels,localvalidationscheme" faillint -paths \
+	faillint -paths \
 		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
@@ -485,12 +485,12 @@ print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo,stringlabels,localvalidationscheme -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo,stringlabels,localvalidationscheme -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
@@ -778,12 +778,12 @@ check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
-	go test -tags=requires_docker,stringlabels,localvalidationscheme ./integration/...
+	go test -tags=requires_docker,stringlabels ./integration/...
 
 integration-tests-race: ## Run all integration tests with race-enabled distroless docker image.
 integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
-	go test -timeout 30m -tags=requires_docker,stringlabels,localvalidationscheme ./integration/...
+	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
 # Those vars are needed for packages target
 export VERSION

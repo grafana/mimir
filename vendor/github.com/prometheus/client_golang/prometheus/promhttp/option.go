@@ -16,8 +16,6 @@ package promhttp
 import (
 	"context"
 
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -35,14 +33,12 @@ type options struct {
 	extraMethods       []string
 	getExemplarFn      func(requestCtx context.Context) prometheus.Labels
 	extraLabelsFromCtx map[string]LabelValueFromCtx
-	validationScheme   model.ValidationScheme
 }
 
 func defaultOptions() *options {
 	return &options{
 		getExemplarFn:      func(ctx context.Context) prometheus.Labels { return nil },
 		extraLabelsFromCtx: map[string]LabelValueFromCtx{},
-		validationScheme:   model.UTF8Validation,
 	}
 }
 

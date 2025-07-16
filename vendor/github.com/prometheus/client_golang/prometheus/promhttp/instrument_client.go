@@ -78,7 +78,7 @@ func InstrumentRoundTripperCounter(counter *prometheus.CounterVec, next http.Rou
 			for label, resolve := range rtOpts.extraLabelsFromCtx {
 				l[label] = resolve(resp.Request.Context())
 			}
-			addWithExemplar(counter.With(l), 1, rtOpts.getExemplarFn(r.Context()), rtOpts.validationScheme)
+			addWithExemplar(counter.With(l), 1, rtOpts.getExemplarFn(r.Context()))
 		}
 		return resp, err
 	}
@@ -122,7 +122,7 @@ func InstrumentRoundTripperDuration(obs prometheus.ObserverVec, next http.RoundT
 			for label, resolve := range rtOpts.extraLabelsFromCtx {
 				l[label] = resolve(resp.Request.Context())
 			}
-			observeWithExemplar(obs.With(l), time.Since(start).Seconds(), rtOpts.getExemplarFn(r.Context()), rtOpts.validationScheme)
+			observeWithExemplar(obs.With(l), time.Since(start).Seconds(), rtOpts.getExemplarFn(r.Context()))
 		}
 		return resp, err
 	}
