@@ -188,19 +188,27 @@ func loadBenchmarkRequests(filePath string) (*BenchmarkRequests, error) {
 	return &requests, nil
 }
 
+func defaultLimitsConfig() validation.Limits {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
+}
+
+func defaultLimitsOverrides() *validation.Overrides {
+	return validation.NewOverrides(defaultLimitsConfig(), nil)
+}
+
 func createTestParquetBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.ParquetBucketStores {
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
 
-	// Create minimal validation.Overrides for testing
-	limits := &validation.Overrides{}
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
 
 	stores, err := storegateway.NewParquetBucketStores(
 		cfg,
-		limits,
+		defaultLimitsOverrides(),
 		allowedTenants,
 		shardingStrategy,
 		bkt,
@@ -216,8 +224,6 @@ func createTestBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.Buc
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
 
-	// Create minimal validation.Overrides for testing
-	limits := &validation.Overrides{}
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
 
@@ -226,7 +232,7 @@ func createTestBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.Buc
 		shardingStrategy,
 		bkt,
 		allowedTenants,
-		limits,
+		defaultLimitsOverrides(),
 		log.NewNopLogger(),
 		prometheus.NewRegistry(),
 	)
