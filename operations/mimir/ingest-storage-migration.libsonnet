@@ -155,11 +155,12 @@
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else {
        'ingest-storage.migration.distributor-send-to-ingesters-enabled': true,
      })
+    + (if $._config.ingest_storage_migration_ingest_storage_max_wait_time == '' then {} else {
+         'ingest-storage.migration.ingest-storage-max-wait-time': $._config.ingest_storage_migration_ingest_storage_max_wait_time,
+         'ingest-storage.migration.ignore-ingest-storage-errors': error 'ingest_storage_migration_ignore_ingest_storage_errors must be set when ingest_storage_migration_ingest_storage_max_wait_time is set',
+       })
     + (if !$._config.ingest_storage_migration_ignore_ingest_storage_errors then {} else {
          'ingest-storage.migration.ignore-ingest-storage-errors': true,
-       })
-    + (if !$._config.ingest_storage_migration_ignore_ingest_storage_errors || $._config.ingest_storage_migration_ingest_storage_max_wait_time == '' then {} else {
-         'ingest-storage.migration.ingest-storage-max-wait-time': $._config.ingest_storage_migration_ingest_storage_max_wait_time,
        }),
 
   distributor_args+::
