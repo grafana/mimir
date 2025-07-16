@@ -180,7 +180,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
-						{t: 0, v: 7, hint: histogram.UnknownCounterReset}, // 2 samples from c2 (higher count wins: 75 > 12)
+						{t: 0, v: 7, hint: histogram.UnknownCounterReset}, // 2 samples from c2 (higher count wins: 7 > 2)
 						{t: 1, v: 8, hint: histogram.NotCounterReset},
 						{t: 2, v: 9, hint: histogram.NotCounterReset}, // 2 samples from c2, previous iterator was also c2, so keep the NCR hint
 						{t: 3, v: 10, hint: histogram.NotCounterReset},
@@ -221,10 +221,10 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 4, v: 2, hint: histogram.NotCounterReset},     // c1
 						{t: 5, v: 8, hint: histogram.UnknownCounterReset}, // c2
 						// Next sample is from c2. This is consecutive, but this ends up as the first sample in a merged
-						// batch, and the c1 sample at ts 7 and 8 is added to the batch stream before this c2 sample, so
+						// batch, and the c1 sample at ts 8 is added to the batch stream before this c2 sample, so
 						// the prevIteratorID is set to c1 rather than c2 when we append this sample.
 						{t: 6, v: 9, hint: histogram.UnknownCounterReset},
-						{t: 7, v: 10, hint: histogram.NotCounterReset},     // c1 (higher count wins)
+						{t: 7, v: 10, hint: histogram.NotCounterReset},     // c2 (higher count wins)
 						{t: 8, v: 5, hint: histogram.UnknownCounterReset},  // c1
 						{t: 9, v: 11, hint: histogram.UnknownCounterReset}, // c2
 					},
