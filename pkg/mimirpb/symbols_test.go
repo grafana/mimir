@@ -59,6 +59,50 @@ func TestSymbolsTable(t *testing.T) {
 			require.Equal(t, ls, FromLabelAdaptersToLabels(decoded))
 		})
 	}
+
+	// Tests specific to the Mimir implementation, which is a superset of the Prometheus one.
+	t.Run("symbols offset, no common symbols", func(t *testing.T) {
+		s := NewFastSymbolsTable(baseSymbolsMapCapacity)
+		s.ConfigureCommonSymbols(128, nil)
+
+		require.Equal(t, []string{""}, s.Symbols(), "required empty reference does not exist")
+		require.Equal(t, uint32(0), s.Symbolize(""))
+		require.Equal(t, []string{""}, s.Symbols())
+
+		require.Equal(t, uint32(129), s.Symbolize("abc"))
+		require.Equal(t, []string{"", "abc"}, s.Symbols())
+
+		require.Equal(t, uint32(130), s.Symbolize("__name__"))
+		require.Equal(t, []string{"", "abc", "__name__"}, s.Symbols())
+
+		s.Reset()
+		require.Equal(t, uint32(0), s.offset)
+	})
+
+	t.Run("common symbols", func(t *testing.T) {
+		commonSymbols := []string{"", "__name__", "__aggregation__"}
+		s := NewFastSymbolsTable(baseSymbolsMapCapacity)
+		s.ConfigureCommonSymbols(8, commonSymbols)
+
+		require.Equal(t, []string{""}, s.Symbols(), "required empty reference does not exist")
+		require.Equal(t, uint32(0), s.Symbolize(""))
+		require.Equal(t, []string{""}, s.Symbols())
+
+		require.Equal(t, uint32(9), s.Symbolize("abc"))
+		require.Equal(t, []string{"", "abc"}, s.Symbols())
+
+		require.Equal(t, uint32(1), s.Symbolize("__name__"))
+		require.Equal(t, []string{"", "abc"}, s.Symbols())
+
+		require.Equal(t, uint32(10), s.Symbolize("def"))
+		require.Equal(t, []string{"", "abc", "def"}, s.Symbols())
+
+		require.Equal(t, uint32(2), s.Symbolize("__aggregation__"))
+		require.Equal(t, []string{"", "abc", "def"}, s.Symbols())
+
+		s.Reset()
+		require.Nil(t, s.commonSymbols)
+	})
 }
 
 func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapter, string) {
