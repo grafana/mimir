@@ -390,6 +390,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
+	ValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -421,7 +422,9 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
+	validationScheme := cfg.ValidationScheme(userID)
+
+	if !isValidMetricName(unsafeMetricName, validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
@@ -447,7 +450,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelValidation && !model.LabelName(l.Name).IsValid() {
+		if !skipLabelValidation && !isValidLabelName(l.Name, validationScheme) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
@@ -472,6 +475,28 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		lastLabelName = l.Name
 	}
 	return nil
+}
+
+func isValidMetricName(name string, validationScheme model.ValidationScheme) bool {
+	switch validationScheme {
+	case model.LegacyValidation:
+		return model.IsValidLegacyMetricName(name)
+	case model.UTF8Validation:
+		return model.IsValidMetricName(model.LabelValue(name))
+	default:
+		return false
+	}
+}
+
+func isValidLabelName(name string, validationScheme model.ValidationScheme) bool {
+	switch validationScheme {
+	case model.LegacyValidation:
+		return model.LabelName(name).IsValidLegacy()
+	case model.UTF8Validation:
+		return model.LabelName(name).IsValid()
+	default:
+		return false
+	}
 }
 
 // metadataValidationMetrics is a collection of metrics used by metadata validation.

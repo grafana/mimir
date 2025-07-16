@@ -67,12 +67,6 @@ import (
 
 var tracer = otel.Tracer("pkg/distributor")
 
-func init() {
-	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
-	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
-}
-
 var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
@@ -1080,6 +1074,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	}
 }
 
+// prePushRelabelMiddleware relabels the metric. Validation of those labels is
+// handled in prePushValidationMiddleware.
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		next, maybeCleanup := NextOrCleanup(next, pushReq)
