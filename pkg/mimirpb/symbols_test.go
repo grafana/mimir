@@ -49,11 +49,14 @@ func TestSymbolsTable(t *testing.T) {
 			require.Equal(t, []string{"", "__name__", "abc"}, s.Symbols())
 
 			ls := labels.FromStrings("__name__", "qwer", "zxcv", "1234")
-			encoded := make([]uint32, len(ls)*2)
-			for i, l := range ls {
+
+			encoded := make([]uint32, ls.Len()*2)
+			i := 0
+			ls.Range(func(l labels.Label) {
 				encoded[(i * 2)] = s.Symbolize(l.Name)
 				encoded[(i*2)+1] = s.Symbolize(l.Value)
-			}
+				i++
+			})
 			require.Equal(t, []uint32{1, 3, 4, 5}, encoded)
 			decoded, _ := desymbolizeLabelsDirect(encoded, s.Symbols())
 			require.Equal(t, ls, FromLabelAdaptersToLabels(decoded))
