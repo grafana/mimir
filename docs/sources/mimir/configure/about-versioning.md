@@ -48,7 +48,6 @@ The following features are currently experimental:
 
 - Cost attribution
   - Configure labels for cost attribution
-    - `-validation.cost-attribution-labels`
     - `-validation.cost-attribution-labels-structured`
   - Configure cost attribution limits, such as cardinality:
     - `-validation.max-cost-attribution-cardinality`
