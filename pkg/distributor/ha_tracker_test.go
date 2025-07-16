@@ -1580,3 +1580,125 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	assert.Equal(t, otherReplica, tracker.clusters[userID][cluster].elected.Replica)
 	tracker.electedLock.Unlock()
 }
+
+func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
+	const userID = "test-user"
+	const cluster = "test-cluster"
+	const replica1 = "replica-1"
+	const replica2 = "replica-2"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	failoverTimeout := 30 * time.Second
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore:         kv.Config{Mock: mock},
+	}, trackerLimits{
+		maxClusters:              100,
+		updateTimeout:            15 * time.Second,
+		updateTimeoutJitterMax:   0,
+		failoverTimeout:          failoverTimeout,
+		useSampleTimeForFailover: true,
+	}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+
+	now := time.Now()
+	sampleDelay := 20 * time.Second
+	sampleTime := now.Add(-sampleDelay)
+
+	// Establish replica1 as elected
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	require.NoError(t, err)
+
+	// Wait past failover timeout
+	now2 := now.Add(failoverTimeout)
+	sampleTime2 := sampleTime.Add(failoverTimeout)
+
+	// Attempt failover to replica2
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica1 should still be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica1, now, now)
+
+	// Wait past sample delay
+	now3 := now2.Add(sampleDelay)
+	sampleTime3 := sampleTime2.Add(sampleDelay)
+
+	// Attempt failover to replica2 again
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica2 should be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now3, now3)
+
+	// Verify replica2 is now accepted
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	require.NoError(t, err)
+}
+
+func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
+	const userID = "test-user"
+	const cluster = "test-cluster"
+	const replica1 = "replica-1"
+	const replica2 = "replica-2"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	failoverTimeout := 30 * time.Second
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore:         kv.Config{Mock: mock},
+	}, trackerLimits{
+		maxClusters:              100,
+		updateTimeout:            15 * time.Second,
+		updateTimeoutJitterMax:   0,
+		failoverTimeout:          failoverTimeout,
+		useSampleTimeForFailover: false,
+	}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+
+	now := time.Now()
+	sampleDelay := 20 * time.Second
+	sampleTime := now.Add(-sampleDelay)
+
+	// Establish replica1 as elected
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	require.NoError(t, err)
+
+	// Wait past failover timeout
+	now2 := now.Add(failoverTimeout)
+	sampleTime2 := sampleTime.Add(failoverTimeout)
+
+	// Attempt failover to replica2
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica2 should be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now2, now2)
+
+	// Verify replica2 is now accepted
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, now2)
+	require.NoError(t, err)
+}
