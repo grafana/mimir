@@ -518,7 +518,7 @@ losingPartitions:
 	}
 
 	logLevel(logger).Log(
-		"msg", "partitions reconciled",
+		"msg", "end of partition reconciliation",
 		"start", start, "end", end,
 		"instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions,
 		"added", added, "skipped", skipped,
