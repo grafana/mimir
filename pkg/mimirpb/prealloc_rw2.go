@@ -53,8 +53,6 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	rw2.TimeseriesRW2 = rw2Timeseries
 	rw2.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
 
-	// TODO: Common symbols not yet supported.
-
 	return rw2, nil
 }
 

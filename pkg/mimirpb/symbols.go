@@ -75,6 +75,15 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 		// 0 means empty string, even if an offset is provided.
 		return 0
 	}
+	if t.commonSymbols != nil {
+		// TODO: CommonSymbols is bounded size, it small enough to where linear search is faster?
+		for i := range t.commonSymbols {
+			if str == t.commonSymbols[i] {
+				return uint32(i)
+			}
+		}
+	}
+
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
