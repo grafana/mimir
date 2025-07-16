@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -416,7 +417,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -439,6 +440,8 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
+	validationScheme := r.limits.ValidationScheme(userID)
+
 	for i, r := range g.Rules {
 		for _, err := range r.Validate(node.Rules[i]) {
 			var ruleName string
@@ -454,9 +457,54 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 				Err:      err,
 			})
 		}
+		// Perform our (stricter) validation.
+		errs = append(errs, validateRule(r, validationScheme)...)
 	}
 
 	return errs
+}
+
+// validateRule extends rulefmt.Rule.Validate but respects the given validationScheme.
+func validateRule(r rulefmt.Rule, validationScheme model.ValidationScheme) []error {
+	var errs []error
+	if r.Record != "" {
+		if !isValidMetricName(r.Record, validationScheme) {
+			errs = append(errs, fmt.Errorf("invalid recording rule name: %s", r.Record))
+		}
+	}
+	for k := range r.Labels {
+		if !isValidLabelName(k, validationScheme) || k == model.MetricNameLabel {
+			errs = append(errs, fmt.Errorf("invalid label name: %s", k))
+		}
+	}
+	for k := range r.Annotations {
+		if !isValidLabelName(k, validationScheme) {
+			errs = append(errs, fmt.Errorf("invalid annotation name: %s", k))
+		}
+	}
+	return errs
+}
+
+func isValidMetricName(name string, validationScheme model.ValidationScheme) bool {
+	switch validationScheme {
+	case model.LegacyValidation:
+		return model.IsValidLegacyMetricName(name)
+	case model.UTF8Validation:
+		return model.IsValidMetricName(model.LabelValue(name))
+	default:
+		return false
+	}
+}
+
+func isValidLabelName(name string, validationScheme model.ValidationScheme) bool {
+	switch validationScheme {
+	case model.LegacyValidation:
+		return model.LabelName(name).IsValidLegacy()
+	case model.UTF8Validation:
+		return model.LabelName(name).IsValid()
+	default:
+		return false
+	}
 }
 
 // filterRuleGroupsByNotEmptyUsers filters out all the tenants that have no rule groups.
