@@ -15,12 +15,17 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -126,18 +131,76 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
 }
 
-func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
+func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
 	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
 
-	query, err := e.Materialize(ctx, plan, q, opts)
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
 	if err != nil {
 		return nil, err
 	}
 
-	return query, nil
+	defer e.activeQueryTracker.Delete(queryID)
+
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
+	}
+
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
+
+	operatorParams := &planning.OperatorParameters{
+		Queryable:                queryable,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations.New(),
+		LookbackDelta:            lookbackDelta,
+		EagerLoadSelectors:       e.eagerLoadSelectors,
+	}
+
+	materializer := NewMaterializer(operatorParams)
+	root, err := materializer.ConvertNodeToOperator(plan.Root, plan.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	evaluator, err := NewEvaluator(root, queryable, plan.TimeRange, e, opts, memoryConsumptionTracker, plan.OriginalExpression)
+	if err != nil {
+		return nil, err
+	}
+
+	statement := &parser.EvalStmt{
+		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
+		Start:         timestamp.Time(plan.TimeRange.StartT),
+		End:           timestamp.Time(plan.TimeRange.EndT),
+		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
+		LookbackDelta: lookbackDelta,
+	}
+
+	if plan.TimeRange.IsInstant {
+		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 for instant queries.
+	}
+
+	q := &Query{
+		evaluator:                evaluator,
+		engine:                   e,
+		statement:                statement,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		originalExpression:       plan.OriginalExpression,
+		topLevelQueryTimeRange:   plan.TimeRange,
+	}
+
+	return q, nil
 }
 
 type QueryLimitsProvider interface {
