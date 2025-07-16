@@ -779,6 +779,10 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, reqDecoded)
 					require.NoError(t, err)
 					require.EqualValues(t, testCase.expectedURL, reqEncoded.RequestURI)
+
+					actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(reqEncoded)
+					require.NoError(t, err)
+					require.Equal(t, userID, actualUserID)
 				})
 			}
 		})
@@ -809,7 +813,7 @@ func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
 			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
