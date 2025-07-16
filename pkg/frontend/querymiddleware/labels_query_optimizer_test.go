@@ -280,7 +280,7 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 
 					// Create the labels query optimizer
 					reg := prometheus.NewPedanticRegistry()
-					codec := NewPrometheusCodec(prometheus.NewRegistry(), 0*time.Minute, formatJSON, nil)
+					codec := NewCodec(prometheus.NewRegistry(), 0*time.Minute, formatJSON, nil)
 					optimizer := newLabelsQueryOptimizer(codec, limits, downstream, mimirtest.NewTestingLogger(t), reg)
 
 					// Execute the request
