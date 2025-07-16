@@ -128,7 +128,7 @@ type Limits struct {
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
 	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
-	HATrackerUseSampleTimeForFailover           bool                `yaml:"ha_tracker_use_sample_time_for_failover" json:"ha_tracker_use_sample_time_for_failover" category:"advanced" doc:"description=Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time."`
+	HATrackerUseSampleTimeForFailover           bool                `yaml:"ha_tracker_use_sample_time_for_failover" json:"ha_tracker_use_sample_time_for_failover" category:"advanced"`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
