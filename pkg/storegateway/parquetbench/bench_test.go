@@ -206,6 +206,7 @@ func createTestParquetBucketStores(b *testing.B, bkt objstore.Bucket) *storegate
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
+	cfg.BucketStore.IgnoreBlocksWithin = 0 // Load all blocks
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
@@ -227,6 +228,7 @@ func createTestBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.Buc
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
+	cfg.BucketStore.IgnoreBlocksWithin = 0 // Load all blocks
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
