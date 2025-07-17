@@ -283,6 +283,8 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	v2bytes, err := reqv2.Marshal()
 	require.NoError(b, err)
 
+	b.ResetTimer()
+
 	b.Run("deserialize v1", func(b *testing.B) {
 		for range b.N {
 			wr := &mimirpb.PreallocWriteRequest{}
@@ -321,4 +323,47 @@ func assertMetadataEqualUnordered(t *testing.T, exp, actual []*mimirpb.MetricMet
 	}
 
 	require.Equal(t, expMap, actualMap)
+}
+
+func BenchmarkRecordFormat(b *testing.B) {
+	// Generate a WriteRequest.
+	req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 10000)}
+	for i := 0; i < len(req.Timeseries); i++ {
+		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+	}
+
+	b.Run("v1 serialize", func(b *testing.B) {
+		ser := versionOneRecordSerializer{}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			_, err := ser.ToRecords(123, "user-1", req, req.Size())
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v2 serialize", func(b *testing.B) {
+		ser := versionTwoRecordSerializer{}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			_, err := ser.ToRecords(123, "user-1", req, req.Size())
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 -> v2 conversion", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := mimirpb.FromWriteRequestToRW2Request(req, nil, V2RecordSymbolOffset)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

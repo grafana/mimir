@@ -122,9 +122,9 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 }
 
 func BenchmarkSymbolizer(b *testing.B) {
-	b.Run("prom symbolizer: 10k labels unique values", func(b *testing.B) {
-		lbls := make([]string, 2*10000)
-		for i := range 10000 {
+	b.Run("prom symbolizer: 2k labels unique values", func(b *testing.B) {
+		lbls := make([]string, 2*2000)
+		for i := range 2000 {
 			lbls[i*2] = "__name__"
 			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
 		}
@@ -138,15 +138,15 @@ func BenchmarkSymbolizer(b *testing.B) {
 				_ = st.Symbolize(l)
 			}
 			symbols := st.Symbols()
-			if len(symbols) != 10002 {
+			if len(symbols) != 2002 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
 		}
 	})
 
-	b.Run("mimir symbolizer: 10k labels unique values", func(b *testing.B) {
-		lbls := make([]string, 2*10000)
-		for i := range 10000 {
+	b.Run("mimir symbolizer: 2k labels unique values", func(b *testing.B) {
+		lbls := make([]string, 2*2000)
+		for i := range 2000 {
 			lbls[i*2] = "__name__"
 			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
 		}
@@ -154,17 +154,89 @@ func BenchmarkSymbolizer(b *testing.B) {
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
-			// st := NewFastSymbolsTable(baseSymbolsMapCapacity)
 			st := symbolsTableFromPool()
 
 			for _, l := range lbls {
 				_ = st.Symbolize(l)
 			}
 			symbols := st.Symbols()
-			if len(symbols) != 10002 {
+			if len(symbols) != 2002 {
+				b.Fatalf("unexpected number of symbols: %d", len(symbols))
+			}
+			reuseSymbolsTable(st)
+		}
+	})
+
+	b.Run("mimir symbolizer: 2k labels unique values, common symbols", func(b *testing.B) {
+		lbls := make([]string, 2*2000)
+		for i := range 2000 {
+			lbls[i*2] = "__name__"
+			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
+		}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			st := symbolsTableFromPool()
+			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+
+			for _, l := range lbls {
+				_ = st.Symbolize(l)
+			}
+			symbols := st.Symbols()
+			if len(symbols) != 10001 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
 			reuseSymbolsTable(st)
 		}
 	})
 }
+
+var (
+	benchmarkCommonSymbols = []string{
+		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
+		// This ensures that empty/missing refs still map to empty string.
+		"",
+		// Prometheus/Mimir symbols
+		"__name__",
+		"__aggregation__",
+		"<aggregated>",
+		"le",
+		"component",
+		"cortex_request_duration_seconds_bucket",
+		"storage_operation_duration_seconds_bucket",
+		// Grafana Labs products
+		"grafana",
+		"asserts_env",
+		"asserts_request_context",
+		"asserts_source",
+		"asserts_entity_type",
+		"asserts_request_type",
+		// General symbols
+		"name",
+		"image",
+		// Kubernetes symbols
+		"cluster",
+		"namespace",
+		"pod",
+		"job",
+		"instance",
+		"container",
+		"replicaset",
+		// Networking, HTTP
+		"interface",
+		"status_code",
+		"resource",
+		"operation",
+		"method",
+		// Common tools
+		"kube-system",
+		"kube-system/cadvisor",
+		"node-exporter",
+		"node-exporter/node-exporter",
+		"kube-system/kubelet",
+		"kube-system/node-local-dns",
+		"kube-state-metrics/kube-state-metrics",
+		"default/kubernetes",
+	}
+)

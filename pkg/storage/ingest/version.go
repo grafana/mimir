@@ -145,8 +145,7 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 type versionTwoRecordSerializer struct{}
 
 func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, nil, V2RecordSymbolOffset)
-	// TODO: Shared symbols
+	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
