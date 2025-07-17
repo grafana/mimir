@@ -81,6 +81,9 @@ type partitionHandler struct {
 	// ignoreSnapshotEventsUntil is the offset of the last snapshot event that was included in the snapshot we loaded at startup.
 	ignoreSnapshotEventsUntil int64
 	lastPublishedEventOffset  atomic.Int64
+	// loadedLastSnapshotTimestamp is the timestamp of the last snapshot we loaded at startup.
+	// it's set only once and is not updated.
+	loadedLastSnapshotTimestamp time.Time
 
 	pendingCreatedSeriesMarshaledEvents chan []byte
 
@@ -278,6 +281,7 @@ func (p *partitionHandler) loadLastSnapshotRecordAndGetEventsOffset(ctx context.
 		return 0, errors.Wrapf(err, "failed to load snapshot")
 	}
 
+	p.loadedLastSnapshotTimestamp = time.UnixMilli(snapshot.Timestamp)
 	p.ignoreSnapshotEventsUntil = snapshot.LastSnapshotEventOffset
 
 	return snapshot.LastEventOffsetPublishedBeforeSnapshot, nil
@@ -737,13 +741,29 @@ func (p *partitionHandler) newEventKafkaRecord(eventTypeBytes []byte, data []byt
 }
 
 func (p *partitionHandler) publishSnapshots(ctx context.Context) {
+	delay := util.DurationWithJitter(p.cfg.IdleTimeout/2, p.cfg.SnapshotIntervalJitter)
+	var firstSnapshot <-chan time.Time
+	if !p.loadedLastSnapshotTimestamp.IsZero() {
+		nextExpectedSnapshot := p.loadedLastSnapshotTimestamp.Add(delay)
+		delayUntilFirstSnapshot := max(time.Until(nextExpectedSnapshot), time.Second)
+		firstSnapshot = time.After(delayUntilFirstSnapshot)
+		level.Info(p.logger).Log("msg", "first snapshot scheduled", "delay", delay, "first_snapshot", time.Now().Add(delay), "loaded_last_snapshot_timestamp", p.loadedLastSnapshotTimestamp.UTC().Format(time.RFC3339))
+	}
+
 	for {
-		delay := util.DurationWithJitter(p.cfg.IdleTimeout/2, p.cfg.SnapshotIntervalJitter)
-		level.Info(p.logger).Log("msg", "next snapshot scheduled", "delay", delay, "next_snapshot", time.Now().Add(delay))
+		level.Info(p.logger).Log("msg", "next snapshot scheduled", "delay", delay, "next_snapshot", time.Now().UTC().Add(delay).Format(time.RFC3339))
 		select {
 		case <-ctx.Done():
 			return
+		case <-firstSnapshot:
+			if err := p.publishSnapshot(ctx); err != nil {
+				p.snapshotEventsPublishFailures.Inc()
+				level.Error(p.logger).Log("msg", "failed to publish snapshot", "err", err)
+			}
 		case <-time.After(delay):
+			// If this happens before firstSnapshot, there's no need to do that one.
+			firstSnapshot = nil
+
 			if err := p.publishSnapshot(ctx); err != nil {
 				p.snapshotEventsPublishFailures.Inc()
 				level.Error(p.logger).Log("msg", "failed to publish snapshot", "err", err)
