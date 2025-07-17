@@ -441,6 +441,7 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 	}
 
 	lastEventOffset := int64(-1)
+	gotEvents := 0
 	for lastEventOffset < lastExpectedEventOffset && ctx.Err() == nil {
 		pollCtx, cancel := context.WithTimeout(ctx, time.Second)
 		fetches := p.eventsKafkaReader.PollRecords(pollCtx, p.cfg.MaxEventsFetchSize)
@@ -455,6 +456,7 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 		}
 
 		fetches.EachRecord(func(r *kgo.Record) {
+			gotEvents++
 			// We don't ignore our own events here, because they potentially were sent after we made the snapshot.
 			eventType, ok := recordHeader(r, eventTypeRecordHeader)
 			if !ok {
@@ -471,7 +473,7 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 		})
 	}
 
-	level.Info(p.logger).Log("msg", "finished loading events", "topic", p.cfg.EventsStorageReader.Topic, "start_offset", eventsOffset, "last_event_offset", lastEventOffset, "last_expected_event_offset", lastExpectedEventOffset)
+	level.Info(p.logger).Log("msg", "finished loading events", "topic", p.cfg.EventsStorageReader.Topic, "start_offset", eventsOffset, "last_event_offset", lastEventOffset, "last_expected_event_offset", lastExpectedEventOffset, "got_events", gotEvents)
 	return ctx.Err()
 }
 
