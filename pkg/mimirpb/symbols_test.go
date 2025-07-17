@@ -178,6 +178,7 @@ func BenchmarkSymbolizer(b *testing.B) {
 			if len(symbols) != 136 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
+			reuseSymbolsSlice(symbols)
 			reuseSymbolsTable(st)
 		}
 	})

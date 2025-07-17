@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
 package mimirpb
 
 import (
@@ -27,8 +25,7 @@ var (
 	}
 	symbolsSlicePool = sync.Pool{
 		New: func() interface{} {
-			val := make([]string, 0, baseSymbolsSliceCapacity)
-			return &val
+			return make([]string, 0, baseSymbolsSliceCapacity)
 		},
 	}
 )
@@ -42,19 +39,20 @@ func reuseSymbolsTable(t *FastSymbolsTable) {
 	symbolsTablePool.Put(t)
 }
 
-func symbolsSliceFromPool() *[]string {
-	return symbolsSlicePool.Get().(*[]string)
+func symbolsSliceFromPool() []string {
+	return symbolsSlicePool.Get().([]string)
 }
 
-func reuseSymbolsSlice(s *[]string) {
-	*s = (*s)[:0]
-	symbolsSlicePool.Put(s)
+func reuseSymbolsSlice(s []string) {
+	for i := range s {
+		s[i] = ""
+	}
+	symbolsSlicePool.Put(s[:0])
 }
 
 // FastSymbolsTable is an optimized, alternate implementation of writev2.SymbolsTable.
 type FastSymbolsTable struct {
 	symbolsMap     map[string]uint32
-	cachedSymbols  *[]string
 	usedSymbolRefs int
 	commonSymbols  []string
 	offset         uint32
@@ -91,38 +89,26 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 	}
 	ref := uint32(len(t.symbolsMap)) + t.offset + 1
 	t.symbolsMap[str] = ref
-	if t.cachedSymbols != nil {
-		reuseSymbolsSlice(t.cachedSymbols)
-		t.cachedSymbols = nil
-	}
 	return ref
 }
 
 func (t *FastSymbolsTable) Symbols() []string {
-	if t.cachedSymbols != nil {
-		return *t.cachedSymbols
-	}
 	syms := symbolsSliceFromPool()
-	if cap(*syms) < len(t.symbolsMap)+1 {
-		*syms = make([]string, 0, len(t.symbolsMap)+1)
+	if cap(syms) < len(t.symbolsMap)+1 {
+		syms = make([]string, 0, len(t.symbolsMap)+1)
 	}
 	for range len(t.symbolsMap) + 1 {
-		*syms = append(*syms, "")
+		syms = append(syms, "")
 	}
 
 	for k, v := range t.symbolsMap {
-		(*syms)[v-t.offset] = k
+		(syms)[v-t.offset] = k
 	}
-	t.cachedSymbols = syms
-	return *t.cachedSymbols
+	return syms
 }
 
 func (t *FastSymbolsTable) Reset() {
 	clear(t.symbolsMap)
-	if t.cachedSymbols != nil {
-		reuseSymbolsSlice(t.cachedSymbols)
-		t.cachedSymbols = nil
-	}
 	t.usedSymbolRefs = 0
 	t.offset = 0
 	t.commonSymbols = nil
