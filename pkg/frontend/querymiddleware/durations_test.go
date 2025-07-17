@@ -34,12 +34,12 @@ func TestDurationMiddleware(t *testing.T) {
 			expectRange:   "rate(http_requests_total[5m10s] offset 4s)",
 		},
 		"valid duration expression with start() should be rewritten": {
-			query: 	   "http_requests_total @ start()",
+			query:         "http_requests_total @ start()",
 			expectInstant: "http_requests_total @ 1.000",
 			expectRange:   "http_requests_total @ 2.000",
 		},
 		"valid duration expression with end() should be rewritten": {
-			query: 	   "http_requests_total @ end()",
+			query:         "http_requests_total @ end()",
 			expectInstant: "http_requests_total @ 1.000",
 			expectRange:   "http_requests_total @ 3.000",
 		},
