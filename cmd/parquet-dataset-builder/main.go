@@ -5,14 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/thanos-io/objstore"
 )
@@ -42,23 +39,24 @@ func main() {
 func runConvert() {
 	fs := flag.NewFlagSet("convert", flag.ExitOnError)
 
-	// Use BlocksStorageConfig for consistent bucket configuration
-	storageCfg := &tsdb.BlocksStorageConfig{}
-	storageCfg.RegisterFlags(fs)
-
-	users := fs.String("users", "", "Comma-separated list of users to convert (empty = all users)")
-	verbose := fs.Bool("verbose", false, "Enable verbose logging")
+	cfg := &ConvertConfig{}
+	cfg.RegisterFlags(fs)
 
 	fs.Parse(os.Args[2:])
 
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	logger := log.NewNopLogger()
-	if *verbose {
+	if cfg.Verbose {
 		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
 
 	ctx := context.Background()
 
-	bkt, err := bucket.NewClient(ctx, storageCfg.Bucket, "parquet-dataset-builder", logger, nil)
+	bkt, err := bucket.NewClient(ctx, cfg.Storage.Bucket, "parquet-dataset-builder", logger, nil)
 	if err != nil {
 		fmt.Printf("Failed to create bucket client: %v\n", err)
 		os.Exit(1)
@@ -69,23 +67,15 @@ func runConvert() {
 		os.Exit(1)
 	}
 
-	var userList []string
-	if *users != "" {
-		userList = strings.Split(*users, ",")
-		for i, user := range userList {
-			userList[i] = strings.TrimSpace(user)
-		}
-	}
-
 	converter := NewConverter(bkt, logger)
-	if err := converter.ConvertAll(ctx, userList); err != nil {
+	if err := converter.ConvertAll(ctx, cfg.Users); err != nil {
 		fmt.Printf("Failed to convert blocks: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create bucket indexes for all users
 	var usersToIndex []string
-	if len(userList) == 0 {
+	if len(cfg.Users) == 0 {
 		// Get all users from the converter
 		allUsers, err := converter.ListAllUsers(ctx)
 		if err != nil {
@@ -94,7 +84,7 @@ func runConvert() {
 		}
 		usersToIndex = allUsers
 	} else {
-		usersToIndex = userList
+		usersToIndex = cfg.Users
 	}
 
 	for _, userID := range usersToIndex {
@@ -110,32 +100,24 @@ func runConvert() {
 func runGenerate() {
 	fs := flag.NewFlagSet("generate", flag.ExitOnError)
 
-	// Use BlocksStorageConfig for consistent bucket configuration
-	storageCfg := &tsdb.BlocksStorageConfig{}
-	storageCfg.RegisterFlags(fs)
-
-	userID := fs.String("user", "user-1", "User ID for dataset")
-	seriesCount := fs.Int("series-count", 10000, "Number of series to generate")
-	dpm := fs.Int("dpm", 1, "Datapoints per minute")
-	metricNames := fs.String("metric-names", "cpu_usage,memory_usage,disk_io", "Comma-separated metric names")
-	labelNames := fs.String("label-names", "instance,job,region", "Comma-separated label names")
-	labelCardinality := fs.String("label-cardinality", "10,5,3", "Comma-separated cardinality for each label")
-	timeRangeHours := fs.Int("time-range-hours", 24, "Time range in hours")
-	scrapeInterval := fs.Duration("scrape-interval", 15*time.Second, "Scrape interval")
-
-	outputPrefix := fs.String("output-prefix", "benchmark-dataset", "Prefix for generated blocks")
-	verbose := fs.Bool("verbose", false, "Enable verbose logging")
+	cfg := &GenerateConfig{}
+	cfg.RegisterFlags(fs)
 
 	fs.Parse(os.Args[2:])
 
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	logger := log.NewNopLogger()
-	if *verbose {
+	if cfg.Verbose {
 		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
 
 	ctx := context.Background()
 
-	bkt, err := bucket.NewClient(ctx, storageCfg.Bucket, "parquet-dataset-builder", logger, nil)
+	bkt, err := bucket.NewClient(ctx, cfg.Storage.Bucket, "parquet-dataset-builder", logger, nil)
 	if err != nil {
 		fmt.Printf("Failed to create bucket client: %v\n", err)
 		os.Exit(1)
@@ -146,56 +128,31 @@ func runGenerate() {
 		os.Exit(1)
 	}
 
-	config, err := parseGenerateConfig(*userID, *seriesCount, *dpm, *metricNames, *labelNames, *labelCardinality, *timeRangeHours, *scrapeInterval, *outputPrefix)
-	if err != nil {
-		fmt.Printf("Failed to parse configuration: %v\n", err)
-		os.Exit(1)
+	datasetConfig := &DatasetConfig{
+		UserID:           cfg.UserID,
+		SeriesCount:      cfg.SeriesCount,
+		DPM:              cfg.DPM,
+		MetricNames:      cfg.MetricNames,
+		LabelNames:       cfg.LabelNames,
+		LabelCardinality: cfg.LabelCardinality,
+		TimeRangeHours:   cfg.TimeRangeHours,
+		ScrapeInterval:   cfg.ScrapeInterval,
+		OutputPrefix:     cfg.OutputPrefix,
 	}
 
 	generator := NewDatasetGenerator(bkt, logger)
-	if err := generator.Generate(ctx, config); err != nil {
+	if err := generator.Generate(ctx, datasetConfig); err != nil {
 		fmt.Printf("Failed to generate dataset: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create bucket index for the user
-	if err := createBucketIndex(ctx, bkt, config.UserID, logger); err != nil {
-		fmt.Printf("Failed to create bucket index for user %s: %v\n", config.UserID, err)
+	if err := createBucketIndex(ctx, bkt, datasetConfig.UserID, logger); err != nil {
+		fmt.Printf("Failed to create bucket index for user %s: %v\n", datasetConfig.UserID, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully generated parquet dataset with %d series and created bucket index\n", *seriesCount)
-}
-
-func parseGenerateConfig(userID string, seriesCount, dpm int, metricNames, labelNames, labelCardinality string, timeRangeHours int, scrapeInterval time.Duration, outputPrefix string) (*DatasetConfig, error) {
-	metrics := strings.Split(metricNames, ",")
-	labels := strings.Split(labelNames, ",")
-	cardinalityStr := strings.Split(labelCardinality, ",")
-
-	if len(labels) != len(cardinalityStr) {
-		return nil, fmt.Errorf("label-names and label-cardinality must have the same length")
-	}
-
-	cardinality := make([]int, len(cardinalityStr))
-	for i, c := range cardinalityStr {
-		val, err := strconv.Atoi(strings.TrimSpace(c))
-		if err != nil {
-			return nil, fmt.Errorf("invalid cardinality value: %s", c)
-		}
-		cardinality[i] = val
-	}
-
-	return &DatasetConfig{
-		UserID:           userID,
-		SeriesCount:      seriesCount,
-		DPM:              dpm,
-		MetricNames:      metrics,
-		LabelNames:       labels,
-		LabelCardinality: cardinality,
-		TimeRangeHours:   timeRangeHours,
-		ScrapeInterval:   scrapeInterval,
-		OutputPrefix:     outputPrefix,
-	}, nil
+	fmt.Printf("Successfully generated parquet dataset with %d series and created bucket index\n", cfg.SeriesCount)
 }
 
 func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string, logger log.Logger) error {
