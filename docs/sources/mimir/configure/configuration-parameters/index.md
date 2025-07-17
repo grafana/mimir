@@ -1301,6 +1301,13 @@ usage_tracker:
   # CLI flag: -usage-tracker.created-series-events-publish-concurrency
   [created_series_events_publish_concurrency: <int> | default = 10]
 
+  # (experimental) If true, the usage-tracker will not load snapshots at
+  # startup. This means that the full state will not be reloaded during
+  # partition handler startup. Useful to skip corrupted snapshots or for testing
+  # purposes only.
+  # CLI flag: -usage-tracker.skip-snapshot-loading-at-startup
+  [skip_snapshot_loading_at_startup: <boolean> | default = false]
+
   # Jitter to apply to the snapshot interval. This is a percentage of the
   # snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.
   # CLI flag: -usage-tracker.snapshot-interval-jitter

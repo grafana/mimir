@@ -23357,6 +23357,17 @@
         },
         {
           "kind": "field",
+          "name": "skip_snapshot_loading_at_startup",
+          "required": false,
+          "desc": "If true, the usage-tracker will not load snapshots at startup. This means that the full state will not be reloaded during partition handler startup. Useful to skip corrupted snapshots or for testing purposes only.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-tracker.skip-snapshot-loading-at-startup",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "snapshot_interval_jitter",
           "required": false,
           "desc": "Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.",

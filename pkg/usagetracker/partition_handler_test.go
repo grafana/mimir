@@ -407,6 +407,33 @@ func TestPartitionHandler(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
+	t.Run("can skip snapshot loading through config", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// New partitionHandler is created that skips snapshot loading at startup.
+		ph := h.newHandler(t, func(cfg *Config) {
+			cfg.SkipSnapshotLoadingAtStartup = true
+		})
+
+		getCalls := atomic.NewInt64(0)
+		ph.snapshotsBucket = &getCounterBucketReader{ph.snapshotsBucket, getCalls}
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+		require.Equal(t, int64(0), getCalls.Load(), "snapshot should not be loaded")
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+	})
+
 	t.Run("snapshot and events are not loaded if they are too old", func(t *testing.T) {
 		t.Parallel()
 

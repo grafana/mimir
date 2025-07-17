@@ -209,7 +209,7 @@ func (p *partitionHandler) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to register partition handler collector as Prometheus collector")
 	}
 
-	eventsOffset, err := p.loadSnapshotAndPrepareKafkaEventsReader(ctx)
+	eventsOffset, err := p.loadLastSnapshotRecordAndGetEventsOffset(ctx)
 	if err != nil {
 		return errors.Wrap(err, "unable to load snapshot")
 	}
@@ -232,9 +232,14 @@ func (p *partitionHandler) start(ctx context.Context) error {
 	return nil
 }
 
-func (p *partitionHandler) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context) (int64, error) {
+func (p *partitionHandler) loadLastSnapshotRecordAndGetEventsOffset(ctx context.Context) (int64, error) {
 	// Default offset to start, to avoid returning nonsense.
 	snapshotsTopic := p.cfg.SnapshotsMetadataReader.Topic
+
+	if p.cfg.SkipSnapshotLoadingAtStartup {
+		level.Warn(p.logger).Log("msg", "configured to skip snapshot loading at startup")
+		return 0, nil
+	}
 
 	offset, err := findEndOffset(ctx, p.snapshotsKafkaReader, snapshotsTopic, p.partitionID)
 	if err != nil {
@@ -396,7 +401,11 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 	lastExpectedEventOffset := endOffset - 1 // Because endOffset is the "next" offset.
 	level.Info(p.logger).Log("msg", "end offset for events topic", "topic", p.cfg.EventsStorageReader.Topic, "end_offset", endOffset, "last_expected_event_offset", lastExpectedEventOffset)
 
-	if lastExpectedEventOffset > endOffset {
+	if p.cfg.SkipSnapshotLoadingAtStartup {
+		p.ignoreSnapshotEventsUntil = lastExpectedEventOffset
+	}
+
+	if lastExpectedEventOffset < eventsOffset {
 		level.Error(p.logger).Log("msg", "snapshot suggested to start consuming events at an offset that is greater than the last expected offset of the topic", "last_expected_event_offset", lastExpectedEventOffset, "snapshot_offset", eventsOffset, "topic", p.cfg.EventsStorageReader.Topic)
 		return nil
 	}

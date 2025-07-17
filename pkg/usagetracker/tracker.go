@@ -74,8 +74,9 @@ type Config struct {
 	CreatedSeriesEventsBatchTTL           time.Duration `yaml:"created_series_events_batch_ttl"`
 	CreatedSeriesEventsPublishConcurrency int           `yaml:"created_series_events_publish_concurrency"`
 
-	SnapshotIntervalJitter      float64 `yaml:"snapshot_interval_jitter"`
-	TargetSnapshotFileSizeBytes int     `yaml:"target_snapshot_file_size_bytes"`
+	SkipSnapshotLoadingAtStartup bool    `yaml:"skip_snapshot_loading_at_startup" category:"experimental"`
+	SnapshotIntervalJitter       float64 `yaml:"snapshot_interval_jitter"`
+	TargetSnapshotFileSizeBytes  int     `yaml:"target_snapshot_file_size_bytes"`
 
 	SnapshotCleanupInterval       time.Duration `yaml:"snapshot_cleanup_interval"`
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
@@ -115,6 +116,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&c.SnapshotIntervalJitter, "usage-tracker.snapshot-interval-jitter", 0.1, "Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 	f.IntVar(&c.TargetSnapshotFileSizeBytes, "usage-tracker.target-snapshot-file-size-bytes", 100*1024*1024, "Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0.")
 
+	f.BoolVar(&c.SkipSnapshotLoadingAtStartup, "usage-tracker.skip-snapshot-loading-at-startup", false, "If true, the usage-tracker will not load snapshots at startup. This means that the full state will not be reloaded during partition handler startup. Useful to skip corrupted snapshots or for testing purposes only.")
 	f.DurationVar(&c.SnapshotCleanupInterval, "usage-tracker.snapshot-cleanup-interval", time.Hour, "Interval to clean up old snapshots.")
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 

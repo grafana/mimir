@@ -383,7 +383,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 	t.Run("reconcile after scale down should not panic or fail", func(t *testing.T) {
 		t.Parallel()
 
-		trackers, pkv := prepareTwoUsageTrackersWithPartitionsReconciled(t)
+		trackers, _ := prepareTwoUsageTrackersWithPartitionsReconciled(t)
 
 		// We're scaling down, so we need to call the prepare downscale endpoint first.
 		callPrepareDownscaleEndpoint(t, trackers["a1"], http.MethodPost)
