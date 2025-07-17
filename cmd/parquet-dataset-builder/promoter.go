@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -73,21 +74,21 @@ func (p *Promoter) promoteLabelsInBlock(ctx context.Context, blockDir string) er
 	level.Info(p.logger).Log("msg", "Processing block", "block", blockDir)
 
 	// Open the block
-	db, err := tsdb.Open(blockDir, nil, nil, tsdb.DefaultOptions(), nil)
+	tsdbBlock, err := tsdb.OpenBlock(
+		util_log.SlogFromGoKit(p.logger), blockDir, nil, tsdb.DefaultPostingsDecoderFactory,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to open block: %w", err)
+		return fmt.Errorf("failed to open block %s: %w", blockDir, err)
 	}
-	defer db.Close()
-
-	// Get a querier for the block
-	querier, err := db.Querier(0, math.MaxInt64)
+	defer tsdbBlock.Close()
+	q, err := tsdb.NewBlockQuerier(tsdbBlock, 0, math.MaxInt64)
 	if err != nil {
-		return fmt.Errorf("failed to get querier: %w", err)
+		return fmt.Errorf("failed to create querier for block %s: %w", blockDir, err)
 	}
-	defer querier.Close()
+	defer q.Close()
 
 	// Find all target_info series and extract their labels
-	targetInfoLabels, err := p.extractTargetInfoLabels(ctx, querier)
+	targetInfoLabels, err := p.extractTargetInfoLabels(ctx, q)
 	if err != nil {
 		return fmt.Errorf("failed to extract target_info labels: %w", err)
 	}
@@ -100,12 +101,11 @@ func (p *Promoter) promoteLabelsInBlock(ctx context.Context, blockDir string) er
 	level.Info(p.logger).Log("msg", "Found target_info series", "count", len(targetInfoLabels), "block", blockDir)
 
 	// Create a new block with promoted labels
-	return p.createPromotedBlock(ctx, blockDir, querier, targetInfoLabels)
+	return p.createPromotedBlock(ctx, blockDir, q, targetInfoLabels)
 }
 
 func (p *Promoter) extractTargetInfoLabels(ctx context.Context, querier storage.Querier) (map[string]labels.Labels, error) {
 	targetInfoLabels := make(map[string]labels.Labels)
-
 	// Get all series with __name__ = "target_info"
 	targetInfoMatcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", "target_info")
 	seriesSet := querier.Select(ctx, false, nil, targetInfoMatcher)
