@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"google.golang.org/api/googleapi"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
