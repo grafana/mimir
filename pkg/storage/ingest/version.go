@@ -150,7 +150,8 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
 
-	// TODO: The thing that v1 does to split across multiple records.
+	// TODO: V1 contains logic that splits large records up across multiple records if they exceed maxSize.
+	// TODO: V2 needs to do this as well, for parity.
 	data := make([]byte, reqv2.Size())
 	n, err := reqv2.MarshalToSizedBuffer(data)
 	if err != nil {

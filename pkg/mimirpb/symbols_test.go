@@ -4,6 +4,7 @@ package mimirpb
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -124,52 +125,7 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 }
 
 func BenchmarkSymbolizer(b *testing.B) {
-	b.Run("prom symbolizer: 2k labels unique values", func(b *testing.B) {
-		lbls := make([]string, 2*2000)
-		for i := range 2000 {
-			lbls[i*2] = "__name__"
-			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
-		}
-
-		b.ResetTimer()
-
-		for n := 0; n < b.N; n++ {
-			st := writev2.NewSymbolTable()
-
-			for _, l := range lbls {
-				_ = st.Symbolize(l)
-			}
-			symbols := st.Symbols()
-			if len(symbols) != 2002 {
-				b.Fatalf("unexpected number of symbols: %d", len(symbols))
-			}
-		}
-	})
-
-	b.Run("mimir symbolizer: 2k labels unique values", func(b *testing.B) {
-		lbls := make([]string, 2*2000)
-		for i := range 2000 {
-			lbls[i*2] = "__name__"
-			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
-		}
-
-		b.ResetTimer()
-
-		for n := 0; n < b.N; n++ {
-			st := symbolsTableFromPool()
-
-			for _, l := range lbls {
-				_ = st.Symbolize(l)
-			}
-			symbols := st.Symbols()
-			if len(symbols) != 2002 {
-				b.Fatalf("unexpected number of symbols: %d", len(symbols))
-			}
-			reuseSymbolsTable(st)
-		}
-	})
-
-	b.Run("mimir symbolizer: 2k labels unique values, common symbols", func(b *testing.B) {
+	b.Run("2k labels unique values, common symbols", func(b *testing.B) {
 		lbls := make([]string, 2*2000)
 		for i := range 2000 {
 			lbls[i*2] = "__name__"
@@ -186,7 +142,40 @@ func BenchmarkSymbolizer(b *testing.B) {
 				_ = st.Symbolize(l)
 			}
 			symbols := st.Symbols()
-			if len(symbols) != 10001 {
+			if len(symbols) != 2001 {
+				b.Fatalf("unexpected number of symbols: %d", len(symbols))
+			}
+			reuseSymbolsTable(st)
+		}
+	})
+
+	b.Run("7 series with some shared label keys, common symbols", func(b *testing.B) {
+		numSeries := 7
+		generatedLabels := 15
+		series := [][]string{}
+		gen := rand.New(rand.NewSource(789456123))
+		for i := range numSeries {
+			s := []string{"__name__", fmt.Sprintf("series_%d", i), "namespace", "my-namespace", "job", fmt.Sprintf("namespace/job-%d", i)}
+			for i := range generatedLabels {
+				s = append(s, fmt.Sprintf("generated_label_%d", i), fmt.Sprintf("%d", gen.Uint64()))
+			}
+			series = append(series, s)
+		}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			st := symbolsTableFromPool()
+			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+
+			for _, s := range series {
+				for _, l := range s {
+					_ = st.Symbolize(l)
+				}
+			}
+
+			symbols := st.Symbols()
+			if len(symbols) != 136 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
 			reuseSymbolsTable(st)
