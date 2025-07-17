@@ -182,12 +182,12 @@ func newPartitionHandler(
 	}
 
 	// Create Kafka reader for events storage.
-	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorageReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, eventsKafkaReaderComponent, reg), p.logger)
+	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorageReader, ingest.NewKafkaReaderClientMetrics(readerMetricsPrefix, eventsKafkaReaderComponent, reg), p.logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
 	}
 
-	p.snapshotsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.SnapshotsMetadataReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, snapshotsKafkaReaderComponent, reg), p.logger,
+	p.snapshotsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.SnapshotsMetadataReader, ingest.NewKafkaReaderClientMetrics(readerMetricsPrefix, snapshotsKafkaReaderComponent, reg), p.logger,
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			p.cfg.SnapshotsMetadataReader.Topic: {p.partitionID: kgo.NewOffset().AtEnd().Relative(-1)},
 		}),
