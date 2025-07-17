@@ -38,10 +38,17 @@ The order of patterns is preserved, so the first matching pattern will be used.
 
 ## Format queries to block
 
-Queries received by Mimir are parsed into PromQL expressions before blocking is applied. When `regex` is
-not used, the `pattern` from the blocked queries is also similarly parsed before being compared against
-the formatted representation of the parsed query. This process allows for consistent query blocking behavior
-regardless of formatting differences in the submitted queries.
+You can ignore this section if you are not using regex. If you are, you'll need to ensure that the regex
+will match against formatted queries as follows.
+
+Use Mimirtool's `mimirtool promql format <query>` command to apply the Prometheus formatter to a query
+for use in a blocked query pattern.
+
+Queries received by Mimir are parsed into PromQL expressions before blocking is applied. When regex is
+not used, the pattern from the blocked queries is also similarly parsed before being compared against
+the formatted representation of the parsed query. When regex is used, the pattern is used as-is. This
+process allows for consistent query blocking behavior regardless of formatting differences in the
+submitted queries.
 
 Among other transformations the Prometheus formatter may reorder operators, remove empty selector braces,
 and eliminate newlines, extraneous whitespace, and comments.
