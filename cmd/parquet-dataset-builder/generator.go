@@ -47,8 +47,8 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *DatasetConfig) 
 	series := g.generateSeries(config)
 	level.Info(g.logger).Log("msg", "Generated series", "count", len(series))
 
-	endTime := time.Now()
-	startTime := endTime.Add(-time.Duration(config.TimeRangeHours) * time.Hour)
+	startTime := time.UnixMilli(0)
+	endTime := startTime.Add(time.Duration(config.TimeRangeHours) * time.Hour)
 
 	userBkt := bucket.NewUserBucketClient(config.UserID, g.bucket, nil)
 
