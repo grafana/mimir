@@ -1,49 +1,38 @@
 {
     "label_values": [
         {
-            "name": "basic_label_1",
-            "label": "label_1",
+            "name": "all_metric_names",
+            "label": "__name__",
             "start": 0,
-            "end": 1000,
-            "matchers": [
-                {
-                    "type": 0,
-                    "name": "label_2",
-                    "value": "0"
-                },
-                {
-                    "type": 0,
-                    "name": "label_3",
-                    "value": "0"
-                }
-            ],
+            "end": 1767225601000,
+            "matchers": [],
             "limit": 0
         },
         {
-            "name": "with_regex_matcher",
+            "name": "regex_matcher",
             "label": "__name__",
             "start": 0,
-            "end": 1000,
+            "end": 1767225601000,
             "matchers": [
                 {
                     "type": 2,
-                    "name": "job",
-                    "value": "prometheus.*"
+                    "name": "__name__",
+                    "value": ".*_.*"
                 }
             ],
-            "limit": 100
+            "limit": 0
         }
     ],
     "label_names": [
         {
             "name": "basic_label_names",
             "start": 0,
-            "end": 1000,
+            "end": 1767225601000,
             "matchers": [
                 {
                     "type": 0,
-                    "name": "job",
-                    "value": "prometheus"
+                    "name": "__name__",
+                    "value": "cpu_usage"
                 }
             ],
             "limit": 0
