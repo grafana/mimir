@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -337,7 +338,16 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 		"count_values": {
 			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				labelName := operators.NewStringLiteral("value", posrange.PositionRange{})
-				return NewCountValues(inner, labelName, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, posrange.PositionRange{}), nil
+				return NewCountValues(
+					inner,
+					labelName,
+					queryTimeRange,
+					[]string{"group"},
+					false,
+					memoryConsumptionTracker,
+					posrange.PositionRange{},
+					model.LegacyValidation,
+				), nil
 			},
 			instant:                       true,
 			allowExpectedSeriesInAnyOrder: true,
