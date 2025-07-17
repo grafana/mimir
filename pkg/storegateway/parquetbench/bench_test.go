@@ -15,6 +15,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"google.golang.org/grpc"
+	grpc_metadata "google.golang.org/grpc/metadata"
+
 	"github.com/grafana/mimir/pkg/storage/bucket/common"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -23,12 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore"
-	"google.golang.org/grpc"
-	grpc_metadata "google.golang.org/grpc/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -241,6 +242,7 @@ func createTestBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.Buc
 	require.NoError(b, err)
 	return stores
 }
+
 
 // mockSeriesServer implements storegatewaypb.StoreGateway_SeriesServer for testing
 type mockSeriesServer struct {
