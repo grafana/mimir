@@ -120,7 +120,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		e.annotations = nil
 	}
 
-	if err := observer.EvaluationCompleted(e, e.annotations); err != nil {
+	if err := observer.EvaluationCompleted(e, e.annotations, e.stats); err != nil {
 		return err
 	}
 
@@ -252,5 +252,5 @@ type EvaluationObserver interface {
 	StringEvaluated(evaluator *Evaluator, data string) error
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
-	EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations) error
+	EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error
 }

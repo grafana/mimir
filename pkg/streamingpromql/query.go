@@ -22,6 +22,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// Query represents a top-level query.
+// It acts as a bridge from the querying interface Prometheus expects into how MQE operates.
 type Query struct {
 	evaluator                *Evaluator
 	statement                *parser.EvalStmt
@@ -34,12 +36,13 @@ type Query struct {
 	// Subqueries may use a different range.
 	topLevelQueryTimeRange types.QueryTimeRange
 
-	annotations    *annotations.Annotations
 	seriesMetadata []types.SeriesMetadata
 	matrix         promql.Matrix
 	vector         promql.Vector
 	string         *promql.String
 	scalar         *promql.Scalar
+	annotations    *annotations.Annotations
+	stats          *types.QueryStats
 
 	resultIsVector bool
 
@@ -260,8 +263,9 @@ func (q *Query) StringEvaluated(evaluator *Evaluator, data string) error {
 	return nil
 }
 
-func (q *Query) EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations) error {
+func (q *Query) EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
 	q.annotations = annotations
+	q.stats = stats
 	return nil
 }
 
@@ -316,9 +320,9 @@ func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
 		Samples: &promstats.QuerySamples{
-			TotalSamples:        q.evaluator.stats.TotalSamples,
-			TotalSamplesPerStep: q.evaluator.stats.TotalSamplesPerStep,
-			EnablePerStepStats:  q.evaluator.stats.EnablePerStepStats,
+			TotalSamples:        q.stats.TotalSamples,
+			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
+			EnablePerStepStats:  q.stats.EnablePerStepStats,
 			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
 			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
 		},
