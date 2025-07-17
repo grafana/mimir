@@ -20,8 +20,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingNotify "github.com/grafana/alerting/notify"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -334,7 +334,7 @@ type MultitenantAlertmanager struct {
 	alertmanagers    map[string]*Alertmanager
 	// Stores the current set of configurations we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
-	cfgs map[string]alertspb.AlertConfigDesc
+	cfgs map[string]amConfig
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -420,7 +420,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
-		cfgs:                map[string]alertspb.AlertConfigDesc{},
+		cfgs:                map[string]amConfig{},
 		alertmanagers:       map[string]*Alertmanager{},
 		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
@@ -761,8 +761,10 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
 	cfg := amConfig{
-		AlertConfigDesc: cfgs.Mimir,
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		User:            cfgs.Mimir.User,
+		RawConfig:       cfgs.Mimir.RawConfig,
+		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
 	// Check if tenants can be skipped (strict initialization enabled).
@@ -838,7 +840,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 
 	// If we're not using Grafana configuration, we shouldn't use Grafana state.
 	// Update the flag accordingly.
-	if !cfg.usingGrafanaConfig {
+	if !cfg.UsingGrafanaConfig {
 		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
 			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
 		}
@@ -891,10 +893,12 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 }
 
 type amConfig struct {
-	alertspb.AlertConfigDesc
-	tmplExternalURL    *url.URL
-	usingGrafanaConfig bool
-	emailConfig        alertingReceivers.EmailSenderConfig
+	User               string
+	RawConfig          string
+	Templates          []definition.PostableApiTemplate
+	TmplExternalURL    *url.URL
+	UsingGrafanaConfig bool
+	EmailConfig        alertingReceivers.EmailSenderConfig
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
@@ -906,7 +910,10 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
 		// configurations. This means metrics from API requests are confused with metrics from
 		// tenant configurations. To avoid this confusion, we use a different origin.
-		validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+		validateMatchersInConfigDesc(am.logger, "tenant", alertspb.AlertConfigDesc{
+			User:      cfg.User,
+			RawConfig: cfg.RawConfig,
+		})
 	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
@@ -947,33 +954,24 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	templates := make([]alertingTemplates.TemplateDefinition, 0, len(cfg.Templates))
-	for _, tmpl := range cfg.Templates {
-		templates = append(templates, alertingTemplates.TemplateDefinition{
-			Name:     tmpl.Filename,
-			Template: tmpl.Body,
-			Kind:     alertingTemplates.GrafanaKind, // TODO this kind is only considered by Grafana code. Load it from TemplateDesc
-		})
-	}
-
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
 		if err != nil {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg.AlertConfigDesc) {
+	} else if configChanged(am.cfgs[cfg.User], cfg) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.emailConfig, cfg.usingGrafanaConfig)
+		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg.AlertConfigDesc
+	am.cfgs[cfg.User] = cfg
 	return nil
 }
 
@@ -981,7 +979,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -1011,7 +1009,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, emailCfg, usingGrafanaConfig); err != nil {
+	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg, tmplExternalURL, emailCfg, usingGrafanaConfig); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
@@ -1133,8 +1131,10 @@ func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanag
 	}
 
 	amConfig := amConfig{
-		AlertConfigDesc: alertspb.ToProto("", nil, userID),
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		User:            userID,
+		RawConfig:       "",
+		Templates:       nil,
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
@@ -1176,8 +1176,9 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	// Calling setConfig with an empty configuration will use the fallback config.
 	amConfig := amConfig{
-		AlertConfigDesc: cfgDesc,
-		tmplExternalURL: am.cfg.ExternalURL.URL,
+		User:            cfgDesc.User,
+		RawConfig:       cfgDesc.RawConfig,
+		TmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	err = am.setConfig(amConfig)
 	if err != nil {
@@ -1505,7 +1506,7 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	return true, nil
 }
 
-func configChanged(left, right alertspb.AlertConfigDesc) bool {
+func configChanged(left, right amConfig) bool {
 	if left.User != right.User {
 		return true
 	}
@@ -1515,19 +1516,22 @@ func configChanged(left, right alertspb.AlertConfigDesc) bool {
 
 	existing := make(map[string]string)
 	for _, tm := range left.Templates {
-		existing[tm.Filename] = tm.Body
+		existing[fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)] = tm.Content
 	}
 
 	for _, tm := range right.Templates {
-		corresponding, ok := existing[tm.Filename]
+		key := fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)
+		corresponding, ok := existing[key]
 		if !ok {
 			return true // Right has a template that left does not.
 		}
-		if corresponding != tm.Body {
+		if corresponding != tm.Content {
 			return true // The template content is different.
 		}
-		delete(existing, tm.Filename)
+		delete(existing, key)
 	}
+
+	// TODO add remaining fields to comparison
 
 	return len(existing) != 0 // Left has a template that right does not.
 }

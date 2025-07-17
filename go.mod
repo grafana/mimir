@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250714110327-9c6da3f1e284
+	github.com/grafana/dskit v0.0.0-20250715115838-7fac058e0e7b
 	github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -62,7 +62,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20250709204613-c5c6f9c1653d
+	github.com/grafana/alerting v0.0.0-20250711181610-8eef376f49f8
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.20.0
@@ -72,7 +72,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250620074007-94f535e0c588
+	github.com/prometheus/otlptranslator v0.0.0-20250717125610-8549f4ab4f8f
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250630122120-3d380bdbe68c
@@ -345,7 +345,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250709154606-832330026356
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250715103124-73cbc98c25ff
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -372,7 +372,7 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
 // Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250620093340-be61a673dee6
 
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.

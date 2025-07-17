@@ -12,12 +12,12 @@
 * [ENHANCEMENT] `kafkatool`: add `consumer-group delete-offset` command as a way to delete the committed offset for a consumer group. #11988
 * [ENHANCEMENT] Block-builder-scheduler: Detect gaps in scheduled and completed jobs. #11867
 * [ENHANCEMENT] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol has been updated. Created timestamps are now supported. This feature includes some limitations. If samples in a write request aren't ordered by time, the created timestamp might be dropped. Additionally, per-series metadata is automatically merged on the metric family level. Ingestion might fail if the client sends ProtoBuf fields out-of-order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0`, depending on the detected remote-write protocol. #11977
-* [ENHANCEMENT] Query-frontend: Added labels query optimizer that automatically removes redundant `__name__!=""` matchers from label names and label values queries, improving query performance. The optimizer can be enabled per-tenant with the `labels_query_optimizer_enabled` runtime configuration flag. #12054 #12066 #12076
+* [ENHANCEMENT] Query-frontend: Added labels query optimizer that automatically removes redundant `__name__!=""` matchers from label names and label values queries, improving query performance. You can enable the optimizer per-tenant with the `labels_query_optimizer_enabled` runtime configuration flag. #12054 #12066 #12076 #12080
 * [BUGFIX] Distributor: Validate the RW2 symbols field and reject invalid requests that don't have an empty string as the first symbol. #11953
 * [BUGFIX] Distributor: Check `max_inflight_push_requests_bytes` before decompressing incoming requests. #11967
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054
 * [BUGFIX] Distributor: Fix a possible panic in the OTLP push path while handling a gRPC status error. #12072
-* [BUGFIX] Tracing: Skip tracing configuration when no tracing environment variables were provided. #12074
+* [BUGFIX] Query-frontend: Evaluate experimental duration expressions before sharding, splitting, and caching. Otherwise, the result is not correct. #12038
 
 ### Mixin
 
@@ -28,20 +28,11 @@
 
 * [CHANGE] Removed support for the experimental read-write deployment mode. #11974
 * [ENHANCEMENT] Add assertion to ensure ingester ScaledObject has minimum and maximum replicas set to a value greater than 0. #11979
-
-### Mimirtool
-
-* [ENHANCEMENT] Add `--block-size` CLI flag to `remote-read export` that allows setting the output block size. #12025
-* [BUGFIX] Fix issue where `remote-read export` could omit some samples if the query time range spans multiple blocks. #12025
-* [BUGFIX] Fix issue where `remote-read export` could omit some output blocks in the list printed to the console or fail with `read/write on closed pipe`. #12025
+* [ENHANCEMENT] Add `ingest_storage_migration_ignore_ingest_storage_errors` and `ingest_storage_migration_ingest_storage_max_wait_time` configs to control error handling of the partition ingesters during ingest storage migrations. #12105
 
 ### Documentation
 
 * [ENHANCEMENT] Update the `MimirIngestedDataTooFarInTheFuture` runbook with a note about false positives and the endpoint to flush TSDB blocks by user. #11961
-
-### Tools
-
-* [BUGFIX] `screenshots`: Update to tar-fs v3.1.0 to address [CVE-2025-48387](https://nvd.nist.gov/vuln/detail/CVE-2025-48387). #12030
 
 ## 2.17.0-rc.0
 
@@ -210,7 +201,7 @@
 * [FEATURE] Make ingest storage ingester HPA behavior configurable through `_config.ingest_storage_ingester_hpa_behavior`. #11168
 * [FEATURE] Add an alternate ingest storage HPA trigger that targets maximum owned series per pod. #11356
 * [FEATURE] Make tracing of HTTP headers as span attributes configurable through `_config.trace_request_headers`. You can exclude certain headers from being traced using `_config.trace_request_exclude_headers_list`. #11655 #11714
-* [FEATURE] Allow configuring tracing with OTel environment variables through `$._config.otlp_traces_endpoint`. When configured, the `$.jaeger_mixin` is no longer available for use. #11773 #11981
+* [FEATURE] Allow configuring tracing with OTel environment variables through `$._config.otlp_traces_endpoint`. When configured, the `$.jaeger_mixin` is no longer available for use. #11773 #11981 #12074
 * [FEATURE] Updated rollout-operator to support `OTEL_` environment variables for tracing. #11787
 * [ENHANCEMENT] Add `query_frontend_only_args` option to specify CLI flags that apply only to query-frontends but not ruler-query-frontends. #11799
 * [ENHANCEMENT] Make querier scale up (`$_config.autoscaling_querier_scaleup_percent_cap`) and scale down rates (`$_config.autoscaling_querier_scaledown_percent_cap`) configurable. #11862
@@ -220,7 +211,10 @@
 ### Mimirtool
 
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
+* [ENHANCEMENT] Add `--block-size` CLI flag to `remote-read export` that allows setting the output block size. #12025
 * [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402
+* [BUGFIX] Fix issue where `remote-read export` could omit some samples if the query time range spans multiple blocks. #12025
+* [BUGFIX] Fix issue where `remote-read export` could omit some output blocks in the list printed to the console or fail with `read/write on closed pipe`. #12025
 
 ### Mimir Continuous Test
 
@@ -238,6 +232,7 @@
 * [ENHANCEMENT] `listblocks`: Output can now also be JSON or YAML for easier parsing. #11184
 * [ENHANCEMENT] `mark-blocks`: Allow specifying blocks from multiple tenants. #11343
 * [ENHANCEMENT] `undelete-blocks`: Support removing S3 delete markers to avoid copying data when recovering blocks. #11256
+* [BUGFIX] `screenshots`: Update to tar-fs v3.1.0 to address [CVE-2025-48387](https://nvd.nist.gov/vuln/detail/CVE-2025-48387). #12030
 
 ## 2.16.1
 
