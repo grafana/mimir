@@ -1969,6 +1969,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					results := make([]*promql.Result, 0, 2)
 
 					for engineName, engine := range engines {
+						fmt.Println("engineName", engineName)
 						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
 							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
 							continue
