@@ -86,4 +86,3 @@ enum Function {
 
   reserved 74, 75; // Used by Adaptive Metrics query rewriting.
 }
-

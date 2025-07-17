@@ -81,7 +81,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		engine,
 		engineOpts,
@@ -121,7 +121,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
@@ -456,7 +456,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				Config{},
 				log.NewNopLogger(),
 				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				nil,
 				engine,
 				engineOpts,
@@ -507,7 +507,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		multiTenantMockLimits{
 			byTenant: map[string]mockLimits{
 				"user-1": {
-					blockedRequests: []*validation.BlockedRequest{
+					blockedRequests: []validation.BlockedRequest{
 						{
 							Path: "/api/v1/series",
 							QueryParams: map[string]validation.BlockedRequestQueryParam{
@@ -518,7 +518,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 				},
 			},
 		},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		engine,
 		engineOpts,
@@ -587,7 +587,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		cfg,
 		log.NewNopLogger(),
 		mockLimits{alignQueriesWithStep: true},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		nil,
 		nil,
@@ -621,6 +621,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
 				"pruneMiddleware",                       // No query pruning support.
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
+				"durationsMiddleware",                   // No duration expressions support.
 				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
 				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
 				"queryLimiterMiddleware",                // This middleware is only for instant queries.
@@ -806,7 +807,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				nil,
 				engine,
 				engineOpts,
@@ -938,7 +939,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewPrometheusCodec(nil, 0, formatJSON, nil),
+		NewCodec(nil, 0, formatJSON, nil),
 		nil,
 		promEngine,
 		promOpts,
