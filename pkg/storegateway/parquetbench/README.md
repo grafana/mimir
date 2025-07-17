@@ -9,7 +9,7 @@ A standalone MinIO instance is used instead of an inprocess file system bucket t
 
 1. Start MinIO:
 ```bash
-docker run --name minio-benchmark -p 9000:9000 -p 9001:9001 \
+docker run -d --name minio-benchmark -p 9000:9000 -p 9001:9001 \
   -e "MINIO_ROOT_USER=mimir" \
   -e "MINIO_ROOT_PASSWORD=supersecret" \
   minio/minio server /data --console-address ":9001"
@@ -53,7 +53,7 @@ go run cmd/parquet-dataset-builder/*.go generate \
   -blocks-storage.s3.endpoint=localhost:9000 \
   -blocks-storage.s3.access-key-id=mimir \
   -blocks-storage.s3.secret-access-key=supersecret \
-  -blocks-storage.s3.bucket-name=your-bucket-name \
+  -blocks-storage.s3.bucket-name=tsdb \
   -blocks-storage.s3.insecure=true
 ```
 
