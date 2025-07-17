@@ -4,7 +4,9 @@ package lookupplan
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -13,17 +15,29 @@ import (
 type CostBasedPlanner struct {
 	stats Statistics
 
-	metrics metrics
+	metrics Metrics
 }
 
 // TODO dimitarvdimitrov add constructor
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, _, _ int64) (LookupPlan, error) {
+func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+	return &CostBasedPlanner{
+		metrics: metrics,
+		stats:   statistics,
+	}
+}
+
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, _, _ int64) (_ LookupPlan, retErr error) {
+	defer func(start time.Time) {
+		var abortedEarly bool
+		retErr, abortedEarly = mapPlanningOutcomeError(retErr)
+		p.recordPlanningOutcome(start, abortedEarly, retErr)
+	}(time.Now())
+
 	// Repartition the matchers. We don't trust other planners.
 	matchers := append(plan.IndexMatchers(), plan.ScanMatchers()...)
 	if len(matchers) > 10 {
-		// TODO dimitarvdimitrov metrics & spanlogger DebugLog
-		return plan, nil
+		return plan, errTooManyMatchers
 	}
 
 	allPlans, err := p.generatePlans(ctx, matchers)
@@ -39,6 +53,26 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, 
 	}
 
 	return lowestCostPlan, nil
+}
+
+var errTooManyMatchers = errors.New("too many matchers to generate plans")
+
+func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool) {
+	if errors.Is(err, errTooManyMatchers) {
+		return nil, true
+	}
+	return err, false
+}
+
+func (p CostBasedPlanner) recordPlanningOutcome(start time.Time, abortedEarly bool, retErr error) {
+	outcome := "success"
+	if abortedEarly {
+		outcome = "aborted_due_to_too_many_matchers"
+	}
+	if retErr != nil {
+		outcome = "error"
+	}
+	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
 }
 
 func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.Matcher) ([]plan, error) {

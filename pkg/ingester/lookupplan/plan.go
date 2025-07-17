@@ -47,9 +47,9 @@ func newPlanWithoutEstimation(ctx context.Context, matchers []*labels.Matcher, s
 
 func (p plan) IndexMatchers() []*labels.Matcher {
 	var matchers []*labels.Matcher
-	for i, pr := range p.predicates {
+	for i, pred := range p.predicates {
 		if p.applied[i] {
-			matchers = append(matchers, pr.matcher)
+			matchers = append(matchers, pred.matcher)
 		}
 	}
 	return matchers
@@ -57,9 +57,9 @@ func (p plan) IndexMatchers() []*labels.Matcher {
 
 func (p plan) ScanMatchers() []*labels.Matcher {
 	var matchers []*labels.Matcher
-	for i, pr := range p.predicates {
+	for i, pred := range p.predicates {
 		if !p.applied[i] {
-			matchers = append(matchers, pr.matcher)
+			matchers = append(matchers, pred.matcher)
 		}
 	}
 	return matchers
@@ -85,7 +85,7 @@ func estimateTotalCost(p plan) plan {
 
 	for i, pr := range p.predicates {
 		if p.applied[i] {
-			p.indexLookupCost += p.calculateIndexLookupCost(pr)
+			p.indexLookupCost += pr.indexLookupCost()
 		}
 	}
 
@@ -93,11 +93,11 @@ func estimateTotalCost(p plan) plan {
 
 	fetchedSeries := p.intersectionSize()
 
-	for i, m := range p.predicates {
+	for i, pred := range p.predicates {
 		// In reality we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
 		if !p.applied[i] {
-			p.filterCost += p.calculateFilterCost(fetchedSeries, m)
+			p.filterCost += pred.filterCost(fetchedSeries)
 		}
 	}
 
@@ -106,25 +106,14 @@ func estimateTotalCost(p plan) plan {
 	return p
 }
 
-func (p plan) calculateIndexLookupCost(pr planPredicate) float64 {
-	cost := 0.0
-	// Runing the matcher against all label values.
-	cost += pr.indexScanCost
-
-	// Retrieving each posting list (e.g. checksumming, disk seeking)
-	cost += costPerPostingListRetrieval * float64(pr.labelNameUniqueVals) * pr.selectivity
-
-	return cost
-}
-
 func (p plan) calculateIntersectionCost() float64 {
 	iteratedPostings := int64(0)
-	for i, pr := range p.predicates {
+	for i, pred := range p.predicates {
 		if !p.applied[i] {
 			continue
 		}
 
-		iteratedPostings += pr.cardinality
+		iteratedPostings += pred.cardinality
 	}
 
 	return float64(iteratedPostings) * costPerIteratedPosting
@@ -132,7 +121,7 @@ func (p plan) calculateIntersectionCost() float64 {
 
 func (p plan) intersectionSize() int64 {
 	finalSelectivity := 1.0
-	for i, pr := range p.predicates {
+	for i, pred := range p.predicates {
 		if !p.applied[i] {
 			continue
 		}
@@ -142,12 +131,7 @@ func (p plan) intersectionSize() int64 {
 		//
 		// We also assume idependence between the predicates. This is a simplification.
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend if we have already applied {statefulset=prometheus}.
-		finalSelectivity *= float64(pr.cardinality) / float64(p.totalSeries)
+		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
 	return int64(finalSelectivity * float64(p.totalSeries))
-}
-
-// filterCost is the perMatchCost to run the matcher against all series.
-func (p plan) calculateFilterCost(series int64, m planPredicate) float64 {
-	return float64(series) * m.perMatchCost
 }

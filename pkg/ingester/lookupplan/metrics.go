@@ -4,9 +4,8 @@ package lookupplan
 
 import "github.com/prometheus/client_golang/prometheus"
 
-type metrics struct {
-	planDuration *prometheus.HistogramVec
-	// TODO dimitarvdimitrov measure q-error
+type Metrics struct {
+	planningDuration *prometheus.HistogramVec
 }
 
 // TODO dimitarvdimitrov add constructor

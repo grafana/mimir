@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type planPredicate struct {
@@ -14,21 +16,21 @@ type planPredicate struct {
 
 	// selectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
 	selectivity float64
-	// cardinality is the estimation of how many series this matcher matches on its own.
+	// cardinality is the estimation of how many series this matcher matches on its own. NB: series, not label values
 	cardinality         int64
 	labelNameUniqueVals int64
-	// perMatchCost is how much it costs to run this matcher against an arbitrary label value.
-	perMatchCost float64
-	// indexScanCost is the perMatchCost to run the matcher against all label values (or at least enough to know all the values it matches).
-	// This is naively perMatchCost * labelNameUniqueVals, but it might be lower if the matcher is a prefix matcher or an exact matcher.
+	// singleMatchCost is how much it costs to run this matcher against an arbitrary label value.
+	singleMatchCost float64
+	// indexScanCost is the cost of traversing the postings offset table. This is the singleMatchCost to run the matcher against all label values (or at least enough to know all the values it matches).
+	// This naively equals singleMatchCost * labelNameUniqueVals, but it might be lower if the matcher is a prefix matcher or an exact matcher.
 	indexScanCost float64
 }
 
 func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats Statistics) (planPredicate, error) {
 	var err error
 	pred := planPredicate{
-		matcher:      m,
-		perMatchCost: m.SingleMatchCost(),
+		matcher:         m,
+		singleMatchCost: m.SingleMatchCost(),
 	}
 	pred.labelNameUniqueVals, err = stats.LabelValuesCount(ctx, m.Name)
 	if err != nil {
@@ -36,54 +38,87 @@ func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats Statistics) 
 	}
 	pred.selectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
 
-	seriesBehindSelectedValues := int64(0)
-	setMatches := m.SetMatches()
-	switch m.Type {
-	case labels.MatchEqual, labels.MatchNotEqual:
-		if m.Value != "" {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
-		} else {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
-		}
-	case labels.MatchRegexp, labels.MatchNotRegexp:
-		if len(setMatches) > 0 {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
-		} else {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
-			seriesBehindSelectedValues = int64(float64(seriesBehindSelectedValues) * pred.selectivity)
-		}
-	}
-	if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
-		pred.cardinality = stats.TotalSeries() - seriesBehindSelectedValues
-	} else {
-		pred.cardinality = seriesBehindSelectedValues
-	}
+	pred.cardinality, err = estimatePredicateCardinality(ctx, m, stats, pred.selectivity)
 	if err != nil {
-		return planPredicate{}, fmt.Errorf("error getting series per label value for label %s: %w", m.Name, err)
+		return planPredicate{}, fmt.Errorf("error estimating cardinality for label %s: %w", m.Name, err)
 	}
 
+	pred.indexScanCost = estimatePredicateIndexScanCost(pred, m)
+
+	return pred, nil
+}
+
+func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float64 {
 	switch pred.matcher.Type {
 	case labels.MatchEqual, labels.MatchNotEqual:
 		if m.Value == "" {
-			pred.indexScanCost = pred.perMatchCost * float64(pred.labelNameUniqueVals)
-		} else {
-			pred.indexScanCost = pred.perMatchCost * 32 // for on-disk index we'd scan through 32 label values and compare them to the needle before returning.
+			// For this we need to get the postings of all label values
+			return pred.singleMatchCost * float64(pred.labelNameUniqueVals)
 		}
+		// For on-disk blocks, we will read one in-memory posting offset.
+		// That will point us to a 32-values-wide range in the on-disk postings offset table.
+		// There we will scan all 32 values to find our match.
+		return pred.singleMatchCost * tsdb.DefaultPostingOffsetInMemorySampling
 	case labels.MatchRegexp, labels.MatchNotRegexp:
-		// TODO benchmark relative cost
-		switch {
-		case pred.matcher.Prefix() != "":
-			pred.indexScanCost = pred.perMatchCost * float64(pred.labelNameUniqueVals) * 0.1
-		case pred.matcher.IsRegexOptimized():
-			if len(setMatches) > 0 {
-				pred.indexScanCost = pred.perMatchCost * float64(len(setMatches))
-			} else {
-				pred.indexScanCost = pred.perMatchCost * float64(pred.labelNameUniqueVals) / 10 // Optimized regexes are expected to be faster.
-			}
-		default:
-			pred.indexScanCost = pred.perMatchCost * float64(pred.labelNameUniqueVals)
+		// Prometheus doesn't optimize if the matcher has a prefix, so we don't take it into account for this cost estimation.
+		// https://github.com/prometheus/prometheus/issues/16889
+		// The store-gateway has this optimization in PostingOffsetTableV2.LabelValuesOffsets,
+		// so if this planner is used in the store-gateway we might want to account for it.
+		if setMatches := m.SetMatches(); len(setMatches) > 0 {
+			// If we know the exact matches, then we will go ~directly to them.
+			// This excludes the calculations for the postings offset table sampling with tsdb.DefaultPostingOffsetInMemorySampling
+			// because we don't know the distribution of the matches in the postings offset table and to keep the code simpler.
+			return pred.singleMatchCost * float64(len(setMatches))
 		}
+		// Assume we will have to scan all label values to find a match.
+		return pred.singleMatchCost * float64(pred.labelNameUniqueVals)
 	}
 
-	return pred, nil
+	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
+}
+
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (int64, error) {
+	var (
+		seriesBehindSelectedValues int64
+		err                        error
+	)
+
+	switch m.Type {
+	case labels.MatchEqual, labels.MatchNotEqual:
+		if m.Value == "" {
+			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
+		} else {
+			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
+		}
+	case labels.MatchRegexp, labels.MatchNotRegexp:
+		if setMatches := m.SetMatches(); len(setMatches) > 0 {
+			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
+		} else {
+			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
+			seriesBehindSelectedValues = int64(float64(seriesBehindSelectedValues) * selectivity)
+		}
+	}
+	if err != nil {
+		return 0, fmt.Errorf("error getting series per label value for label %s: %w", m.Name, err)
+	}
+	if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
+		return stats.TotalSeries() - seriesBehindSelectedValues, nil
+	}
+	return seriesBehindSelectedValues, nil
+}
+
+func (pr planPredicate) indexLookupCost() float64 {
+	cost := 0.0
+	// Running the matcher against all label values.
+	cost += pr.indexScanCost
+
+	// Retrieving each posting list (e.g. checksumming, disk seeking)
+	cost += costPerPostingListRetrieval * float64(pr.labelNameUniqueVals) * pr.selectivity
+
+	return cost
+}
+
+// filterCost is the singleMatchCost to run the matcher against all series.
+func (pr planPredicate) filterCost(series int64) float64 {
+	return float64(series) * pr.singleMatchCost
 }
