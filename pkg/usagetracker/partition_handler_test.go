@@ -89,6 +89,29 @@ func TestPartitionHandler(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
+	t.Run("events are only published when new series are tracked", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 4
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+
+		requireTrackSeries(t, ph, tenantID, []uint64{1}, nil)
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 1})
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1}})
+
+		// Track 1 again, this should not publish an event.
+		requireTrackSeries(t, ph, tenantID, []uint64{1}, nil)
+
+		// Track 2, this should publish an event.
+		requireTrackSeries(t, ph, tenantID, []uint64{2}, nil)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{2}})
+	})
+
 	t.Run("create and load snapshots", func(t *testing.T) {
 		for maxFileSize, expectedSnapshotFiles := range map[int]int{
 			10e3: 1,

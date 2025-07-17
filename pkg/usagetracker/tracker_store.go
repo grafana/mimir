@@ -101,6 +101,10 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	}
 
 	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
+	if len(createdRefs) == 0 {
+		return rejectedRefs, nil
+	}
+	
 	if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
 		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
 		return nil, err
