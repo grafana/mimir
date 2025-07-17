@@ -88,3 +88,22 @@ func (c *GenerateConfig) Validate() error {
 
 	return nil
 }
+
+type PromoterConfig struct {
+	Storage         tsdb.BlocksStorageConfig
+	BlocksDirectory string
+	Verbose         bool
+}
+
+func (c *PromoterConfig) RegisterFlags(fs *flag.FlagSet) {
+	c.Storage.RegisterFlags(fs)
+	fs.StringVar(&c.BlocksDirectory, "blocks-dir", "", "Directory containing TSDB blocks to process")
+	fs.BoolVar(&c.Verbose, "verbose", false, "Enable verbose logging")
+}
+
+func (c *PromoterConfig) Validate() error {
+	if c.BlocksDirectory == "" {
+		return fmt.Errorf("blocks-dir is required")
+	}
+	return nil
+}
