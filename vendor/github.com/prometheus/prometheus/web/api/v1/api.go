@@ -544,7 +544,11 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	return promql.NewPrometheusQueryOpts(
+		r.FormValue("stats") == "all",
+		duration,
+		model.UTF8Validation,
+	), nil
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
