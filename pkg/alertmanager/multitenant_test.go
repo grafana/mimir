@@ -501,7 +501,6 @@ templates:
 	expCfg := amConfig{
 		User:               "user4",
 		RawConfig:          string(rawCfg),
-		Templates:          []definition.PostableApiTemplate{},
 		UsingGrafanaConfig: true,
 		TmplExternalURL:    externalUrl,
 		EmailConfig: alertingReceivers.EmailSenderConfig{
@@ -3327,7 +3326,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3351,7 +3349,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3376,7 +3373,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3400,7 +3396,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3425,7 +3420,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3449,7 +3443,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
-				Templates:          []definition.PostableApiTemplate{},
 				EmailConfig:        baseEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
@@ -3483,7 +3476,6 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:      tenantReceivingRequestsExpired,
 				RawConfig: string(combinedCfg),
-				Templates: []definition.PostableApiTemplate{},
 				EmailConfig: alertingReceivers.EmailSenderConfig{
 					AuthPassword:   "test-password",
 					AuthUser:       "test-user",

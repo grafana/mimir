@@ -75,7 +75,7 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 	amCfg.AlertmanagerConfig.Receivers = rcvs
 
-	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
+	rawCfg, err := definition.MarshalJSONWithSecrets(amCfg.AlertmanagerConfig)
 	if err != nil {
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
@@ -135,7 +135,8 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 
 	// The map can only contain templates of the Grafana kind.
-	tmpl := definition.TemplatesMapToPostableAPITemplates(amCfg.Templates, definition.GrafanaTemplateKind)
+	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
+	tmpl := append(amCfg.Templates, definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)...)
 
 	return amConfig{
 		User:               gCfg.User,
