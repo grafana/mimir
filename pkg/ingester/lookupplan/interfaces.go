@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Package lookupplan contains interfaces that are meant to be deleted once they're upstreamed to prometheus and moved to mimir-prometheus
+
 package lookupplan
 
 import (
