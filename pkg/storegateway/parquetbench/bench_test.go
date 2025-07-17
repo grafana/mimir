@@ -91,6 +91,10 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
+				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response")
+				if !reqConfig.SkipChunks {
+					require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
+				}
 				return err
 			})
 		})
@@ -242,7 +246,6 @@ func createTestBucketStores(b *testing.B, bkt objstore.Bucket) *storegateway.Buc
 	require.NoError(b, err)
 	return stores
 }
-
 
 // mockSeriesServer implements storegatewaypb.StoreGateway_SeriesServer for testing
 type mockSeriesServer struct {
