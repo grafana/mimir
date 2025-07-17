@@ -128,27 +128,15 @@ func runGenerate() {
 		os.Exit(1)
 	}
 
-	datasetConfig := &DatasetConfig{
-		UserID:           cfg.UserID,
-		SeriesCount:      cfg.SeriesCount,
-		DPM:              cfg.DPM,
-		MetricNames:      cfg.MetricNames,
-		LabelNames:       cfg.LabelNames,
-		LabelCardinality: cfg.LabelCardinality,
-		TimeRangeHours:   cfg.TimeRangeHours,
-		ScrapeInterval:   cfg.ScrapeInterval,
-		OutputPrefix:     cfg.OutputPrefix,
-	}
-
 	generator := NewDatasetGenerator(bkt, logger)
-	if err := generator.Generate(ctx, datasetConfig); err != nil {
+	if err := generator.Generate(ctx, cfg); err != nil {
 		fmt.Printf("Failed to generate dataset: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create bucket index for the user
-	if err := createBucketIndex(ctx, bkt, datasetConfig.UserID, logger); err != nil {
-		fmt.Printf("Failed to create bucket index for user %s: %v\n", datasetConfig.UserID, err)
+	if err := createBucketIndex(ctx, bkt, cfg.UserID, logger); err != nil {
+		fmt.Printf("Failed to create bucket index for user %s: %v\n", cfg.UserID, err)
 		os.Exit(1)
 	}
 
@@ -173,16 +161,4 @@ func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string, 
 	}
 	level.Info(logger).Log("msg", "Successfully created bucket index", "user", userID, "blocks", len(idx.Blocks))
 	return nil
-}
-
-type DatasetConfig struct {
-	UserID           string
-	SeriesCount      int
-	DPM              int
-	MetricNames      []string
-	LabelNames       []string
-	LabelCardinality []int
-	TimeRangeHours   int
-	ScrapeInterval   time.Duration
-	OutputPrefix     string
 }
