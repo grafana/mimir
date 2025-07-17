@@ -75,7 +75,7 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 	amCfg.AlertmanagerConfig.Receivers = rcvs
 
-	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
+	rawCfg, err := definition.MarshalJSONWithSecrets(amCfg.AlertmanagerConfig)
 	if err != nil {
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
