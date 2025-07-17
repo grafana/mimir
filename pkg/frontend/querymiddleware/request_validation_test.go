@@ -32,7 +32,7 @@ func TestMetricsQueryRequestValidationRoundTripper(t *testing.T) {
 	)
 	defer srv.Close()
 
-	rt := NewMetricsQueryRequestValidationRoundTripper(newTestPrometheusCodec(), http.DefaultTransport)
+	rt := NewMetricsQueryRequestValidationRoundTripper(newTestCodec(), http.DefaultTransport)
 
 	for i, tc := range []struct {
 		url             string
@@ -109,7 +109,7 @@ func TestLabelsQueryRequestValidationRoundTripper(t *testing.T) {
 	)
 	defer srv.Close()
 
-	rt := NewLabelsQueryRequestValidationRoundTripper(newTestPrometheusCodec(), http.DefaultTransport)
+	rt := NewLabelsQueryRequestValidationRoundTripper(newTestCodec(), http.DefaultTransport)
 
 	for i, tc := range []struct {
 		url             string
