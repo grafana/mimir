@@ -40,7 +40,7 @@ The order of patterns is preserved, so the first matching pattern will be used.
 
 Queries received by Mimir are parsed into PromQL expressions before blocking is applied. When `regex` is
 not used, the `pattern` from the blocked queries is also similarly parsed before being compared against
-the formatted representation of the parsed query, in order to allow consistent query blocking behavior
+the formatted representation of the parsed query. This process allows for consistent query blocking behavior
 regardless of formatting differences in the submitted queries.
 
 Among other transformations the Prometheus formatter may reorder operators, remove empty selector braces,
