@@ -89,8 +89,14 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 		if setMatches := m.SetMatches(); len(setMatches) > 0 {
 			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
 		} else {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
-			seriesBehindSelectedValues = uint64(float64(seriesBehindSelectedValues) * selectivity)
+			var labelNameCardinality uint64
+			labelNameCardinality, err = stats.LabelValuesCardinality(ctx, m.Name)
+			if m.Matches("") {
+				// The matcher selects all series, which don't have this label.
+				seriesBehindSelectedValues += stats.TotalSeries() - labelNameCardinality
+			}
+			// The matcher selects some series with this label.
+			seriesBehindSelectedValues += uint64(float64(labelNameCardinality) * selectivity)
 		}
 	}
 	if err != nil {
