@@ -179,6 +179,8 @@ type GrafanaAlertmanagerOpts struct {
 	Peer    ClusterPeer
 	Logger  log.Logger
 	Metrics *GrafanaAlertmanagerMetrics
+
+	NotificationHistorian nfstatus.NotificationHistorian
 }
 
 func (c *GrafanaAlertmanagerOpts) Validate() error {
@@ -705,6 +707,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err 
 		NoWrap,
 		am.opts.Version,
 		am.logger,
+		am.opts.NotificationHistorian,
 	)
 	if err != nil {
 		return err
@@ -953,5 +956,6 @@ func (am *GrafanaAlertmanager) buildReceiverIntegrations(receiver *APIReceiver, 
 		NoWrap,
 		am.opts.Version,
 		am.logger,
+		am.opts.NotificationHistorian,
 	)
 }
