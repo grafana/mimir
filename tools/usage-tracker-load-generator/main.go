@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -79,8 +80,8 @@ func main() {
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetCodec())
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
 
-	dnsProvider := dns.NewProvider(logger, nil, dns.GolangResolverType)
-	memberlistKV := memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, nil)
+	dnsProvider := dns.NewProvider(logger, prometheus.DefaultRegisterer, dns.GolangResolverType)
+	memberlistKV := memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, prometheus.DefaultRegisterer)
 	assertNoError(services.StartAndAwaitRunning(ctx, memberlistKV))
 
 	// Update the config.
@@ -88,15 +89,15 @@ func main() {
 	cfg.PartitionRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
 
 	// Init the instance ring.
-	instanceRing, err := usagetracker.NewInstanceRingClient(cfg.InstanceRing, logger, nil)
+	instanceRing, err := usagetracker.NewInstanceRingClient(cfg.InstanceRing, logger, prometheus.DefaultRegisterer)
 	assertNoError(err)
 	assertNoError(services.StartAndAwaitRunning(ctx, instanceRing))
 
 	// Init the partition ring.
-	partitionKVClient, err := usagetracker.NewPartitionRingKVClient(cfg.PartitionRing, "watcher", logger, nil)
+	partitionKVClient, err := usagetracker.NewPartitionRingKVClient(cfg.PartitionRing, "watcher", logger, prometheus.DefaultRegisterer)
 	assertNoError(err)
 
-	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, logger, nil)
+	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, logger, prometheus.DefaultRegisterer)
 	assertNoError(services.StartAndAwaitRunning(ctx, partitionRingWatcher))
 
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
@@ -108,7 +109,7 @@ func main() {
 	go http.ListenAndServe(":80", router)
 
 	// Create the usage-tracker client.
-	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, nil)
+	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, prometheus.DefaultRegisterer)
 
 	// Compute the number of workers assuming each TrackSeries() request 100ms on average (we consider this a worst case scenario).
 	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest
