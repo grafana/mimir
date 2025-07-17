@@ -7,8 +7,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type planPredicate struct {
@@ -55,10 +53,7 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 			// For this we need to get the postings of all label values
 			return pred.singleMatchCost * float64(pred.labelNameUniqueVals)
 		}
-		// For on-disk blocks, we will read one in-memory posting offset.
-		// That will point us to a 32-values-wide range in the on-disk postings offset table.
-		// There we will scan all 32 values to find our match.
-		return pred.singleMatchCost * tsdb.DefaultPostingOffsetInMemorySampling
+		return pred.singleMatchCost
 	case labels.MatchRegexp, labels.MatchNotRegexp:
 		// Prometheus doesn't optimize if the matcher has a prefix, so we don't take it into account for this cost estimation.
 		// https://github.com/prometheus/prometheus/issues/16889
