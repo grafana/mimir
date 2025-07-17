@@ -1885,7 +1885,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-series` option. To configure the limit per-tenant, use the `max_label_value_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1895,7 +1895,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 
 This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceeds the configured limit.
 An info series is a series where the metric name ends in `_info`.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-info-series` option.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1904,7 +1904,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-native-histogram-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
-The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
+The limit protects the system from using too much memory. To configure the limit for all tenants, use the `-validation.max-native-histogram-buckets` option. To configure the limit per-tenant, use the `max_native_histogram_buckets` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
@@ -2079,7 +2079,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2088,7 +2088,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2201,7 +2201,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
@@ -2210,7 +2210,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
