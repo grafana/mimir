@@ -101,7 +101,8 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 	if err != nil {
 		return 0, fmt.Errorf("error getting series per label value for label %s: %w", m.Name, err)
 	}
-	if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
+	switch m.Type {
+	case labels.MatchNotEqual, labels.MatchNotRegexp:
 		return stats.TotalSeries() - seriesBehindSelectedValues, nil
 	}
 	return seriesBehindSelectedValues, nil
