@@ -7,17 +7,19 @@ syntax = "proto3";
 
 package stats;
 
-option go_package = "stats";
-
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
+option go_package = "stats";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message Stats {
   // The sum of all wall time spent in the querier to execute the query.
-  google.protobuf.Duration wall_time = 1 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration wall_time = 1 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   // The number of series fetched for the query
   uint64 fetched_series_count = 2;
   // The number of bytes of the chunks fetched for the query, after any deduplication
@@ -33,9 +35,15 @@ message Stats {
   // The estimated number of series to be fetched for the query
   uint64 estimated_series_count = 8;
   // The sum of durations that the query spent in the queue, before it was handled by querier.
-  google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration queue_time = 9 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   // The time spent at the frontend encoding the query's final results. Does not include time spent serializing results at the querier.
-  google.protobuf.Duration encode_time = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration encode_time = 10 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   // SamplesProcessed represents the total number of samples scanned while evaluating a query.
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
@@ -46,6 +54,6 @@ message Stats {
 
 // StepStat represents a sample count at a specific timestamp
 message StepStat {
-  int64 timestamp = 1;  // Unix timestamp in milliseconds
-  int64 value = 2;      // Number of samples at this timestamp
+  int64 timestamp = 1; // Unix timestamp in milliseconds
+  int64 value = 2; // Number of samples at this timestamp
 }
