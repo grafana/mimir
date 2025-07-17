@@ -1,3 +1,5 @@
+# Comments are ignored in this file
+# [ignore_annotations] can be used as a prefix to a query string. This instructs the test assertions to ignore differences in annotations
 ("")
 ((""))
 ({"metric"}[2y]@012)
@@ -5,12 +7,11 @@
 {metric}[2y]@012
 ({metric}[2y]@012)
 (({metric}[2y]@012))
- quAntile without () (  +(2),(A))
+[ignore_annotations] quAntile without () (  +(2),(A))
 
 0
  1
 1
- quAntile without () (  +(2),(A))
 ((({\"0\"}))%Count_vAlues(\"\",((A))))
 acos(some_metric)
 acosh(some_metric)
@@ -171,7 +172,7 @@ exp(  (      -(          {__name__="http_requests",group!="canary",instance!="0"
 {__name__="http_requests"}
 {__name__="http_requests"} @ 1415972390.872[1h:1m]
 stdvar without (job, instance, group) (min by (job, instance) ({__name__="http_requests"}))
-stdvar(rate({__name__="http_requests"}[1h:1m]))
+[ignore_annotations] stdvar(rate({__name__="http_requests"}[1h:1m]))
 -(    bottomk(3, min_over_time({__name__="http_requests",job=~"api-s.*"}[4m] @ start() offset 4m24s))  -    (        ({__name__="http_requests"} or {__name__="http_requests"})      or        {__name__="http_requests"} offset 1m57s    ))
 {__name__="http_requests",group="canary",instance!~".*"} @ end()
 {__name__="http_requests",job!="api-server"} offset -4m52s[1h:1m] @ 463169260.389
@@ -258,7 +259,7 @@ bottomk without (type, __name__, group, job) (  4,  -group by (job) ({__name__="
 absent_over_time({__name__="some_metric_often_stale"} @ 776218253.104 offset 13s[1h:1m] offset -1m5s)
 {__name__="some_metric_often_stale"}[1h:1m] offset -2m40s
 {__name__="mixed_metric_float_first"}
--(    resets({__name__="http_requests",group="canary",job!~"api-s.*"}[2m])  unless    (        ({__name__="http_requests"} offset 34s + {__name__="http_requests",instance!~""})      > bool        bottomk without (type, __name__, group, instance) (2, {__name__="metric"} offset -4m31s)    ))
+[ignore_annotations] -(    resets({__name__="http_requests",group="canary",job!~"api-s.*"}[2m])  unless    (        ({__name__="http_requests"} offset 34s + {__name__="http_requests",instance!~""})      > bool        bottomk without (type, __name__, group, instance) (2, {__name__="metric"} offset -4m31s)    ))
 bottomk without (type) (  4,  count_over_time({__name__="mixed_metric_histogram_first"} offset -2m16s[1h:1m] @ end() offset -3m33s  ))
 {__name__="mixed_metric_float_first"}[3m] @ 1552732950.709
 -quantile by (job, __name__, type, instance) (  scalar({__name__="metric"} @ start()),  max by (group) (    (        {__name__="some_metric_with_stale_marker"} @ start() offset -4m45s      +        {__name__="some_metric_with_stale_marker"} offset 3m14s    )  ))
@@ -273,12 +274,12 @@ avg_over_time({__name__="some_metric_often_stale"}[1h:1m] @ end())
 {__name__="other_metric"}[1m] @ 769989034.912
 {__name__="mixed_metric_histogram_first"} @ 162064505.633
 {__name__="mixed_metric_float_first"}[1m]
-(    sum_over_time({__name__="metric"}[1m])  > bool    clamp_min(      quantile without (instance) (        time(),        -{__name__="mixed_metric_float_first"} @ 356343982.706 offset -31s      ),      time()    ))
+[ignore_annotations] (    sum_over_time({__name__="metric"}[1m])  > bool    clamp_min(      quantile without (instance) (        time(),        -{__name__="mixed_metric_float_first"} @ 356343982.706 offset -31s      ),      time()    ))
 histogram_avg(  min by (instance) (    clamp_min({__name__="metric"} @ end(), (0.44173289779847597 % 0.5841461740156767))  ))
 -histogram_quantile(  -(0.828004616985678 > bool 0.10744660906648132),  stddev without (type, instance) (-{__name__="some_metric_all_gaps"} @ start() offset -1m23s))
 {__name__="mixed_metric_float_first"} @ start()
 -idelta({__name__="mixed_metric_float_first"} offset 3m35s[1h:1m])
-(    -(        ({__name__="http_requests",job!~"api-s.*"} @ end() offset -41s / {__name__="http_requests"})      <=        stdvar without (__name__, type, group) ({__name__="some_metric_often_stale"} @ start())    )  -    -quantile by (instance) (      scalar({__name__="other_metric",type="mixed"}),      sum without (job, type, instance, __name__) ({__name__="other_metric"} offset 4m42s)    ))
+[ignore_annotations] (    -(        ({__name__="http_requests",job!~"api-s.*"} @ end() offset -41s / {__name__="http_requests"})      <=        stdvar without (__name__, type, group) ({__name__="some_metric_often_stale"} @ start())    )  -    -quantile by (instance) (      scalar({__name__="other_metric",type="mixed"}),      sum without (job, type, instance, __name__) ({__name__="other_metric"} offset 4m42s)    ))
 -quantile_over_time(  -(0.667004918840558 < bool 0.8951977671453377),{__name__="some_metric_with_stale_marker"} offset 18s[1h:1m] offset 3m38s)
 max by (group, __name__) (stdvar by (group, instance, __name__) ({__name__="some_metric_all_gaps"}))
 {__name__="mixed_metric_float_first"}[1h:1m] @ start()
@@ -299,7 +300,7 @@ resets({__name__="metric",type="floats"}[1h:1m] offset 4m17s)
 {__name__="http_requests"} @ start()
 avg_over_time({__name__="some_metric_with_stale_marker"}[4m] @ 857199457.703 offset 24s)
 {__name__="some_metric_all_gaps"}[2m] @ end()
-(    -quantile by (group, job, type) (      (0.9015382887228457 != bool 0.07289964533662588),      -{__name__="some_metric_all_stale"} offset 2m21s    )  or    (        (            min_over_time({__name__="other_metric",type=~"flo.*"}[1m])          > bool            ({__name__="some_metric_often_stale"} + {__name__="some_metric_all_stale"} @ start() offset -4m49s)        )      <= bool        idelta({__name__="other_metric",type=~"hist.*"}[1h:1m])    ))
+[ignore_annotations] (    -quantile by (group, job, type) (      (0.9015382887228457 != bool 0.07289964533662588),      -{__name__="some_metric_all_stale"} offset 2m21s    )  or    (        (            min_over_time({__name__="other_metric",type=~"flo.*"}[1m])          > bool            ({__name__="some_metric_often_stale"} + {__name__="some_metric_all_stale"} @ start() offset -4m49s)        )      <= bool        idelta({__name__="other_metric",type=~"hist.*"}[1h:1m])    ))
 quantile by (instance, job, type, group) (  scalar(    (        ({__name__="http_requests",job="api-server"} - {__name__="mixed_metric"})      %        {__name__="metric",type=~"flo.*"} @ start() offset -4m37s    )  ),  -(      sort_desc({__name__="metric",type="histograms"})    > bool      topk by (__name__) (2, {__name__="some_metric_all_gaps"} offset -1m5s)  ))
 {__name__="mixed_metric_histogram_first"} offset -6s[1h:1m] offset 2m38s
 {__name__="mixed_metric"} offset 2m15s
@@ -323,7 +324,7 @@ scalar(  (      {__name__="some_metric_often_stale"} offset -2m17s    >=      ( 
 {__name__="some_metric_with_stale_marker"} offset -4m7s
 (    (        count without (job) (          histogram_stddev({__name__="http_requests",instance!="0",job!="api-server"} offset 4m52s)        )      >=        (            min without () ({__name__="http_requests"} @ start() offset 4m33s)          ^            stddev({__name__="some_metric_often_stale"} @ start())        )    )  /    deg(      (          min_over_time({__name__="other_metric"}[2m] offset 57s)        -          ({__name__="http_requests",group!~".+"} @ end() >= {__name__="http_requests"} @ 96205721.372)      )    ))
 {__name__="other_metric"} offset -57s
-sort(  (      {__name__="http_requests",job!~""} @ 514897502.470 offset 1m32s    and      -stddev without (type, group, instance) ({__name__="other_metric"})  ))
+[ignore_annotations] sort(  (      {__name__="http_requests",job!~""} @ 514897502.470 offset 1m32s    and      -stddev without (type, group, instance) ({__name__="other_metric"})  ))
 {__name__="mixed_metric_float_first"} offset -30s
 {__name__="mixed_metric_float_first"} offset 37s
 histogram_avg(min without (group) ({__name__="mixed_metric_float_first"} @ end() offset 2m34s))
@@ -331,10 +332,10 @@ histogram_avg(min without (group) ({__name__="mixed_metric_float_first"} @ end()
 {__name__="mixed_metric_float_first"}[1m] offset -4m21s
 timestamp(increase({__name__="mixed_metric_float_first"} @ end() offset 3m2s[1h:1m] @ end()))
 {__name__="http_requests"}[1m] @ start()
-group by (group) (  (      stddev({__name__="other_metric"})    >      (          ({__name__="some_metric_with_gaps"} < bool {__name__="other_metric"})        +          {__name__="http_requests",group!="production"}      )  ))
+[ignore_annotations] group by (group) (  (      stddev({__name__="other_metric"})    >      (          ({__name__="some_metric_with_gaps"} < bool {__name__="other_metric"})        +          {__name__="http_requests",group!="production"}      )  ))
 {__name__="http_requests"} offset 2m23s[1h:1m] @ 665418850.010
 {__name__="other_metric"}[3m]
-(    topk by (type, instance, __name__, group) (5, -{__name__="metric"})  < bool    (        min without (group, job) ({__name__="mixed_metric_float_first"})      ^        topk by (__name__, type) (          2,          ({__name__="some_metric_all_stale"} offset 4m37s != {__name__="http_requests"} offset -1m9s)        )    ))
+[ignore_annotations] (    topk by (type, instance, __name__, group) (5, -{__name__="metric"})  < bool    (        min without (group, job) ({__name__="mixed_metric_float_first"})      ^        topk by (__name__, type) (          2,          ({__name__="some_metric_all_stale"} offset 4m37s != {__name__="http_requests"} offset -1m9s)        )    ))
 (    -{__name__="other_metric"} @ end()  ^    (        -(            {__name__="some_metric_all_stale"} @ 1053763717.111          and            {__name__="some_metric_all_stale"} offset 4m27s        )      >= bool        (            max without (instance) ({__name__="some_metric_with_gaps"} @ start() offset -1m32s)          <=            -{__name__="mixed_metric"}        )    ))
 group by (type) (-avg_over_time({__name__="some_metric_all_gaps"} @ start()[1h:1m]))
 avg without (instance, job) (  -max by (instance, __name__) (    (        {__name__="some_metric_with_stale_marker"} offset 3m44s      < bool        {__name__="some_metric_often_stale"} offset 2m34s    )  ))
@@ -384,7 +385,7 @@ holt_winters({__name__="mixed_metric_float_first"} offset 4m49s[1h:1m],  0.00875
 {__name__="other_metric",type!="mixed"} @ 846850734.082
 {__name__="mixed_metric_histogram_first"}[1h:1m] offset 4m40s
 {__name__="some_metric_with_gaps"}[5m] @ end() offset 2m40s
--count without () (  (      {__name__="other_metric"} @ 1731963989.883    ==      topk without (type, group, __name__, job) (5, {__name__="other_metric"} offset -4m7s)  ))
+[ignore_annotations] -count without () (  (      {__name__="other_metric"} @ 1731963989.883    ==      topk without (type, group, __name__, job) (5, {__name__="other_metric"} offset -4m7s)  ))
 -{__name__="some_metric_often_stale"} @ 643039980.653
 stddev without (instance) (sgn(-sum_over_time({__name__="http_requests"}[5m] offset -1m44s)))
 ---(    {__name__="mixed_metric_histogram_first"}  unless    {__name__="http_requests",instance!~"",job="api-server"} @ 1269735764.009 offset 3m38s)

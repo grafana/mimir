@@ -106,6 +106,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 		require.Equal(t, expected.String(), actual.String())
 	case parser.ValueTypeScalar:
 		requireInEpsilonIfNotZeroOrInf(t, expected.Value.(promql.Scalar).V, actual.Value.(promql.Scalar).V)
+		require.Equal(t, expected.Value.(promql.Scalar).T, actual.Value.(promql.Scalar).T)
 	default:
 		require.Fail(t, "unexpected value type", "type: %v", expected.Value.Type())
 	}

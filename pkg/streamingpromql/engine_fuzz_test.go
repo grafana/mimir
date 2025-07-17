@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/assert"
 
@@ -33,27 +32,14 @@ func init() {
 	parser.EnableExperimentalFunctions = true
 }
 
-// we ignore these as they include the string index of where the invalid value is in the query
-// seems like prometheus does a trim() somewhere but MQE does not, so we end up with different char index's referenced in the warning
-var ignorePrefix = []string{"PromQL warning: quantile value should be between 0 and 1", "PromQL info: metric might not be a counter, name does not end in"}
-
-// Replace series Metric which are nil with an empty Labels{}
-func fixUpEmptyLabels(r *promql.Result) {
-	if r == nil || r.Value == nil {
-		return
-	}
-	switch r.Value.Type() {
-	case parser.ValueTypeMatrix:
-		matrix, _ := r.Matrix()
-		for i := 0; i < len(matrix); i++ {
-			if matrix[i].Metric == nil {
-				matrix[i].Metric = labels.Labels{}
-			}
-		}
-	}
+type TestQueryContext struct {
+	prometheusEngine  *promql.Engine
+	mimirEngine       *Engine
+	testStorage       *teststorage.TestStorage
+	ignoreAnnotations map[string]bool
 }
 
-func DoComparisonQuery(t *testing.T, asInstantQuery bool, query string, prometheusEngine *promql.Engine, mimirEngine *Engine, testStorage *teststorage.TestStorage) {
+func DoComparisonQuery(t *testing.T, asInstantQuery bool, query string, ctx TestQueryContext) {
 
 	var prom, mimir *promql.Result
 	var promErr, mimiErr error
@@ -61,19 +47,19 @@ func DoComparisonQuery(t *testing.T, asInstantQuery bool, query string, promethe
 
 	if asInstantQuery {
 
-		ts := time.Now()
+		ts := time.Unix(0, 0)
 
-		promQry, promErr = prometheusEngine.NewInstantQuery(context.Background(), testStorage, nil, query, ts)
-		mimiQry, mimiErr = mimirEngine.NewInstantQuery(context.Background(), testStorage, nil, query, ts)
+		promQry, promErr = ctx.prometheusEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, query, ts)
+		mimiQry, mimiErr = ctx.mimirEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, query, ts)
 
 	} else {
 
-		start := time.Now()
-		end := time.Now().Add(time.Minute)
+		start := time.Unix(0, 0)
+		end := start.Add(time.Minute)
 		step := time.Minute
 
-		promQry, promErr = prometheusEngine.NewRangeQuery(context.Background(), testStorage, nil, query, start, end, step)
-		mimiQry, mimiErr = mimirEngine.NewRangeQuery(context.Background(), testStorage, nil, query, start, end, step)
+		promQry, promErr = ctx.prometheusEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, query, start, end, step)
+		mimiQry, mimiErr = ctx.mimirEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, query, start, end, step)
 	}
 
 	if promErr == nil {
@@ -88,21 +74,11 @@ func DoComparisonQuery(t *testing.T, asInstantQuery bool, query string, promethe
 
 	if promErr == nil {
 
-		// prometheus may have a metric label = nil, and mimir could have an empty slice of metric labels
-		fixUpEmptyLabels(prom)
+		// Replace series Metric which are nil with an empty Labels{}
+		/// Prometheus may have a metric label = nil, and mimir could have an empty slice of metric labels
+		FixUpEmptyLabels(prom)
 
-		skipAnnotationComparison := false
-		if prom != nil && mimir != nil && prom.Warnings != nil {
-			for e := range prom.Warnings {
-
-				for _, prefix := range ignorePrefix {
-					if strings.HasPrefix(e, prefix) {
-						skipAnnotationComparison = true
-						break
-					}
-				}
-			}
-		}
+		skipAnnotationComparison := ctx.ignoreAnnotations[query]
 
 		if mimir != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
 			assert.Equal(t, "unexpected all postings", mimir.Err.Error())
@@ -125,13 +101,24 @@ func TestSingleQuery(t *testing.T) {
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
-	storage := promqltest.LoadedStorage(t, string(data))
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	testStorage := promqltest.LoadedStorage(t, string(data))
+	t.Cleanup(func() { require.NoError(t, testStorage.Close()) })
 
-	expr := `{""!="",""}`
+	//expr := `{""!="",""}`
+	expr := `false / quantile_over_time(1.95, metric[5m])`
+	ignoreAnnotations := map[string]bool{
+		expr: true,
+	}
 
-	DoComparisonQuery(t, true, expr, prometheusEngine, mimirEngine, storage)
-	DoComparisonQuery(t, false, expr, prometheusEngine, mimirEngine, storage)
+	testCtx := TestQueryContext{
+		prometheusEngine:  prometheusEngine,
+		mimirEngine:       mimirEngine,
+		testStorage:       testStorage,
+		ignoreAnnotations: ignoreAnnotations,
+	}
+
+	DoComparisonQuery(t, true, expr, testCtx)
+	DoComparisonQuery(t, false, expr, testCtx)
 }
 
 // This test function will run like a normal unit test with go test
@@ -158,18 +145,35 @@ func FuzzQuery(f *testing.F) {
 	// Seed some example queries/expressions
 	queries, err := os.ReadFile("testdata/fuzz/data/seed-queries.test")
 	require.NoError(f, err)
+
+	ignoreAnnotations := map[string]bool{}
+
 	for _, query := range strings.Split(string(queries), "\n") {
+		if len(query) == 0 || strings.HasPrefix(query, "#") {
+			continue
+		}
+
+		query, found := strings.CutPrefix(query, "[ignore_annotations] ")
+		ignoreAnnotations[query] = found
+
 		f.Add(query)
 	}
 
+	testCtx := TestQueryContext{
+		prometheusEngine:  prometheusEngine,
+		mimirEngine:       mimirEngine,
+		testStorage:       testStorage,
+		ignoreAnnotations: ignoreAnnotations,
+	}
+
 	f.Fuzz(func(t *testing.T, query string) {
-		DoComparisonQuery(t, true, query, prometheusEngine, mimirEngine, testStorage)
-		DoComparisonQuery(t, false, query, prometheusEngine, mimirEngine, testStorage)
+		DoComparisonQuery(t, true, query, testCtx)
+		DoComparisonQuery(t, false, query, testCtx)
 	})
 }
 
 // Test different combinations of start, end times in a range query
-// Note that we do not compare to the Prometheus engine, as it validates range inputs in it's http api handler
+// Note that we do not compare to the Prometheus engine, as it validates range inputs in its http api handler
 func FuzzRangeQueryTimes(f *testing.F) {
 
 	const expression = "vector(0)"

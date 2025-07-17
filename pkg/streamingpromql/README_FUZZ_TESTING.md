@@ -4,22 +4,38 @@ This file contains notes related to the addition of Fuzz tests for the Mimir que
 
 Fuzz tests have been added to the `engine_fuzz_test.go` file. 
 
-These will run as a normal unit test, or they can be invoked with the Go Fuzz engine with `go test -fuzz=FuzzQuery`
+The test assertions are that the Prometheus PromQL Engine returns the same result as the Mimir Query Engine. 
 
-In either case, the test function loads a set of sample data from `seed-data.test` and then runs a range of sample queries from `seed-queries.test`.
+Considered in this test are the result errors, result values and result annotations.
 
-The test assertions are that the Prometheus PromQL Engine returns the same result as the Mimir Query Engine. Considered in this test are the result errors, result values and result annotations.
+There are some expected cases where the Prometheus and Mimir query engines will return different responses.
 
-There are some caveats to this comparison;
+It is important to be aware of these differences if you use the Fuzz tool to generate new queries, as these differences will appear as test failures.
 
-* there are cases where query result annotations (error/warning) do not match. The Mimir Query Engine has AST optimisation where a right hand side expression will not be evaluated if the left side has not results
-* there are cases where query result annotations do not match on quantile percentile being out of bounds. The warning annotation includes a position in the original query of the invalid percentile and there is a difference in whitespace trimming of the query expressions between engines which results in a difference
-* there are some expressions not yet supported by the Mimir Query Engine, such as info, mad_over_time, sort_by_label and sort_by_label_desc
-* there are some expressions which do not have a deterministic result - ie topk(), bottomk() are undefined if there are multiple series with the same value
+The scenarios where a difference can occur include;
+
+* [annotation] Mimir may not emit warning annotations on binary operations that produce no series - where an expression has a left and right hand side, the right hand side expression will not generate a warning if the left hand side would evaluate to having no results. For instance, in Mimir engine the query  `false / quantile_over_time(1.95, metric[5m])` would not issue a quantile value being out of range warning  
+* [annotation] There can be a difference in annotation messages which include the query string offset as to where the error occurs. There is a difference in query string whitespace trimming which results in the reported string offsets being different. For instance `PromQL warning: quantile value should be between 0 and 1, got 2 (1:25)` - the `(1:25)` may be different.
+* [result] There can be a difference in the returned series when the `topk` and `bottomk` queries are used over a dataset which matches the same values. In this scenario the returned series is indeterminate, and the returned series from Mimir may differ from that of Prometheus 
+* [result] There are some expressions not yet supported by the Mimir Query Engine, such as info, mad_over_time, sort_by_label and sort_by_label_desc
+
+Further information on the differences can be found [here](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/references/architecture/mimir-query-engine.md#known-differences-compared-to-prometheus-engine)
+
+If you need to exclude a test query from comparing annotations, the query can be prefixed with `[ignore_annotations]` in the data seeding file.
+
+```text
+# This query will compare any returned annotations
+(({metric}[2y]@012))
+
+# This query will ignore comparing returned annotations
+[ignore_annotations] quAntile without () (  +(2),(A))
+```
 
 ## Fuzz Usage
 
-`go test -fuzz=FuzzQuery`
+```
+go test -fuzz=FuzzQuery
+```
 
 When invoked the seed queries are all tested first, and then the Go Fuzzer will start generating new string queries based off this seed corpus.
 
@@ -29,7 +45,9 @@ These failures are always re-tested when the test cases are either run as unit t
 
 By default, the fuzz tests will continue until a failure is found. A time bound can be added to the fuzz run as follows;
 
-`go test -fuzz=FuzzQuery -fuzztime 30s`
+```
+go test -fuzz=FuzzQuery -fuzztime 30s
+```
 
 ## Query Generation
 
