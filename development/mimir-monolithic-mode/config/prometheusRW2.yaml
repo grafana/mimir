@@ -10,7 +10,6 @@ scrape_configs:
       - targets: ['mimir-1:8001']
         labels:
           container: 'mimir-1'
-
   - job_name: mimir-2
     static_configs:
       - targets: ['mimir-2:8002']
