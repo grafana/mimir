@@ -51,33 +51,28 @@
     ],
     "series": [
         {
-            "name": "basic_series",
+            "name": "cpu_usage_no_chunks",
             "min_time": 0,
             "max_time": 1000,
             "matchers": [
                 {
                     "type": 0,
                     "name": "__name__",
-                    "value": "up"
+                    "value": "cpu_usage"
                 }
             ],
             "skip_chunks": true
         },
         {
-            "name": "series_with_chunks",
+            "name": "cpu_usage_with_chunks",
             "min_time": 0,
             "max_time": 1000,
             "matchers": [
                 {
                     "type": 0,
                     "name": "__name__",
-                    "value": "http_requests_total"
+                    "value": "cpu_usage"
                 },
-                {
-                    "type": 2,
-                    "name": "status",
-                    "value": "2.."
-                }
             ],
             "skip_chunks": false
         }
