@@ -72,7 +72,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250620074007-94f535e0c588
+	github.com/prometheus/otlptranslator v0.0.0-20250717125610-8549f4ab4f8f
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250630122120-3d380bdbe68c
