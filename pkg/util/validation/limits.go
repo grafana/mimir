@@ -594,7 +594,11 @@ func (l *Limits) canonicalizeQueries() {
 		if err != nil {
 			continue
 		}
-		l.BlockedQueries[i].Pattern = expr.String()
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.BlockedQueries[i].Pattern = newPattern
 	}
 }
 
