@@ -22,7 +22,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	symbols := symbolsTableFromPool()
-	defer reuseSymbolsTable(symbols) // TODO: is this safe because we leak the symbols slice by returning it? but this puts it back in a pool too early?
+	defer reuseSymbolsTable(symbols)
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
 	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
@@ -53,7 +53,8 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	rw2.TimeseriesRW2 = rw2Timeseries
-	rw2.SymbolsRW2 = symbols.Symbols() // TODO: I think we leak this because reuse puts it back in a pool but we dont want to
+	syms := symbolsSliceFromPool()
+	rw2.SymbolsRW2 = symbols.SymbolsPrealloc(syms)
 
 	return rw2, nil
 }

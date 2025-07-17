@@ -92,19 +92,27 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 	return ref
 }
 
+func (t *FastSymbolsTable) CountSymbols() int {
+	return len(t.symbolsMap) + 1
+}
+
 func (t *FastSymbolsTable) Symbols() []string {
-	syms := symbolsSliceFromPool()
-	if cap(syms) < len(t.symbolsMap)+1 {
-		syms = make([]string, 0, len(t.symbolsMap)+1)
+	syms := make([]string, 0, t.CountSymbols())
+	return t.SymbolsPrealloc(syms)
+}
+
+func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
+	if cap(prealloc) < t.CountSymbols() {
+		prealloc = make([]string, 0, t.CountSymbols())
 	}
 	for range len(t.symbolsMap) + 1 {
-		syms = append(syms, "")
+		prealloc = append(prealloc, "")
 	}
 
 	for k, v := range t.symbolsMap {
-		(syms)[v-t.offset] = k
+		(prealloc)[v-t.offset] = k
 	}
-	return syms
+	return prealloc
 }
 
 func (t *FastSymbolsTable) Reset() {

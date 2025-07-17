@@ -141,10 +141,13 @@ func BenchmarkSymbolizer(b *testing.B) {
 			for _, l := range lbls {
 				_ = st.Symbolize(l)
 			}
-			symbols := st.Symbols()
+
+			symbols := symbolsSliceFromPool()
+			symbols = st.SymbolsPrealloc(symbols)
 			if len(symbols) != 2001 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
+			reuseSymbolsSlice(symbols)
 			reuseSymbolsTable(st)
 		}
 	})
@@ -174,7 +177,8 @@ func BenchmarkSymbolizer(b *testing.B) {
 				}
 			}
 
-			symbols := st.Symbols()
+			symbols := symbolsSliceFromPool()
+			symbols = st.SymbolsPrealloc(symbols)
 			if len(symbols) != 136 {
 				b.Fatalf("unexpected number of symbols: %d", len(symbols))
 			}
