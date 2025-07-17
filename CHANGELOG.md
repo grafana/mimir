@@ -19,6 +19,7 @@
 
 ### Mixin
 
+* [FEATURE] Add an alert if the block-builder-scheduler ever detects that it has skipped data. #12118
 * [CHANGE] Remove support for the experimental read-write deployment mode. #11975
 * [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
 
@@ -27,6 +28,7 @@
 * [CHANGE] Removed support for the experimental read-write deployment mode. #11974
 * [ENHANCEMENT] Add assertion to ensure ingester ScaledObject has minimum and maximum replicas set to a value greater than 0. #11979
 * [ENHANCEMENT] Add `ingest_storage_migration_ignore_ingest_storage_errors` and `ingest_storage_migration_ingest_storage_max_wait_time` configs to control error handling of the partition ingesters during ingest storage migrations. #12105
+* [ENHANCEMENT] Add block-builder job processing duration timings to Block-builder dashboard. #12118
 
 ### Documentation
 
