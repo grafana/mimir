@@ -31,12 +31,12 @@ func NewDatasetGenerator(bucket objstore.Bucket, logger log.Logger) *DatasetGene
 	}
 }
 
-func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig) error {
-	level.Info(g.logger).Log("msg", "Starting dataset generation", "series_count", config.SeriesCount)
+func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig) (int, error) {
+	level.Info(g.logger).Log("msg", "Starting dataset generation")
 
 	tmpDir := filepath.Join(os.TempDir(), "mimir-parquet-dataset-builder")
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
+		return 0, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
@@ -45,7 +45,8 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig)
 	}()
 
 	series := g.generateSeries(config)
-	level.Info(g.logger).Log("msg", "Generated series", "count", len(series))
+	seriesCount := len(series)
+	level.Info(g.logger).Log("msg", "Generated series", "count", seriesCount)
 
 	startTime := time.UnixMilli(0)
 	endTime := startTime.Add(time.Duration(config.TimeRangeHours) * time.Hour)
@@ -54,7 +55,7 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig)
 
 	userDir := filepath.Join(tmpDir, config.UserID)
 	if err := os.MkdirAll(userDir, 0755); err != nil {
-		return fmt.Errorf("failed to create user directory: %w", err)
+		return 0, fmt.Errorf("failed to create user directory: %w", err)
 	}
 
 	// Calculate total samples based on DPM and time range
@@ -63,46 +64,90 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig)
 
 	level.Info(g.logger).Log("msg", "Generating TSDB blocks", "start_time", startTime, "end_time", endTime, "samples_per_series", samplesPerSeries)
 	if err := g.generateTSDBBlocks(ctx, userDir, config.UserID, series, startTime, endTime, samplesPerSeries); err != nil {
-		return fmt.Errorf("failed to generate TSDB blocks: %w", err)
+		return 0, fmt.Errorf("failed to generate TSDB blocks: %w", err)
 	}
 
 	level.Info(g.logger).Log("msg", "Uploading original TSDB blocks to object storage")
 	if err := g.uploadTSDBBlocks(ctx, userDir, userBkt); err != nil {
-		return fmt.Errorf("failed to upload TSDB blocks: %w", err)
+		return 0, fmt.Errorf("failed to upload TSDB blocks: %w", err)
 	}
 
 	level.Info(g.logger).Log("msg", "Converting blocks to parquet format")
 	converter := NewConverter(g.bucket, g.logger)
 	if err := converter.convertUserBlocks(ctx, config.UserID); err != nil {
-		return fmt.Errorf("failed to convert blocks to parquet: %w", err)
+		return 0, fmt.Errorf("failed to convert blocks to parquet: %w", err)
 	}
 
 	level.Info(g.logger).Log("msg", "Dataset generation completed")
-	return nil
+	return seriesCount, nil
 }
 
 func (g *DatasetGenerator) generateSeries(config *GenerateConfig) []labels.Labels {
 	var series []labels.Labels
 
 	for _, metricName := range config.MetricNames {
-		seriesPerMetric := config.SeriesCount / len(config.MetricNames)
-
-		for i := 0; i < seriesPerMetric; i++ {
-			lbls := labels.Labels{
-				{Name: "__name__", Value: metricName},
-			}
-
-			for j, labelName := range config.LabelNames {
-				cardinality := config.LabelCardinality[j]
-				value := fmt.Sprintf("%d", i%cardinality)
-				lbls = append(lbls, labels.Label{Name: labelName, Value: value})
-			}
-
-			series = append(series, lbls)
-		}
+		// Generate all possible combinations of label values
+		series = append(series, g.generateSeriesForMetric(metricName, config)...)
 	}
 
 	return series
+}
+
+func (g *DatasetGenerator) generateSeriesForMetric(metricName string, config *GenerateConfig) []labels.Labels {
+	var series []labels.Labels
+
+	if len(config.LabelNames) == 0 {
+		// If no labels, just create a series with the metric name
+		series = append(series, labels.Labels{
+			{Name: "__name__", Value: metricName},
+		})
+		return series
+	}
+
+	// Generate all combinations of label values
+	combinations := g.generateLabelCombinations(config.LabelNames, config.LabelCardinality)
+
+	for _, combination := range combinations {
+		lbls := labels.Labels{
+			{Name: "__name__", Value: metricName},
+		}
+
+		for i, labelName := range config.LabelNames {
+			lbls = append(lbls, labels.Label{Name: labelName, Value: combination[i]})
+		}
+
+		series = append(series, lbls)
+	}
+
+	return series
+}
+
+func (g *DatasetGenerator) generateLabelCombinations(labelNames []string, cardinalities []int) [][]string {
+	if len(labelNames) == 0 {
+		return [][]string{}
+	}
+
+	// Calculate total combinations
+	totalCombinations := 1
+	for _, cardinality := range cardinalities {
+		totalCombinations *= cardinality
+	}
+
+	combinations := make([][]string, totalCombinations)
+
+	for i := 0; i < totalCombinations; i++ {
+		combination := make([]string, len(labelNames))
+		temp := i
+
+		for j := len(labelNames) - 1; j >= 0; j-- {
+			combination[j] = fmt.Sprintf("%s_%d", labelNames[j], temp%cardinalities[j])
+			temp /= cardinalities[j]
+		}
+
+		combinations[i] = combination
+	}
+
+	return combinations
 }
 
 func (g *DatasetGenerator) generateTSDBBlocks(ctx context.Context, userDir, userID string, series []labels.Labels, minTime, maxTime time.Time, samplesPerSeries int) error {

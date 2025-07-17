@@ -38,7 +38,6 @@ func (c *ConvertConfig) Validate() error {
 type GenerateConfig struct {
 	Storage             tsdb.BlocksStorageConfig
 	UserID              string
-	SeriesCount         int
 	DPM                 int
 	MetricNamesRaw      string
 	LabelNamesRaw       string
@@ -57,7 +56,6 @@ type GenerateConfig struct {
 func (c *GenerateConfig) RegisterFlags(fs *flag.FlagSet) {
 	c.Storage.RegisterFlags(fs)
 	fs.StringVar(&c.UserID, "user", "user-1", "User ID for dataset")
-	fs.IntVar(&c.SeriesCount, "series-count", 10000, "Number of series to generate")
 	fs.IntVar(&c.DPM, "dpm", 1, "Datapoints per minute")
 	fs.StringVar(&c.MetricNamesRaw, "metric-names", "cpu_usage,memory_usage,disk_io", "Comma-separated metric names")
 	fs.StringVar(&c.LabelNamesRaw, "label-names", "instance,job,region", "Comma-separated label names")

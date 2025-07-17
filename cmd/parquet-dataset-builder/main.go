@@ -131,7 +131,8 @@ func runGenerate() {
 	}
 
 	generator := NewDatasetGenerator(bkt, logger)
-	if err := generator.Generate(ctx, cfg); err != nil {
+	seriesCount, err := generator.Generate(ctx, cfg)
+	if err != nil {
 		fmt.Printf("Failed to generate dataset: %v\n", err)
 		os.Exit(1)
 	}
@@ -142,8 +143,9 @@ func runGenerate() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully generated parquet dataset with %d series and created bucket index\n")
+	fmt.Printf("Successfully generated parquet dataset with %d series and created bucket index\n", seriesCount)
 }
+
 
 func runPromoter() {
 	fs := flag.NewFlagSet("promoter", flag.ExitOnError)
