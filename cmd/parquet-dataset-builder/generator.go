@@ -31,7 +31,7 @@ func NewDatasetGenerator(bucket objstore.Bucket, logger log.Logger) *DatasetGene
 	}
 }
 
-func (g *DatasetGenerator) Generate(ctx context.Context, config *DatasetConfig) error {
+func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig) error {
 	level.Info(g.logger).Log("msg", "Starting dataset generation", "series_count", config.SeriesCount)
 
 	tmpDir := filepath.Join(os.TempDir(), "mimir-parquet-dataset-builder")
@@ -81,7 +81,7 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *DatasetConfig) 
 	return nil
 }
 
-func (g *DatasetGenerator) generateSeries(config *DatasetConfig) []labels.Labels {
+func (g *DatasetGenerator) generateSeries(config *GenerateConfig) []labels.Labels {
 	var series []labels.Labels
 
 	for _, metricName := range config.MetricNames {
