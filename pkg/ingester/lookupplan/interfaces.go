@@ -25,7 +25,7 @@ type LookupPlanner interface {
 }
 
 type Statistics interface {
-	TotalSeries() int64
-	LabelValuesCount(ctx context.Context, name string) (int64, error)
-	LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error)
+	TotalSeries() uint64
+	LabelValuesCount(ctx context.Context, name string) (uint64, error)
+	LabelValuesCardinality(ctx context.Context, name string, values ...string) (uint64, error)
 }

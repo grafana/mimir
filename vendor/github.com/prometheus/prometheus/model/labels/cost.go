@@ -3,17 +3,17 @@ package labels
 import "github.com/grafana/regexp/syntax"
 
 const (
-	// TODO verify relative magnitude of these costs
+	// TODO verify relative magnitude of these costs.
 	estimatedStringEqualityCost          = 1.0
-	estimatedStingHasPrefixCost          = 0.5
+	estimatedStringHasPrefixCost         = 0.5
 	estimatedSliceContainsCostPerElement = 1.0
 	estimatedMapContainsCostPerElement   = 0.01
 	estimatedRegexMatchCost              = 10.0
 )
 
-// FixedCost returns the fixed cost of running this matcher against an arbitrary label value.
-// TODO benchmark relative cost of different matchers
-// TODO use the complexity of the regex string as a cost
+// SingleMatchCost returns the fixed cost of running this matcher against an arbitrary label value..
+// TODO benchmark relative cost of different matchers.
+// TODO use the complexity of the regex string as a cost.
 func (m *Matcher) SingleMatchCost() float64 {
 	switch m.Type {
 	case MatchEqual, MatchNotEqual:
@@ -32,26 +32,31 @@ func (m *Matcher) SingleMatchCost() float64 {
 
 		// If we have a prefix optimization, use that
 		if m.re.prefix != "" {
-			return estimatedStingHasPrefixCost
+			return estimatedStringHasPrefixCost
 		}
 
 		return m.re.SingleMatchCost()
 	}
 
-	panic("labels.Matcher.FixedCost: invalid match type " + m.Type.String())
+	panic("labels.Matcher.SingleMatchCost: invalid match type " + m.Type.String() + m.String())
 }
 
 // EstimateSelectivity is the estimated fraction of all strings that it would match.
-// For example
-// * namespace!="" will match all values, so its selectivity is 1
-// * namespace=~"foo" will match only a single value, so its selectivity across 100 values is 0.01
-// * namespace=~"foo|bar" will match two values, so its selectivity across 100 values is 0.02
-func (m *Matcher) EstimateSelectivity(totalLabelValues int64) float64 {
+// For example:
+// * namespace!="" will match all values, so its selectivity is 1;
+// * namespace=~"foo" will match only a single value, so its selectivity across 100 values is 0.01;
+// * namespace=~"foo|bar" will match two values, so its selectivity across 100 values is 0.02.
+func (m *Matcher) EstimateSelectivity(totalLabelValues uint64) float64 {
 	var selectivity float64
+	// First estimate the selectivity of the operation without taking into account whether it's an inclusive or exclusive matcher.
 	switch m.Type {
 	case MatchEqual, MatchNotEqual:
-		// For exact match, we expect to match exactly one value
-		selectivity = 1.0 / float64(totalLabelValues)
+		if m.Value == "" {
+			selectivity = 0
+		} else {
+			// For exact match, we expect to match exactly one value
+			selectivity = 1.0 / float64(totalLabelValues)
+		}
 
 	case MatchRegexp, MatchNotRegexp:
 		// If we have optimized set matches, we know exactly how many values we'll match.
@@ -69,7 +74,6 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues int64) float64 {
 
 		// For unoptimized regex, assume we'll match ~10% of values
 		selectivity = 0.1
-		break
 	}
 
 	switch m.Type {
@@ -87,7 +91,7 @@ func (m *FastRegexMatcher) SingleMatchCost() float64 {
 	return costEstimate(parsed)
 }
 
-// TODO this doesn't account for backtracking, which can come with a large cost
+// TODO this doesn't account for backtracking, which can come with a large cost.
 func costEstimate(re *syntax.Regexp) float64 {
 	switch re.Op {
 	case syntax.OpBeginText:
@@ -109,7 +113,7 @@ func costEstimate(re *syntax.Regexp) float64 {
 	case syntax.OpCapture:
 		return costEstimate(re.Sub[0])
 	case syntax.OpConcat:
-		var total float64 = 0
+		var total float64
 		for _, sub := range re.Sub {
 			total += costEstimate(sub)
 		}

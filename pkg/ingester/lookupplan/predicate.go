@@ -17,8 +17,8 @@ type planPredicate struct {
 	// selectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
 	selectivity float64
 	// cardinality is the estimation of how many series this matcher matches on its own. NB: series, not label values
-	cardinality         int64
-	labelNameUniqueVals int64
+	cardinality         uint64
+	labelNameUniqueVals uint64
 	// singleMatchCost is how much it costs to run this matcher against an arbitrary label value.
 	singleMatchCost float64
 	// indexScanCost is the cost of traversing the postings offset table. This is the singleMatchCost to run the matcher against all label values (or at least enough to know all the values it matches).
@@ -77,9 +77,9 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
 }
 
-func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (int64, error) {
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (uint64, error) {
 	var (
-		seriesBehindSelectedValues int64
+		seriesBehindSelectedValues uint64
 		err                        error
 	)
 
@@ -95,7 +95,7 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
 		} else {
 			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
-			seriesBehindSelectedValues = int64(float64(seriesBehindSelectedValues) * selectivity)
+			seriesBehindSelectedValues = uint64(float64(seriesBehindSelectedValues) * selectivity)
 		}
 	}
 	if err != nil {
@@ -119,6 +119,6 @@ func (pr planPredicate) indexLookupCost() float64 {
 }
 
 // filterCost is the singleMatchCost to run the matcher against all series.
-func (pr planPredicate) filterCost(series int64) float64 {
+func (pr planPredicate) filterCost(series uint64) float64 {
 	return float64(series) * pr.singleMatchCost
 }

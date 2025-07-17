@@ -19,7 +19,7 @@ const (
 type plan struct {
 	predicates  []planPredicate
 	applied     []bool
-	totalSeries int64
+	totalSeries uint64
 
 	indexLookupCost  float64
 	intersectionCost float64
@@ -107,7 +107,7 @@ func estimateTotalCost(p plan) plan {
 }
 
 func (p plan) calculateIntersectionCost() float64 {
-	iteratedPostings := int64(0)
+	iteratedPostings := uint64(0)
 	for i, pred := range p.predicates {
 		if !p.applied[i] {
 			continue
@@ -119,7 +119,7 @@ func (p plan) calculateIntersectionCost() float64 {
 	return float64(iteratedPostings) * costPerIteratedPosting
 }
 
-func (p plan) intersectionSize() int64 {
+func (p plan) intersectionSize() uint64 {
 	finalSelectivity := 1.0
 	for i, pred := range p.predicates {
 		if !p.applied[i] {
@@ -133,5 +133,5 @@ func (p plan) intersectionSize() int64 {
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend if we have already applied {statefulset=prometheus}.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
-	return int64(finalSelectivity * float64(p.totalSeries))
+	return uint64(finalSelectivity * float64(p.totalSeries))
 }
