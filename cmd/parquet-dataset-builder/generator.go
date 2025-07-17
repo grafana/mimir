@@ -57,8 +57,12 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *DatasetConfig) 
 		return fmt.Errorf("failed to create user directory: %w", err)
 	}
 
-	level.Info(g.logger).Log("msg", "Generating TSDB blocks", "start_time", startTime, "end_time", endTime)
-	if err := g.generateTSDBBlocks(ctx, userDir, config.UserID, series, startTime, endTime, config.SamplesPerSeries); err != nil {
+	// Calculate total samples based on DPM and time range
+	totalMinutes := config.TimeRangeHours * 60
+	samplesPerSeries := config.DPM * totalMinutes
+
+	level.Info(g.logger).Log("msg", "Generating TSDB blocks", "start_time", startTime, "end_time", endTime, "samples_per_series", samplesPerSeries)
+	if err := g.generateTSDBBlocks(ctx, userDir, config.UserID, series, startTime, endTime, samplesPerSeries); err != nil {
 		return fmt.Errorf("failed to generate TSDB blocks: %w", err)
 	}
 
@@ -122,7 +126,7 @@ func (g *DatasetGenerator) generateTSDBBlocks(ctx context.Context, userDir, user
 	app := db.Appender(ctx)
 	step := maxTime.Sub(minTime) / time.Duration(samplesPerSeries)
 
-	level.Info(g.logger).Log("msg", "Adding samples to TSDB", "series_count", len(series), "samples_per_series", samplesPerSeries)
+	level.Info(g.logger).Log("msg", "Adding samples to TSDB", "series_count", len(series), "samples_per_series", samplesPerSeries, "time_step", step)
 	for _, s := range series {
 		for i := 0; i < samplesPerSeries; i++ {
 			ts := minTime.Add(time.Duration(i) * step)
