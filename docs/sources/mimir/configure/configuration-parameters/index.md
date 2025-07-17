@@ -3835,8 +3835,7 @@ blocked_requests:
 
 # (experimental)
 cost_attribution_labels_structured:
-  -
-    [input: <string> | default = ""]
+  -     [input: <string> | default = ""]
 
     [output: <string> | default = ""]
 
