@@ -219,8 +219,9 @@ func TestRecordSerializer(t *testing.T) {
 					Histograms: []mimirpb.Histogram{{Timestamp: 10}},
 				}},
 				{TimeSeries: &mimirpb.TimeSeries{
-					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
-					Samples: []mimirpb.Sample{{TimestampMs: 30}},
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 30}},
+					Exemplars: []mimirpb.Exemplar{},
 				}},
 			},
 			Metadata: []*mimirpb.MetricMetadata{
@@ -242,7 +243,11 @@ func TestRecordSerializer(t *testing.T) {
 		err = DeserializeRecordContent(record.Value, resultReq, 2)
 		require.NoError(t, err)
 
-		require.Equal(t, req.Metadata, resultReq.Metadata)
+		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
+		require.Nil(t, resultReq.SymbolsRW2)
+		require.Nil(t, resultReq.TimeseriesRW2)
+		// Metadata order is currently not preserved by the RW2 deser layer.
+		assertMetadataEqualUnordered(t, req.Metadata, resultReq.Metadata)
 	})
 }
 
@@ -299,4 +304,21 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 			mimirpb.ReuseSlice(wr.Timeseries)
 		}
 	})
+}
+
+func assertMetadataEqualUnordered(t *testing.T, exp, actual []*mimirpb.MetricMetadata) {
+	t.Helper()
+
+	expMap := make(map[string]*mimirpb.MetricMetadata)
+	actualMap := make(map[string]*mimirpb.MetricMetadata)
+	for _, v := range exp {
+		require.NotContains(t, expMap, v.MetricFamilyName)
+		expMap[v.MetricFamilyName] = v
+	}
+	for _, v := range actual {
+		require.NotContains(t, actualMap, v.MetricFamilyName)
+		actualMap[v.MetricFamilyName] = v
+	}
+
+	require.Equal(t, expMap, actualMap)
 }
