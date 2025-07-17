@@ -98,6 +98,8 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 
 func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer) error) {
 	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
+		err := os.MkdirAll("profiles", 0755)
+		require.NoError(b, err)
 		fcpu, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_cpu.prof")
 		require.NoError(b, err)
 		fmem, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_mem.prof")
