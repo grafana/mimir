@@ -56,10 +56,12 @@ local filename = 'mimir-block-builder.json';
           [
             'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
             'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_job_gap_detected_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
           ],
           [
             'fetch offsets failed',
             'flush failed',
+            'offset gap detected',
           ],
         )
       )
@@ -161,6 +163,27 @@ local filename = 'mimir-block-builder.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
+      .addPanel(
+        $.timeseriesPanel('Job processing duration') +
+        $.panelDescription(
+          'Job processing duration',
+          'Amount of time that it takes to process a job.'
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
+            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
+            'histogram_avg(sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            'average',
+          ],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 's' } } },
+      )
+
     )
     .addRow(
       $.row('TSDB')
