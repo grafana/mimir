@@ -387,6 +387,15 @@ func (p *partitionHandler) loadSnapshotIntoBufferWithBackoff(ctx context.Context
 	return 0, fmt.Errorf("%w (%s)", err, backoff.Err())
 }
 
+// loadEvents loads the events from the last snapshot (or from the idle timeout) up to the last one.
+// In this method:
+// eventsOffset:
+// - Is the offset of the last event published before the loaded snapshot was taken.
+// - If it's zero, then no snapshot was loaded. If it's non-zero, we should start consuming events from that offset.
+// endOffset:
+// - Is the end offset of the events topic, which is the offset of the next record that will be published.
+// lastExpectedEventOffset:
+// - Is endOffset - 1: we expect to load events up to this offset.
 func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) error {
 	endOffset, err := findEndOffset(ctx, p.eventsKafkaReader, p.cfg.EventsStorageReader.Topic, p.partitionID)
 	if err != nil {
