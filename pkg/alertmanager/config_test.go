@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
 	"github.com/grafana/alerting/receivers"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -299,7 +300,10 @@ receivers:
 			require.Equal(t, test.grafanaConfig.User, cfg.User)
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.TmplExternalURL.String())
 			require.True(t, cfg.UsingGrafanaConfig)
-			require.EqualValues(t, cfg.Templates, test.expTemplates)
+
+			secret, err := json.Marshal(config.Secret("very-secret"))
+			require.NoError(t, err)
+			require.NotContainsf(t, cfg.RawConfig, string(secret), "masked secrets should not be present in the config")
 
 			if test.grafanaConfig.SmtpConfig != nil {
 				require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.EmailConfig.StaticHeaders)
