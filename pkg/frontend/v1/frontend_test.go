@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 func init() {
@@ -344,7 +345,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	handlerCfg := transport.HandlerConfig{QueryStatsEnabled: true}
 	flagext.DefaultValues(&handlerCfg)
 
-	rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)
+	rt := httpgrpcutil.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)
 	r := mux.NewRouter()
 	r.PathPrefix("/").Handler(middleware.Merge(
 		middleware.AuthenticateUser,
