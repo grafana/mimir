@@ -129,6 +129,7 @@ func (q *Query) SeriesMetadataEvaluated(evaluator *Evaluator, series []types.Ser
 
 func (q *Query) InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
+		// Nothing to do.
 		types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
 		return nil
 	}
@@ -137,43 +138,50 @@ func (q *Query) InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesInd
 	q.seriesMetadata[seriesIndex] = types.SeriesMetadata{} // Clear the original series metadata slice so we don't return the labels twice when the slice is returned later.
 
 	if q.resultIsVector {
-		// Instant query: we'll return a vector.
-		defer types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
-		if q.vector == nil {
-			var err error
-			q.vector, err = types.VectorPool.Get(len(q.seriesMetadata), q.memoryConsumptionTracker)
-			if err != nil {
-				return err
-			}
-		}
-
-		if len(seriesData.Floats)+len(seriesData.Histograms) != 1 {
-			return fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", series.Labels.String(), len(seriesData.Floats), len(seriesData.Histograms))
-		}
-
-		if len(seriesData.Floats) == 1 {
-			point := seriesData.Floats[0]
-			q.vector = append(q.vector, promql.Sample{
-				Metric: series.Labels,
-				T:      point.T,
-				F:      point.F,
-			})
-		} else {
-			point := seriesData.Histograms[0]
-			q.vector = append(q.vector, promql.Sample{
-				Metric: series.Labels,
-				T:      point.T,
-				H:      point.H,
-			})
-
-			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
-			seriesData.Histograms[0].H = nil
-		}
-
-		return nil
+		return q.appendSeriesToVector(series, seriesData)
 	}
 
-	// Range query: we'll return a matrix.
+	q.appendSeriesToMatrix(series, seriesData)
+	return nil
+}
+
+func (q *Query) appendSeriesToVector(series types.SeriesMetadata, seriesData types.InstantVectorSeriesData) error {
+	defer types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
+	if q.vector == nil {
+		var err error
+		q.vector, err = types.VectorPool.Get(len(q.seriesMetadata), q.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(seriesData.Floats)+len(seriesData.Histograms) != 1 {
+		return fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", series.Labels.String(), len(seriesData.Floats), len(seriesData.Histograms))
+	}
+
+	if len(seriesData.Floats) == 1 {
+		point := seriesData.Floats[0]
+		q.vector = append(q.vector, promql.Sample{
+			Metric: series.Labels,
+			T:      point.T,
+			F:      point.F,
+		})
+	} else {
+		point := seriesData.Histograms[0]
+		q.vector = append(q.vector, promql.Sample{
+			Metric: series.Labels,
+			T:      point.T,
+			H:      point.H,
+		})
+
+		// Remove histogram from slice to ensure it's not mutated when the slice is reused.
+		seriesData.Histograms[0].H = nil
+	}
+
+	return nil
+}
+
+func (q *Query) appendSeriesToMatrix(series types.SeriesMetadata, seriesData types.InstantVectorSeriesData) {
 	if q.matrix == nil {
 		q.matrix = types.GetMatrix(len(q.seriesMetadata))
 	}
@@ -183,8 +191,6 @@ func (q *Query) InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesInd
 		Floats:     seriesData.Floats,
 		Histograms: seriesData.Histograms,
 	})
-
-	return nil
 }
 
 func (q *Query) RangeVectorStepSamplesEvaluated(evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
