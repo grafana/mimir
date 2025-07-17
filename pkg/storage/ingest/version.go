@@ -146,6 +146,7 @@ type versionTwoRecordSerializer struct{}
 
 func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
 	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
+	defer mimirpb.ReuseRW2(reqv2)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}

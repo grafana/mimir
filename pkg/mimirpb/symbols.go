@@ -44,6 +44,10 @@ func symbolsSliceFromPool() []string {
 }
 
 func reuseSymbolsSlice(s []string) {
+	if cap(s) == 0 {
+		return
+	}
+
 	for i := range s {
 		s[i] = ""
 	}
