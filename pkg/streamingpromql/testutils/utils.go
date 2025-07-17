@@ -20,6 +20,17 @@ import (
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
+
+	if expected == nil && actual == nil {
+		return
+	} else if expected == nil {
+		require.Fail(t, `expected nil but got type: %v`, actual)
+		return
+	} else if actual == nil {
+		require.Fail(t, "expected a value but got nil")
+		return
+	}
+
 	require.Equal(t, expected.Err, actual.Err)
 
 	if expected.Err != nil {
@@ -55,7 +66,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 
 			require.Equal(t, expectedSample.Metric, actualSample.Metric)
 			require.Equal(t, expectedSample.T, actualSample.T)
-			require.Equal(t, expectedSample.H, actualSample.H)
+			requireHistogramMatch(t, expectedSample.H, actualSample.H)
 			requireInEpsilonIfNotZeroOrInf(t, expectedSample.F, actualSample.F)
 		}
 	case parser.ValueTypeMatrix:
@@ -87,37 +98,60 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 				if expectedPoint.H == nil {
 					require.Equal(t, expectedPoint.H, actualPoint.H)
 				} else {
-					h1 := expectedPoint.H
-					h2 := actualPoint.H
-
-					require.Equal(t, h1.Schema, h2.Schema, "histogram schemas match")
-					requireInEpsilonIfNotZeroOrInf(t, h1.Count, h2.Count, "histogram counts match")
-					requireInEpsilonIfNotZeroOrInf(t, h1.Sum, h2.Sum, "histogram sums match")
-
-					if h1.UsesCustomBuckets() {
-						requireFloatBucketsMatch(t, h1.CustomValues, h2.CustomValues)
-					}
-
-					requireInEpsilonIfNotZeroOrInf(t, h1.ZeroThreshold, h2.ZeroThreshold, "histogram thresholds match")
-					requireInEpsilonIfNotZeroOrInf(t, h1.ZeroCount, h2.ZeroCount, "histogram zero counts match")
-
-					requireSpansMatch(t, h1.NegativeSpans, h2.NegativeSpans)
-					requireFloatBucketsMatch(t, h1.NegativeBuckets, h2.NegativeBuckets)
-
-					requireSpansMatch(t, h1.PositiveSpans, h2.PositiveSpans)
-					requireFloatBucketsMatch(t, h1.PositiveBuckets, h2.PositiveBuckets)
+					requireHistogramMatch(t, expectedPoint.H, actualPoint.H)
 				}
 			}
 		}
 	case parser.ValueTypeString:
 		require.Equal(t, expected.String(), actual.String())
+	case parser.ValueTypeScalar:
+		requireInEpsilonIfNotZeroOrInf(t, expected.Value.(promql.Scalar).V, actual.Value.(promql.Scalar).V)
 	default:
 		require.Fail(t, "unexpected value type", "type: %v", expected.Value.Type())
 	}
 }
 
+// Assert that the given histograms are a match on all attributes
+// This special case has been made since using require.Equal() directly will return false
+// if the ZeroCount, Count or Sum fields are NaN. The require.Equal() will fall through to doing
+// a deepEquals() and this will evaluate on the float == float fields, which is false on NaN comparisons.
+func requireHistogramMatch(t testing.TB, expected, actual *histogram.FloatHistogram) {
+	if expected == nil && actual == nil {
+		return
+	}
+
+	if expected == nil {
+		require.Fail(t, "expected nil, got %v", actual)
+		return
+	}
+
+	if actual == nil {
+		require.Fail(t, "expected non-nil, got nil")
+		return
+	}
+
+	require.Equal(t, expected.Schema, actual.Schema, "histogram schemas match")
+	requireInEpsilonIfNotZeroOrInf(t, expected.Count, expected.Count, "histogram counts match")
+	requireInEpsilonIfNotZeroOrInf(t, expected.Sum, expected.Sum, "histogram sums match")
+
+	if expected.UsesCustomBuckets() {
+		requireFloatBucketsMatch(t, expected.CustomValues, expected.CustomValues)
+	}
+
+	requireInEpsilonIfNotZeroOrInf(t, expected.ZeroThreshold, expected.ZeroThreshold, "histogram thresholds match")
+	requireInEpsilonIfNotZeroOrInf(t, expected.ZeroCount, expected.ZeroCount, "histogram zero counts match")
+
+	requireSpansMatch(t, expected.NegativeSpans, expected.NegativeSpans)
+	requireFloatBucketsMatch(t, expected.NegativeBuckets, expected.NegativeBuckets)
+
+	requireSpansMatch(t, expected.PositiveSpans, expected.PositiveSpans)
+	requireFloatBucketsMatch(t, expected.PositiveBuckets, expected.PositiveBuckets)
+}
+
 func requireInEpsilonIfNotZeroOrInf(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
-	if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
+	if math.IsNaN(expected) && math.IsNaN(actual) {
+		// ok
+	} else if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
 		require.Equal(t, expected, actual, msgAndArgs...)
 	} else {
 		require.InEpsilon(t, expected, actual, 1e-10, msgAndArgs...)
