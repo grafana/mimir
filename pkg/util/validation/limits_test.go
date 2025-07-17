@@ -1873,13 +1873,13 @@ func TestLimitsCanonicalizeQueries(t *testing.T) {
 				// Invalid exact queries are unchanged.
 				{Pattern: `up{pod="test", job="test"`, Regex: false},
 				// Regex queries are unchanged.
-				{Pattern: `up{job=~".*"}`, Regex: true},
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
 			},
 			expectedQueries: BlockedQueriesConfig{
 				// Order is preserved.
 				{Pattern: `up{job="test",pod="test"}`, Regex: false},
 				{Pattern: `up{pod="test", job="test"`, Regex: false},
-				{Pattern: `up{job=~".*"}`, Regex: true},
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
 			},
 		},
 		{
