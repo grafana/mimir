@@ -53,7 +53,7 @@
         {
             "name": "cpu_usage_no_chunks",
             "min_time": 0,
-            "max_time": 1000,
+            "max_time": 1767225601000,
             "matchers": [
                 {
                     "type": 0,
@@ -66,13 +66,13 @@
         {
             "name": "cpu_usage_with_chunks",
             "min_time": 0,
-            "max_time": 1000,
+            "max_time": 1767225601000,
             "matchers": [
                 {
                     "type": 0,
                     "name": "__name__",
                     "value": "cpu_usage"
-                },
+                }
             ],
             "skip_chunks": false
         }

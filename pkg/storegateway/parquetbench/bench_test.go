@@ -65,25 +65,25 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 		storegateway.GrpcContextMetadataTenantID: []string{*user},
 	})
 
-	for _, reqConfig := range requests.LabelValues {
-		req := &reqConfig.LabelValuesRequest
-		b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
-				_, err := store.LabelValues(ctx, req)
-				return err
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelValues {
+	//	req := &reqConfig.LabelValuesRequest
+	//	b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
+	//		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+	//			_, err := store.LabelValues(ctx, req)
+	//			return err
+	//		})
+	//	})
+	// }
 
-	for _, reqConfig := range requests.LabelNames {
-		req := &reqConfig.LabelNamesRequest
-		b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
-				_, err := store.LabelNames(ctx, req)
-				return err
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelNames {
+	//	req := &reqConfig.LabelNamesRequest
+	//	b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
+	//		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+	//			_, err := store.LabelNames(ctx, req)
+	//			return err
+	//		})
+	//	})
+	// }
 
 	for _, reqConfig := range requests.Series {
 		req := &reqConfig.SeriesRequest
