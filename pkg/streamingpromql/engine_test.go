@@ -3954,11 +3954,11 @@ func TestQueryClose(t *testing.T) {
 	q.Close()
 	mqeQuery, ok := q.(*Query)
 	require.True(t, ok)
-	require.Equal(t, uint64(0), mqeQuery.evaluator.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	// Close the query a second time, to ensure that closing the query again does not cause any issues.
 	q.Close()
-	require.Equal(t, uint64(0), mqeQuery.evaluator.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestEagerLoadSelectors(t *testing.T) {
