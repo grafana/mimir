@@ -14,9 +14,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 var evaluateQueryRequestType = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -86,27 +89,30 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp queryR
 		return
 	}
 
-	plan, err := req.Plan.ToDecodedPlan()
+	evaluationNode := req.Nodes[0]
+
+	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
 	if err != nil {
 		resp.WriteError(fmt.Sprintf("could not decode plan: %s", err.Error()))
 		return
 	}
 
-	// TODO: materialize requested node, not root
-	q, err := d.engine.MaterializeNode(ctx, plan, d.queryable, nil, plan.Root, plan.TimeRange)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, nil, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
 		resp.WriteError(fmt.Sprintf("could not materialize query: %s", err.Error()))
 		return
 	}
 
-	defer q.Close()
+	defer e.Close()
 
-	// TODO: start sending messages
-	resp.WriteError(fmt.Sprintf("TODO"))
+	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex}); err != nil {
+		resp.WriteError(err.Error())
+	}
 }
 
 type queryResponseWriter interface {
 	WriteError(msg string)
+	Write(m querierpb.EvaluateQueryResponse) error
 }
 
 type httpResponseWriter struct {
@@ -143,4 +149,79 @@ func (w *httpResponseWriter) WriteError(msg string) {
 	if err != nil {
 		level.Debug(w.logger).Log("msg", "could not write response message", "err", err)
 	}
+}
+
+type evaluationObserver struct {
+	w         queryResponseWriter
+	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
+}
+
+func (o *evaluationObserver) SeriesMetadataEvaluated(evaluator *streamingpromql.Evaluator, series []types.SeriesMetadata) error {
+	defer types.SeriesMetadataSlicePool.Put(&series, evaluator.MemoryConsumptionTracker)
+
+	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
+
+	for _, s := range series {
+		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
+			Labels: mimirpb.FromLabelsToLabelAdapters(s.Labels),
+		})
+	}
+
+	return o.w.Write(querierpb.EvaluateQueryResponse{
+		Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+			SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+				NodeIndex: o.nodeIndex,
+				Series:    protoSeries,
+			},
+		},
+	})
+}
+
+func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(evaluator *streamingpromql.Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+	defer types.PutInstantVectorSeriesData(seriesData, evaluator.MemoryConsumptionTracker)
+
+	// TODO: batch up series to return, rather than sending each immediately
+
+	return o.w.Write(querierpb.EvaluateQueryResponse{
+		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+				NodeIndex: o.nodeIndex,
+				// TODO: data
+			},
+		},
+	})
+}
+
+func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+	// We do not need to return anything to the pool here: the ring buffers in stepData are reused for subsequent steps, or returned to the pool elsewhere if not needed.
+
+	// TODO: batch up series to return, rather than sending each immediately
+
+	//TODO implement me
+	panic("implement me")
+}
+
+func (o *evaluationObserver) ScalarEvaluated(evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
+	defer types.FPointSlicePool.Put(&data.Samples, evaluator.MemoryConsumptionTracker)
+
+	//TODO implement me
+	panic("implement me")
+}
+
+func (o *evaluationObserver) StringEvaluated(evaluator *streamingpromql.Evaluator, data string) error {
+	return o.w.Write(querierpb.EvaluateQueryResponse{
+		Message: &querierpb.EvaluateQueryResponse_StringValue{
+			StringValue: &querierpb.EvaluateQueryResponseStringValue{
+				NodeIndex: o.nodeIndex,
+				Value:     data,
+			},
+		},
+	})
+}
+
+func (o *evaluationObserver) EvaluationCompleted(evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+
+	//TODO implement me
+	//panic("implement me")
+	return nil
 }
