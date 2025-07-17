@@ -34,7 +34,7 @@ type Evaluator struct {
 	cancel                   context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, originalExpression string) (*Evaluator, error) {
+func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, activityTrackerDescription string) (*Evaluator, error) {
 	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 	return &Evaluator{
 		root:                       root,
 		engine:                     engine,
-		activityTrackerDescription: originalExpression,
+		activityTrackerDescription: activityTrackerDescription,
 
 		memoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
