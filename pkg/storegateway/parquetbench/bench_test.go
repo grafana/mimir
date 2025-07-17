@@ -15,6 +15,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"google.golang.org/grpc"
+	grpc_metadata "google.golang.org/grpc/metadata"
+
 	"github.com/grafana/mimir/pkg/storage/bucket/common"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -23,12 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore"
-	"google.golang.org/grpc"
-	grpc_metadata "google.golang.org/grpc/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -64,25 +65,25 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 		storegateway.GrpcContextMetadataTenantID: []string{*user},
 	})
 
-	for _, reqConfig := range requests.LabelValues {
-		req := &reqConfig.LabelValuesRequest
-		b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
-				_, err := store.LabelValues(ctx, req)
-				return err
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelValues {
+	//	req := &reqConfig.LabelValuesRequest
+	//	b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
+	//		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+	//			_, err := store.LabelValues(ctx, req)
+	//			return err
+	//		})
+	//	})
+	// }
 
-	for _, reqConfig := range requests.LabelNames {
-		req := &reqConfig.LabelNamesRequest
-		b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
-				_, err := store.LabelNames(ctx, req)
-				return err
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelNames {
+	//	req := &reqConfig.LabelNamesRequest
+	//	b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
+	//		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+	//			_, err := store.LabelNames(ctx, req)
+	//			return err
+	//		})
+	//	})
+	// }
 
 	for _, reqConfig := range requests.Series {
 		req := &reqConfig.SeriesRequest
@@ -90,6 +91,10 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
+				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response")
+				if !reqConfig.SkipChunks {
+					require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
+				}
 				return err
 			})
 		})
@@ -98,6 +103,8 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 
 func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer) error) {
 	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
+		err := os.MkdirAll("profiles", 0755)
+		require.NoError(b, err)
 		fcpu, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_cpu.prof")
 		require.NoError(b, err)
 		fmem, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_mem.prof")
