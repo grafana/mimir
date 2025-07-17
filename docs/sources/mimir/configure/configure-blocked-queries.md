@@ -40,17 +40,11 @@ The order of patterns is preserved, so the first matching pattern will be used.
 
 You can ignore this section if you're not using a regular expression. If you are, you need to ensure that it matches against formatted queries as follows.
 
-Use Mimirtool's `mimirtool promql format <query>` command to apply the Prometheus formatter to a query
-for use in a blocked query pattern.
+Use Mimirtool's `mimirtool promql format <query>` command to apply the Prometheus formatter to a query that is expected to be blocked by the regular expression pattern, and then check the formatted query will match the regular expression.
 
-Mimir parses queries into PromQL expressions before blocking is applied. When a regular expression is
-not used, the pattern from the blocked queries is also similarly parsed before being compared against
-the formatted representation of the parsed query. When a regular expression is used, the pattern is used as-is. This
-process allows for consistent query blocking behavior regardless of formatting differences in the
-submitted queries.
+Mimir parses queries into PromQL expressions before blocking is applied. When a regular expression is not used, the pattern from the blocked queries is also similarly parsed before being compared against the formatted representation of the parsed query. When a regular expression is used, the pattern is used as-is. This process allows for consistent query blocking behavior regardless of formatting differences in the submitted queries.
 
-Among other transformations the Prometheus formatter may reorder operators, remove empty selector braces,
-and eliminate newlines, extraneous whitespace, and comments.
+Among other transformations the Prometheus formatter may reorder operators, remove empty selector braces, and eliminate newlines, extraneous whitespace, and comments.
 
 ### Formatted query examples
 
