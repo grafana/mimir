@@ -77,6 +77,8 @@ func ValidateRecordVersion(version int) error {
 		return nil
 	case 1:
 		return nil
+	case 2:
+		return nil
 	default:
 		return fmt.Errorf("unknown record version %d", version)
 	}
