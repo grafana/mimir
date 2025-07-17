@@ -407,6 +407,7 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
+		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
@@ -419,6 +420,7 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
+		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
 	)
 
