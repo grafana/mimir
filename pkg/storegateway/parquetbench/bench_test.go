@@ -68,9 +68,9 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 	for _, reqConfig := range requests.LabelValues {
 		req := &reqConfig.LabelValuesRequest
 		b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				_, err := store.LabelValues(ctx, req)
-				return err
+				require.NoError(b, err)
 			})
 		})
 	}
@@ -78,9 +78,9 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 	for _, reqConfig := range requests.LabelNames {
 		req := &reqConfig.LabelNamesRequest
 		b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				_, err := store.LabelNames(ctx, req)
-				return err
+				require.NoError(b, err)
 			})
 		})
 	}
@@ -88,20 +88,20 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 	for _, reqConfig := range requests.Series {
 		req := &reqConfig.SeriesRequest
 		b.Run(fmt.Sprintf("Series-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) error {
+			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
+				require.NoError(tb, err)
 				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response")
 				if !reqConfig.SkipChunks {
 					require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
 				}
-				return err
 			})
 		})
 	}
 }
 
-func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer) error) {
+func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer)) {
 	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
 		fcpu, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_cpu.prof")
 		require.NoError(b, err)
@@ -110,7 +110,7 @@ func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Buck
 		runtime.GC()
 
 		// Warm up
-		require.NoError(b, operation(store))
+		operation(store)
 
 		err = pprof.StartCPUProfile(fcpu)
 		require.NoError(b, err)
@@ -130,8 +130,7 @@ func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Buck
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			err := operation(store)
-			require.NoError(b, err)
+			operation(store)
 		}
 		b.StopTimer()
 	}
