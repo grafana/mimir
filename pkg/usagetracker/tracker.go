@@ -677,21 +677,9 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 // CheckReady performs a readiness check.
 // An instance is ready when it has instantiated all the partitions that should belong to it according to the ring.
 func (t *UsageTracker) CheckReady(_ context.Context) error {
-	start, end, _ := t.instancePartitions()
-
-	var pending []int32
-	t.partitionsMtx.RLock()
-	for pid := start; pid < end; pid++ {
-		if _, ok := t.partitions[pid]; !ok {
-			pending = append(pending, pid)
-		}
+	if t.instanceLifecycler.GetState() != ring.ACTIVE {
+		return fmt.Errorf("instance is not active, current state: %s", t.instanceLifecycler.GetState())
 	}
-	t.partitionsMtx.RUnlock()
-
-	if len(pending) > 0 {
-		return fmt.Errorf("pending to instantiate %d partitions: %v", len(pending), pending)
-	}
-
 	return nil
 }
 
