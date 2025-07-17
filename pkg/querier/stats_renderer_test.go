@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
@@ -25,12 +24,6 @@ import (
 
 	mimir_stats "github.com/grafana/mimir/pkg/querier/stats"
 )
-
-func init() {
-	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
-	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
-}
 
 func TestStatsRenderer(t *testing.T) {
 
