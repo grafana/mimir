@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -205,6 +206,51 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 }
 
+func TestRecordSerializer(t *testing.T) {
+	t.Run("v2", func(t *testing.T) {
+		req := &mimirpb.WriteRequest{
+			Source:              mimirpb.RULE,
+			SkipLabelValidation: true,
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+					Samples:    []mimirpb.Sample{{TimestampMs: 20}},
+					Exemplars:  []mimirpb.Exemplar{{TimestampMs: 30}},
+					Histograms: []mimirpb.Histogram{{Timestamp: 10}},
+				}},
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 30}},
+					Exemplars: []mimirpb.Exemplar{},
+				}},
+			},
+			Metadata: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+
+		serializer := versionTwoRecordSerializer{}
+		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		require.NoError(t, err)
+		require.Len(t, records, 1)
+		record := records[0]
+
+		require.Equal(t, 2, ParseRecordVersion(record))
+
+		resultReq := &mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(record.Value, resultReq, 2)
+		require.NoError(t, err)
+
+		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
+		require.Nil(t, resultReq.SymbolsRW2)
+		require.Nil(t, resultReq.TimeseriesRW2)
+		// Metadata order is currently not preserved by the RW2 deser layer.
+		assertMetadataEqualUnordered(t, req.Metadata, resultReq.Metadata)
+	})
+}
+
 func BenchmarkDeserializeRecordContent(b *testing.B) {
 	// Generate a write request in each version
 	reqv1 := &mimirpb.PreallocWriteRequest{
@@ -237,6 +283,8 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	v2bytes, err := reqv2.Marshal()
 	require.NoError(b, err)
 
+	b.ResetTimer()
+
 	b.Run("deserialize v1", func(b *testing.B) {
 		for range b.N {
 			wr := &mimirpb.PreallocWriteRequest{}
@@ -258,4 +306,21 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 			mimirpb.ReuseSlice(wr.Timeseries)
 		}
 	})
+}
+
+func assertMetadataEqualUnordered(t *testing.T, exp, actual []*mimirpb.MetricMetadata) {
+	t.Helper()
+
+	expMap := make(map[string]*mimirpb.MetricMetadata)
+	actualMap := make(map[string]*mimirpb.MetricMetadata)
+	for _, v := range exp {
+		require.NotContains(t, expMap, v.MetricFamilyName)
+		expMap[v.MetricFamilyName] = v
+	}
+	for _, v := range actual {
+		require.NotContains(t, actualMap, v.MetricFamilyName)
+		actualMap[v.MetricFamilyName] = v
+	}
+
+	require.Equal(t, expMap, actualMap)
 }
