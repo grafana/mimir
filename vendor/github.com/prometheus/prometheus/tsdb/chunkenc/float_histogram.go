@@ -23,6 +23,11 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 )
 
+func floatHistogramDetails(h *histogram.FloatHistogram) string {
+	return fmt.Sprintf("fCR=%v c=%v s=%v S=%v ps=%v ns=%v pb=%v nb=%v",
+		h.CounterResetHint, h.Count, h.Sum, h.Schema, h.PositiveSpans, h.NegativeSpans, h.PositiveBuckets, h.NegativeBuckets)
+}
+
 // FloatHistogramChunk holds encoded sample data for a sparse, high-resolution
 // float histogram.
 //
@@ -665,6 +670,7 @@ func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {
 // continue appending, use the returned Appender rather than the receiver of
 // this method.
 func (a *FloatHistogramAppender) recode(
+	h *histogram.FloatHistogram,
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
 ) (Chunk, Appender) {
@@ -684,6 +690,11 @@ func (a *FloatHistogramAppender) recode(
 
 	for it.Next() == ValFloatHistogram {
 		tOld, hOld := it.AtFloatHistogram(nil)
+
+		var savedFH *histogram.FloatHistogram
+		if debugRecode {
+			savedFH = hOld.Copy()
+		}
 
 		// We have to newly allocate slices for the modified buckets
 		// here because they are kept by the appender until the next
@@ -705,6 +716,14 @@ func (a *FloatHistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, false)
 		}
+
+		if savedFH != nil {
+			if err := hOld.Validate(); err != nil {
+				fmt.Printf("DEBUG_RECODE(recode) trigger %s old %s new %s\n",
+					floatHistogramDetails(h), floatHistogramDetails(savedFH), floatHistogramDetails(hOld))
+			}
+		}
+
 		happ.appendFloatHistogram(tOld, hOld)
 	}
 
@@ -718,6 +737,11 @@ func (a *FloatHistogramAppender) recodeHistogram(
 	fh *histogram.FloatHistogram,
 	pBackwardInter, nBackwardInter []Insert,
 ) {
+	var savedFH *histogram.FloatHistogram
+	if debugRecode {
+		savedFH = fh.Copy()
+	}
+
 	if len(pBackwardInter) > 0 {
 		numPositiveBuckets := countSpans(fh.PositiveSpans)
 		fh.PositiveBuckets = insert(fh.PositiveBuckets, make([]float64, numPositiveBuckets), pBackwardInter, false)
@@ -725,6 +749,13 @@ func (a *FloatHistogramAppender) recodeHistogram(
 	if len(nBackwardInter) > 0 {
 		numNegativeBuckets := countSpans(fh.NegativeSpans)
 		fh.NegativeBuckets = insert(fh.NegativeBuckets, make([]float64, numNegativeBuckets), nBackwardInter, false)
+	}
+
+	if savedFH != nil {
+		if err := fh.Validate(); err != nil {
+			fmt.Printf("DEBUG_RECODE(recodeHistogram): old %s new %s\n",
+				floatHistogramDetails(savedFH), floatHistogramDetails(fh))
+		}
 	}
 }
 
@@ -800,6 +831,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				return nil, false, a, fmt.Errorf("float histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
 			chk, app := a.recode(
+				h,
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
@@ -840,6 +872,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return nil, false, a, fmt.Errorf("float gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
 		chk, app := a.recode(
+			h,
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
