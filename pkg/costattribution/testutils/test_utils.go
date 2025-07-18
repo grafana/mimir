@@ -3,6 +3,7 @@
 package testutils
 
 import (
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -14,6 +15,8 @@ func NewMockCostAttributionLimits(idx int, lvs ...string) *validation.Overrides 
 		"user3": {MaxCostAttributionCardinality: 2, CostAttributionLabels: []string{"department", "service"}},
 		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabels: []string{"platform"}},
 		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabels: []string{"a"}},
+		// user6 has opted to rename team to eng_team.
+		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "eng_team"}}},
 	}
 	if len(lvs) > 0 {
 		baseLimits[lvs[0]] = &validation.Limits{
@@ -44,7 +47,7 @@ type Series struct {
 
 func CreateRequest(data []Series) *mimirpb.WriteRequest {
 	timeSeries := make([]mimirpb.PreallocTimeseries, 0, len(data))
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		var Labels []mimirpb.LabelAdapter
 		for j := 0; j+1 < len(data[i].LabelValues); j += 2 {
 			Labels = append(Labels, mimirpb.LabelAdapter{Name: data[i].LabelValues[j], Value: data[i].LabelValues[j+1]})

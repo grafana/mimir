@@ -23,6 +23,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"google.golang.org/api/googleapi"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -715,6 +716,19 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	err = a.store.SetRuleGroup(ctx, userID, namespace, rgProto)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to store rule group", "err", err.Error())
+
+		// If the error is an object mutation rate limit error from GCS, a 429 is returned instead of a 500. This is a
+		// user issue rather than a server error, as it indicates the user is trying to update that specific rule group
+		// too fast (the rate limit is per-object).
+		// This is a simple way of returning the correct response code for a problem we've seen in practice, a more
+		// advanced solution would be to actually implement rate limiting for the ruler API.
+		// We don't return 429s for all object storage rate limit errors, since we can't guarantee all of them are user
+		// issues.
+		if isGCSObjectMutationRateLimitError(err) {
+			respondError(logger, w, http.StatusTooManyRequests, v1.ErrServer, "per-rule group rate limit exceeded")
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -814,4 +828,15 @@ func alertStateDescToPrometheusAlert(d *AlertStateDesc) *Alert {
 	}
 
 	return a
+}
+
+// isGCSObjectMutationRateLimitError checks whether the error message is from GCS and is an object mutation rate limit.
+// This is a per-object limit and is limited to 1 mutation per second (https://cloud.google.com/storage/quotas).
+func isGCSObjectMutationRateLimitError(err error) bool {
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) {
+		return gErr.Code == 429 &&
+			strings.Contains(gErr.Message, "exceeded the rate limit for object mutation operations")
+	}
+	return false
 }
