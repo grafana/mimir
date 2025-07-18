@@ -26,6 +26,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
   triggers:
+  {{- if .Values.querier.kedaAutoscaling.enableDefaultTriggers }}
   - metadata:
       {{- if .Values.kedaAutoscaling.authentication.enabled }}
       authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
@@ -62,6 +63,7 @@ spec:
     authenticationRef:
         name: "keda-triggger-auth"
     {{- end }}
+  {{- end }}
   {{- $autoscaling := .Values.querier.kedaAutoscaling -}}
   {{- if .Values.querier.kedaAutoscaling.predictiveScalingEnabled }}
   - metadata:
@@ -82,5 +84,8 @@ spec:
     authenticationRef:
         name: "keda-triggger-auth"
     {{- end }}
+  {{- end }}
+  {{- if .Values.querier.kedaAutoscaling.additionalTriggers }}
+  {{- toYaml .Values.querier.kedaAutoscaling.additionalTriggers | nindent 2 }}
   {{- end }}
 {{- end }}
