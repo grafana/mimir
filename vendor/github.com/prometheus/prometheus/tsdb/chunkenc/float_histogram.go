@@ -810,6 +810,14 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return newChunk, false, app, nil
 		}
 		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
+			var savedFH *histogram.FloatHistogram
+			if debugRecode {
+				savedFH = h.Copy()
+				if err := h.Validate(); err != nil {
+					fmt.Printf("DEBUG_RECODE(AppendFloatHistogram): input %s\n", floatHistogramDetails(h))
+				}
+			}
+
 			// The histogram needs to be expanded to have the extra empty buckets
 			// of the chunk.
 			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
@@ -824,6 +832,16 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				h.PositiveSpans = adjustForInserts(h.PositiveSpans, pBackwardInserts)
 				h.NegativeSpans = adjustForInserts(h.NegativeSpans, nBackwardInserts)
 			}
+
+			if savedFH != nil {
+				if err := h.Validate(); err != nil {
+					fmt.Printf("DEBUG_RECODE(AppendFloatHistogram): old %s new %s pfi=%v nfi=%v\n",
+						floatHistogramDetails(savedFH), floatHistogramDetails(h),
+						pForwardInserts, nForwardInserts,
+					)
+				}
+			}
+
 			a.recodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
