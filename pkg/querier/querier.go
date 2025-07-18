@@ -36,6 +36,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -88,8 +89,9 @@ type Config struct {
 }
 
 type SemConvConfig struct {
-	EnableVersionedRead bool              `yaml:"enable_versioned_read" category:"experimental"`
-	SchemaOverrides     map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
+	EnableVersionedRead                   bool              `yaml:"enable_versioned_read" category:"experimental"`
+	EnableAutomaticOTelTranslationSchemas bool              `yaml:"enable_automatic_o_tel_translation_schemas" category:"experimental"`
+	SchemaOverrides                       map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
 }
 
 const (
@@ -127,6 +129,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
 	f.BoolVar(&cfg.SemConv.EnableVersionedRead, "querier.semconv.enable-versioned-read", false, "Enable versioned read, as proposed in https://docs.google.com/document/d/14y4wdZdRMC676qPLDqBQZfaCA6Dog_3ukzmjLOgAL-k")
+	f.BoolVar(&cfg.SemConv.EnableAutomaticOTelTranslationSchemas, "querier.semconv.enable-automatic-otel-translation-schemas", false, "Automatically do versioned reads to include all OTel translations in queries")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -224,17 +227,65 @@ func New(
 	})
 
 	if cfg.SemConv.EnableVersionedRead {
-		semconvAwareQueryable, applyConfig := semconv.AwareQueryable(queryable)
-		queryable = semconvAwareQueryable
-		err := applyConfig(&config.Config{
-			SemConv: config.SemConvConfig{
-				SchemaOverrides: cfg.SemConv.SchemaOverrides,
-			},
-		})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
-		}
 		level.Info(logger).Log("msg", "Experimental support for versioned reads is enabled")
+
+		nextQueryable := queryable
+
+		if !cfg.SemConv.EnableAutomaticOTelTranslationSchemas {
+			semconvAwareQueryable, applyConfig := semconv.AwareQueryable(nextQueryable)
+			queryable = semconvAwareQueryable
+			err := applyConfig(&config.Config{
+				SemConv: config.SemConvConfig{
+					SchemaOverrides: cfg.SemConv.SchemaOverrides,
+				},
+			})
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
+			}
+		}
+
+		// EnableAutomaticOTelTranslationSchemas depends on tenant limits, so
+		// we need to do some wrapping here to intercept the tenant ID for each
+		// query.
+		queryable = storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+			nextQuerier, err := nextQueryable.Querier(minT, maxT)
+			if err != nil {
+				return nil, err
+			}
+			return querierSelectFunc{Querier: nextQuerier, selectFunc: func(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				tenantID, err := tenant.TenantID(ctx)
+				if err != nil {
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+
+				var options []semconv.AwareQueryableOption
+				// TODO: Take this from limits
+				if utf8Enabled := true; utf8Enabled {
+					options = append(options, semconv.WithSyntheticSchemas(otlp.PreUTF8Compatibility{
+						WithMetricSuffixes: limits.OTelMetricSuffixesEnabled(tenantID),
+					}.Schema))
+				}
+				semconvAwareQueryable, applyConfig := semconv.AwareQueryable(
+					nextQueryable,
+					options...,
+				)
+				err = applyConfig(&config.Config{
+					SemConv: config.SemConvConfig{
+						SchemaOverrides: cfg.SemConv.SchemaOverrides,
+					},
+				})
+				if err != nil {
+					level.Warn(logger).Log("Error applying config to semconv-aware queryable. Falling back to base queryable", "error", err)
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+				awareQuerier, err := semconvAwareQueryable.Querier(minT, maxT)
+				if err != nil {
+					level.Warn(logger).Log("Unexpected semconvAwareQueryable.Querier error", "error", err)
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+				return awareQuerier.Select(ctx, sortSeries, hints, matchers...)
+			}}, nil
+		})
 	}
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
@@ -906,71 +957,11 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	return totalLimit, nil
 }
 
-func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	hasEnabled := false
-	hasDisabled := false
-	for _, tenantID := range tenantIDs {
-		if p.limits.EnableDelayedNameRemoval(tenantID) {
-			hasEnabled = true
-		} else {
-			hasDisabled = true
-		}
-	}
-	if hasEnabled && hasDisabled {
-		return false, fmt.Errorf("%w for tenants: %v", errConflictEnableDelayedNameRemoval, tenantIDs)
-	}
-
-	return hasEnabled, nil
+type querierSelectFunc struct {
+	storage.Querier
+	selectFunc func(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet
 }
 
-type RequestMetrics struct {
-	RequestDuration                *prometheus.HistogramVec
-	ReceivedMessageSize            *prometheus.HistogramVec
-	SentMessageSize                *prometheus.HistogramVec
-	InflightRequests               *prometheus.GaugeVec
-	PlansReceived                  *prometheus.CounterVec
-	NodesPerQueryEvaluationRequest prometheus.Histogram
-}
-
-func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
-	return &RequestMetrics{
-		RequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_querier_request_duration_seconds",
-			Help:    "Time (in seconds) spent serving HTTP requests to the querier.",
-			Buckets: instrument.DefBuckets,
-		}, []string{"method", "route", "status_code", "ws"}),
-
-		ReceivedMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_querier_request_message_bytes",
-			Help:    "Size (in bytes) of messages received in the request to the querier.",
-			Buckets: middleware.BodySizeBuckets,
-		}, []string{"method", "route"}),
-
-		SentMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_querier_response_message_bytes",
-			Help:    "Size (in bytes) of messages sent in response by the querier.",
-			Buckets: middleware.BodySizeBuckets,
-		}, []string{"method", "route"}),
-
-		InflightRequests: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_querier_inflight_requests",
-			Help: "Current number of inflight requests to the querier.",
-		}, []string{"method", "route"}),
-
-		PlansReceived: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_querier_received_query_plans_total",
-			Help: "Total number of query plans received by the querier.",
-		}, []string{"version"}),
-
-		NodesPerQueryEvaluationRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_querier_nodes_per_query_evaluation_request",
-			Help:                        "Number of nodes requested to be evaluated per query evaluation request.",
-			NativeHistogramBucketFactor: 1.1,
-		}),
-	}
+func (q querierSelectFunc) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return q.selectFunc(ctx, sortSeries, hints, matchers...)
 }

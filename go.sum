@@ -597,10 +597,10 @@ github.com/grafana/gomemcache v0.0.0-20250828162811-a96f6acee2fe h1:q+QaVANzNZxv
 github.com/grafana/gomemcache v0.0.0-20250828162811-a96f6acee2fe/go.mod h1:j/s0jkda4UXTemDs7Pgw/vMT06alWc42CHisvYac0qw=
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkBuItHW0VnRpr/upV0JkSg/mEkBCnlrPTjU=
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
-github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96 h1:kq5zJVW9LyFOB5xCeQPTON2HNjwwEkefhegZXGIhQPk=
-github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250710141806-3eb1e1882855 h1:cjEEUplHzz7Q/w9jdfZYegCxZND/93VmLWjTDN/PWRs=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250710141806-3eb1e1882855/go.mod h1:pMAfHk9bK0awpbVcdEsVSXVntOTvpccSVgAQcDHkU7o=
+github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa h1:MUh6FkgCcJZCXDtEzuuEKTNCc1D0VQbRbqo2A9dr/hI=
+github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250924124952-19eeece088cd h1:GTPI4R908WLDhZ5BgBk/TbNeIQRFUz7Pi/GR5fUaqF8=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250924124952-19eeece088cd/go.mod h1:lDQeQ1WKB1d1a4Wb16wN5BpAT5hnWWEqfiJuJWZlqNA=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
