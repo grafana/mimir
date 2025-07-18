@@ -1154,7 +1154,11 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
-	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
+	opts := tsdb.LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    3 * 1024 * 1024,
+		EnableOverlappingCompaction: true,
+	}
+	compactor, err := tsdb.NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, opts)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
