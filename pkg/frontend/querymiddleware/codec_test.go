@@ -71,8 +71,8 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
-	codec := newTestPrometheusCodec()
+func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
+	codec := newTestCodec()
 
 	for i, tc := range []struct {
 		url         string
@@ -149,10 +149,12 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			const userID = "user-1"
+
 			r, err := http.NewRequest("GET", tc.url, nil)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "1")
+			ctx := user.InjectOrgID(context.Background(), userID)
 			r = r.WithContext(ctx)
 
 			req, err := codec.DecodeMetricsQueryRequest(ctx, r)
@@ -162,9 +164,13 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 			}
 			requireEqualMetricsQueryRequest(t, tc.expected, req)
 
-			rdash, err := codec.EncodeMetricsQueryRequest(context.Background(), req)
+			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, req)
 			require.NoError(t, err)
-			require.Equal(t, tc.url, rdash.RequestURI)
+			require.Equal(t, tc.url, encodedReq.RequestURI)
+
+			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
+			require.NoError(t, err)
+			require.Equal(t, userID, actualUserID)
 		})
 	}
 }
@@ -499,7 +505,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
+func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                      string
 		propagateHeaders          []string
@@ -721,6 +727,8 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
 				t.Run(reqMethod, func(t *testing.T) {
+					const userID = "user-1"
+
 					var r *http.Request
 					var err error
 
@@ -748,7 +756,7 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 						t.Fatalf("unsupported HTTP method %q", reqMethod)
 					}
 
-					ctx := user.InjectOrgID(context.Background(), "1")
+					ctx := user.InjectOrgID(context.Background(), userID)
 					r = r.WithContext(ctx)
 					for k, v := range testCase.headers {
 						for _, v := range v {
@@ -756,7 +764,7 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 						}
 					}
 
-					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
+					codec := newTestCodecWithHeaders(testCase.propagateHeaders)
 					reqDecoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, r)
 					if err != nil || testCase.expectedErr != "" {
 						require.EqualError(t, err, testCase.expectedErr)
@@ -768,21 +776,26 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 					require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
 					require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
 
-					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(context.Background(), reqDecoded)
+					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, reqDecoded)
 					require.NoError(t, err)
 					require.EqualValues(t, testCase.expectedURL, reqEncoded.RequestURI)
+
+					actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(reqEncoded)
+					require.NoError(t, err)
+					require.Equal(t, userID, actualUserID)
 				})
 			}
 		})
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
+			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
 			req := PrometheusInstantQueryRequest{}
-			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &req)
 			require.NoError(t, err)
 
 			switch queryResultPayloadFormat {
@@ -797,11 +810,11 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
-			ctx := api.ContextWithReadConsistencyLevel(context.Background(), consistencyLevel)
+			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
@@ -809,13 +822,14 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T)
 	}
 }
 
-func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
 	const notAllowedHeader = "X-Some-Name"
 
-	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+	codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
 	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
-	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	req, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{
 		headers: []*PrometheusHeader{
 			// Allowed.
 			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
@@ -842,7 +856,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 	}
 }
 
-func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
+func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 	testResponse := &PrometheusResponse{
 		Status:    statusError,
 		ErrorType: string(v1Client.ErrExec),
@@ -896,7 +910,7 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		},
 	}
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
@@ -955,7 +969,7 @@ func jsonErrorResponse(t *testing.T, errType apierror.Type, message string) *htt
 	}
 }
 
-func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
+func TestCodec_DecodeResponse_Errors(t *testing.T) {
 	scenarios := map[string]struct {
 		response                    *http.Response
 		expectedResponseContentType string
@@ -1005,7 +1019,7 @@ func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
 
 	for name, testCase := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			codec := newTestPrometheusCodec()
+			codec := newTestCodec()
 
 			_, err := codec.DecodeMetricsQueryResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
 			require.Error(t, err)
@@ -1017,7 +1031,7 @@ func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
+func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		responseHeaders http.Header
@@ -1036,7 +1050,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -1055,7 +1069,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 }
 
 func TestMergeAPIResponses(t *testing.T) {
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	histogram1 := mimirpb.FloatHistogram{
 		CounterResetHint: histogram.GaugeType,
@@ -1519,13 +1533,13 @@ func mustParse(t *testing.T, response string) Response {
 	return &resp
 }
 
-func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
+func BenchmarkCodec_DecodeResponse(b *testing.B) {
 	const (
 		numSeries           = 1000
 		numSamplesPerSeries = 1000
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
@@ -1549,13 +1563,13 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 	}
 }
 
-func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
+func BenchmarkCodec_EncodeResponse(b *testing.B) {
 	const (
 		numSeries           = 1000
 		numSamplesPerSeries = 1000
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	req, err := http.NewRequest(http.MethodGet, "/something", nil)
 	require.NoError(b, err)
 
@@ -1779,10 +1793,10 @@ func Test_DecodeOptions(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
+// TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
 // metrics query request does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
-	codec := newTestPrometheusCodec().(prometheusCodec)
+func TestCodec_DecodeEncode_Metrics(t *testing.T) {
+	codec := newTestCodec()
 	for _, tt := range []struct {
 		name    string
 		headers http.Header
@@ -1814,6 +1828,8 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			const userID = "user-1"
+
 			queryURL := "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
 			expected, err := http.NewRequest("GET", queryURL, nil)
 			require.NoError(t, err)
@@ -1827,7 +1843,10 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 
-			ctx := context.Background()
+			// This header is set by EncodeMetricsQueryRequest and based on the provided context.
+			expected.Header.Set(user.OrgIDHeaderName, userID)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
 			decoded, err := codec.DecodeMetricsQueryRequest(ctx, expected)
 			require.NoError(t, err)
 			encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
@@ -1839,14 +1858,14 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
+// TestCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
 // labels query request multiple times does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
+func TestCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 
 	defaultHeaders := httpHeadersToProm(http.Header{
 		"Accept": {"application/json"},
 	})
-	codec := newTestPrometheusCodec().(prometheusCodec)
+	codec := newTestCodec()
 	for _, tc := range []struct {
 		name     string
 		queryURL string
@@ -1936,14 +1955,28 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			const userID = "user-1"
+
+			// Inject the auth in the original request.
+			var err error
+			tc.request, err = tc.request.WithHeaders(append(
+				tc.request.GetHeaders(),
+				&PrometheusHeader{Name: http.CanonicalHeaderKey(user.OrgIDHeaderName), Values: []string{userID}}))
+			require.NoError(t, err)
+
 			expected, err := http.NewRequest("GET", tc.queryURL, nil)
 			require.NoError(t, err)
 			expected.Body = http.NoBody
 			expected.Header = make(http.Header)
+
 			// This header is set by EncodeLabelsSeriesQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
-			ctx := context.Background()
+
+			// This header is set by EncodeMetricsQueryRequest and based on the provided context.
+			expected.Header.Set(user.OrgIDHeaderName, userID)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
 
 			decoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, expected)
 			require.NoError(t, err)
@@ -1966,7 +1999,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
+func TestCodec_DecodeMultipleTimes(t *testing.T) {
 	const query = "sum by (namespace) (container_memory_rss)"
 	t.Run("instant query", func(t *testing.T) {
 		params := url.Values{
@@ -1979,7 +2012,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, query, decoded.GetQuery())
@@ -2004,7 +2037,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, query, decoded.GetQuery())
@@ -2018,7 +2051,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 	})
 }
 
-func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
+func TestCodec_DecodeEncode_Stats(t *testing.T) {
 	const query = "sum by (namespace) (container_memory_rss)"
 	const allStats = "all"
 	t.Run("instant query", func(t *testing.T) {
@@ -2033,7 +2066,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, allStats, decoded.GetStats())
@@ -2052,7 +2085,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, allStats, decoded.GetStats())
@@ -2068,7 +2101,7 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, "", decoded.GetStats())
@@ -2086,19 +2119,19 @@ func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 
 		ctx := context.Background()
-		codec := newTestPrometheusCodec()
+		codec := newTestCodec()
 		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, "", decoded.GetStats())
 	})
 }
 
-func newTestPrometheusCodec() Codec {
-	return newTestPrometheusCodecWithHeaders(nil)
+func newTestCodec() Codec {
+	return newTestCodecWithHeaders(nil)
 }
 
-func newTestPrometheusCodecWithHeaders(propagateHeaders []string) Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
+func newTestCodecWithHeaders(propagateHeaders []string) Codec {
+	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
 }
 
 func mustSucceed[T any](value T, err error) T {

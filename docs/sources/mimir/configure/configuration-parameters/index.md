@@ -4908,13 +4908,14 @@ blocked_requests:
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
-# (experimental) Defines labels for cost attribution. Applies to metrics like
-# cortex_distributor_received_attributed_samples_total. To disable, set to an
-# empty string. For example, 'team,service' produces metrics such as
-# cortex_distributor_received_attributed_samples_total{team='frontend',
-# service='api'}.
-# CLI flag: -validation.cost-attribution-labels
+# (experimental)
 [cost_attribution_labels: <string> | default = ""]
+
+# (experimental)
+cost_attribution_labels_structured:
+  -     [input: <string> | default = ""]
+
+    [output: <string> | default = ""]
 
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.

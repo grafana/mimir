@@ -20,9 +20,9 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
-// TestPrometheusCodec_ResponseParsingEdgeCases tests various edge cases for response parsing
+// TestCodec_ResponseParsingEdgeCases tests various edge cases for response parsing
 // to ensure the codec handles malformed, unexpected, or non-Prometheus responses gracefully.
-func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
+func TestCodec_ResponseParsingEdgeCases(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		contentType     string
@@ -238,7 +238,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 			for _, statusCode := range tc.statusCodes {
 				t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
 					reg := prometheus.NewPedanticRegistry()
-					codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+					codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 
 					responseBody := []byte(tc.responseBody)
 					headers := http.Header{}

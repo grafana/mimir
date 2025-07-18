@@ -11,7 +11,13 @@ weight: 20
 
 # Grafana Mimir tenant injector
 
-The tenant injector is a standalone HTTP proxy that injects the `X-Scope-OrgID` header with a value, which you specify via the `-tenant-id` flag into incoming HTTP requests, and then forwards the modified requests to the URL you specify via the `-remote-address` flag.
+The tenant injector is a standalone HTTP proxy that injects the `X-Scope-OrgID` header with the value that you specify in the `-tenant-id` flag into incoming HTTP requests. It then forwards the modified requests to the URL you specify in the `-remote-address` flag.
+
+## Download the tenant injector
+
+Download the tenant injector as a separate binary from Grafana Mimir. Refer to [Grafana Mimir releases](https://github.com/grafana/mimir/releases) on GitHub.
+
+## Use the tenant injector
 
 You can use the tenant injector to query data for a tenant during development or troubleshooting.
 

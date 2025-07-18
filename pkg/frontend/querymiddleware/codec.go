@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/user"
 	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -52,9 +53,9 @@ var (
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	prometheusCodecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
 	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	prometheusCodecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
 )
 
 const maxResolutionPoints = 11000
@@ -76,31 +77,6 @@ const (
 	formatJSON     = "json"
 	formatProtobuf = "protobuf"
 )
-
-// Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
-type Codec interface {
-	Merger
-	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
-	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
-	// DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
-	DecodeLabelsSeriesQueryRequest(context.Context, *http.Request) (LabelsSeriesQueryRequest, error)
-	// DecodeMetricsQueryResponse decodes a Response from an http response.
-	// The original request is also passed as a parameter this is useful for implementation that needs the request
-	// to merge result or build the result correctly.
-	DecodeMetricsQueryResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-	// DecodeLabelsSeriesQueryResponse decodes a Response from an http response.
-	// The original request is also passed as a parameter this is useful for implementation that needs the request
-	// to merge result or build the result correctly.
-	DecodeLabelsSeriesQueryResponse(context.Context, *http.Response, LabelsSeriesQueryRequest, log.Logger) (Response, error)
-	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
-	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
-	// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
-	EncodeLabelsSeriesQueryRequest(context.Context, LabelsSeriesQueryRequest) (*http.Request, error)
-	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
-	EncodeMetricsQueryResponse(context.Context, *http.Request, Response) (*http.Response, error)
-	// EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
-	EncodeLabelsSeriesQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
-}
 
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
 type Merger interface {
@@ -212,19 +188,19 @@ type Response interface {
 	Close()
 }
 
-type prometheusCodecMetrics struct {
+type codecMetrics struct {
 	duration *prometheus.HistogramVec
 	size     *prometheus.HistogramVec
 }
 
-func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCodecMetrics {
+func newCodecMetrics(registerer prometheus.Registerer) *codecMetrics {
 	factory := promauto.With(registerer)
 	second := 1.0
 	ms := second / 1000
 	kb := 1024.0
 	mb := 1024 * kb
 
-	return &prometheusCodecMetrics{
+	return &codecMetrics{
 		duration: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_query_response_codec_duration_seconds",
 			Help:    "Total time spent encoding or decoding query result payloads, in seconds.",
@@ -238,8 +214,9 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 	}
 }
 
-type prometheusCodec struct {
-	metrics                                         *prometheusCodecMetrics
+// Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
+type Codec struct {
+	metrics                                         *codecMetrics
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
@@ -263,22 +240,23 @@ var knownFormats = []formatter{
 	protobufFormatter{},
 }
 
-func NewPrometheusCodec(
+func NewCodec(
 	registerer prometheus.Registerer,
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
 	propagateHeaders []string,
 ) Codec {
-	return prometheusCodec{
-		metrics:                            newPrometheusCodecMetrics(registerer),
+	return Codec{
+		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
-		propagateHeadersMetrics:            append(prometheusCodecPropagateHeadersMetrics, propagateHeaders...),
-		propagateHeadersLabels:             append(prometheusCodecPropagateHeadersLabels, propagateHeaders...),
+		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
 	}
 }
 
-func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
+// MergeResponse merges responses from multiple requests into a single Response
+func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
 		return newEmptyPrometheusResponse(), nil
 	}
@@ -343,7 +321,8 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}, nil
 }
 
-func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
+// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
+func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
@@ -354,7 +333,7 @@ func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Re
 	}
 }
 
-func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -381,7 +360,7 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	return req, nil
 }
 
-func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -421,7 +400,8 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 	return headers
 }
 
-func (prometheusCodec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) (LabelsSeriesQueryRequest, error) {
+// DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
+func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) (LabelsSeriesQueryRequest, error) {
 	if !IsLabelsQuery(r.URL.Path) && !IsSeriesQuery(r.URL.Path) {
 		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", r.URL.Path)
 	}
@@ -699,7 +679,8 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
+// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -768,10 +749,16 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		}
 	}
 
+	// Inject auth from context.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
 	return req.WithContext(ctx), nil
 }
 
-func (c prometheusCodec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSeriesQueryRequest) (*http.Request, error) {
+// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
+func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSeriesQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch req := req.(type) {
 	case *PrometheusLabelNamesQueryRequest:
@@ -868,6 +855,11 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req
 		}
 	}
 
+	// Inject auth from context.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, r); err != nil {
+		return nil, err
+	}
+
 	return r.WithContext(ctx), nil
 }
 
@@ -889,7 +881,10 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 }
 
-func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
+// DecodeMetricsQueryResponse decodes a Response from an http response.
+// The original request is also passed as a parameter this is useful for implementation that needs the request
+// to merge result or build the result correctly.
+func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
@@ -947,7 +942,10 @@ func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http
 	return resp, nil
 }
 
-func (c prometheusCodec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Response, lr LabelsSeriesQueryRequest, logger log.Logger) (Response, error) {
+// DecodeLabelsSeriesQueryResponse decodes a Response from an http response.
+// The original request is also passed as a parameter this is useful for implementation that needs the request
+// to merge result or build the result correctly.
+func (c Codec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Response, lr LabelsSeriesQueryRequest, logger log.Logger) (Response, error) {
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
@@ -1043,7 +1041,8 @@ func findFormatter(contentType string) formatter {
 	return nil
 }
 
-func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
+// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
+func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.End()
 
@@ -1101,7 +1100,8 @@ func (prc *prometheusReadCloser) Close() error {
 	return nil
 }
 
-func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
+// EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
+func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.End()
 
@@ -1161,7 +1161,7 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, re
 	return &resp, nil
 }
 
-func (prometheusCodec) negotiateContentType(acceptHeader string) (string, formatter) {
+func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
 		return jsonMimeType, jsonFormatterInstance
 	}

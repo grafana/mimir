@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -98,7 +100,16 @@ func (m *Manager) enabledForUser(userID string) bool {
 	if m == nil {
 		return false
 	}
-	return len(m.limits.CostAttributionLabels(userID)) > 0
+
+	return len(m.limits.CostAttributionLabels(userID)) > 0 || len(m.limits.CostAttributionLabelsStructured(userID)) > 0
+}
+
+func (m *Manager) labels(userID string) []costattributionmodel.Label {
+	// We prefer the structured labels over the string labels, if provided.
+	if s := m.limits.CostAttributionLabelsStructured(userID); len(s) > 0 {
+		return s
+	}
+	return costattributionmodel.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -115,7 +126,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.limits.CostAttributionLabels(userID)
+	labels := m.labels(userID)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -125,11 +136,12 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 		return tracker
 	}
 
-	// sort the labels to ensure the order is consistent
-	orderedLables := slices.Clone(labels)
-	slices.Sort(orderedLables)
+	// sort the labels to ensure the order is consistent.
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
+		return strings.Compare(a.Input, b.Input)
+	})
 
-	tracker = newSampleTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
 	m.sampleTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -148,7 +160,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.limits.CostAttributionLabels(userID)
+	labels := m.labels(userID)
 	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
@@ -159,10 +171,11 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// sort the labels to ensure the order is consistent
-	orderedLables := slices.Clone(labels)
-	slices.Sort(orderedLables)
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
+		return strings.Compare(a.Input, b.Input)
+	})
 
-	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = NewActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -266,25 +279,27 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
-	lbls := slices.Clone(m.limits.CostAttributionLabels(userID))
+	labels := m.labels(userID)
 
 	// sort the labels to ensure the order is consistent
-	slices.Sort(lbls)
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
+		return strings.Compare(a.Input, b.Input)
+	})
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
 	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
 
-	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
+	if !st.hasSameLabels(labels) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.stmtx.Lock()
-		st = newSampleTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		st = newSampleTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
 		m.sampleTrackersByUserID[userID] = st
 		m.stmtx.Unlock()
 	}
 
-	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
+	if !at.hasSameLabels(labels) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
-		at = NewActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		at = NewActiveSeriesTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
 		m.atmtx.Unlock()
 	}

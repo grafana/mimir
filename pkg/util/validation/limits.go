@@ -20,10 +20,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
@@ -67,7 +69,6 @@ const (
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
-	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -222,10 +223,11 @@ type Limits struct {
 	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
-	// Cost attribution and limit.
-	CostAttributionLabels         flagext.StringSliceCSV `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
-	MaxCostAttributionCardinality int                    `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown       model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Cost attribution.
+	CostAttributionLabels           flagext.StringSliceCSV       `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
+	CostAttributionLabelsStructured []costattributionmodel.Label `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	MaxCostAttributionCardinality   int                          `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	CostAttributionCooldown         model.Duration               `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -364,9 +366,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
+
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
@@ -532,7 +534,12 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	return l.validate()
+	if err = l.validate(); err != nil {
+		return err
+	}
+
+	l.canonicalizeQueries()
+	return nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -579,6 +586,23 @@ func (l *Limits) validate() error {
 	}
 
 	return nil
+}
+
+func (l *Limits) canonicalizeQueries() {
+	for i, q := range l.BlockedQueries {
+		if q.Regex {
+			continue
+		}
+		expr, err := parser.ParseExpr(q.Pattern)
+		if err != nil {
+			continue
+		}
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.BlockedQueries[i].Pattern = newPattern
+	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
@@ -953,6 +977,10 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 
 func (o *Overrides) CostAttributionLabels(userID string) []string {
 	return o.getOverridesForUser(userID).CostAttributionLabels
+}
+
+func (o *Overrides) CostAttributionLabelsStructured(userID string) []costattributionmodel.Label {
+	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
 }
 
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {

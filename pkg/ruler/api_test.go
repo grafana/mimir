@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -1554,6 +1555,85 @@ rules:
 	// Iter from initial sync, get, iter from sync, another get, iter from sync
 	assert.Equal(t, 5, mockCache.CountFetchCalls())
 
+}
+
+func TestAPI_CreateRuleGroup_GCSRateLimit_ErrorDetection(t *testing.T) {
+	testCases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "GCS rate limit error",
+			err:      &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."},
+			expected: true,
+		},
+		{
+			name:     "GCS rate limit error with different message",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited in some other way"},
+			expected: false,
+		},
+		{
+			name:     "GCS rate limit error but not 429",
+			err:      &googleapi.Error{Code: 500, Message: "Server down"},
+			expected: false,
+		},
+
+		{
+			name:     "other error",
+			err:      errors.New("pow"),
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isGCSObjectMutationRateLimitError(tc.err)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestCreateRuleGroup_GCSObjectMutationRateLimit(t *testing.T) {
+	const (
+		userID    = "user1"
+		namespace = "test-namespace"
+	)
+
+	store := &gcsObjRateLimitStore{
+		mockRuleStore: newMockRuleStore(make(map[string]rulespb.RuleGroupList)),
+	}
+
+	cfg := defaultRulerConfig(t)
+	r := prepareRuler(t, cfg, store)
+	api := NewAPI(r, store, log.NewNopLogger())
+
+	ruleGroupPayload := `
+name: test-group
+interval: 15s
+rules:
+- record: up_rule
+  expr: up
+`
+
+	req := requestFor(t, "POST", fmt.Sprintf("https://localhost:8080/prometheus/config/v1/rules/%s", namespace), strings.NewReader(ruleGroupPayload), userID)
+	req = mux.SetURLVars(req, map[string]string{"namespace": namespace})
+	w := httptest.NewRecorder()
+
+	api.CreateRuleGroup(w, req)
+
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+
+	responseBody := w.Body.String()
+	assert.Contains(t, responseBody, "per-rule group rate limit exceeded")
+}
+
+type gcsObjRateLimitStore struct {
+	*mockRuleStore
+}
+
+func (r *gcsObjRateLimitStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
+	return &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."}
 }
 
 func TestAPI_DeleteNamespace(t *testing.T) {
