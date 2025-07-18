@@ -11,6 +11,7 @@ type schedulerMetrics struct {
 	updateScheduleDuration   prometheus.Histogram
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
+	partitionPlannedOffset   *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
 	flushFailed              prometheus.Counter
 	fetchOffsetsFailed       prometheus.Counter
@@ -40,6 +41,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
 			Help: "The observed committed offset of each partition.",
+		}, []string{"partition"}),
+		partitionPlannedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_planned_offset",
+			Help: "The planned offset of each partition.",
 		}, []string{"partition"}),
 		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
