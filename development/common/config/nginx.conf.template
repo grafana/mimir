@@ -67,6 +67,9 @@ http {
     location = /api/v1/grafana/config {
       proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
     }
+    location = /api/v1/grafana/config/status {
+      proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
+    }
     location = /api/v1/grafana/full_state {
       proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
     }

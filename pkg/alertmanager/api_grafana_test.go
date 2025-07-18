@@ -312,6 +312,30 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 		require.Len(t, storage.Objects(), 1)
 	}
+	t.Run("should return correct config status", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/grafana/config/status", nil)
+		req = req.WithContext(user.InjectOrgID(context.Background(), "test_user"))
+
+		rec := httptest.NewRecorder()
+		am.GetGrafanaConfigStatus(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		require.NoError(t, err)
+		json := fmt.Sprintf(`
+		{
+			"data": {
+				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
+				 "created": %d,
+				 "promoted": true
+			},
+			"status": "success"
+		}
+		`, now)
+
+		require.JSONEq(t, json, string(body))
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+		require.Len(t, storage.Objects(), 1)
+	})
 }
 
 func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
