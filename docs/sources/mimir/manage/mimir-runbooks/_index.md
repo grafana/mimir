@@ -1830,7 +1830,7 @@ How to **investigate**:
 
 Data recovery / temporary mitigation:
 
-You'll need to coax block-builder into consuming the skipped data. See the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
+You need to coax block-builder into consuming the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
 ### MimirServerInvalidClusterValidationLabelRequests
 
