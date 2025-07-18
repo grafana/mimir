@@ -656,8 +656,10 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	return kadm.Offsets{}, lastErr
 }
 
-func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
+// snapOffsets returns a snapshot of the committed and planned offsets for all partitions.
+func (s *BlockBuilderScheduler) snapOffsets() (kadm.Offsets, kadm.Offsets) {
 	cp := make(kadm.Offsets)
+	pp := make(kadm.Offsets)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -666,27 +668,32 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 		if !ps.committed.empty() {
 			cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
 		}
+		if !ps.planned.empty() {
+			pp.AddOffset(ps.topic, ps.partition, ps.planned.offset(), 0)
+		}
 	}
 
-	return cp
+	return cp, pp
 }
 
 // flushOffsetsToKafka flushes the committed offsets to Kafka and updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
-	offsets := s.snapCommitted()
+	committed, planned := s.snapOffsets()
 
-	offsets.Each(func(o kadm.Offset) {
+	committed.Each(func(o kadm.Offset) {
 		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 	})
+	planned.Each(func(o kadm.Offset) {
+		s.metrics.partitionPlannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+	})
 
-	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed)
 	if err != nil {
 		return fmt.Errorf("commit offsets: %w", err)
 	}
 
-	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(offsets))
-
+	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(committed))
 	return nil
 }
 
