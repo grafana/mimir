@@ -835,10 +835,12 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 
 			if savedFH != nil {
 				if err := h.Validate(); err != nil {
-					fmt.Printf("DEBUG_RECODE(AppendFloatHistogram): old %s new %s pfi=%v nfi=%v chunkps=%v chunkns=%v\n",
+					fmt.Printf("DEBUG_RECODE(AppendFloatHistogram): old %s new %s pbi=%v nbi=%v pfi=%v nfi=%v chunk ps=%v ns=%v pb=%v nb=%v\n",
 						floatHistogramDetails(savedFH), floatHistogramDetails(h),
+						pBackwardInserts, nBackwardInserts,
 						pForwardInserts, nForwardInserts,
 						a.pSpans, a.nSpans,
+						a.pBuckets, a.nBuckets,
 					)
 				}
 			}
@@ -858,6 +860,20 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return chk, true, app, nil
 		}
 		a.appendFloatHistogram(t, h)
+
+		if debugRecode {
+			if countSpans(a.pSpans) != len(a.pBuckets) {
+				fmt.Printf("DEBUG_RECODE(AppendFloatHistogram) after %s, p chunk ps=%v ns=%v pb=%v nb=%v\n",
+					floatHistogramDetails(h), a.pSpans, a.nSpans, a.pBuckets, a.nBuckets,
+				)
+			}
+			if countSpans(a.nSpans) != len(a.nBuckets) {
+				fmt.Printf("DEBUG_RECODE(AppendFloatHistogram) after %s, n chunk ps=%v ns=%v pb=%v nb=%v\n",
+					floatHistogramDetails(h), a.pSpans, a.nSpans, a.pBuckets, a.nBuckets,
+				)
+			}
+		}
+
 		return nil, false, a, nil
 	}
 	// Adding gauge histogram.
