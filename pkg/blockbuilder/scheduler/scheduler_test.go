@@ -1291,3 +1291,44 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		requireGaps(t, reg, part, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
 }
+
+func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
+	sched, _ := mustScheduler(t, 4)
+	reg := sched.register.(*prometheus.Registry)
+
+	const part int32 = 1
+	requireGaps(t, reg, part, 0, 0)
+
+	pp := sched.getPartitionState("ingest", part)
+	require.True(t, pp.planned.empty())
+	require.True(t, pp.committed.empty())
+
+	k := jobKey{"myjob5", 5}
+	spec := schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   20,
+	}
+
+	pp.planned.advance(k, spec)
+	requireGaps(t, reg, part, 0, 0, "advancing an empty planned offset should not register a gap")
+
+	pp.committed.advance(k, spec)
+	requireGaps(t, reg, part, 0, 0, "advancing an empty committed offset should not register a gap")
+
+	// Now create a gap:
+	k2 := jobKey{"myjob7", 23}
+	spec2 := schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 40,
+		EndOffset:   50,
+	}
+
+	pp.planned.advance(k2, spec2)
+	requireGaps(t, reg, part, 1, 0, "a gap after a non-empty planned offset should register a gap")
+
+	pp.committed.advance(k2, spec2)
+	requireGaps(t, reg, part, 1, 1, "a gap after a non-empty committed offset should register a gap")
+}
