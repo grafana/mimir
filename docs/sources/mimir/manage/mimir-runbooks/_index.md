@@ -1820,7 +1820,7 @@ This alert fires when the block-builder-scheduler has detected a gap in either c
 How it **works**:
 
 - Block-builder-scheduler is in charge of both planning "jobs" for block-builders to consume, as well as advancing the per-partition commit when one of these jobs is completed. Each job has a start offset, which is inclusive, and an end offset, which is exclusive.
-- Block-builder-scheduler also verifies that neither planning nor committing jobs ever produces a gap. This alert fires when the scheduler detects one of these gaps.
+- Block-builder-scheduler also verifies that neither planning nor committing jobs ever produce a gap. This alert fires when the scheduler detects one of these gaps.
 - Note this is a "should never happen" problem, and will only happen if there's a correctness bug.
 
 How to **investigate**:
