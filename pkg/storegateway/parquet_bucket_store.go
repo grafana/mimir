@@ -26,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
+	"github.com/prometheus-community/parquet-common/search"
 	parquetStorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -595,7 +596,15 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	}
 
 	decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, s.querierOpts...)
+	opts := s.querierOpts
+	if shardSelector != nil {
+		shardFilter := func(_ context.Context, _ *storage.SelectHints) (search.MaterializedLabelsFilter, bool) {
+			return materializedLabelsShardFilter{shardSelector: shardSelector}, true
+		}
+		opts = append(opts, parquet.WithMaterializedLabelsFilterCallback(shardFilter))
+	}
+
+	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, opts...)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error creating parquet queryable")
 	}
@@ -618,7 +627,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	// not support streaming results, the iterator we get from q.Select is
 	// already backed by a slice. So we are not losing as much as it may seem.
 	// We are planning to implement proper streaming.
-	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, shardSelector, req.SkipChunks)
+	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, req.SkipChunks)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
 	}
@@ -640,6 +649,31 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	}
 
 	return labelsIt, newConcreteIterator(aggrChunks), nil
+}
+
+type materializedLabelsShardFilter struct {
+	shardSelector *sharding.ShardSelector
+}
+
+func (f materializedLabelsShardFilter) Filter(lbls labels.Labels) bool {
+	return shardOwnedUncached(f.shardSelector, lbls)
+}
+
+func (f materializedLabelsShardFilter) Close() {
+}
+
+// shardOwnedUncached checks if the given labels belong to the shard specified
+// by the shard selector. As opposed to shardOwned & friends from the
+// non-Parquet path, this function does not cache hashes. This is because, at
+// least yet, we don't have easy access to an identifier for the series in the
+// block to use as a cache key.
+func shardOwnedUncached(shard *sharding.ShardSelector, lset labels.Labels) bool {
+	if shard == nil {
+		return true
+	}
+
+	hash := labels.StableHash(lset)
+	return hash%shard.ShardCount == shard.ShardIndex
 }
 
 func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, labelsIt iterator[labels.Labels]) (numSeries int, err error) {
@@ -1131,17 +1165,13 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 // storage.ChunkSeriesSet and returns them as slices, converting the chunks to
 // storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
 // empty.
-func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, shardSelector *sharding.ShardSelector, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
+func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
 	var seriesLabels []labels.Labels
 	var aggrChunks [][]storepb.AggrChunk
 
 	for chunkSeriesSet.Next() {
 		chunkSeries := chunkSeriesSet.At()
 		lbls := chunkSeries.Labels()
-		if !shardOwnedUncached(shardSelector, lbls) {
-			continue
-		}
-
 		seriesLabels = append(seriesLabels, lbls)
 
 		if skipChunks {
@@ -1166,20 +1196,6 @@ func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, shardSelec
 	}
 
 	return seriesLabels, aggrChunks, chunkSeriesSet.Err()
-}
-
-// shardOwnedUncached checks if the given labels belong to the shard specified
-// by the shard selector. As opposed to shardOwned & friends from the
-// non-Parquet path, this function does not cache hashes. This is because, at
-// least yet, we don't have easy access to an identifier for the series in the
-// block to use as a cache key.
-func shardOwnedUncached(shard *sharding.ShardSelector, lset labels.Labels) bool {
-	if shard == nil {
-		return true
-	}
-
-	hash := labels.StableHash(lset)
-	return hash%shard.ShardCount == shard.ShardIndex
 }
 
 func prometheusChunkEncodingToStorePBChunkType(enc chunkenc.Encoding) storepb.Chunk_Encoding {
