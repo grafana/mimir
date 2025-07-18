@@ -599,6 +599,12 @@ func TestKafkaFlush(t *testing.T) {
 
 		offs, err := sched.fetchCommittedOffsets(ctx)
 		require.NoError(t, err)
+		offcount := 0
+		offs.Each(func(o kadm.Offset) {
+			offcount++
+		})
+		require.Equal(t, len(offsets), offcount)
+
 		for partition, expected := range offsets {
 			o, ok := offs.Lookup(topic, partition)
 			require.True(t, ok, args...)
@@ -607,6 +613,9 @@ func TestKafkaFlush(t *testing.T) {
 	}
 
 	flushAndRequireOffsets("ingest", map[int32]int64{}, "no group found -> no offsets")
+
+	_ = sched.getPartitionState("ingest", 0)
+	// (No commit yet for p0.)
 
 	p1 := sched.getPartitionState("ingest", 1)
 	p1.committed.set(2000)
@@ -626,6 +635,14 @@ func TestKafkaFlush(t *testing.T) {
 		1: 4000,
 		4: 65535,
 	}, "should be able to advance an existing offset")
+
+	reg := sched.register.(*prometheus.Registry)
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
+		# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
+		cortex_blockbuilder_scheduler_partition_committed_offset{partition="1"} 4000
+		cortex_blockbuilder_scheduler_partition_committed_offset{partition="4"} 65535
+	`), "cortex_blockbuilder_scheduler_partition_committed_offset"), "should only modify commit gauge for non-empty commit offsets")
 }
 
 func TestUpdateSchedule(t *testing.T) {

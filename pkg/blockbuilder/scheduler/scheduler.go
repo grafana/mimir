@@ -663,7 +663,9 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 	defer s.mu.Unlock()
 
 	for _, ps := range s.partState {
-		cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		if !ps.committed.empty() {
+			cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		}
 	}
 
 	return cp
