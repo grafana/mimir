@@ -1826,7 +1826,7 @@ How it **works**:
 How to **investigate**:
 
 - Look at the block-builder-scheduler logs around the affected time. There's a log line that mentions "gap detected in offset advancement" with relevant data.
-- Using this data, further look at block-builder-scheduler logs to find the jobs either planned or committed around this time, and see if you can piece together how the gap occurred.
+- Using this data, continue to look at block-builder-scheduler logs to find the jobs either planned or committed around this time, and see if you can determine how the gap occurred.
 
 Data recovery / temporary mitigation:
 
