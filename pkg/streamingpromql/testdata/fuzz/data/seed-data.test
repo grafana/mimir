@@ -17,6 +17,10 @@ load 1m
 load 10s
     metric{type="floats"} 1 2
     metric{type="histograms"} {{count:1}} {{count:2}}
+    metric{env="1"} 0+1x50
+    metric{env="2"} 0+2x50 _ _ 500+5x20 stale stale
+    metric{env="3"} 1 2 _ _ stale stale _ _ 3 4 5+1x50
+    metric{env="4"} 5 2+3x2 _ stale {{schema:1 sum:3 count:22 buckets:[5 10 7]}} {{schema:1 sum:4 count:24 buckets:[5 10 7 2]}}
     http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
     http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
     http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000

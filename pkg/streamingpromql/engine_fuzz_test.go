@@ -7,7 +7,6 @@ package streamingpromql
 
 import (
 	"context"
-	"math"
 	"os"
 	"strings"
 	"testing"
@@ -19,19 +18,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	types.EnableManglingReturnedSlices = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-}
-
+// A construct to hold our query engines and storage. Also holds rules for how we process certain queries
 type TestQueryContext struct {
 	prometheusEngine  *promql.Engine
 	mimirEngine       *Engine
@@ -39,114 +31,45 @@ type TestQueryContext struct {
 	ignoreAnnotations map[string]bool
 }
 
-func DoComparisonQuery(t *testing.T, asInstantQuery bool, query string, ctx TestQueryContext) {
-
-	var prom, mimir *promql.Result
-	var promErr, mimiErr error
-	var promQry, mimiQry promql.Query
-
-	if asInstantQuery {
-
-		ts := time.Unix(0, 0)
-
-		promQry, promErr = ctx.prometheusEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, query, ts)
-		mimiQry, mimiErr = ctx.mimirEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, query, ts)
-
-	} else {
-
-		start := time.Unix(0, 0)
-		end := start.Add(time.Minute)
-		step := time.Minute
-
-		promQry, promErr = ctx.prometheusEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, query, start, end, step)
-		mimiQry, mimiErr = ctx.mimirEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, query, start, end, step)
-	}
-
-	if promErr == nil {
-		defer promQry.Close()
-		prom = promQry.Exec(context.Background())
-	}
-
-	if mimiErr == nil {
-		defer mimiQry.Close()
-		mimir = mimiQry.Exec(context.Background())
-	}
-
-	if promErr == nil {
-
-		// Replace series Metric which are nil with an empty Labels{}
-		/// Prometheus may have a metric label = nil, and mimir could have an empty slice of metric labels
-		FixUpEmptyLabels(prom)
-
-		skipAnnotationComparison := ctx.ignoreAnnotations[query]
-
-		if mimir != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
-			assert.Equal(t, "unexpected all postings", mimir.Err.Error())
-		} else {
-			testutils.RequireEqualResults(t, query, prom, mimir, skipAnnotationComparison)
-		}
-	} else {
-		require.NotNil(t, mimiErr)
-	}
+// A construct to hold our input params to each test
+type TestQueryInput struct {
+	// promQL query
+	query string
+	// range query start or instant query time
+	startEpoch int64
+	// range query end time
+	endEpoch int64
+	// range query step size
+	durationMilliSecs int64
 }
 
-// This is a utility test which can be useful testing individual query strings
-func TestSingleQuery(t *testing.T) {
-	opts := NewTestEngineOpts()
-
-	data, err := os.ReadFile("testdata/fuzz/data/seed-data.test")
-	require.NoError(t, err)
-
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-	require.NoError(t, err)
-
-	testStorage := promqltest.LoadedStorage(t, string(data))
-	t.Cleanup(func() { require.NoError(t, testStorage.Close()) })
-
-	//expr := `{""!="",""}`
-	expr := `false / quantile_over_time(1.95, metric[5m])`
-	ignoreAnnotations := map[string]bool{
-		expr: true,
-	}
-
-	testCtx := TestQueryContext{
-		prometheusEngine:  prometheusEngine,
-		mimirEngine:       mimirEngine,
-		testStorage:       testStorage,
-		ignoreAnnotations: ignoreAnnotations,
-	}
-
-	DoComparisonQuery(t, true, expr, testCtx)
-	DoComparisonQuery(t, false, expr, testCtx)
+// A construct to hold the result of a query preparation
+type EngineQueryPreparationResult struct {
+	query promql.Query
+	error error
 }
 
-// This test function will run like a normal unit test with go test
-// It can be used for Fuzz testing with go test -fuzz=FuzzQuery
-// These tests can be extended in 2 ways;
-// a. Add more sample data to the seed-data.test file
-// b. Add more sample queries to the seed-queries.test file
-// The Go Fuzzer will create new queries based off the entries in seed-queries.test
-func FuzzQuery(f *testing.F) {
+// A contruct to hold the query preparation results for both engines
+type MultiEnginePrepareResult struct {
+	prom           EngineQueryPreparationResult
+	mimir          EngineQueryPreparationResult
+	isInstantQuery func() bool
+}
 
-	// seed some test data - see prometheus/promql/promqltest/README.md
-	data, err := os.ReadFile("testdata/fuzz/data/seed-data.test")
+// A utility to abstract the actual query preparation steps
+type InvokeQueryEnginePreparation func(input TestQueryInput) MultiEnginePrepareResult
+
+// A function to add a query to the Fuzz corpus (ie t.Add(...))
+// This is abstracted to allow for custom corpus seeding of time ranges and step size
+type SeedFuzzFunc func(t *testing.F, query string)
+
+// Seed queries from the given file into the Fuzz test corpus
+// Stores a map in the testContext which details queries which should have annotation comparison disabled
+func seedQueryCorpus(f *testing.F, queryFile string, seedFuzzFunc SeedFuzzFunc, testContext *TestQueryContext) {
+	queries, err := os.ReadFile(queryFile)
 	require.NoError(f, err)
 
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-	require.NoError(f, err)
-
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
-	testStorage := promqltest.LoadedStorage(f, string(data))
-	f.Cleanup(func() { require.NoError(f, testStorage.Close()) })
-
-	// Seed some example queries/expressions
-	queries, err := os.ReadFile("testdata/fuzz/data/seed-queries.test")
-	require.NoError(f, err)
-
-	ignoreAnnotations := map[string]bool{}
+	ignoreAnnotations := make(map[string]bool, 500)
 
 	for _, query := range strings.Split(string(queries), "\n") {
 		if len(query) == 0 || strings.HasPrefix(query, "#") {
@@ -156,83 +79,192 @@ func FuzzQuery(f *testing.F) {
 		query, found := strings.CutPrefix(query, "[ignore_annotations] ")
 		ignoreAnnotations[query] = found
 
-		f.Add(query)
+		seedFuzzFunc(f, query)
 	}
 
-	testCtx := TestQueryContext{
-		prometheusEngine:  prometheusEngine,
-		mimirEngine:       mimirEngine,
-		testStorage:       testStorage,
-		ignoreAnnotations: ignoreAnnotations,
-	}
-
-	f.Fuzz(func(t *testing.T, query string) {
-		DoComparisonQuery(t, true, query, testCtx)
-		DoComparisonQuery(t, false, query, testCtx)
-	})
+	testContext.ignoreAnnotations = ignoreAnnotations
 }
 
-// Test different combinations of start, end times in a range query
-// Note that we do not compare to the Prometheus engine, as it validates range inputs in its http api handler
-func FuzzRangeQueryTimes(f *testing.F) {
+// Build a TestStorage seeded with the data in the given file
+func buildStorage(f *testing.F, datafile string) *teststorage.TestStorage {
+	data, err := os.ReadFile(datafile)
+	require.NoError(f, err)
 
-	const expression = "vector(0)"
-	const duration = time.Duration(60*5) * time.Second
+	testStorage := promqltest.LoadedStorage(f, string(data))
+	f.Cleanup(func() { require.NoError(f, testStorage.Close()) })
 
+	return testStorage
+}
+
+// Build a new TestQueryContext
+// This includes our Mimir & Prometheus engines, and a seeded TestStorage
+// The seed queries are also loaded into the Fuzz corpus
+// A seeding function is passed in defining how we will seed the Fuzz corpus
+func buildQueryContext(f *testing.F, datafile string, queryFile string, seedFuzzFunc SeedFuzzFunc) *TestQueryContext {
 	opts := NewTestEngineOpts()
+
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(f, err)
 
-	now := time.Now()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
-	testStart := []time.Time{now.Add(-time.Hour), now.Add(-time.Second), now.Add(-time.Millisecond), now.Add(-time.Hour * 24 * 365), now, now.Add(time.Second)}
-	for _, start := range testStart {
-		f.Add(start.UnixMilli(), now.UnixMilli())
+	testContext := TestQueryContext{
+		prometheusEngine: prometheusEngine,
+		mimirEngine:      mimirEngine,
+		testStorage:      buildStorage(f, datafile),
 	}
 
-	f.Fuzz(func(t *testing.T, startEpoch int64, endEpoch int64) {
-
-		start := time.UnixMilli(startEpoch)
-		end := time.UnixMilli(endEpoch)
-
-		_, mimErr := mimirEngine.NewRangeQuery(context.Background(), nil, nil, expression, start, end, duration)
-
-		if startEpoch <= endEpoch {
-			require.Nil(t, mimErr, "Expected success for start=%s, end=%s", start, end)
-		} else {
-			require.NotNil(t, mimErr, "Expected failure for start=%s, end=%s", start, end)
-		}
-	})
+	seedQueryCorpus(f, queryFile, seedFuzzFunc, &testContext)
+	return &testContext
 }
 
-// Seed the fuzz with sample durations in a range query
-// These tests we only check the Mimir engine, as the step size is validated in the Prometheus API handler (api.go)
-// Note also that the max resolution size (end-start/step) is validated in codec.go so we don't test that here
-func FuzzRangeTestStep(f *testing.F) {
+// There is a mismatch in a postings error message.
+// We manually assert on the expected Mimir error string and modify the mimir error so it will pass the RequireEqualResults()
+func fixUpAndAssertPostingErrors(t *testing.T, prom, mimir *promql.Result) {
+	if mimir != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
+		assert.Equal(t, "unexpected all postings", mimir.Err.Error())
+		mimir.Err = prom.Err
+	}
+}
 
-	const expression = "vector(0)"
-	var startTime = time.Now().Add(-time.Hour)
-	var endTime = time.Now()
+func buildInstantQueryPreparationFunc(ctx *TestQueryContext) InvokeQueryEnginePreparation {
+	return func(input TestQueryInput) MultiEnginePrepareResult {
 
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-	require.NoError(f, err)
+		res := MultiEnginePrepareResult{
+			prom:           EngineQueryPreparationResult{},
+			mimir:          EngineQueryPreparationResult{},
+			isInstantQuery: func() bool { return true },
+		}
 
-	testStepSecs := []int64{-1, 0, 60, math.MaxInt64, int64(math.MaxInt64 / time.Second), int64(math.MaxInt64/time.Second) - 1}
-	for _, stepSec := range testStepSecs {
-		f.Add(stepSec)
+		start := time.UnixMilli(input.startEpoch)
+		res.prom.query, res.prom.error = ctx.prometheusEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, input.query, start)
+		res.mimir.query, res.mimir.error = ctx.mimirEngine.NewInstantQuery(context.Background(), ctx.testStorage, nil, input.query, start)
+
+		return res
+	}
+}
+
+func buildRangeQueryPreparationFunc(ctx *TestQueryContext) InvokeQueryEnginePreparation {
+	return func(input TestQueryInput) MultiEnginePrepareResult {
+
+		res := MultiEnginePrepareResult{
+			prom:           EngineQueryPreparationResult{},
+			mimir:          EngineQueryPreparationResult{},
+			isInstantQuery: func() bool { return false },
+		}
+
+		start := time.UnixMilli(input.startEpoch)
+		end := time.UnixMilli(input.endEpoch)
+		step := time.Duration(input.durationMilliSecs) * time.Millisecond
+
+		res.prom.query, res.prom.error = ctx.prometheusEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, input.query, start, end, step)
+		res.mimir.query, res.mimir.error = ctx.mimirEngine.NewRangeQuery(context.Background(), ctx.testStorage, nil, input.query, start, end, step)
+
+		return res
+	}
+}
+
+// Run the given query against Prometheus and Mimir query engines and validate that the results (inc series, errors, annotations) match
+func doComparisonQuery(t *testing.T, input TestQueryInput, ctx TestQueryContext, prepareQueriesFunc InvokeQueryEnginePreparation) {
+
+	prep := prepareQueriesFunc(input)
+
+	// Note - prometheus validates time ranges and steps in http api handler, so it will not return an error at query preparation time
+	// Note - max resolution size (end-start/step) is validated in codec.go so we don't validate that here
+	if prep.prom.error != nil || (!prep.isInstantQuery() && input.startEpoch > input.endEpoch) {
+		require.NotNil(t, prep.mimir.error)
+		return
 	}
 
-	f.Fuzz(func(t *testing.T, stepSecs int64) {
+	var prom, mimir *promql.Result
 
-		step := time.Duration(stepSecs) * time.Second
+	// Execute our queries
+	defer prep.prom.query.Close()
+	prom = prep.prom.query.Exec(context.Background())
 
-		_, mimErr := mimirEngine.NewRangeQuery(context.Background(), nil, nil, expression, startTime, endTime, step)
+	defer prep.mimir.query.Close()
+	mimir = prep.mimir.query.Exec(context.Background())
 
-		if stepSecs <= 0 || stepSecs > int64(math.MaxInt64/time.Second) {
-			require.NotNil(t, mimErr, "Expected error for StepSecs=%d", stepSecs)
-		} else {
-			require.Nil(t, mimErr, "Expected success for StepSecs=%d", stepSecs)
+	// Replace series Metric which are nil with an empty Labels{}
+	FixUpEmptyLabels(prom)
+
+	// Special case for posting errors which are formatted differently in Prometheus and Mimir
+	fixUpAndAssertPostingErrors(t, prom, mimir)
+
+	// Assert that the results match exactly. Note that annotations comparison will be ignored if the query is in the given ignore map
+	testutils.RequireEqualResults(t, input.query, prom, mimir, ctx.ignoreAnnotations[input.query])
+}
+
+// This test function will run like a normal unit test with go test
+// It can be used for Fuzz testing with go test -fuzz=FuzzQuery
+// These tests can be extended in 3 ways;
+// a. Add more sample data to the seed-data.test file
+// b. Add more sample queries to the seed-queries.test file
+// c. Add additional step sizes or time ranges to consider
+// When the Go Fuzzer is used, it will randomize the inputs of query string, start time, end time and step size.
+func FuzzQuery(f *testing.F) {
+
+	steps := []time.Duration{
+		time.Second,
+		time.Second * 2,
+		time.Second * 10,
+		time.Second * 30,
+		time.Second * 59,
+		time.Minute,
+		time.Second * 61,
+		time.Minute * 10,
+		time.Hour * 24 * 365 * 100,
+	}
+
+	epoch := time.Unix(0, 0)
+
+	ranges := [][]time.Time{
+		// invalid time range, as start > end
+		{epoch.Add(time.Second), epoch},
+
+		// start == end
+		{epoch, epoch},
+
+		// explore below our sample interval
+		{epoch, epoch.Add(time.Second * 1)},
+
+		// explore the bounds around our sample interval
+		{epoch, epoch.Add(time.Second * 59)},
+		{epoch, epoch.Add(time.Second * 60)},
+		{epoch, epoch.Add(time.Second * 61)},
+		{epoch.Add(time.Second * 4), epoch.Add(time.Second * 61)},
+
+		// explore the bounds after we have multiple samples
+		{epoch, epoch.Add(time.Minute*5 - time.Second)},
+		{epoch, epoch.Add(time.Minute * 5)},
+		{epoch, epoch.Add(time.Minute*5 + time.Second)},
+		{epoch.Add(time.Second * 4), epoch.Add(time.Second * 61)},
+		{epoch.Add(time.Minute * 2), epoch.Add(time.Second * 61)},
+	}
+
+	// For each query string we will test for each range & step combination
+	// The fuzzer will then be able then randomise on the query, time range and/or step size
+	seedFuzzFunc := func(t *testing.F, query string) {
+		for _, step := range steps {
+			for _, rang := range ranges {
+				t.Add(query, rang[0].UnixMilli(), rang[1].UnixMilli(), step.Milliseconds())
+			}
 		}
+	}
+
+	testCtx := buildQueryContext(f, "testdata/fuzz/data/seed-data.test", "testdata/fuzz/data/seed-queries.test", seedFuzzFunc)
+
+	instantQueryPreparationHandler := buildInstantQueryPreparationFunc(testCtx)
+	rangeQueryPreparationHandler := buildRangeQueryPreparationFunc(testCtx)
+
+	f.Fuzz(func(t *testing.T, query string, startEpoch int64, endEpoch int64, durationMilliSecs int64) {
+		input := TestQueryInput{
+			query:             query,
+			startEpoch:        startEpoch,
+			endEpoch:          endEpoch,
+			durationMilliSecs: durationMilliSecs,
+		}
+		doComparisonQuery(t, input, *testCtx, instantQueryPreparationHandler)
+		doComparisonQuery(t, input, *testCtx, rangeQueryPreparationHandler)
 	})
 }
