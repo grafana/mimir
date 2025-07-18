@@ -29,7 +29,7 @@ type Spawner struct {
 	rotator        *Rotator
 	bkt            objstore.Bucket
 
-	planningInterval      time.Duration
+	planningInterval time.Duration
 
 	userDiscoveryBackoff backoff.Config
 
@@ -43,11 +43,11 @@ func NewSpawner(
 	bkt objstore.Bucket,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
-		allowedTenants:        allowList,
-		rotator:               rotator,
-		bkt:                   bkt,
-		planningInterval:      cfg.planningInterval,
-		userDiscoveryBackoff:  cfg.userDiscoveryBackoff,
+		allowedTenants:       allowList,
+		rotator:              rotator,
+		bkt:                  bkt,
+		planningInterval:     cfg.planningInterval,
+		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
 	}
 	s.Service = services.NewTimerService(cfg.planningCheckInterval, nil, s.iter, nil)
 	return s
