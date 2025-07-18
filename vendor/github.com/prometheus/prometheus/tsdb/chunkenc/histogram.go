@@ -18,10 +18,24 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 )
+
+var debugRecode bool
+
+func init() {
+	if os.Getenv("DEBUG_RECODE") == "true" {
+		debugRecode = true
+	}
+}
+
+func histogramDetails(h *histogram.Histogram) string {
+	return fmt.Sprintf("CR=%v c=%v s=%v S=%v ps=%v ns=%v pb=%v nb=%v",
+		h.CounterResetHint, h.Count, h.Sum, h.Schema, h.PositiveSpans, h.NegativeSpans, h.PositiveBuckets, h.NegativeBuckets)
+}
 
 // HistogramChunk holds encoded sample data for a sparse, high-resolution
 // histogram.
@@ -708,6 +722,7 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 // continue appending, use the returned Appender rather than the receiver of
 // this method.
 func (a *HistogramAppender) recode(
+	h *histogram.Histogram,
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
 ) (Chunk, Appender) {
@@ -727,6 +742,11 @@ func (a *HistogramAppender) recode(
 
 	for it.Next() == ValHistogram {
 		tOld, hOld := it.AtHistogram(nil)
+
+		var savedH *histogram.Histogram
+		if debugRecode {
+			savedH = hOld.Copy()
+		}
 
 		// We have to newly allocate slices for the modified buckets
 		// here because they are kept by the appender until the next
@@ -748,6 +768,14 @@ func (a *HistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
+
+		if savedH != nil {
+			if err := hOld.Validate(); err != nil {
+				fmt.Printf("DEBUG_RECODE(recode) trigger %s old %s new %s\n",
+					histogramDetails(h), histogramDetails(savedH), histogramDetails(hOld))
+			}
+		}
+
 		happ.appendHistogram(tOld, hOld)
 	}
 
@@ -761,6 +789,11 @@ func (a *HistogramAppender) recodeHistogram(
 	h *histogram.Histogram,
 	pBackwardInserts, nBackwardInserts []Insert,
 ) {
+	var savedH *histogram.Histogram
+	if debugRecode {
+		savedH = h.Copy()
+	}
+
 	if len(pBackwardInserts) > 0 {
 		numPositiveBuckets := countSpans(h.PositiveSpans)
 		h.PositiveBuckets = insert(h.PositiveBuckets, make([]int64, numPositiveBuckets), pBackwardInserts, true)
@@ -768,6 +801,13 @@ func (a *HistogramAppender) recodeHistogram(
 	if len(nBackwardInserts) > 0 {
 		numNegativeBuckets := countSpans(h.NegativeSpans)
 		h.NegativeBuckets = insert(h.NegativeBuckets, make([]int64, numNegativeBuckets), nBackwardInserts, true)
+	}
+
+	if savedH != nil {
+		if err := h.Validate(); err != nil {
+			fmt.Printf("DEBUG_RECODE(recodeHistogram): old %s new %s\n",
+				histogramDetails(savedH), histogramDetails(h))
+		}
 	}
 }
 
@@ -841,6 +881,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
 			chk, app := a.recode(
+				h,
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
@@ -881,6 +922,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
 		chk, app := a.recode(
+			h,
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
