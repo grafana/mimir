@@ -28,7 +28,7 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	if err != nil {
 		return nil, err
 	}
-	m, err := search.NewMaterializer(s, d, block, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback)
+	m, err := search.NewMaterializer(s, d, block, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 				return nil
 			}
 
-			series, err := b.m.Materialize(ctx, rgi, mint, maxt, skipChunks, rr)
+			series, err := b.m.Materialize(ctx, nil, rgi, mint, maxt, skipChunks, rr)
 			if err != nil {
 				return err
 			}
