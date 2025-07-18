@@ -401,13 +401,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
 			name:    "planned",
-			off:     emptyOffset,
+			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
 			name:    "committed",
-			off:     emptyOffset,
+			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
@@ -961,7 +961,7 @@ type advancingOffset struct {
 	logger  log.Logger
 }
 
-const emptyOffset int64 = -1
+const offsetEmpty int64 = -1
 
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
@@ -995,7 +995,7 @@ func (o *advancingOffset) set(offset int64) {
 
 // empty returns true if the offset is empty and uninitialized.
 func (o *advancingOffset) empty() bool {
-	return o.off == emptyOffset
+	return o.off == offsetEmpty
 }
 
 // validNextSpec returns true if the given job spec is valid to be added to the

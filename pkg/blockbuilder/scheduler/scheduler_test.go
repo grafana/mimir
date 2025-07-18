@@ -504,7 +504,7 @@ func TestObservations(t *testing.T) {
 		sched.requireOffset(t, "ingest", 4, 900, "ingest/4 should be moved forward to account for the completed jobs")
 		sched.requireOffset(t, "ingest", 5, 12000, "ingest/5 has nothing new completed")
 		sched.requireOffset(t, "ingest", 6, 600, "ingest/6 allowed to move the commit")
-		sched.requireOffset(t, "ingest", 7, emptyOffset, "ingest/7 has an in-progress job, but had no commit at startup")
+		sched.requireOffset(t, "ingest", 7, offsetEmpty, "ingest/7 has an in-progress job, but had no commit at startup")
 		sched.requireOffset(t, "ingest", 8, 1300, "ingest/8 should be committed only until the gap")
 		sched.requireOffset(t, "ingest", 9, 1300, "ingest/9 should be committed only until the gap")
 	}
@@ -594,7 +594,7 @@ func TestKafkaFlush(t *testing.T) {
 	ctx := context.Background()
 	sched.completeObservationMode(ctx)
 
-	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...interface{}) {
+	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
 		offs, err := sched.fetchCommittedOffsets(ctx)
