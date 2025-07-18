@@ -49,7 +49,7 @@ type EngineQueryPreparationResult struct {
 	error error
 }
 
-// A contruct to hold the query preparation results for both engines
+// A construct to hold the query preparation results for both engines
 type MultiEnginePrepareResult struct {
 	prom           EngineQueryPreparationResult
 	mimir          EngineQueryPreparationResult
