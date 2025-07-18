@@ -8,6 +8,7 @@
 * [FEATURE] MQE: Add support for experimental `sort_by_label` and `sort_by_label_desc` PromQL functions. #11930
 * [FEATURE] Ingester/Block-builder: Handle the created timestamp field for remote-write requests. #11977
 * [FEATURE] Cost attribution: Labels specified in the limit configuration may specify an output label in order to override emitted label names. #12035
+* [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
 * [ENHANCEMENT] Ingester: Display user grace interval in the tenant list obtained through the `/ingester/tenants` endpoint. #11961
 * [ENHANCEMENT] `kafkatool`: add `consumer-group delete-offset` command as a way to delete the committed offset for a consumer group. #11988
 * [ENHANCEMENT] Block-builder-scheduler: Detect gaps in scheduled and completed jobs. #11867
