@@ -607,7 +607,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="ingester",operation="upload"' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Upload latency',
           |||
