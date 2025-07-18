@@ -1113,8 +1113,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactorScheduler() (serv services.Service, err error) {
 
-
-	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
+	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.Compactor, t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}

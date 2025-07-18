@@ -15,6 +15,7 @@ type Job[K comparable, V any] struct {
 
 	creationTime time.Time
 	leaseTime    time.Time
+	renewalTime  time.Time
 	numLeases    int
 }
 
@@ -35,18 +36,21 @@ func (j *Job[K, V]) MarkLeased() {
 	j.numLeases += 1
 }
 
+// TODO: Some kind of feedback mechanism so the Spawner can know if a submitted plan job failed or completed
 type JobTracker[K comparable, V any] struct {
 	q          *list.List          // available jobs
 	leased     *list.List          // leased jobs
 	elementMap map[K]*list.Element // all tracked jobs will be in this map, element is in one and only one of q or leased
+	maxLeases  int
 	mtx        *sync.Mutex
 }
 
-func NewJobTracker[K comparable, V any]() *JobTracker[K, V] {
+func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
 	return &JobTracker[K, V]{
-		q:      list.New(),
-		leased: list.New(),
-		mtx:    &sync.Mutex{},
+		q:         list.New(),
+		leased:    list.New(),
+		maxLeases: maxLeases,
+		mtx:       &sync.Mutex{},
 	}
 }
 
@@ -103,9 +107,9 @@ func (jq *JobTracker[K, V]) RemoveIf(k K, predicate func(v V) bool) (bool, bool)
 }
 
 // ExpireLeases iterates through all the jobs known by the JobTracker to find ones that have expired leases.
-// If a job has an expired lease and has been leased under maxLeases times, it is returned to the front of the queue
+// If a job has an expired lease and has been leased under the maximum number of times, it is returned to the front of the queue
 // Otherwise a job with an expired lease will be removed from the tracker.
-func (jq *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration, maxLeases int) bool {
+func (jq *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -118,25 +122,67 @@ func (jq *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration, maxLeases 
 		next = e.Next() // get the next element now since it can't be done after removal
 
 		j := e.Value.(*Job[K, V])
-		if now.Sub(j.leaseTime) > leaseDuration {
-			jq.leased.Remove(e)
-			// This lease is expired, can it be returned to the queue?
-			if j.numLeases < maxLeases {
-				jq.elementMap[j.k] = jq.q.PushFront(j)
+		if now.Sub(j.renewalTime) > leaseDuration {
+			if jq.endLease(e, j) {
 				revivedAny = true
-			} else {
-				delete(jq.elementMap, j.k)
 			}
-		} else {
-			// The leased jobs are pushed in order. If this lease is not expired the others won't be
-			break
 		}
 	}
 
 	return wasEmpty && revivedAny
 }
 
-func (jq *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev V, new V) bool) (int, bool) {
+// endLease removes a job from the leased list and returns true if the job was returned to the queue or false otherwise
+func (jq *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
+	jq.leased.Remove(e)
+
+	// Can the job be returned to the queue?
+	if jq.maxLeases == 0 || j.numLeases < jq.maxLeases {
+		j.leaseTime = time.Time{}
+		j.renewalTime = time.Time{}
+		jq.elementMap[j.k] = jq.q.PushFront(j)
+		return true
+	}
+
+	delete(jq.elementMap, j.k)
+	return false
+}
+
+func (jq *JobTracker[K, V]) RenewLease(k K, leaseTime time.Time) bool {
+	jq.mtx.Lock()
+	defer jq.mtx.Unlock()
+
+	e, ok := jq.elementMap[k]
+	if !ok {
+		return false
+	}
+
+	j := e.Value.(*Job[K, V])
+	if j.IsLeased() && j.leaseTime == leaseTime {
+		j.renewalTime = time.Now()
+		return true
+	}
+	return false
+}
+
+func (jq *JobTracker[K, V]) CancelLease(k K, leaseTime time.Time) bool {
+	jq.mtx.Lock()
+	defer jq.mtx.Unlock()
+
+	e, ok := jq.elementMap[k]
+	if !ok {
+		return false
+	}
+
+	j := e.Value.(*Job[K, V])
+	if j.IsLeased() && j.leaseTime == leaseTime {
+		jq.endLease(e, j)
+		return true
+	}
+	return false
+}
+
+func (jq *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, new V) bool) (int, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 

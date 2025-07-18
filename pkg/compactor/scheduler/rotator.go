@@ -12,6 +12,8 @@ type Rotator struct {
 	rotation             []string
 	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
 	mtx                  *sync.RWMutex
+
+	jobTrackerFactory func() *JobTracker[string, *CompactionJob]
 }
 
 type TenantRotationState struct {
@@ -19,12 +21,13 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator() *Rotator {
+func NewRotator(jobTrackerFactory func() *JobTracker[string, *CompactionJob]) *Rotator {
 	return &Rotator{
 		tenantStateMap:       make(map[string]*TenantRotationState),
 		rotation:             make([]string, 0, 10), // initial size doesn't really matter
 		rotationIndexCounter: &atomic.Int32{},
 		mtx:                  &sync.RWMutex{},
+		jobTrackerFactory:    jobTrackerFactory,
 	}
 }
 
@@ -63,30 +66,64 @@ func (r *Rotator) Lease(ctx context.Context, canAccept func(*CompactionJob) bool
 	return nil, false
 }
 
-func (r *Rotator) Offer(tenant string, jobs []*CompactionJob, shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
+func (r *Rotator) RenewLease(tenant string, key string, leaseTime time.Time) bool {
 	r.mtx.RLock()
+	defer r.mtx.RUnlock()
 
-	now := time.Now()
-	wrappedJobs := make([]*Job[string, *CompactionJob], len(jobs))
-	for _, job := range jobs {
-		wrappedJobs = append(wrappedJobs, NewJob(tenant, job, now))
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		return false
 	}
+
+	return tenantState.tracker.RenewLease(key, leaseTime)
+}
+
+func (r *Rotator) CancelLease(tenant string, key string, leaseTime time.Time) bool {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	var canceled bool
+	var wasEmpty bool
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		canceled, wasEmpty := tenantState.tracker.CancelLease(key, leaseTime)
+		if !wasEmpty {
+			r.mtx.RUnlock()
+			return canceled
+		}
+	}
+
+	// Drop the read lock to acquire a write lock
+	r.mtx.RUnlock()
+	r.possiblyAddToRotation(tenant, nil, nil)
+	return
+	// TODO: Possibly add back to rotation
+
+	return tenantState.tracker.CancelLease(key, leaseTime)
+}
+
+func (r *Rotator) Offer(tenant string, jobs []*Job[string, *CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
+	if len(jobs) == 0 {
+		return 0
+	}
+
+	r.mtx.RLock()
 
 	var added int
 	var wasEmpty bool
 	tenantState, hadState := r.tenantStateMap[tenant]
 	if hadState {
-		added, wasEmpty = tenantState.tracker.Offer(wrappedJobs, shouldReplace)
+		added, wasEmpty = tenantState.tracker.Offer(jobs, shouldReplace)
 		if !wasEmpty {
 			r.mtx.RUnlock()
 			return added
 		}
-		wrappedJobs = nil // we want to add the tenant to the rotation, but not offer the same jobs
+		jobs = nil // we want to add the tenant to the rotation, but not offer the same jobs
 	}
 
 	// Drop the read lock to acquire a write lock
 	r.mtx.RUnlock()
-	addedAfter := r.possiblyAddToRotation(tenant, wrappedJobs, shouldReplace)
+	addedAfter := r.possiblyAddToRotation(tenant, jobs, shouldReplace)
 	if hadState {
 		return added
 	}
@@ -123,7 +160,7 @@ func (r *Rotator) possiblyAddToRotation(tenant string, jobs []*Job[string, *Comp
 			return 0
 		}
 		tenantState = &TenantRotationState{
-			NewJobTracker[string, *CompactionJob](),
+			r.jobTrackerFactory(),
 			-1,
 		}
 		r.tenantStateMap[tenant] = tenantState
