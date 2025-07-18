@@ -20,6 +20,7 @@ func (c *MimirConverter) TimeSeries() []mimirpb.PreallocTimeseries {
 
 	allTS := mimirpb.PreallocTimeseriesSliceFromPool()[:0]
 	if cap(allTS) < totalCount {
+		mimirpb.ReuseSlice(allTS)
 		allTS = make([]mimirpb.PreallocTimeseries, 0, totalCount)
 	}
 	for _, ts := range c.unique {
