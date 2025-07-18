@@ -5,6 +5,8 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/grafana/dskit/tracing"
@@ -211,4 +213,20 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls label
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
 	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
+}
+
+func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	b := &strings.Builder{}
+
+	for source, value := range l.currentEstimatedMemoryConsumptionBySource {
+		b.WriteString(MemoryConsumptionSource(source).String())
+		b.WriteString(": ")
+		b.WriteString(strconv.FormatUint(value, 10))
+		b.WriteString(" B \n")
+	}
+
+	return b.String()
 }
