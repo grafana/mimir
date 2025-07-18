@@ -139,7 +139,7 @@ func (s *Scheduler) stop(err error) error {
 }
 
 func (s *Scheduler) poll(ctx context.Context) {
-	s.rotator.Lease(ctx, func(_ *CompactionJob) bool {
+	s.rotator.LeaseJob(ctx, func(_ *CompactionJob) bool {
 		// TODO: Is this a plan job and can this worker plan for this tenant?
 		return true
 	})
@@ -147,15 +147,15 @@ func (s *Scheduler) poll(ctx context.Context) {
 }
 
 func (s *Scheduler) heartbeat(tenant, jobID string, leaseTime time.Time) bool {
-	return s.rotator.RenewLease(tenant, jobID, leaseTime)
+	return s.rotator.RenewJobLease(tenant, jobID, leaseTime)
 }
 
 func (s *Scheduler) fail(tenant, jobID string, leaseTime time.Time) bool {
-	return s.rotator.CancelLease(tenant, jobID, leaseTime)
+	return s.rotator.CancelJobLease(tenant, jobID, leaseTime)
 }
 
 func (s *Scheduler) complete(tenant, jobID string, job *CompactionJob) bool {
-	return s.rotator.RemoveIf(tenant, jobID, func(existing *CompactionJob) bool {
+	return s.rotator.RemoveJobIf(tenant, jobID, func(existing *CompactionJob) bool {
 		// TODO: Is this sufficient? Would sorting ever change?
 		return slices.Equal(job.blocks, existing.blocks)
 	})

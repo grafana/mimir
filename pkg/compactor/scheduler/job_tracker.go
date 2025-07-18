@@ -13,10 +13,10 @@ type Job[K comparable, V any] struct {
 	k K
 	v V
 
-	creationTime time.Time
-	leaseTime    time.Time
-	renewalTime  time.Time
-	numLeases    int
+	creationTime      time.Time
+	leaseCreationTime time.Time
+	lastRenewalTime   time.Time
+	numLeases         int
 }
 
 func NewJob[K comparable, V any](k K, v V, creationTime time.Time) *Job[K, V] {
@@ -28,11 +28,12 @@ func NewJob[K comparable, V any](k K, v V, creationTime time.Time) *Job[K, V] {
 }
 
 func (j *Job[K, V]) IsLeased() bool {
-	return !j.leaseTime.IsZero()
+	return !j.leaseCreationTime.IsZero()
 }
 
 func (j *Job[K, V]) MarkLeased() {
-	j.leaseTime = time.Now()
+	j.leaseCreationTime = time.Now()
+	j.lastRenewalTime = j.leaseCreationTime 
 	j.numLeases += 1
 }
 
@@ -122,7 +123,7 @@ func (jq *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
 		next = e.Next() // get the next element now since it can't be done after removal
 
 		j := e.Value.(*Job[K, V])
-		if now.Sub(j.renewalTime) > leaseDuration {
+		if now.Sub(j.lastRenewalTime) > leaseDuration {
 			if jq.endLease(e, j) {
 				revivedAny = true
 			}
@@ -138,8 +139,8 @@ func (jq *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
 
 	// Can the job be returned to the queue?
 	if jq.maxLeases == 0 || j.numLeases < jq.maxLeases {
-		j.leaseTime = time.Time{}
-		j.renewalTime = time.Time{}
+		j.leaseCreationTime = time.Time{}
+		j.lastRenewalTime = time.Time{}
 		jq.elementMap[j.k] = jq.q.PushFront(j)
 		return true
 	}
@@ -158,28 +159,28 @@ func (jq *JobTracker[K, V]) RenewLease(k K, leaseTime time.Time) bool {
 	}
 
 	j := e.Value.(*Job[K, V])
-	if j.IsLeased() && j.leaseTime == leaseTime {
-		j.renewalTime = time.Now()
+	if j.IsLeased() && j.leaseCreationTime == leaseTime {
+		j.lastRenewalTime = time.Now()
 		return true
 	}
 	return false
 }
 
-func (jq *JobTracker[K, V]) CancelLease(k K, leaseTime time.Time) bool {
+func (jq *JobTracker[K, V]) CancelLease(k K, leaseTime time.Time) (bool, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
 	e, ok := jq.elementMap[k]
 	if !ok {
-		return false
+		return false, false
 	}
 
 	j := e.Value.(*Job[K, V])
-	if j.IsLeased() && j.leaseTime == leaseTime {
-		jq.endLease(e, j)
-		return true
+	if j.IsLeased() && j.leaseCreationTime == leaseTime {
+		wasEmpty := jq.isAvailableEmpty()
+		return true, wasEmpty && jq.endLease(e, j)
 	}
-	return false
+	return false, false
 }
 
 func (jq *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, new V) bool) (int, bool) {

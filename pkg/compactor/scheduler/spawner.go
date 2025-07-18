@@ -67,7 +67,7 @@ func (s *Spawner) start(ctx context.Context) error {
 		}
 		b.Wait()
 	}
-	return errors.Wrap(err, "failed to discover users for the compactor scheduler") 
+	return errors.Wrap(err, "failed to discover users for the compactor scheduler")
 }
 
 func (s *Spawner) run(ctx context.Context) error {
@@ -80,7 +80,6 @@ func (s *Spawner) run(ctx context.Context) error {
 	for {
 		select {
 		case <-leaseCheckTicker.C:
-
 		case <-planningCheckTicker.C:
 			// Don't care if user discovery fails since we still want to submit plans for users that are known
 			_ = s.discoverTenants(ctx)
@@ -96,7 +95,7 @@ func (s *Spawner) plan() {
 		now := time.Now() // declaring inside the loop because locks are used when submitting plans
 		if now.Sub(info.lastPlanSubmitted) > s.planningInterval {
 			job := NewJob("plan", &CompactionJob{}, now)
-			accepted := s.rotator.Offer(tenant, []*Job[string, *CompactionJob]{job}, func(_, _ *CompactionJob) bool {
+			accepted := s.rotator.OfferJobs(tenant, []*Job[string, *CompactionJob]{job}, func(_, _ *CompactionJob) bool {
 				return false
 			})
 			if accepted == 1 {
@@ -130,8 +129,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 
 	for tenant := range s.planMap {
 		if _, ok := seen[tenant]; !ok {
-			// Tenant is no longer present
-			// TODO: Inform rotator?
+			s.rotator.RemoveTenant(tenant)
 			delete(s.planMap, tenant)
 		}
 	}
