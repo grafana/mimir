@@ -29,8 +29,6 @@ type Spawner struct {
 	rotator        *Rotator
 	bkt            objstore.Bucket
 
-	leaseCheckInterval    time.Duration
-	planningCheckInterval time.Duration
 	planningInterval      time.Duration
 
 	userDiscoveryBackoff backoff.Config
@@ -48,12 +46,10 @@ func NewSpawner(
 		allowedTenants:        allowList,
 		rotator:               rotator,
 		bkt:                   bkt,
-		leaseCheckInterval:    cfg.leaseCheckInterval,
-		planningCheckInterval: cfg.planningCheckInterval,
 		planningInterval:      cfg.planningInterval,
 		userDiscoveryBackoff:  cfg.userDiscoveryBackoff,
 	}
-	s.Service = services.NewBasicService(s.start, s.run, nil)
+	s.Service = services.NewTimerService(cfg.planningCheckInterval, nil, s.iter, nil)
 	return s
 }
 
@@ -63,6 +59,7 @@ func (s *Spawner) start(ctx context.Context) error {
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)
 		if err == nil {
+			s.plan()
 			break
 		}
 		b.Wait()
@@ -70,24 +67,11 @@ func (s *Spawner) start(ctx context.Context) error {
 	return errors.Wrap(err, "failed to discover users for the compactor scheduler")
 }
 
-func (s *Spawner) run(ctx context.Context) error {
-	leaseCheckTicker := time.NewTicker(s.leaseCheckInterval)
-	planningCheckTicker := time.NewTicker(s.planningCheckInterval)
-
-	// Do not wait to submit the first plan jobs
+func (s *Spawner) iter(ctx context.Context) error {
+	// Don't care if user discovery fails since we still want to submit plans for users that are known
+	_ = s.discoverTenants(ctx)
 	s.plan()
-
-	for {
-		select {
-		case <-leaseCheckTicker.C:
-		case <-planningCheckTicker.C:
-			// Don't care if user discovery fails since we still want to submit plans for users that are known
-			_ = s.discoverTenants(ctx)
-			s.plan()
-		case <-ctx.Done():
-			return nil
-		}
-	}
+	return nil
 }
 
 func (s *Spawner) plan() {
@@ -99,7 +83,7 @@ func (s *Spawner) plan() {
 				return false
 			})
 			if accepted == 1 {
-				info.lastPlanSubmitted = job.creationTime
+				info.lastPlanSubmitted = now
 			}
 		}
 	}

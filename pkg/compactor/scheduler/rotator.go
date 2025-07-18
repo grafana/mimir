@@ -5,17 +5,32 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/grafana/dskit/services"
 )
 
 const outsideRotation int = -1
 
+// Rotator rotates initial calls to LeaseJob between per-tenant job trackers for fairness and to reduce contention.
+// Hints are given by a tenant's job tracker when an operation causes it to transition states:
+//
+//	available jobs -> no available jobs: The tenant's job tracker is taken out of rotation
+//	no available jobs -> available jobs: The tenant's job tracker is placed into rotation
+//
+// A mapping is maintained for each tenant even if they are not currently in the rotation for lease interaction.
+// Note: The rotation mechansim could be extended for weighted fairness if needed.
 type Rotator struct {
-	tenantStateMap       map[string]*TenantRotationState
-	rotation             []string
-	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
-	mtx                  *sync.RWMutex
+	services.Service
 
-	jobTrackerFactory func() *JobTracker[string, *CompactionJob]
+	tenantStateMap map[string]*TenantRotationState
+	rotation       []string
+	mtx            *sync.RWMutex
+
+	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
+
+	leaseDuration      time.Duration
+	leaseCheckInterval time.Duration
+	maxLeases          int
 }
 
 type TenantRotationState struct {
@@ -23,14 +38,23 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(jobTrackerFactory func() *JobTracker[string, *CompactionJob]) *Rotator {
-	return &Rotator{
+func NewRotator(leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
+	r := &Rotator{
 		tenantStateMap:       make(map[string]*TenantRotationState),
 		rotation:             make([]string, 0, 10), // initial size doesn't really matter
-		rotationIndexCounter: &atomic.Int32{},
 		mtx:                  &sync.RWMutex{},
-		jobTrackerFactory:    jobTrackerFactory,
+		rotationIndexCounter: &atomic.Int32{},
+		leaseDuration:        leaseDuration,
+		leaseCheckInterval:   leaseCheckInterval,
+		maxLeases:            maxLeases,
 	}
+	r.Service = services.NewTimerService(leaseCheckInterval, nil, r.iter, nil)
+	return r
+}
+
+func (r *Rotator) iter(_ context.Context) error {
+	r.LeaseMaintenance(r.leaseDuration)
+	return nil
 }
 
 func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(*CompactionJob) bool) (*CompactionJob, bool) {
@@ -49,11 +73,11 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(*CompactionJob) b
 	// but this may still encounter some due to canAccept or due to holding the read lock
 	for range length {
 		tenant := r.rotation[i]
-		job, remove := r.tenantStateMap[tenant].tracker.Lease(canAccept)
+		job, transition := r.tenantStateMap[tenant].tracker.Lease(canAccept)
 		if job != nil {
-			// must drop the read lock before reacquiring the write lock in removeFromRotation or returning
+			// must drop the read lock if acquiring the write lock in possiblyRemoveFromRotation 
 			r.mtx.RUnlock()
-			if remove {
+			if transition {
 				r.possiblyRemoveFromRotation(tenant)
 			}
 			return job, true
@@ -89,8 +113,8 @@ func (r *Rotator) CancelJobLease(tenant string, key string, leaseTime time.Time)
 		return false
 	}
 
-	canceled, wasEmpty := tenantState.tracker.CancelLease(key, leaseTime)
-	if !wasEmpty {
+	canceled, transition := tenantState.tracker.CancelLease(key, leaseTime)
+	if !transition {
 		r.mtx.RUnlock()
 		return canceled
 	}
@@ -105,7 +129,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, leaseTime time.Time)
 		return false
 	}
 
-	if tenantState.rotationIndex == outsideRotation {
+	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isAvailableEmpty() {
 		tenantState.rotationIndex = len(r.rotation)
 		r.rotation = append(r.rotation, tenant)
 	}
@@ -122,8 +146,8 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], 
 
 	var added int
 	var wasEmpty bool
-	tenantState, hadState := r.tenantStateMap[tenant]
-	if hadState {
+	tenantState, ok := r.tenantStateMap[tenant]
+	if ok {
 		added, wasEmpty = tenantState.tracker.Offer(jobs, shouldReplace)
 		if !wasEmpty {
 			r.mtx.RUnlock()
@@ -135,7 +159,7 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], 
 	// Drop the read lock to acquire a write lock in possiblyAddToRotation
 	r.mtx.RUnlock()
 	addedAfter := r.possiblyAddToRotation(tenant, jobs, shouldReplace)
-	if hadState {
+	if ok {
 		return added
 	}
 	return addedAfter
@@ -179,6 +203,32 @@ func (r *Rotator) RemoveTenant(tenant string) {
 	}
 }
 
+func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
+	r.mtx.RLock()
+	addRotationFor := make([]string, 10) // size is arbitrary
+	for tenant, tenantState := range r.tenantStateMap {
+		if tenantState.tracker.ExpireLeases(leaseDuration) {
+			addRotationFor = append(addRotationFor, tenant)
+		}
+	}
+	r.mtx.RUnlock()
+
+	if len(addRotationFor) == 0 {
+		// No tenant needs to be moved into the rotation
+		return
+	}
+
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	for _, tenant := range addRotationFor {
+		tenantState, ok := r.tenantStateMap[tenant]
+		if ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isAvailableEmpty() {
+			tenantState.rotationIndex = len(r.rotation)
+			r.rotation = append(r.rotation, tenant)
+		}
+	}
+}
+
 func (r *Rotator) possiblyAddToRotation(tenant string, jobs []*Job[string, *CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -189,11 +239,12 @@ func (r *Rotator) possiblyAddToRotation(tenant string, jobs []*Job[string, *Comp
 			return 0
 		}
 		tenantState = &TenantRotationState{
-			r.jobTrackerFactory(),
+			NewJobTracker[string, *CompactionJob](r.maxLeases),
 			outsideRotation,
 		}
 		r.tenantStateMap[tenant] = tenantState
 	}
+	// TODO: Correctness seems off here
 
 	if tenantState.rotationIndex == outsideRotation {
 		tenantState.rotationIndex = len(r.rotation)

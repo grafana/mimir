@@ -67,9 +67,8 @@ type Scheduler struct {
 	compactorCfg compactor.Config
 	cfg          Config
 
-	subservicesManager *services.Manager
-
 	rotator *Rotator
+	subservicesManager *services.Manager
 
 	logger log.Logger
 }
@@ -85,12 +84,9 @@ func NewCompactorScheduler(
 	scheduler := &Scheduler{
 		compactorCfg: compactorCfg,
 		cfg:          cfg,
+		rotator:      NewRotator(cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
 		logger:       logger,
 	}
-
-	scheduler.rotator = NewRotator(func() *JobTracker[string, *CompactionJob] {
-		return NewJobTracker[string, *CompactionJob](cfg.maxLeases)
-	})
 
 	// TODO: This will need to be moved for testing
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
@@ -106,7 +102,7 @@ func NewCompactorScheduler(
 		logger,
 	)
 
-	subservicesManager, err := services.NewManager(planSpawner)
+	subservicesManager, err := services.NewManager(scheduler.rotator, planSpawner)
 	if err != nil {
 		return nil, err
 	}

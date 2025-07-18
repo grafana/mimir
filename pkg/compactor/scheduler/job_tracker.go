@@ -107,7 +107,7 @@ func (jq *JobTracker[K, V]) RemoveIf(k K, predicate func(v V) bool) (bool, bool)
 	return false, false
 }
 
-// ExpireLeases iterates through all the jobs known by the JobTracker to find ones that have expired leases.
+// ExpireLeases iterates through all the leased jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been leased under the maximum number of times, it is returned to the front of the queue
 // Otherwise a job with an expired lease will be removed from the tracker.
 func (jq *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
@@ -159,7 +159,7 @@ func (jq *JobTracker[K, V]) RenewLease(k K, leaseTime time.Time) bool {
 	}
 
 	j := e.Value.(*Job[K, V])
-	if j.IsLeased() && j.leaseCreationTime == leaseTime {
+	if j.IsLeased() && j.leaseCreationTime.Equal(leaseTime) {
 		j.lastRenewalTime = time.Now()
 		return true
 	}
