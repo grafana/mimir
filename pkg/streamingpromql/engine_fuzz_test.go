@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
 // A construct to hold our query engines and storage. Also holds rules for how we process certain queries

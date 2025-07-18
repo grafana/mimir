@@ -15,16 +15,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
-
-	"github.com/cortexproject/promqlsmith"
 )
 
 var (
