@@ -370,15 +370,15 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 
 func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t, 10)
-	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.
+	// Initially we're in observation mode. We have Kafka's commit offsets, but no client jobs.
 
 	sched.getPartitionState("ingest", 1).initCommit(5000)
 	sched.getPartitionState("ingest", 2).initCommit(800)
 	sched.getPartitionState("ingest", 3).initCommit(974)
 	sched.getPartitionState("ingest", 4).initCommit(500)
 	sched.getPartitionState("ingest", 5).initCommit(12000)
-	// no 6
-	// no 7
+	sched.getPartitionState("ingest", 6) // no commit for 6
+	sched.getPartitionState("ingest", 7) // no commit for 7
 	sched.getPartitionState("ingest", 8).initCommit(1000)
 	sched.getPartitionState("ingest", 9).initCommit(1000)
 
@@ -386,7 +386,7 @@ func TestObservations(t *testing.T) {
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
 		sched.jobs = nq
 		sched.finalizeObservations()
-		require.Len(t, nq.jobs, 0, "No observations, no jobs")
+		require.Empty(t, nq.jobs, "No observations, no jobs")
 	}
 
 	type observation struct {
@@ -448,13 +448,12 @@ func TestObservations(t *testing.T) {
 	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, 12000, 13000, maybeBadEpoch, errBadEpoch)
 	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, 12000, 13000, nil, nil)
 
-	// Partition 6 has a complete job, but wasn't among the offsets we learned
-	// from Kafka. We'll drop this as the start offset is nonzero, but not-found
-	// completed jobs are ignored on update.
+	// Partition 6 has a complete job but had no commit at startup. We allow
+	// transitioning from empty to commit to any offset.
 	mkJob(complete, "w0", 6, "ingest/6/500", 48, 500, 600, nil, nil)
-	// Partition 7 has an in-progress job, but wasn't among the offsets we
-	// learned from Kafka. We'll drop this one, too.
-	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, errJobNotFound)
+	// Partition 7 has an in-progress job, but had no commit at startup. We
+	// honor this job and allow it to influence the planned/resumption offset.
+	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, nil)
 
 	// Partition 8 has a number of reports and has a hole that should should not be passed.
 	mkJob(complete, "w0", 8, "ingest/8/1000", 53, 1000, 1100, nil, nil)
@@ -487,11 +486,11 @@ func TestObservations(t *testing.T) {
 					}
 
 					if errors.Is(expectedErr, maybeBadEpoch) {
-						assert.True(t, errors.Is(err, errBadEpoch) || err == nil, "job %V: expected either bad epoch or no error, got %v", c.key, err)
+						require.True(t, errors.Is(err, errBadEpoch) || err == nil, "job %V: expected either bad epoch or no error, got %v", c.key, err)
 					} else if expectedErr != nil {
-						assert.ErrorIs(t, err, expectedErr, "job %V: expected %v, got %v", c.key, expectedErr, err)
+						require.ErrorIs(t, err, expectedErr, "job %V: expected %v, got %v", c.key, expectedErr, err)
 					} else {
-						assert.NoError(t, err, "job %V: expected no error", c.key)
+						require.NoError(t, err, "job %V: expected no error", c.key)
 					}
 				}
 			})
@@ -504,14 +503,16 @@ func TestObservations(t *testing.T) {
 		sched.requireOffset(t, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
 		sched.requireOffset(t, "ingest", 4, 900, "ingest/4 should be moved forward to account for the completed jobs")
 		sched.requireOffset(t, "ingest", 5, 12000, "ingest/5 has nothing new completed")
-		sched.requireOffset(t, "ingest", 6, 0, "ingest/6 should not have been added to the offsets as there was a gap")
-		sched.requireOffset(t, "ingest", 7, 0, "ingest/7 should not have been added to the offsets as there was a gap")
+		sched.requireOffset(t, "ingest", 6, 600, "ingest/6 allowed to move the commit")
+		sched.requireOffset(t, "ingest", 7, emptyOffset, "ingest/7 has an in-progress job, but had no commit at startup")
 		sched.requireOffset(t, "ingest", 8, 1300, "ingest/8 should be committed only until the gap")
 		sched.requireOffset(t, "ingest", 9, 1300, "ingest/9 should be committed only until the gap")
 	}
 
 	sendUpdates()
 	sched.completeObservationMode(context.Background())
+
+	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
 	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now())
@@ -523,15 +524,13 @@ func TestObservations(t *testing.T) {
 		{topic: "ingest", partition: 3, resume: 974},
 		{topic: "ingest", partition: 4, resume: 900},
 		{topic: "ingest", partition: 5, resume: 13000},
-		{topic: "ingest", partition: 6, resume: 0},
-		{topic: "ingest", partition: 7, resume: 0},
+		{topic: "ingest", partition: 6, resume: 600},
+		{topic: "ingest", partition: 7, resume: 93874},
 		{topic: "ingest", partition: 8, resume: 1300},
 		{topic: "ingest", partition: 9, resume: 1300},
 	}, offs)
 
-	verifyCommits()
-
-	require.Len(t, sched.jobs.jobs, 3, "should be 3 in-progress jobs")
+	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
 	require.Equal(t, 65, int(sched.jobs.epoch))
 
 	// Verify that the same set of updates can be sent now that we're out of
@@ -1235,8 +1234,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
-	pt.planned.offset()
-	assert.Equal(t, int64(0), pt.planned.offset())
+	assert.True(t, pt.planned.empty())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())

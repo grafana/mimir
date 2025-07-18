@@ -401,11 +401,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
 			name:    "planned",
+			off:     emptyOffset,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
 			name:    "committed",
+			off:     emptyOffset,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
@@ -520,8 +522,9 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var resumeOffset int64
 
-			if planned := ps.planned.offset(); planned > 0 {
-				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(planned))
+			if !ps.planned.empty() {
+				planned := ps.planned.offset()
+				s.metrics.partitionPlannedOffset.WithLabelValues(partStr).Set(float64(planned))
 				resumeOffset = planned
 			} else {
 				// Nothing planned offset for this partition. Resume from fallback offset instead.
@@ -958,6 +961,8 @@ type advancingOffset struct {
 	logger  log.Logger
 }
 
+const emptyOffset int64 = -1
+
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
@@ -988,13 +993,19 @@ func (o *advancingOffset) set(offset int64) {
 	o.off = offset
 }
 
+// empty returns true if the offset is empty and uninitialized.
+func (o *advancingOffset) empty() bool {
+	return o.off == emptyOffset
+}
+
 // validNextSpec returns true if the given job spec is valid to be added to the
 // offset. It is valid if the start offset is the same as the current offset.
+// We also allow transitioning out of an empty offset without calling it a gap.
 func (o *advancingOffset) validNextSpec(spec schedulerpb.JobSpec) bool {
-	return o.off == spec.StartOffset
+	return o.off == spec.StartOffset || o.empty()
 }
 
 // beyondSpec returns true if the offset is beyond the given job spec.
 func (o *advancingOffset) beyondSpec(spec schedulerpb.JobSpec) bool {
-	return spec.EndOffset <= o.off
+	return !o.empty() && spec.EndOffset <= o.off
 }
