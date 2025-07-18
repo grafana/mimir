@@ -1156,7 +1156,6 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
 	opts := tsdb.LeveledCompactorOptions{
 		MaxBlockChunkSegmentSize:    3 * 1024 * 1024,
-		MergeFunc:                   nil,
 		EnableOverlappingCompaction: true,
 	}
 	compactor, err := tsdb.NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, opts)
