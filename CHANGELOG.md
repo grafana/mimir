@@ -19,7 +19,7 @@
 
 ### Mixin
 
-* [FEATURE] Add an alert if the block-builder-scheduler ever detects that it has skipped data. #12118
+* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 * [CHANGE] Remove support for the experimental read-write deployment mode. #11975
 * [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
 
