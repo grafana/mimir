@@ -16,6 +16,7 @@ package semconv
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strconv"
@@ -35,18 +36,15 @@ const cacheTTL = 1 * time.Hour
 
 type schemaEngine struct {
 	// TODO(bwplotka): Implement GC logic for ttl and limits.
-	cachedIDs       map[string]*ids
-	cacheMu         sync.RWMutex
-	cachedChangelog map[string]*changelog
+	cachedSchemas map[string]*fetchedSchema
+	cacheMu       sync.RWMutex
 
 	schemaBaseOverride map[string]string
 }
 
 func newSchemaEngine() *schemaEngine {
 	return &schemaEngine{
-		cachedIDs:       map[string]*ids{},
-		cachedChangelog: map[string]*changelog{},
-
+		cachedSchemas:      map[string]*fetchedSchema{},
 		schemaBaseOverride: map[string]string{},
 	}
 }
@@ -75,7 +73,7 @@ func newMatcherBuilder(matchers []*labels.Matcher) (matcherBuilder, error) {
 				return b, errors.New("__unit__ matcher must be equal")
 			}
 			b.metadata.Unit = m.Value
-		case m.Name == schemaURLLabel:
+		case m.Name == SchemaURLLabel:
 			// Skip it as we will be querying to different versions? We could
 			// make regex for registry dir at least, if that helps.
 		default:
@@ -139,60 +137,101 @@ func (e *schemaEngine) getSchemaBase(schemaURL string) string {
 	return schemaBase
 }
 
-func (e *schemaEngine) fetchIDs(schemaURL string) (_ *ids, err error) {
-	e.cacheMu.RLock()
-	schemaBase := e.getSchemaBase(schemaURL)
-	schemaIDsURL := fmt.Sprintf("%s/ids.yaml", schemaBase)
-	ids := e.cachedIDs[schemaIDsURL]
-	e.cacheMu.RUnlock()
-	if ids != nil && time.Since(ids.fetchTime) < cacheTTL {
-		return ids, nil
-	}
-	// Expired or missing.
-	ids, err = fetchIDs(schemaIDsURL)
-	if err != nil {
-		return nil, err
-	}
-	e.cacheMu.Lock()
-	e.cachedIDs[schemaIDsURL] = ids
-	e.cacheMu.Unlock()
-	return ids, nil
+type fetchedSchema struct {
+	Schema
+
+	version                  string
+	uniqueNameToIdentity     map[string]string
+	uniqueNameTypeToIdentity map[string]string
+
+	fetchTime time.Time
 }
 
-func (e *schemaEngine) fetchChangelog(schemaURL string) (_ *changelog, err error) {
+func (s Schema) toFetchedSchema(version string) *fetchedSchema {
+	fs := &fetchedSchema{
+		Schema:                   s,
+		version:                  version,
+		uniqueNameTypeToIdentity: make(map[string]string),
+		uniqueNameToIdentity:     make(map[string]string),
+		fetchTime:                time.Now().UTC(),
+	}
+	for id := range fs.IDs.MetricsIDs {
+		var name, nameType string
+		// Parse identity in a form of name~unit.type or name.type.
+		parts := strings.Split(id, "~")
+		if len(parts) > 1 {
+			name = parts[0]
+
+			unitAndType := strings.TrimPrefix(id, name+"~")
+			parts = strings.Split(unitAndType, ".")
+			nameType = name + "." + parts[len(parts)-1]
+		} else {
+			parts := strings.Split(id, ".")
+			name = parts[0]
+			nameType = id
+		}
+
+		if _, ok := fs.uniqueNameToIdentity[name]; ok {
+			// Not unique, put sentinel "" which will trigger error.
+			fs.uniqueNameToIdentity[name] = ""
+		} else {
+			fs.uniqueNameToIdentity[name] = id
+		}
+
+		if _, ok := fs.uniqueNameTypeToIdentity[nameType]; ok {
+			// Not unique, put sentinel "" which will trigger error.
+			fs.uniqueNameTypeToIdentity[nameType] = ""
+		} else {
+			fs.uniqueNameTypeToIdentity[nameType] = id
+		}
+	}
+	return fs
+}
+
+type schemaFetcher interface {
+	fetchSchema(_ *schemaEngine, metricName string, labelNames []string) (_ *fetchedSchema, found bool, _ error)
+}
+
+func (f FetchSyntheticSchema) fetchSchema(e *schemaEngine, metricName string, labelNames []string) (*fetchedSchema, bool, error) {
+	// TODO: Cache with key metricName:labelNames
+	schema, ok := f(metricName, labelNames)
+	return schema.toFetchedSchema("1.0.0"), ok, nil
+}
+
+type schemaURLFetcher string
+
+func (f schemaURLFetcher) fetchSchema(e *schemaEngine, _ string, _ []string) (_ *fetchedSchema, _ bool, err error) {
+	schemaURL := string(f)
+
 	e.cacheMu.RLock()
 	schemaBase := e.getSchemaBase(schemaURL)
-	schemaChangelogURL := fmt.Sprintf("%s/changelog.yaml", schemaBase)
-	ch := e.cachedChangelog[schemaChangelogURL]
+	s := e.cachedSchemas[schemaBase]
 	e.cacheMu.RUnlock()
-	if ch != nil && time.Since(ch.fetchTime) < cacheTTL {
-		return ch, nil
+	if s != nil && time.Since(s.fetchTime) < cacheTTL {
+		return s, true, nil
 	}
+
 	// Expired or missing.
-	ch, err = fetchChangelog(schemaChangelogURL)
+	var schema Schema
+	err = fetchAndUnmarshal(schemaBase, &schema)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	version := path.Base(schemaURL)
+	s = schema.toFetchedSchema(version)
+
 	e.cacheMu.Lock()
-	e.cachedChangelog[schemaChangelogURL] = ch
+	e.cachedSchemas[schemaBase] = s
 	e.cacheMu.Unlock()
-	return ch, nil
+	return s, true, nil
 }
 
 // findMetricID returns the metric ID from the schema definition for this identity and schema URL.
 // This allows parsing semantic ID and the revision number. This function also returns
 // magicSuffix that was matched if any.
-func (e *schemaEngine) findMetricID(schemaURL string, metadata schema.Metadata) (metricID, string, error) {
-	schemaVersion := path.Base(schemaURL)
-
-	// TODO(bwplotka): This assumes such a file structure is part of the spec.
-	ids, err := e.fetchIDs(schemaURL)
-	if err != nil {
-		return "", "", err
-	}
-
+func (e *schemaEngine) findMetricID(schema *fetchedSchema, metadata schema.Metadata) (MetricID, string, error) {
 	var (
-		vid         []versionedID
+		vid         []VersionedID
 		magicSuffix string
 	)
 	for _, suffix := range []string{"", "_bucket", "_count", "_sum"} {
@@ -200,16 +239,16 @@ func (e *schemaEngine) findMetricID(schemaURL string, metadata schema.Metadata) 
 		m := metadata
 		m.Name = strings.TrimSuffix(m.Name, magicSuffix)
 
-		vid = ids.MetricsIDs[m.String()]
+		vid = schema.IDs.MetricsIDs[m.String()]
 		if len(vid) > 0 {
 			break
 		}
 
 		// Try non-unit search.
-		val := ids.uniqueNameTypeToIdentity[m.String()]
+		val := schema.uniqueNameTypeToIdentity[m.String()]
 		if val == "" {
 			// Try just name search.
-			val = ids.uniqueNameToIdentity[m.Name]
+			val = schema.uniqueNameToIdentity[m.Name]
 			if val == "" {
 				// Try different suffix.
 				continue
@@ -218,54 +257,64 @@ func (e *schemaEngine) findMetricID(schemaURL string, metadata schema.Metadata) 
 		if val == "" {
 			return "", "", fmt.Errorf("ambiguous metric ID lookup for %s metric; use __type__ and __unit__ for more specific selection", m.String())
 		}
-		vid = ids.MetricsIDs[val]
+		vid = schema.MetricsIDs[val]
 		break
 	}
 	if len(vid) == 0 {
 		return "", "", fmt.Errorf(
 			"can't find metric ID in %s entry for version %s; this metric (with or without magic suffixes) is not part of this schema registry",
-			metadata.String(), schemaVersion)
+			metadata.String(), schema.version)
 	}
 
 	for _, id := range vid {
-		if !natural.Less(schemaVersion, id.IntroVersion) {
+		if !natural.Less(schema.version, id.IntroVersion) {
 			return id.ID, magicSuffix, nil
 		}
 	}
-	return "", "", fmt.Errorf("can't find metric ID in %s entry for version %s", metadata.String(), schemaVersion)
+	return "", "", fmt.Errorf("can't find metric ID in %s entry for version %s", metadata.String(), schema.version)
 }
 
 type queryContext struct {
-	mID         metricID
-	magicSuffix string
-	changes     []change
+	mID           MetricID
+	magicSuffix   string
+	changes       []MetricChange
+	schemaFetcher schemaFetcher
 }
 
 // FindMatcherVariants returns all variants to match for a single schematized (referenced by schema_url) metric selection.
 // It also returns all changes for found semantic ID.
 // It returns an error if the given matchers does not point to a single metric or if schema or variants couldn't
 // be detected.
-func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []*labels.Matcher) (variants [][]*labels.Matcher, q queryContext, err error) {
+func (e *schemaEngine) FindMatcherVariants(sf schemaFetcher, originalMatchers []*labels.Matcher) (variants [][]*labels.Matcher, q queryContext, err error) {
 	matchers, err := newMatcherBuilder(originalMatchers)
 	if err != nil {
 		return nil, q, err
 	}
 
-	q.mID, q.magicSuffix, err = e.findMetricID(schemaURL, matchers.metadata)
+	var metricName string
+	labelNames := map[string]struct{}{}
+	for _, m := range originalMatchers {
+		if m.Name == "__name__" {
+			metricName = m.Value
+		} else {
+			labelNames[m.Name] = struct{}{}
+		}
+	}
+	schema, ok, err := sf.fetchSchema(e, metricName, slices.Collect(maps.Keys(labelNames)))
+	if err != nil || !ok {
+		return nil, q, err
+	}
+	q.schemaFetcher = sf
+	q.mID, q.magicSuffix, err = e.findMetricID(schema, matchers.metadata)
 	if err != nil {
 		return nil, q, fmt.Errorf("FindMetricID: %w", err)
-	}
-
-	ch, err := e.fetchChangelog(schemaURL)
-	if err != nil {
-		return nil, q, err
 	}
 
 	// Original selection (without schema url).
 	variants = append(variants, matchers.ToMatchers(""))
 
 	sID, rev := q.mID.semanticID()
-	q.changes = ch.MetricsChangelog[sID]
+	q.changes = schema.Changelog.MetricsChangelog[sID]
 	if len(q.changes) == 0 {
 		// Unfortunately this (!ok) might also mean the malformed schema or cache.
 		// __schema__id__ idea would be more robust here.
@@ -301,7 +350,7 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 }
 
 type changeTraverser struct {
-	changes     []change
+	changes     []MetricChange
 	magicSuffix string
 }
 
@@ -309,7 +358,7 @@ type changeTraverser struct {
 // It then walks further with the new matchers and result transformation as the base for the next change in the chain.
 // This allows handling multi-version variants.
 func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matcherBuilder, v [][]*labels.Matcher) ([][]*labels.Matcher, error) {
-	var to, from metricGroupChange
+	var to, from MetricGroupDescription
 	// Changes are sorted from the oldest to the newest.
 	if newer {
 		if len(t.changes) <= revision {
@@ -370,13 +419,38 @@ func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matche
 // TransformSeries returns transformed series and value transformer for a single series that contains __schema__url__.
 // TODO(bwplotka): Decide what to do if non schematized series are returned, currently we error.
 func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Labels) (lbls labels.Labels, vt valueTransformer, _ error) {
-	schemaURL := originalLabels.Get(schemaURLLabel)
-	if schemaURL == "" {
+	sf := q.schemaFetcher
+
+	schemaURL := schemaURLFetcher(originalLabels.Get(SchemaURLLabel))
+	if schemaURL != "" {
+		// If the series has a specific schema URL, use it instead of the one from
+		// the query.
+		sf = schemaURLFetcher(schemaURL)
+	} else if _, ok := sf.(schemaURLFetcher); ok {
+		// If the query had a schema URL, then the retrieved series must have
+		// one too.
 		return originalLabels, vt, fmt.Errorf("selected series %v does not contain __schema_url__", originalLabels)
 	}
 
+	var metricName string
+	labelNames := map[string]struct{}{}
+	for _, m := range originalLabels {
+		if m.Name == "__name__" {
+			metricName = m.Value
+		} else {
+			labelNames[m.Name] = struct{}{}
+		}
+	}
+	s, ok, err := sf.fetchSchema(e, metricName, slices.Sorted(maps.Keys(labelNames)))
+	if err != nil {
+		return originalLabels, vt, fmt.Errorf("fetching schema for %q=%q: %w", SchemaURLLabel, schemaURL, err)
+	}
+	if !ok {
+		return originalLabels, vt, nil
+	}
+
 	identity := schema.NewMetadataFromLabels(originalLabels)
-	mID, magicSuffix, err := e.findMetricID(schemaURL, identity)
+	mID, magicSuffix, err := e.findMetricID(s, identity)
 	if err != nil {
 		return originalLabels, vt, fmt.Errorf("getMetricID: %w", err)
 	}
@@ -390,7 +464,7 @@ func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Lab
 
 	builder := labels.NewBuilder(originalLabels)
 	// Explicitly remove __schema_url__ as that would be misleading.
-	builder.Del(schemaURLLabel)
+	builder.Del(SchemaURLLabel)
 
 	if fromRev == toRev {
 		return builder.Labels(), vt, nil
@@ -427,7 +501,7 @@ func (t *changeTraverser) traverseForLabels(fromRev, toRev int, mTyp model.Metri
 		return vt, nil
 	}
 
-	var to, from metricGroupChange
+	var to, from MetricGroupDescription
 	// Changes are sorted from the oldest to the newest.
 	if fromRev < toRev {
 		if len(t.changes) <= fromRev {

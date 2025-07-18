@@ -25,49 +25,49 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type metricID string
+type MetricID string
 
-type semanticMetricID string
+type SemanticMetricID string
 
-func (id metricID) semanticID() (_ semanticMetricID, revision int) {
+func (id MetricID) semanticID() (_ SemanticMetricID, revision int) {
 	parts := strings.Split(string(id), ".")
 	if len(parts) == 1 {
-		return semanticMetricID(id), 0
+		return SemanticMetricID(id), 0
 	}
 
 	var err error
 	revision, err = strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
-		return semanticMetricID(id), 0
+		return SemanticMetricID(id), 0
 	}
 
 	// Number, assume revision.
-	return semanticMetricID(strings.Join(parts[:len(parts)-1], ".")), revision
+	return SemanticMetricID(strings.Join(parts[:len(parts)-1], ".")), revision
 }
 
-type changelog struct {
+type Changelog struct {
 	Version int `yaml:"version"`
 
-	MetricsChangelog map[semanticMetricID][]change `yaml:"metrics_changelog"`
+	MetricsChangelog map[SemanticMetricID][]MetricChange `yaml:"metrics_changelog"`
 
 	fetchTime time.Time
 }
 
-type change struct {
-	Forward  metricGroupChange
-	Backward metricGroupChange
+type MetricChange struct {
+	Forward  MetricGroupDescription
+	Backward MetricGroupDescription
 }
 
-// metricGroupChange represents a semconv metric group.
+// MetricGroupDescription represents a semconv metric group.
 // NOTE(bwplotka): Only implementing fields that matter for querying.
-type metricGroupChange struct {
+type MetricGroupDescription struct {
 	MetricName  string      `yaml:"metric_name"`
 	Unit        string      `yaml:"unit"`
 	ValuePromQL string      `yaml:"value_promql"`
-	Attributes  []attribute `yaml:"attributes"`
+	Attributes  []Attribute `yaml:"attributes"`
 }
 
-func (m metricGroupChange) DirectUnit() string {
+func (m MetricGroupDescription) DirectUnit() string {
 	if strings.HasPrefix(m.Unit, "{") {
 		return strings.Trim(m.Unit, "{}") + "s"
 	}
@@ -75,77 +75,29 @@ func (m metricGroupChange) DirectUnit() string {
 	return m.Unit
 }
 
-type attribute struct {
+type Attribute struct {
 	Tag     string            `yaml:"tag"`
-	Members []attributeMember `yaml:"members"`
+	Members []AttributeMember `yaml:"members"`
 }
 
-type attributeMember struct {
+type AttributeMember struct {
 	Value string `yaml:"value"`
 }
 
-func fetchChangelog(schemaChangelogURL string) (_ *changelog, err error) {
-	ch := &changelog{}
-	if err := fetchAndUnmarshal(schemaChangelogURL, ch); err != nil {
-		return nil, fmt.Errorf("fetch changelog for __schema_url__=%q: %w", schemaChangelogURL, err)
-	}
-	return ch, nil
+type FetchSchema func(baseUrl string, labelNames []string, out *Schema) error
+
+type Schema struct {
+	IDs
+	Changelog
 }
 
-type ids struct {
-	Version int `yaml:"version"`
-
-	MetricsIDs               map[string][]versionedID `yaml:"metrics_ids"`
-	uniqueNameToIdentity     map[string]string
-	uniqueNameTypeToIdentity map[string]string
-
-	fetchTime time.Time
+type IDs struct {
+	Version    int                      `yaml:"version"`
+	MetricsIDs map[string][]VersionedID `yaml:"metrics_ids"`
 }
 
-func fetchIDs(schemaIDsURL string) (_ *ids, err error) {
-	i := &ids{
-		uniqueNameTypeToIdentity: make(map[string]string),
-		uniqueNameToIdentity:     make(map[string]string),
-	}
-	if err := fetchAndUnmarshal(schemaIDsURL, i); err != nil {
-		return nil, fmt.Errorf("fetch IDs for __schema_url__=%q: %w", schemaIDsURL, err)
-	}
-
-	for id := range i.MetricsIDs {
-		var name, nameType string
-		// Parse identity in a form of name~unit.type or name.type.
-		parts := strings.Split(id, "~")
-		if len(parts) > 1 {
-			name = parts[0]
-
-			unitAndType := strings.TrimPrefix(id, name+"~")
-			parts = strings.Split(unitAndType, ".")
-			nameType = name + "." + parts[len(parts)-1]
-		} else {
-			parts := strings.Split(id, ".")
-			name = parts[0]
-			nameType = id
-		}
-
-		if _, ok := i.uniqueNameToIdentity[name]; ok {
-			// Not unique, put sentinel "" which will trigger error.
-			i.uniqueNameToIdentity[name] = ""
-		} else {
-			i.uniqueNameToIdentity[name] = id
-		}
-
-		if _, ok := i.uniqueNameTypeToIdentity[nameType]; ok {
-			// Not unique, put sentinel "" which will trigger error.
-			i.uniqueNameTypeToIdentity[nameType] = ""
-		} else {
-			i.uniqueNameTypeToIdentity[nameType] = id
-		}
-	}
-	return i, nil
-}
-
-type versionedID struct {
-	ID           metricID `yaml:"id"`
+type VersionedID struct {
+	ID           MetricID `yaml:"id"`
 	IntroVersion string   `yaml:"intro_version"`
 }
 

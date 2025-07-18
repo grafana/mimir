@@ -30,12 +30,12 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-const schemaURLLabel = "__schema_url__"
+const SchemaURLLabel = "__schema_url__"
 
 // AwareStorage is a convenience function for wrapping a Storage's
 // Queryable interface as described in AwareQueryable.
-func AwareStorage(s storage.Storage) (storage.Storage, func(config *config.Config) error) {
-	aq, applyConfig := AwareQueryable(s)
+func AwareStorage(s storage.Storage, options ...AwareQueryableOption) (storage.Storage, func(config *config.Config) error) {
+	aq, applyConfig := AwareQueryable(s, options...)
 	return awareStorage{awareQueryable: aq.(awareQueryable), Storage: s}, applyConfig
 }
 
@@ -48,23 +48,47 @@ func (s awareStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	return s.awareQueryable.Querier(mint, maxt)
 }
 
+type awareQueryableOptions struct {
+	schemaFetcher schemaFetcher
+}
+
+type FetchSyntheticSchema func(metricName string, labelNames []string) (_ Schema, ok bool)
+
+type AwareQueryableOption func(*awareQueryableOptions)
+
+func WithSyntheticSchemas(f FetchSyntheticSchema) AwareQueryableOption {
+	return func(o *awareQueryableOptions) {
+		o.schemaFetcher = f
+	}
+}
+
 // AwareQueryable wraps given queriable with a semconv awareness that
 // performs versioned read when __schema_url__ matcher is provided.
-func AwareQueryable(s storage.Queryable) (storage.Queryable, func(config *config.Config) error) {
+func AwareQueryable(s storage.Queryable, options ...AwareQueryableOption) (storage.Queryable, func(config *config.Config) error) {
+	var o awareQueryableOptions
+	for _, setOption := range options {
+		setOption(&o)
+	}
 	e := newSchemaEngine()
-	return &awareQueryable{Queryable: s, engine: e}, e.ApplyConfig
+	return &awareQueryable{
+		Queryable:           s,
+		engine:              e,
+		customSchemaFetcher: o.schemaFetcher,
+	}, e.ApplyConfig
 }
 
 type awareQueryable struct {
 	storage.Queryable
 
-	engine *schemaEngine
+	engine              *schemaEngine
+	customSchemaFetcher schemaFetcher
 }
 
 type awareQuerier struct {
 	storage.Querier
 
-	engine *schemaEngine
+	engine              *schemaEngine
+	customSchemaFetcher schemaFetcher
 }
 
 func (s awareQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -72,7 +96,11 @@ func (s awareQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &awareQuerier{Querier: q, engine: s.engine}, nil
+	return &awareQuerier{
+		Querier:             q,
+		engine:              s.engine,
+		customSchemaFetcher: s.customSchemaFetcher,
+	}, nil
 }
 
 type annotatedSeriesSet struct {
@@ -94,7 +122,7 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 	var schemaURL string
 
 	for _, m := range matchers {
-		if m.Name != schemaURLLabel {
+		if m.Name != SchemaURLLabel {
 			continue
 		}
 		if schemaURL != "" {
@@ -111,11 +139,13 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		}
 		schemaURL = m.Value
 	}
-	if schemaURL == "" {
-		return q.Querier.Select(ctx, sort, hints, matchers...)
+
+	sf := q.customSchemaFetcher
+	if schemaURL != "" {
+		sf = schemaURLFetcher(schemaURL)
 	}
 
-	variants, qCtx, err := q.engine.FindMatcherVariants(schemaURL, matchers)
+	variants, qCtx, err := q.engine.FindMatcherVariants(sf, matchers)
 	if err != nil {
 		return annotateSeriesSet(
 			q.Querier.Select(ctx, sort, hints, matchers...),
@@ -123,7 +153,7 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		)
 	}
 
-	if len(qCtx.changes) == 0 {
+	if len(variants) == 0 || len(qCtx.changes) == 0 {
 		// No changes detected, fast path without transformations.
 		return q.Querier.Select(ctx, sort, hints, matchers...)
 	}

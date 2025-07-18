@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -79,8 +80,9 @@ type Config struct {
 }
 
 type SemConvConfig struct {
-	EnableVersionedRead bool              `yaml:"enable_versioned_read" category:"experimental"`
-	SchemaOverrides     map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
+	EnableVersionedRead                   bool              `yaml:"enable_versioned_read" category:"experimental"`
+	EnableAutomaticOTelTranslationSchemas bool              `yaml:"enable_automatic_o_tel_translation_schemas" category:"experimental"`
+	SchemaOverrides                       map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
 }
 
 const (
@@ -115,6 +117,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
 	f.BoolVar(&cfg.SemConv.EnableVersionedRead, "querier.semconv.enable-versioned-read", false, "Enable versioned read, as proposed in https://docs.google.com/document/d/14y4wdZdRMC676qPLDqBQZfaCA6Dog_3ukzmjLOgAL-k")
+	f.BoolVar(&cfg.SemConv.EnableAutomaticOTelTranslationSchemas, "querier.semconv.enable-automatic-otel-translation-schemas", false, "Automatically do versioned reads to include all OTel translations in queries")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -184,17 +187,65 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	})
 
 	if cfg.SemConv.EnableVersionedRead {
-		semconvAwareQueryable, applyConfig := semconv.AwareQueryable(queryable)
-		queryable = semconvAwareQueryable
-		err := applyConfig(&config.Config{
-			SemConv: config.SemConvConfig{
-				SchemaOverrides: cfg.SemConv.SchemaOverrides,
-			},
-		})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
-		}
 		level.Info(logger).Log("msg", "Experimental support for versioned reads is enabled")
+
+		nextQueryable := queryable
+
+		if !cfg.SemConv.EnableAutomaticOTelTranslationSchemas {
+			semconvAwareQueryable, applyConfig := semconv.AwareQueryable(nextQueryable)
+			queryable = semconvAwareQueryable
+			err := applyConfig(&config.Config{
+				SemConv: config.SemConvConfig{
+					SchemaOverrides: cfg.SemConv.SchemaOverrides,
+				},
+			})
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
+			}
+		}
+
+		// EnableAutomaticOTelTranslationSchemas depends on tenant limits, so
+		// we need to do some wrapping here to intercept the tenant ID for each
+		// query.
+		queryable = storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+			nextQuerier, err := nextQueryable.Querier(minT, maxT)
+			if err != nil {
+				return nil, err
+			}
+			return querierSelectFunc{Querier: nextQuerier, selectFunc: func(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				tenantID, err := tenant.TenantID(ctx)
+				if err != nil {
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+
+				var options []semconv.AwareQueryableOption
+				// TODO: Take this from limits
+				if utf8Enabled := true; utf8Enabled {
+					options = append(options, semconv.WithSyntheticSchemas(otlp.PreUTF8Compatibility{
+						WithMetricSuffixes: limits.OTelMetricSuffixesEnabled(tenantID),
+					}.Schema))
+				}
+				semconvAwareQueryable, applyConfig := semconv.AwareQueryable(
+					nextQueryable,
+					options...,
+				)
+				err = applyConfig(&config.Config{
+					SemConv: config.SemConvConfig{
+						SchemaOverrides: cfg.SemConv.SchemaOverrides,
+					},
+				})
+				if err != nil {
+					level.Warn(logger).Log("Error applying config to semconv-aware queryable. Falling back to base queryable", "error", err)
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+				awareQuerier, err := semconvAwareQueryable.Querier(minT, maxT)
+				if err != nil {
+					level.Warn(logger).Log("Unexpected semconvAwareQueryable.Querier error", "error", err)
+					return nextQuerier.Select(ctx, sortSeries, hints, matchers...)
+				}
+				return awareQuerier.Select(ctx, sortSeries, hints, matchers...)
+			}}, nil
+		})
 	}
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
@@ -817,4 +868,13 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+type querierSelectFunc struct {
+	storage.Querier
+	selectFunc func(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet
+}
+
+func (q querierSelectFunc) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return q.selectFunc(ctx, sortSeries, hints, matchers...)
 }
