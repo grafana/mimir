@@ -4,10 +4,9 @@ syntax = "proto3";
 
 package usagetrackerpb;
 
-option go_package = "usagetrackerpb";
-
 import "gogoproto/gogo.proto";
 
+option go_package = "usagetrackerpb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
