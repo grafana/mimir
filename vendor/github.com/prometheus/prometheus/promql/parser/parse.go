@@ -71,6 +71,8 @@ type parser struct {
 
 	generatedParserResult interface{}
 	parseErrors           ParseErrors
+
+	validationScheme model.ValidationScheme
 }
 
 type Opt func(p *parser)
@@ -78,6 +80,14 @@ type Opt func(p *parser)
 func WithFunctions(functions map[string]*Function) Opt {
 	return func(p *parser) {
 		p.functions = functions
+	}
+}
+
+// WithValidationScheme controls how metric/label names are validated.
+// Defaults to UTF8Validation.
+func WithValidationScheme(scheme model.ValidationScheme) Opt {
+	return func(p *parser) {
+		p.validationScheme = scheme
 	}
 }
 
@@ -90,6 +100,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.parseErrors = nil
 	p.generatedParserResult = nil
 	p.closingParens = make([]posrange.Pos, 0)
+	p.validationScheme = model.UTF8Validation
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
