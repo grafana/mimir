@@ -23,6 +23,7 @@ type Config struct {
 	SchedulerConfig SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
 	ApplyMaxGlobalSeriesPerUserBelow int `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
+	ConcurrentFetcherConcurrency     int `yaml:"concurrent_fetcher_concurrency" category:"experimental"`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
@@ -46,6 +47,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
 	f.IntVar(&cfg.ApplyMaxGlobalSeriesPerUserBelow, "block-builder.apply-max-global-series-per-user-below", 0, "Apply the global series limit per partition if the global series limit for the user is <= this given value. 0 means limits are disabled. If a user's limit is more than the given value, then the limits are not applied as well.")
+	f.IntVar(&cfg.ConcurrentFetcherConcurrency, "block-builder.concurrent-fetcher-concurrency", 1, "The maximum number of concurrent fetch requests that the block-builder makes when reading data from Kafka. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume.")
 
 	cfg.SchedulerConfig.RegisterFlags(f)
 }

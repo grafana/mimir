@@ -248,7 +248,7 @@ func newErrorFetchResult(ctx context.Context, partitionID int32, err error) fetc
 	}
 }
 
-type concurrentFetchers struct {
+type ConcurrentFetchers struct {
 	wg   sync.WaitGroup
 	done chan struct{}
 
@@ -270,7 +270,7 @@ type concurrentFetchers struct {
 	lastReturnedOffset int64
 	startOffset        int64
 	startConcurrency   int
-	startOffsetsReader *genericOffsetReader[int64]
+	startOffsetsReader *GenericOffsetReader[int64]
 
 	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
 	// We set it here so that tests can override it run faster.
@@ -285,8 +285,8 @@ type concurrentFetchers struct {
 	estimatedBytesPerRecord *atomic.Int64
 }
 
-// newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
-func newConcurrentFetchers(
+// NewConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
+func NewConcurrentFetchers(
 	ctx context.Context,
 	client *kgo.Client,
 	logger log.Logger,
@@ -298,10 +298,10 @@ func newConcurrentFetchers(
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
-	startOffsetsReader *genericOffsetReader[int64],
+	startOffsetsReader *GenericOffsetReader[int64],
 	fetchBackoffConfig backoff.Config,
 	metrics *readerMetrics,
-) (*concurrentFetchers, error) {
+) (*ConcurrentFetchers, error) {
 	if fetchBackoffConfig.MaxBackoff == 0 {
 		// Ensure it's not the zero value, which means we haven't got the backoff config due to a bug.
 		return nil, errors.New("fetchBackoffConfig.MaxBackoff has not been set")
@@ -328,7 +328,7 @@ func newConcurrentFetchers(
 	if maxBufferedBytesLimit <= 0 {
 		maxBufferedBytesLimit = math.MaxInt32
 	}
-	f := &concurrentFetchers{
+	f := &ConcurrentFetchers{
 		bufferedFetchedRecords:  atomic.NewInt64(0),
 		bufferedFetchedBytes:    atomic.NewInt64(0),
 		estimatedBytesPerRecord: atomic.NewInt64(0),
@@ -366,27 +366,27 @@ func newConcurrentFetchers(
 }
 
 // BufferedRecords implements fetcher.
-func (r *concurrentFetchers) BufferedRecords() int64 {
+func (r *ConcurrentFetchers) BufferedRecords() int64 {
 	return r.bufferedFetchedRecords.Load()
 }
 
 // BufferedBytes implements fetcher.
-func (r *concurrentFetchers) BufferedBytes() int64 {
+func (r *ConcurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
 }
 
-func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
+func (r *ConcurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
 }
 
 // Start implements fetcher.
-func (r *concurrentFetchers) Start(ctx context.Context) {
+func (r *ConcurrentFetchers) Start(ctx context.Context) {
 	r.wg.Add(1)
 	go r.start(ctx, r.startOffset, r.startConcurrency)
 }
 
 // Stop implements fetcher.
-func (r *concurrentFetchers) Stop() {
+func (r *ConcurrentFetchers) Stop() {
 	// Ensure it's not already stopped.
 	select {
 	case _, ok := <-r.done:
@@ -408,7 +408,7 @@ func (r *concurrentFetchers) Stop() {
 }
 
 // PollFetches implements fetcher
-func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
+func (r *ConcurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
 	waitStartTime := time.Now()
 	select {
 	case <-ctx.Done():
@@ -489,7 +489,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 	return len(records)
 }
 
-func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
+func (r *ConcurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
 	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
@@ -535,7 +535,7 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 // contain any record in case an error is also returned.
 //
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
+func (r *ConcurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
 	defer func(fetchStartTime time.Time) {
 		fr.logCompletedFetch(fetchStartTime, fw)
 	}(time.Now())
@@ -565,7 +565,7 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 	return r.parseFetchResponse(ctx, fw.startOffset, resp)
 }
 
-func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) kmsg.FetchRequest {
+func (r *ConcurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) kmsg.FetchRequest {
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1 // Warpstream ignores this field. This means that the WaitTime below is always waited and MaxBytes play a bigger role in how fast Ws responds.
 	req.Version = 13
@@ -588,7 +588,7 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 }
 
 // This function guarantees that the returned fetchResult doesn't contain any record in case an error is also returned.
-func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset int64, resp *kmsg.FetchResponse) fetchResult {
+func (r *ConcurrentFetchers) parseFetchResponse(ctx context.Context, startOffset int64, resp *kmsg.FetchResponse) fetchResult {
 	// We ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest,
 	// so the broker _probably_ doesn't have a recommended replica for us.
 
@@ -662,7 +662,7 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 	return sum
 }
 
-func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
+func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
 	defer r.wg.Done()
 
 	errBackoff := backoff.New(ctx, r.fetchBackoffConfig)
@@ -801,7 +801,7 @@ func (w *inflightFetchWants) removeNextResult() {
 	w.wants.Remove(head)
 }
 
-func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
+func (r *ConcurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
 	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
@@ -910,7 +910,7 @@ type metadataRefresher interface {
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionStartOffset *genericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionStartOffset *GenericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
 	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
 	// So we force a metadata refresh here to be sure.
 	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).

@@ -165,10 +165,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 // running learns about the jobs from a block-builder-scheduler, and consumes one job at a time.
 func (b *BlockBuilder) running(ctx context.Context) error {
-	// We control our own context here. We'll stop processing jobs when the
-	// service context is cancelled, but let any in-flight jobs complete.
-
-	// Kick off the scheduler's run loop.
+	// Kick off the scheduler client's run loop.
 	go b.schedulerClient.Run(ctx)
 
 	for {
@@ -267,12 +264,42 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
+	b.kafkaClient.ForceMetadataRefresh()
+
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
 	var (
 		firstRec *kgo.Record
 		lastRec  *kgo.Record
 	)
+
+	fetcher, ferr := ingest.NewConcurrentFetchers(
+		ctx,
+		b.kafkaClient,
+		logger,
+		b.cfg.Kafka.Topic,
+		partition,
+		startOffset,
+		b.cfg.ConcurrentFetcherConcurrency,
+		100_000_000,
+		false,
+		5*time.Second,
+		nil,
+		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+		backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 1 * time.Second,
+		},
+		nil)
+	if ferr != nil {
+		return lastConsumedOffset, fmt.Errorf("creating concurrent fetcher: %w", ferr)
+	}
+
+	fetcher.Start(ctx)
+	defer fetcher.Stop()
+
+	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprint(partition))
+	metricUpdatePending := 0
 
 consumerLoop:
 	for recOffset := int64(-1); recOffset < endOffset-1; {
@@ -284,7 +311,7 @@ consumerLoop:
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches, _ := fetcher.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
@@ -293,6 +320,12 @@ consumerLoop:
 		})
 
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
+
+			if metricUpdatePending > 100 {
+				consumeMetric.Add(float64(metricUpdatePending))
+				metricUpdatePending = 0
+			}
+
 			rec := recIter.Next()
 			recOffset = rec.Offset
 
@@ -305,6 +338,8 @@ consumerLoop:
 				break consumerLoop
 			}
 
+			metricUpdatePending++
+
 			err := builder.Process(ctx, rec)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
@@ -313,6 +348,9 @@ consumerLoop:
 			lastRec = rec
 		}
 	}
+
+	consumeMetric.Add(float64(metricUpdatePending))
+	metricUpdatePending = 0
 
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
