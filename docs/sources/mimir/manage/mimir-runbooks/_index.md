@@ -165,6 +165,10 @@ How to **fix** it:
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
+### MimirIngesterTooManyDiscardedSamples
+
+TBA.
+
 ### MimirDistributorGcUsesTooMuchCpu
 
 This alert fires when distributors spend too much CPU time on garbage collection.
@@ -203,6 +207,10 @@ How to **fix** it:
    If the actual number of in-flight push requests is very close to or already hit the limit.
 2. **Scale up distributors**<br />
    Scaling up distributors will lower the number of in-flight push requests per distributor.
+
+### MimirHATrackerElectedReplicaChangesTooOften
+
+TBA.
 
 ### MimirRequestLatency
 
