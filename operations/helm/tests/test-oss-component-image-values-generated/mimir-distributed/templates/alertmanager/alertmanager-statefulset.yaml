@@ -132,3 +132,5 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []

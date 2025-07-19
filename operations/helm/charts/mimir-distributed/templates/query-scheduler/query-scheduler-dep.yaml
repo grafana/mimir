@@ -86,15 +86,8 @@ spec:
             {{- toYaml .Values.query_scheduler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.query_scheduler.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.query_scheduler.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.query_scheduler.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "query-scheduler") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.query_scheduler.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

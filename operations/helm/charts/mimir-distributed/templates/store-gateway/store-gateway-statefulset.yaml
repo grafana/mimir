@@ -200,27 +200,19 @@ spec:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
           {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
-          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.store_gateway.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- if $cpu_request }}
-              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
-              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
-            - name: "GOMAXPROCS"
-              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
-            {{- end }}
-            {{- if $mem_request }}
-            - name: "GOMEMLIMIT"
-              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
-            {{- end }}
+          {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled $cpu_request_plus_four | toString)) }}
           {{- end }}
+          {{- if $mem_request }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMEMLIMIT" "value" (include "mimir.siToBytes" (dict "value" $mem_request) | toString)) }}
+          {{- end }}
+          env:
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "store-gateway" "env" $defaultEnv) | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
