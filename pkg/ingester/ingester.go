@@ -3242,7 +3242,11 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval()
-	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
+
+	// After the first interval, we want the compaction to run at a specified interval for the partial zone if we have multiple zones,
+	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
+	// If the criteria to have staggered compactions is not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
+	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
 		// reference may change during the lifetime of compactionServiceRunning().
@@ -3265,7 +3269,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 				stopTicker()
 
 				standardInterval = newStandardInterval
-				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval)
+				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 			}
 
 		case req := <-i.forceCompactTrigger:
@@ -3289,7 +3293,7 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 		// if ingest storage is enabled.
 		standardInterval = min(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 	} else {
-		standardInterval = i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+		standardInterval = i.calculateHeadCompactionInterval()
 	}
 
 	if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
@@ -3299,6 +3303,42 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	}
 
 	return
+}
+
+// calculateHeadCompactionInterval calculates the head compaction interval based on the number of zones
+// and the configured head compaction interval to ensure we can stagger the compaction across zones.
+// If zone awareness is not enabled, it returns the configured interval as-is.
+func (i *Ingester) calculateHeadCompactionInterval() time.Duration {
+	// If we don't have zone awareness enabled, we return the configured head compaction interval as-is,
+	// because we don't need to adjust it based on the number of zones.
+	if !i.cfg.IngesterRing.ZoneAwarenessEnabled || i.cfg.IngesterRing.InstanceZone == "" {
+		return i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+	}
+
+	zones := i.lifecycler.Zones()
+
+	// No more than 1 zone, we don't need to adjust the interval.
+	if len(zones) <= 1 {
+		return i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+	}
+
+	// Calculate the step duration based on the number of zones.
+	step := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval / time.Duration(len(zones))
+
+	// Find the index of the current zone in the zones list.
+	current := i.cfg.IngesterRing.InstanceZone
+	for idx, zone := range zones {
+		if zone == current {
+			multiplier := idx + 1
+			result := step * time.Duration(multiplier)
+			level.Debug(i.logger).Log("msg", "calculated zone-aware compaction interval", "zone", current, "zone_multiplier", multiplier, "total_zones", len(zones), "base_interval", i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, "calculated_interval", result)
+			return result
+		}
+	}
+
+	// Zone not found in the list - this shouldn't happen but handle gracefully.
+	level.Warn(i.logger).Log("msg", "current zone not found in zones list, using the default", "current_zone", current, "available_zones", strings.Join(zones, ","))
+	return i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
@@ -3377,7 +3417,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	})
 }
 
-// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the elegible tenants in order to reduce the in-memory series.
+// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the eligible tenants to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
 	// Skip if disabled.
 	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
