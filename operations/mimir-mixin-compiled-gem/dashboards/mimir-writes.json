@@ -2539,7 +2539,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(histogram_sum(sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval])))) / sum(histogram_count(sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval])))) * 1e3",
+                        "expr": "histogram_avg(sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))) * 1e3",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "legendLink": null
