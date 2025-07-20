@@ -36,6 +36,10 @@ Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mim
 
 ![Mimir's horizontally scaled monolithic mode](scaled-monolithic-mode.svg)
 
+{{< admonition type="note" >}}
+Because monolithic mode requires scaling all Grafana Mimir components together, this deployment mode isn't recommended for large-scale deployments.
+{{< /admonition >}}
+
 ## Microservices mode
 
 In microservices mode, components are deployed in distinct processes. Scaling is per component, which allows for greater flexibility in scaling and more granular failure domains. Microservices mode is the preferred method for a production deployment, but it is also the most complex.
