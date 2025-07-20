@@ -1141,6 +1141,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of symbols flushers used when doing split compaction. (default 1)
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
+  -compactor.update-blocks-concurrency int
+    	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 16)
   -compactor.upload-sparse-index-headers
     	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
   -config.expand-env
