@@ -17,6 +17,7 @@ import (
 
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/errors"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -88,7 +89,10 @@ func main() {
 	matcher := flag.String(matcherFlag, "{job=\"prometheus\"}", "Prometheus matcher")
 	labelsSource := flag.String(srcFlag, "", "Label set source - file|prometheus")
 
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	if len(*labelsSource) == 0 || *count <= 0 || *count > maxCount {
 		printUsageAndExit("")
