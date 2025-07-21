@@ -3247,6 +3247,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.http.excluded-paths comma-separated-list-of-strings
     	[experimental] Comma-separated list of url paths that are excluded from the cluster validation check.
+  -server.cluster-validation.http.excluded-user-agents comma-separated-list-of-strings
+    	[experimental] Comma-separated list of user agents that are excluded from the cluster validation check.
   -server.cluster-validation.http.soft-validation
     	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
   -server.cluster-validation.label string
