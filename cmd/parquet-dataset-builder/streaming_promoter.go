@@ -95,7 +95,7 @@ func (sp *StreamingPromoter) promoteLabelsInBlock(ctx context.Context, blockDir 
 	defer q.Close()
 
 	// Extract target_info labels
-	targetInfoLabels, err := sp.extractTargetInfoLabels(ctx, q)
+	targetInfoLabels, err := sp.getTargetInfoLabelsFetcher(ctx, q)
 	if err != nil {
 		return fmt.Errorf("failed to extract target_info labels: %w", err)
 	}
@@ -104,7 +104,7 @@ func (sp *StreamingPromoter) promoteLabelsInBlock(ctx context.Context, blockDir 
 	return sp.createPromotedBlockWithIndexUpdate(ctx, blockDir, tsdbBlock, targetInfoLabels)
 }
 
-func (sp *StreamingPromoter) extractTargetInfoLabels(ctx context.Context, querier storage.Querier) (func(string) labels.Labels, error) {
+func (sp *StreamingPromoter) getTargetInfoLabelsFetcher(ctx context.Context, querier storage.Querier) (func(string) labels.Labels, error) {
 	targetInfoLabels := make(map[string]labels.Labels)
 
 	// Get all series with __name__ = "target_info"
@@ -340,13 +340,6 @@ func (sp *StreamingPromoter) createPromotedBlockWithIndexUpdate(
 		return fmt.Errorf("failed to close index writer: %w", err)
 	}
 
-	// Copy the chunks directory unchanged
-	originalChunksDir := filepath.Join(originalBlockDir, "chunks")
-	newChunksDir := filepath.Join(outDir, "chunks")
-	if err := sp.copyDirectory(originalChunksDir, newChunksDir); err != nil {
-		return fmt.Errorf("failed to copy chunks directory: %w", err)
-	}
-
 	// Copy the meta.json file
 	originalMetaPath := filepath.Join(originalBlockDir, "meta.json")
 	newMetaPath := filepath.Join(outDir, "meta.json")
@@ -406,34 +399,6 @@ func (sp *StreamingPromoter) promoteSeriesLabels(originalLabels labels.Labels, t
 	})
 
 	return newLabels
-}
-
-func (sp *StreamingPromoter) copyDirectory(src, dst string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return fmt.Errorf("failed to read source directory: %w", err)
-	}
-
-	if err := os.MkdirAll(dst, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		if entry.IsDir() {
-			if err := sp.copyDirectory(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy subdirectory: %w", err)
-			}
-		} else {
-			if err := sp.copyFile(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy file: %w", err)
-			}
-		}
-	}
-
-	return nil
 }
 
 func (sp *StreamingPromoter) copyFile(src, dst string) error {
