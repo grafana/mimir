@@ -27,33 +27,7 @@ var FullValidConfigForTesting = fmt.Sprintf(`{
 		"secret": "test-hmac-secret",
 		"header": "X-Grafana-Alerting-Signature",
 		"timestampHeader": "X-Grafana-Alerting-Timestamp"
-	},
-	"http_config": {
-		"oauth2": {
-			"client_id": "test-client-id",
-			"client_secret": "test-client-secret",
-			"token_url": "https://localhost/auth/token",
-			"scopes": ["scope1", "scope2"],
-			"endpoint_params": {
-				"param1": "value1",
-				"param2": "value2"
-			},
-			"tls_config": {
-				"insecureSkipVerify": false,
-				"clientCertificate": %[1]q,
-				"clientKey": %[2]q,
-				"caCertificate": %[3]q
-			},
-			"proxy_config": {
-				"proxy_url": "http://localproxy:8080",
-				"no_proxy": "localhost",
-				"proxy_from_environment": false,
-				"proxy_connect_header": {
-					"X-Proxy-Header": "proxy-value"
-				}
-			}
-		}
-    }
+	}
 }`, http.TestCertPem, http.TestKeyPem, http.TestCACert)
 
 // FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets
@@ -63,9 +37,5 @@ var FullValidSecretsForTesting = fmt.Sprintf(`{
 	"tlsConfig.clientCertificate": %q,
 	"tlsConfig.clientKey": %q,
 	"tlsConfig.caCertificate": %q,
-	"hmacConfig.secret": "test-override-hmac-secret",
-	"http_config.oauth2.client_secret": "test-override-oauth2-secret",
-	"http_config.oauth2.tls_config.clientCertificate": %[1]q,
-	"http_config.oauth2.tls_config.clientKey": %[2]q,
-	"http_config.oauth2.tls_config.caCertificate": %[3]q
+	"hmacConfig.secret": "test-override-hmac-secret"
 }`, http.TestCertPem, http.TestKeyPem, http.TestCACert)

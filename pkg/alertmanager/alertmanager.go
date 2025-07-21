@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -153,6 +154,8 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
+
+	notifyHooksMetrics *notifyHooksMetrics
 }
 
 var (
@@ -214,6 +217,10 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Name: "alertmanager_notification_rate_limited_total",
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
+	}
+
+	if am.cfg.EnableNotifyHooks {
+		am.notifyHooksMetrics = newNotifyHooksMetrics(reg)
 	}
 
 	am.registry = reg
@@ -326,6 +333,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// This route is an experimental Mimir extension to the receivers API, so we put
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
+		am.mux.Handle("/api/v1/grafana/full_state", http.HandlerFunc(am.GetFullStateHandler))
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
 		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
 		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
@@ -335,6 +343,37 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
+}
+
+func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Request) {
+	st, err := am.state.GetFullState()
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error getting full state", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error getting full state: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	bytes, err := st.Marshal()
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error marshalling full state", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error marshalling full state: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	d, err := json.Marshal(successResult{
+		Status: statusSuccess,
+		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(d); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
@@ -580,7 +619,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
 	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.registry)
+		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.notifyHooksMetrics)
 		if err != nil {
 			// It's rare an error is returned, but in theory it can happen.
 			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)

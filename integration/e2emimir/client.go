@@ -1225,8 +1225,16 @@ func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) GetFullState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
+	return c.getState(ctx, "/api/v1/grafana/full_state")
+}
+
 func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+	return c.getState(ctx, "/api/v1/grafana/state")
+}
+
+func (c *Client) getState(ctx context.Context, path string) (*alertmanager.UserGrafanaState, error) {
+	u := c.alertmanagerClient.URL(path, nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {

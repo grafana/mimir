@@ -597,25 +597,29 @@ eval_fail range from 0 to 30m step 6m topk(Inf, series)
   expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
 
 eval_fail range from 0 to 30m step 6m topk(NaN, series)
-  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
+  expected_fail_regexp (P|p)arameter value is NaN( for topk)?
 
 eval_fail instant at 0 topk(Inf, series)
   expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
 
 eval_fail instant at 0 topk(NaN, series)
-  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
+  expected_fail_regexp (P|p)arameter value is NaN( for topk)?
 
 eval_fail range from 0 to 30m step 6m bottomk(Inf, series)
   expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
 
 eval_fail range from 0 to 30m step 6m bottomk(NaN, series)
-  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
+  expected_fail_regexp (P|p)arameter value is NaN( for bottomk)?
 
 eval_fail instant at 0 bottomk(Inf, series)
   expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
 
 eval_fail instant at 0 bottomk(NaN, series)
-  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
+  expected_fail_regexp (P|p)arameter value is NaN( for bottomk)?
+
+# This test is marked unsupported in upstream/aggregations.test, only due to the different error messages.
+eval_fail instant at 50m topk(NaN, non_existent)
+  expected_fail_regexp (P|p)arameter value is NaN( for topk)?
 
 clear
 

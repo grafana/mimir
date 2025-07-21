@@ -327,6 +327,9 @@ func newQueryTripperware(
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
+		// Optimize labels queries after validation.
+		labels = newLabelsQueryOptimizer(codec, limits, labels, log, registerer)
+
 		// Validate the request before any processing.
 		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
 		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
@@ -404,6 +407,7 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
+		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
@@ -416,6 +420,7 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
+		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
 	)
 

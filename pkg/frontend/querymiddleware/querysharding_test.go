@@ -53,6 +53,11 @@ var (
 	lookbackDelta = 5 * time.Minute
 )
 
+func init() {
+	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
+	parser.ExperimentalDurationExpr = true
+}
+
 func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
 	return HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
@@ -172,6 +177,10 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `sum(metric_counter offset -5s)`,
 			expectedShardedQueries: 1,
 		},
+		"sum() offset aritmetic": {
+			query:                  `sum(metric_counter offset (10s - 5s))`,
+			expectedShardedQueries: 1,
+		},
 		"sum() grouping 'by'": {
 			query:                  `sum by(group_1) (metric_counter)`,
 			expectedShardedQueries: 1,
@@ -182,6 +191,10 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"sum(rate()) no grouping": {
 			query:                  `sum(rate(metric_counter[1m]))`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate()) range aritmetic": {
+			query:                  `sum(rate(metric_counter[30s+30s]))`,
 			expectedShardedQueries: 1,
 		},
 		"sum(rate()) grouping 'by'": {
@@ -752,9 +765,9 @@ func TestQuerySharding_Correctness(t *testing.T) {
 									0,
 									reg,
 								)
-
+								durationsware := newDurationsMiddleware(log.NewNopLogger())
 								// Run the query with sharding.
-								shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+								shardedRes, err := durationsware.Wrap(shardingware.Wrap(downstream)).Do(user.InjectOrgID(context.Background(), "test"), req)
 								require.Nil(t, err)
 
 								// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -1914,7 +1927,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					false, // Since cache is disabled, we don't need to cache queryable samples stats.
 					splitInterval,
 					mockLimits{},
-					newTestPrometheusCodec(),
+					newTestCodec(),
 					nil,
 					nil,
 					nil,

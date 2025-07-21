@@ -71,6 +71,7 @@ type alertmanagerMetrics struct {
 	notifyHookTotal         *prometheus.Desc
 	notifyHookNoop          *prometheus.Desc
 	notifyHookFailed        *prometheus.Desc
+	notifyHookDuration      *prometheus.Desc
 
 	// exported metrics, gathered from Alertmanager Dispatcher
 	dispatcherAggrGroups                    *prometheus.Desc
@@ -257,6 +258,10 @@ func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 		notifyHookFailed: prometheus.NewDesc(
 			"cortex_alertmanager_notify_hook_failed_total",
 			"Number of times a pre-notify was attempted but failed.",
+			[]string{"status_code"}, nil),
+		notifyHookDuration: prometheus.NewDesc(
+			"cortex_alertmanager_notify_hook_duration_seconds",
+			"Time spent invoking pre-notify hooks.",
 			nil, nil),
 		dispatcherAggrGroups: prometheus.NewDesc(
 			"cortex_alertmanager_dispatcher_aggregation_groups",
@@ -343,6 +348,7 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.notifyHookTotal
 	out <- m.notifyHookNoop
 	out <- m.notifyHookFailed
+	out <- m.notifyHookDuration
 	out <- m.dispatcherAggrGroups
 	out <- m.dispatcherProcessingDuration
 	out <- m.dispatcherAggregationGroupsLimitReached
@@ -403,7 +409,8 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCounters(out, m.notifyHookTotal, "alertmanager_notify_hook_total")
 	data.SendSumOfCounters(out, m.notifyHookNoop, "alertmanager_notify_hook_noop_total")
-	data.SendSumOfCounters(out, m.notifyHookFailed, "alertmanager_notify_hook_failed_total")
+	data.SendSumOfCountersWithLabels(out, m.notifyHookFailed, "alertmanager_notify_hook_failed_total", "status_code")
+	data.SendSumOfHistograms(out, m.notifyHookDuration, "alertmanager_notify_hook_duration_seconds")
 
 	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
 	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")

@@ -58,9 +58,9 @@ var (
 )
 
 type GrafanaAlertmanagerConfig struct {
-	Templates          map[string]string                    `json:"template_files"`
+	TemplateFiles      map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
-
+	Templates          []definition.PostableApiTemplate     `json:"templates,omitempty"`
 	// original is the string from which the config was parsed
 	original string
 }
@@ -133,6 +133,8 @@ type UserGrafanaState struct {
 
 type PostableUserGrafanaState struct {
 	UserGrafanaState
+
+	// Deprecated: This field is not used.
 	Promoted bool `json:"promoted"`
 }
 
@@ -512,22 +514,19 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 
 	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
 		for _, tmpl := range grafanaConfig.Templates {
-			if size := len(tmpl.Body); size > maxSize {
-				return fmt.Errorf(errTemplateTooBig, tmpl.GetFilename(), size, maxSize)
+			if size := len(tmpl.Content); size > maxSize {
+				return fmt.Errorf(errTemplateTooBig, tmpl.Name, size, maxSize)
 			}
 		}
 	}
 
 	// Validate template files.
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0, len(grafanaConfig.Templates))
-	for _, tmpl := range grafanaConfig.Templates {
-		tmpls = append(tmpls, alertingTemplates.TemplateDefinition{
-			Name:     tmpl.Filename,
-			Template: tmpl.Body,
-			Kind:     alertingTemplates.GrafanaKind,
-		})
-	}
-	factory, err := alertingTemplates.NewFactory(tmpls, logger, "http://localhost", user) // use fake URL to avoid errors.
+	factory, err := alertingTemplates.NewFactory(
+		alertingNotify.PostableAPITemplatesToTemplateDefinitions(grafanaConfig.Templates),
+		logger,
+		"http://localhost", // Use a fake URL to avoid errors.
+		user,
+	)
 	if err != nil {
 		return err
 	}
