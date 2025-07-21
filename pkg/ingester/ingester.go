@@ -3252,9 +3252,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
-			// Prepare compaction before the periodic head compaction is triggered.
-			cleanup := i.prepareCompaction()
-			defer cleanup()
+			// Count the number of compactions in progress to keep the downscale handler from
+			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+			i.numCompactionsInProgress.Inc()
+			defer i.numCompactionsInProgress.Dec()
 
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
@@ -3309,21 +3310,6 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	}
 
 	return
-}
-
-// prepareCompaction is incrementing the atomic counter of the number of compactions in progress.
-// It also exposes a metric tracking the number of compactions in progress.
-// It returns a callback that should be called when the compaction is finished, e.g. in defer statement.
-// This callback is decrementing the atomic counter of the number of compactions in progress.
-func (i *Ingester) prepareCompaction() func() {
-	// Increment the number of compactions in progress.
-	// This is used to ensure that the ingester will never leave the read-only state.
-	// (See [Ingester.PrepareInstanceRingDownscaleHandler])
-	i.numCompactionsInProgress.Inc()
-
-	return func() {
-		i.numCompactionsInProgress.Dec()
-	}
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
@@ -3664,9 +3650,10 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Prepare compaction before the force compaction is triggered.
-		cleanup := i.prepareCompaction()
-		defer cleanup()
+		// Count the number of compactions in progress to keep the downscale handler from
+		// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+		i.numCompactionsInProgress.Inc()
+		defer i.numCompactionsInProgress.Dec()
 
 		compactionCallbackCh := make(chan struct{})
 

@@ -54,7 +54,7 @@ func (i *Ingester) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r 
 	case http.MethodDelete:
 		// Don't leave read-only mode if there is any compaction pending or in progress.
 		if i.numCompactionsInProgress.Load() != 0 {
-			msg := "cannot clear read-only mode while forced compaction is in progress"
+			msg := "cannot clear read-only mode while forced compaction is pending or in progress"
 			level.Warn(i.logger).Log("msg", msg)
 			http.Error(w, msg, http.StatusConflict)
 			return
