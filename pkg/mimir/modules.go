@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
@@ -805,9 +806,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = promql.NewEngine(promOpts)
+		// TODO: Decide whether this is a good idea.
+		eng = streamingpromqlcompat.NameValidatingEngine(promql.NewEngine(promOpts), t.Overrides)
 	case querier.MimirEngine:
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryPlanner, util_log.Logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryPlanner, util_log.Logger)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -820,9 +822,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Querier.QueryEngine))
 	}
-
-	// TODO: Decide whether this is a good idea.
-	eng = streamingpromqlcompat.NameValidatingEngine(eng, t.Overrides)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
