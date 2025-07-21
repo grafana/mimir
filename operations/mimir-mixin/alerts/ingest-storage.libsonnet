@@ -309,6 +309,20 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
           },
         },
+
+        // Alert immediately if block-builder-scheduler detects an unexpected offset gap.
+        {
+          alert: $.alertName('BlockBuilderDataSkipped'),
+          expr: |||
+            increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected skipped data.' % $._config,
+          },
+        },
       ],
     },
   ],

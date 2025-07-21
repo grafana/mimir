@@ -23,7 +23,7 @@ import (
 
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
-// The amConfig.emailConfig field can be used to create Grafana email integrations.
+// The amConfig.EmailConfig field can be used to create Grafana email integrations.
 func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
@@ -75,7 +75,7 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 	amCfg.AlertmanagerConfig.Receivers = rcvs
 
-	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
+	rawCfg, err := definition.MarshalJSONWithSecrets(amCfg.AlertmanagerConfig)
 	if err != nil {
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
@@ -134,10 +134,28 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		}
 	}
 
+	// The map can only contain templates of the Grafana kind.
+	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
+	tmpl := append(amCfg.Templates, definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)...)
+
 	return amConfig{
-		AlertConfigDesc:    alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
-		tmplExternalURL:    externalURL,
-		usingGrafanaConfig: true,
-		emailConfig:        emailCfg,
+		User:               gCfg.User,
+		RawConfig:          string(rawCfg),
+		Templates:          tmpl,
+		TmplExternalURL:    externalURL,
+		UsingGrafanaConfig: true,
+		EmailConfig:        emailCfg,
 	}, nil
+}
+
+func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
+	result := make([]definition.PostableApiTemplate, 0, len(t))
+	for _, desc := range t {
+		result = append(result, definition.PostableApiTemplate{
+			Name:    desc.Filename,
+			Content: desc.Body,
+			Kind:    kind,
+		})
+	}
+	return result
 }

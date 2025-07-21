@@ -5215,12 +5215,48 @@
           "kind": "field",
           "name": "cost_attribution_labels",
           "required": false,
-          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.",
+          "desc": "",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "validation.cost-attribution-labels",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_labels_structured",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_labels_structured",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "input",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "output",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
