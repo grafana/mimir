@@ -813,6 +813,11 @@ cluster_validation:
     # the cluster validation check.
     # CLI flag: -server.cluster-validation.http.excluded-paths
     [excluded_paths: <string> | default = ""]
+
+    # (experimental) Comma-separated list of user agents that are excluded from
+    # the cluster validation check.
+    # CLI flag: -server.cluster-validation.http.excluded-user-agents
+    [excluded_user_agents: <string> | default = ""]
 ```
 
 ### distributor
