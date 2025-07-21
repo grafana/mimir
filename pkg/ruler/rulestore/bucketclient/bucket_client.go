@@ -34,6 +34,9 @@ const (
 	RulesPrefix = "rules"
 
 	loadConcurrency = 10
+
+	maxWorkers           = 50
+	targetFilesPerWorker = 5
 )
 
 var (
@@ -174,6 +177,7 @@ func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[s
 	// Given we store one file per rule group. With this, we create a pool of workers that will
 	// download all rule groups in parallel. We limit the number of workers to avoid a
 	// particular user having too many rule groups rate limiting us with the object storage.
+	dynamicLoadConcurrency(groupsToLoad, targetFilesPerWorker, maxWorkers)
 	g, gCtx := errgroup.WithContext(ctx)
 	for i := 0; i < loadConcurrency; i++ {
 		g.Go(func() error {
@@ -340,4 +344,17 @@ func parseRuleGroupObjectKey(key string) (namespace, group string, _ error) {
 	}
 
 	return string(decodedNamespace), string(decodedGroup), nil
+}
+
+func dynamicLoadConcurrency(groupsToLoad map[string]rulespb.RuleGroupList, targetFilesPerWorker, maxWorkers int) int {
+	expFiles := 0
+	for _, groups := range groupsToLoad {
+		expFiles += len(groups)
+	}
+
+	workers := expFiles / targetFilesPerWorker
+	if workers > maxWorkers {
+		return maxWorkers
+	}
+	return workers
 }
