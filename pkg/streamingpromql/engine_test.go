@@ -245,6 +245,53 @@ func TestOurTestCases(t *testing.T) {
 	}
 }
 
+func TestBryan(t *testing.T) {
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	baseT := timestamp.Time(0)
+	storage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x40
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	testCases := map[string]struct {
+		expr     string
+		expected *promql.Result
+		ts       time.Time
+	}{
+		"floats: matches series with points in range": {
+			expr: "sum_over_time(some_metric[1h])",
+			ts:   baseT.Add(2 * time.Hour),
+			expected: &promql.Result{
+				Value: promql.Vector{
+					{
+						Metric: labels.FromStrings("env", "1"),
+						T:      timestamp.FromTime(baseT.Add(2 * time.Hour)),
+						F:      7 + 8 + 9 + 10 + 11 + 12,
+					},
+				},
+			},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, ts time.Time, expected *promql.Result) {
+				q, err := eng.NewInstantQuery(context.Background(), storage, nil, expr, ts)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(context.Background())
+				require.Equal(t, testCase.expected, res)
+			}
+			runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
+		})
+	}
+}
+
 // Testing instant queries that return a range vector is not supported by Prometheus' PromQL testing framework,
 // and adding support for this would be quite involved.
 //
