@@ -1084,9 +1084,9 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
 
-			cfg, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			status, err := c.GetGrafanaAlertmanagerConfigStatus(context.Background())
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-			require.Nil(t, cfg)
+			require.Nil(t, status)
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
