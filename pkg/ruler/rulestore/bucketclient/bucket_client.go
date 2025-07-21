@@ -33,8 +33,6 @@ const (
 	// RulesPrefix is the bucket prefix under which all tenants rule groups are stored.
 	RulesPrefix = "rules"
 
-	loadConcurrency = 10
-
 	maxWorkers           = 50
 	targetFilesPerWorker = 5
 )
@@ -177,9 +175,9 @@ func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[s
 	// Given we store one file per rule group. With this, we create a pool of workers that will
 	// download all rule groups in parallel. We limit the number of workers to avoid a
 	// particular user having too many rule groups rate limiting us with the object storage.
-	dynamicLoadConcurrency(groupsToLoad, targetFilesPerWorker, maxWorkers)
+	concurrency := dynamicLoadConcurrency(groupsToLoad, targetFilesPerWorker, maxWorkers)
 	g, gCtx := errgroup.WithContext(ctx)
-	for i := 0; i < loadConcurrency; i++ {
+	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for inputGroup := range ch {
 				user, namespace, groupName := inputGroup.GetUser(), inputGroup.GetNamespace(), inputGroup.GetName()
