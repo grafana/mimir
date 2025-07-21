@@ -169,6 +169,45 @@ func sumOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarDat
 	return 0, false, h, err
 }
 
+type sumOverTimeIntermediate struct {
+	sumF       float64
+	sumC       float64 // FIXME figure out how to use this in summation.
+	sumH       *histogram.FloatHistogram
+	hasFloat   bool
+	RangeStart int64
+	RangeEnd   int64
+}
+
+func sumOverTimePiecewise(emitAnnotation types.EmitAnnotationFunc, pieces []sumOverTimeIntermediate) (float64, bool, *histogram.FloatHistogram, error) {
+	haveFloats := false
+	sumF, c := 0.0, 0.0
+	var sumH *histogram.FloatHistogram
+
+	for _, p := range pieces {
+		if p.hasFloat {
+			haveFloats = true
+			sumF, c = floats.KahanSumInc(p.sumF, sumF, c)
+		}
+		if p.sumH != nil {
+			if sumH == nil {
+				sumH = p.sumH.Copy()
+			} else {
+				if _, err := sumH.Add(p.sumH); err != nil {
+					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					return 0, false, nil, err
+				}
+			}
+		}
+	}
+
+	if haveFloats && sumH != nil {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
+	}
+
+	return sumF, haveFloats, sumH, nil
+}
+
 func sumFloats(head, tail []promql.FPoint) float64 {
 	sum, c := 0.0, 0.0
 
