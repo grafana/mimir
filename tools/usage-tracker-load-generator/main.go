@@ -106,7 +106,12 @@ func main() {
 	router.Handle("/metrics", promhttp.Handler())
 	router.Handle("/usage-tracker/instance-ring", instanceRing)
 	router.Handle("/usage-tracker/partition-ring", ring.NewPartitionRingPageHandler(partitionRingWatcher, ring.NewPartitionRingEditor(usagetracker.PartitionRingKey, partitionKVClient)))
-	go http.ListenAndServe(":80", router)
+	go func() {
+		if err := http.ListenAndServe(":80", router); err != nil { // nolint:gosec
+			fmt.Fprintln(os.Stderr, "Failed to start HTTP server:", err)
+			os.Exit(1)
+		}
+	}()
 
 	// Create the usage-tracker client.
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, prometheus.DefaultRegisterer)
