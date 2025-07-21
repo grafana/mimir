@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"os"
 	"path/filepath"
@@ -99,18 +100,11 @@ func (sp *StreamingPromoter) promoteLabelsInBlock(ctx context.Context, blockDir 
 		return fmt.Errorf("failed to extract target_info labels: %w", err)
 	}
 
-	if len(targetInfoLabels) == 0 {
-		level.Info(sp.logger).Log("msg", "No target_info series found in block", "block", blockDir)
-		return nil
-	}
-
-	level.Info(sp.logger).Log("msg", "Found target_info series", "count", len(targetInfoLabels), "block", blockDir)
-
 	// Create a new block with promoted labels in the index only
 	return sp.createPromotedBlockWithIndexUpdate(ctx, blockDir, tsdbBlock, targetInfoLabels)
 }
 
-func (sp *StreamingPromoter) extractTargetInfoLabels(ctx context.Context, querier storage.Querier) (map[string]labels.Labels, error) {
+func (sp *StreamingPromoter) extractTargetInfoLabels(ctx context.Context, querier storage.Querier) (func(string) labels.Labels, error) {
 	targetInfoLabels := make(map[string]labels.Labels)
 
 	// Get all series with __name__ = "target_info"
@@ -145,14 +139,36 @@ func (sp *StreamingPromoter) extractTargetInfoLabels(ctx context.Context, querie
 		return nil, fmt.Errorf("series set error: %w", seriesSet.Err())
 	}
 
-	return targetInfoLabels, nil
+	targetInfoLabelsSlice := make([]string, 0, len(targetInfoLabels))
+	for key := range targetInfoLabels {
+		targetInfoLabelsSlice = append(targetInfoLabelsSlice, key)
+	}
+
+	if len(targetInfoLabelsSlice) == 0 {
+		level.Info(sp.logger).Log("msg", "No target_info series found in block")
+	} else {
+		level.Info(sp.logger).Log("msg", "Found target_info series", "count", len(targetInfoLabels))
+	}
+
+	getAttributes := func(key string) labels.Labels {
+		if lbls, exists := targetInfoLabels[key]; exists {
+			return lbls
+		}
+		h := fnv.New64()
+		h.Write([]byte(key))
+		index := h.Sum64() % uint64(len(targetInfoLabelsSlice))
+		key = targetInfoLabelsSlice[index]
+		return targetInfoLabels[key]
+	}
+
+	return getAttributes, nil
 }
 
 func (sp *StreamingPromoter) createPromotedBlockWithIndexUpdate(
 	ctx context.Context,
 	originalBlockDir string,
 	tsdbBlock *tsdb.Block,
-	targetInfoLabels map[string]labels.Labels,
+	targetInfoLabels func(string) labels.Labels,
 ) error {
 	outDir := originalBlockDir + ".promoted"
 	sp.logger.Log("msg", "Creating directory for promoted block", "temp_dir", outDir)
@@ -351,7 +367,7 @@ func (sp *StreamingPromoter) createPromotedBlockWithIndexUpdate(
 	return nil
 }
 
-func (sp *StreamingPromoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfoLabels map[string]labels.Labels) labels.Labels {
+func (sp *StreamingPromoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfoLabels func(string) labels.Labels) labels.Labels {
 	// Get job and instance from the original series
 	job := originalLabels.Get("job")
 	instance := originalLabels.Get("instance")
@@ -362,10 +378,7 @@ func (sp *StreamingPromoter) promoteSeriesLabels(originalLabels labels.Labels, t
 
 	// Look up the target_info labels for this job:instance combination
 	key := fmt.Sprintf("%s:%s", job, instance)
-	promotedLabels, exists := targetInfoLabels[key]
-	if !exists {
-		return originalLabels
-	}
+	promotedLabels := targetInfoLabels(key)
 
 	// Create a new label set starting with the original labels
 	newLabels := make(labels.Labels, 0, len(originalLabels)+len(promotedLabels))
