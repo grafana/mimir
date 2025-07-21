@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -3700,6 +3701,15 @@ func Test_amConfigFingerprint(t *testing.T) {
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
+			// copy map to shuffle elements
+			cp := map[string]string{}
+			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
+			cfg2.EmailConfig.StaticHeaders = cp
+
+			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
+				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
+			})
+
 			require.Equal(t, expected, cfg2.fingerprint())
 		}
 	})
@@ -3756,7 +3766,7 @@ func Test_amConfigFingerprint(t *testing.T) {
 		assertField("")("TmplExternalURL")
 		notChecked--
 
-		cfg.EmailConfig.ContentTypes = []string{"text/plain", "text/html"}
+		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
 		assertField("EmailConfig.")("ContentTypes")
 		notChecked--
 

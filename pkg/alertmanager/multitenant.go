@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -910,12 +911,11 @@ func newMimirAmConfigFromDesc(dec alertspb.AlertConfigDesc, url *url.URL) amConf
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
-	var fingerprintSeparator = []byte{255}
-	sum := fnv.New64()
+	sum := fnv.New64a()
 
 	writeBytes := func(b []byte) {
 		_, _ = sum.Write(b)
-		_, _ = sum.Write(fingerprintSeparator)
+		_, _ = sum.Write([]byte{255}) // add separator between fields. It is impossible in strings so, it reduces collisions in strings
 	}
 	writeString := func(s string) {
 		if len(s) == 0 {
@@ -933,6 +933,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 			writeBytes([]byte{0})
 		}
 	}
+
 	writeString(f.User)
 	writeString(f.RawConfig)
 	writeBool(f.UsingGrafanaConfig)
@@ -944,9 +945,6 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeString(f.EmailConfig.AuthPassword)
 	writeString(f.EmailConfig.AuthUser)
 	writeString(f.EmailConfig.CertFile)
-	for _, ct := range f.EmailConfig.ContentTypes {
-		writeString(ct)
-	}
 	writeString(f.EmailConfig.EhloIdentity)
 	writeString(f.EmailConfig.ExternalURL)
 	writeString(f.EmailConfig.FromName)
@@ -957,24 +955,48 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeString(f.EmailConfig.StartTLSPolicy)
 	writeString(f.EmailConfig.SentBy)
 	result := sum.Sum64()
+
+	writeBytes([]byte{})
 	// Calculate hash for each key-value pair independently and combine it using XOR
 	// so we do not need to care about the random order of the pairs in the map.
+	var mapFp uint64
 	for k, v := range f.EmailConfig.StaticHeaders {
 		sum.Reset()
 		writeString(k)
 		writeString(v)
-		result ^= sum.Sum64()
+		mapFp ^= sum.Sum64()
 	}
+
 	// Ignore order in templates because they're usually built from the map
+	var templatesFp uint64
 	for _, template := range f.Templates {
 		sum.Reset()
 		writeString(template.Name)
 		writeString(template.Content)
 		writeString(string(template.Kind))
-		result ^= sum.Sum64()
+		templatesFp ^= sum.Sum64()
 	}
 
-	return model.Fingerprint(result)
+	// Ignore order in templates because they're usually built from the map
+	var contentTypesFp uint64
+	for _, ct := range f.EmailConfig.ContentTypes {
+		sum.Reset()
+		writeString(ct)
+		contentTypesFp ^= sum.Sum64()
+	}
+
+	// combine all hashes, including ones for empty slices\map
+	sum.Reset()
+	tmp := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tmp, result)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, mapFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, templatesFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, contentTypesFp)
+	writeBytes(tmp)
+	return model.Fingerprint(sum.Sum64())
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
