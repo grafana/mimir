@@ -184,8 +184,13 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 			logger := log.NewNopLogger()
 			if testCase.enabled {
 				reg := prometheus.NewPedanticRegistry()
+				cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+					ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+						SoftValidation: testCase.softValidation,
+					},
+				}
 				handler = middleware.ClusterValidationMiddleware(
-					testCase.serverCluster, []string{}, testCase.softValidation,
+					testCase.serverCluster, cfg,
 					middleware.NewInvalidClusterRequests(reg, "cortex"), logger,
 				).Wrap(handler)
 			}
