@@ -17,9 +17,10 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  convert    Convert existing TSDB blocks to parquet\n")
-		fmt.Fprintf(os.Stderr, "  generate   Generate TSDB blocks along with their parquet versions\n")
-		fmt.Fprintf(os.Stderr, "  promoter   Promote labels from target_info to other series in blocks\n")
+		fmt.Fprintf(os.Stderr, "  convert         Convert existing TSDB blocks to parquet\n")
+		fmt.Fprintf(os.Stderr, "  generate        Generate TSDB blocks along with their parquet versions\n")
+		fmt.Fprintf(os.Stderr, "  promoter        Promote labels from target_info to other series in blocks\n")
+		fmt.Fprintf(os.Stderr, "  promote-stream  Promote labels using optimized approach\n")
 		os.Exit(1)
 	}
 
@@ -32,6 +33,8 @@ func main() {
 		runGenerate()
 	case "promoter":
 		runPromoter()
+	case "promote-stream":
+		runPromoterStreaming()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
@@ -146,7 +149,6 @@ func runGenerate() {
 	fmt.Printf("Successfully generated parquet dataset with %d series and created bucket index\n", seriesCount)
 }
 
-
 func runPromoter() {
 	fs := flag.NewFlagSet("promoter", flag.ExitOnError)
 
@@ -174,6 +176,36 @@ func runPromoter() {
 	}
 
 	fmt.Println("Successfully promoted labels from target_info to series")
+}
+
+func runPromoterStreaming() {
+	fs := flag.NewFlagSet("promote-stream", flag.ExitOnError)
+
+	cfg := &PromoterConfig{}
+	cfg.RegisterFlags(fs)
+
+	fs.Parse(os.Args[2:])
+
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	logger := log.NewNopLogger()
+	if cfg.Verbose {
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	}
+
+	ctx := context.Background()
+
+	// Use streaming promoter for better memory efficiency
+	promoter := NewStreamingPromoter(cfg.BlocksDirectory, logger)
+	if err := promoter.PromoteLabels(ctx); err != nil {
+		fmt.Printf("Failed to promote labels: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Successfully promoted labels from target_info to series using optimized approach")
 }
 
 func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string, logger log.Logger) error {
