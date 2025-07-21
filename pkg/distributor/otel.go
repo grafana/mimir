@@ -27,9 +27,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/otlptranslator"
+	// "github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -37,7 +38,7 @@ import (
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/distributor/otlp"
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -89,7 +90,8 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter()
+		appender := otlpappender.NewCombinedAppender()
+		otlpConverter := newOTLPMimirConverter(appender)
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)
 
@@ -290,6 +292,18 @@ func newOTLPParser(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
+		// _, err = otlpConverter.FromMetrics(ctx, otlpReq.Metrics(), otlptranslator.Settings{
+		// 	ExportCreatedMetric: enableCTZeroIngestion,
+		// 	AddMetricSuffixes: 		  addSuffixes,
+		// 	KeepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+		// 	ConvertHistogramsToNHCB: 		  convertHistogramsToNHCB,
+		// 	AllowDeltaTemporality: 		  allowDeltaTemporality,
+		// 	PromoteScopeMetadata: promoteScopeMetadata,
+		// }) 
+		// if err != nil {
+		// 	return err
+		// }
+
 		metrics, metricsDropped, err := otelMetricsToTimeseries(
 			ctx,
 			otlpConverter,
@@ -306,6 +320,9 @@ func newOTLPParser(
 			},
 			spanLogger,
 		)
+
+		//metrics, metadata, metricsDropped := appender.GetResult()
+
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -335,7 +352,8 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		//req.Metadata = metadata
+		// otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 
 		return nil
 	}
@@ -466,44 +484,44 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
-	resourceMetricsSlice := md.ResourceMetrics()
+// func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
+// 	resourceMetricsSlice := md.ResourceMetrics()
 
-	metadataLength := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
+// 	metadataLength := 0
+// 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+// 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+// 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+// 			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
+// 		}
+// 	}
 
-	namer := otlptranslator.MetricNamer{
-		Namespace:          "",
-		WithMetricSuffixes: addSuffixes,
-		UTF8Allowed:        false,
-	}
+// 	namer := otlptranslator.MetricNamer{
+// 		Namespace:          "",
+// 		WithMetricSuffixes: addSuffixes,
+// 		UTF8Allowed:        false,
+// 	}
 
-	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				metric := scopeMetrics.Metrics().At(k)
-				entry := mimirpb.MetricMetadata{
-					Type: otelMetricTypeToMimirMetricType(metric),
-					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
-				}
-				metadata = append(metadata, &entry)
-			}
-		}
-	}
+// 	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
+// 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+// 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+// 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+// 			scopeMetrics := scopeMetricsSlice.At(j)
+// 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
+// 				metric := scopeMetrics.Metrics().At(k)
+// 				entry := mimirpb.MetricMetadata{
+// 					Type: otelMetricTypeToMimirMetricType(metric),
+// 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
+// 					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
+// 					Help:             metric.Description(),
+// 					Unit:             metric.Unit(),
+// 				}
+// 				metadata = append(metadata, &entry)
+// 			}
+// 		}
+// 	}
 
-	return metadata
-}
+// 	return metadata
+// }
 
 type conversionOptions struct {
 	addSuffixes                       bool
@@ -523,11 +541,11 @@ func otelMetricsToTimeseries(
 	opts conversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
-	settings := otlp.Settings{
+	settings := otlptranslator.Settings{
 		AddMetricSuffixes:                   opts.addSuffixes,
-		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		// EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+		// EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		PromoteResourceAttributes:           otlptranslator.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
 		PromoteScopeMetadata:                opts.promoteScopeMetadata,
@@ -543,24 +561,29 @@ func otelMetricsToTimeseries(
 }
 
 type otlpMimirConverter struct {
-	converter *otlp.MimirConverter
+	appender *otlpappender.CombinedAppender
+	converter *otlptranslator.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
 }
 
-func newOTLPMimirConverter() *otlpMimirConverter {
+func newOTLPMimirConverter(appender *otlpappender.CombinedAppender) *otlpMimirConverter {
 	return &otlpMimirConverter{
-		converter: otlp.NewMimirConverter(),
+		appender: appender,
+		converter: otlptranslator.NewPrometheusConverter(appender),
 	}
 }
 
-func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metrics, settings otlp.Settings, logger log.Logger) []mimirpb.PreallocTimeseries {
+func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metrics, settings otlptranslator.Settings, logger log.Logger) []mimirpb.PreallocTimeseries {
 	if c.err != nil {
 		return nil
 	}
 
-	_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
-	return c.converter.TimeSeries()
+	_, c.err = c.converter.FromMetrics(ctx, md, settings)
+
+	timeseries, _, _ := c.appender.GetResult()
+	//_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
+	return timeseries
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {

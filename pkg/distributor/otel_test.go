@@ -25,8 +25,10 @@ import (
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	//"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	//otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -36,6 +38,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -393,8 +396,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-
-			converter := newOTLPMimirConverter()
+			appender := otlpappender.NewCombinedAppender()
+			converter := newOTLPMimirConverter(appender)
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
@@ -406,7 +409,20 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				log.NewNopLogger(),
 			)
+
+			// appender := otlpappender.NewCombinedAppender()
+			// converter := otlptranslator.NewPrometheusConverter(appender)
+			// otlpConfig := config.DefaultOTLPConfig
+			// otlpConfig.PromoteResourceAttributes = tc.promoteResourceAttributes
+			// _, err := converter.FromMetrics(context.Background(), md, otlptranslator.Settings{
+			// 	AddMetricSuffixes:             true,
+			// 	KeepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+			// 	PromoteResourceAttributes: 		otlptranslator.NewPromoteResourceAttributes(otlpConfig),
+			// })
 			require.NoError(t, err)
+
+			//mimirTS, _, dropped := appender.GetResult()
+
 			require.Len(t, mimirTS, 2)
 			require.Equal(t, 0, dropped)
 			var ts mimirpb.PreallocTimeseries
@@ -468,7 +484,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter()
+		appender := otlpappender.NewCombinedAppender()
+		converter := newOTLPMimirConverter(appender)
 		mimirTS, dropped, err := otelMetricsToTimeseries(
 			context.Background(),
 			converter,
@@ -479,7 +496,15 @@ func TestConvertOTelHistograms(t *testing.T) {
 			},
 			log.NewNopLogger(),
 		)
+		// appender := otlpappender.NewCombinedAppender()
+		// converter := otlptranslator.NewPrometheusConverter(appender)
+		// _, err := converter.FromMetrics(context.Background(), md, otlptranslator.Settings{
+		// 	AddMetricSuffixes:       true,
+		// 	ConvertHistogramsToNHCB: convertHistogramsToNHCB,
+		// })
+
 		require.NoError(t, err)
+		//mimirTS, _, dropped := appender.GetResult()
 		require.Equal(t, 0, dropped)
 		if convertHistogramsToNHCB {
 			ts := make([]mimirpb.PreallocTimeseries, 0, len(mimirTS))
@@ -679,7 +704,16 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter()
+			appender := otlpappender.NewCombinedAppender()
+			// converter := otlptranslator.NewPrometheusConverter(appender)
+			// _, err := converter.FromMetrics(context.Background(), tc.input, otlptranslator.Settings{
+			// 	AddMetricSuffixes:       true,
+			// 	AllowDeltaTemporality:   tc.allowDelta,
+			// })
+
+			// require.NoError(t, err)
+			mimirTS, _, dropped := appender.GetResult()
+			converter := newOTLPMimirConverter(appender)
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
