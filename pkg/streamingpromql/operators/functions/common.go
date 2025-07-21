@@ -104,8 +104,11 @@ type FunctionOverInstantVectorDefinition struct {
 }
 
 type FunctionOverRangeVectorDefinition struct {
+	Name string
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
+
+	PiecewiseStepFunc RangeVectorStepFunction
 
 	// SeriesValidationFuncFactory is the function that creates a validator for a complete series, emitting any annotations
 	// for that series.

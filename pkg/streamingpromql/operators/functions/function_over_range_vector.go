@@ -8,6 +8,7 @@ package functions
 
 import (
 	"context"
+	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -19,6 +20,7 @@ import (
 )
 
 // FunctionOverRangeVector performs a rate calculation over a range vector.
+// This struct represents one invocation of a function.
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	ScalarArgs               []types.ScalarOperator
@@ -34,6 +36,8 @@ type FunctionOverRangeVector struct {
 
 	timeRange    types.QueryTimeRange
 	rangeSeconds float64
+
+	intermediateResults []IntermediateResultBlock
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -83,6 +87,14 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
+	if m.Func.PiecewiseStepFunc != nil {
+		if m.Inner.Range() > minDurationToCache {
+			// We probably have the user somewhere.
+			// Probably don't have the selector?  FIXME
+			m.intermediateResults = fakeCache("user", m.Func.Name, "selector", m.timeRange.StartT, m.Inner.Range())
+		}
+	}
+
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -99,6 +111,15 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	}
 
 	return metadata, nil
+}
+
+func fakeCache(user, function, selector string, start int64, duration time.Duration) []IntermediateResultBlock {
+	// Quantize and split the time range.
+	return []IntermediateResultBlock{
+		{
+			StartTimestampMs: 0,
+		},
+	}
 }
 
 func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
@@ -188,6 +209,11 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 	m.Annotations.Add(generator(metricName, pos))
 }
 
+const (
+	intermediateCacheBlockLength = time.Minute * 5
+	minDurationToCache           = intermediateCacheBlockLength * 6
+)
+
 type IntermediateResultBlock struct {
 	Version          int
 	StartTimestampMs int
@@ -197,6 +223,7 @@ type IntermediateResultBlock struct {
 }
 
 type IntermediateResult struct {
+	sumOverTime []sumOverTimeIntermediate
 }
 
 /*
