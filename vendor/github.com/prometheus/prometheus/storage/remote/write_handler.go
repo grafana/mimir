@@ -608,8 +608,8 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
-		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
 		LookbackDelta:                     rw.lookbackDelta,
+		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
 
 		// Mimir specifics.
 		EnableCreatedTimestampZeroIngestion:        rw.enableCTZeroIngestion,
