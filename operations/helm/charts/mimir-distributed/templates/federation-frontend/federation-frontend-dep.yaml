@@ -77,15 +77,8 @@ spec:
             {{- toYaml .Values.federation_frontend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.federation_frontend.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.federation_frontend.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.federation_frontend.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "federation-frontend") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.federation_frontend.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

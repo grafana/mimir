@@ -87,6 +87,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
       
       terminationGracePeriodSeconds: 30
       volumes:
