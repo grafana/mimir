@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // This is a utility function to generate PromQL queries from a set of label sets
 // The label sets can be provided in a file or retrieved from a Prometheus server
 // The queries are generated using the promqlsmith library
