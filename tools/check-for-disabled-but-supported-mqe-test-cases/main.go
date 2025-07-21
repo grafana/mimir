@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -58,7 +59,7 @@ func run() error {
 	}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)
 	}

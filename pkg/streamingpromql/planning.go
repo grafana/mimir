@@ -126,13 +126,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		start, end := timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT)
-		interval := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+
 		if timeRange.IsInstant {
-			// Prometheus expects interval to be zero for instant queries but we use 1.
-			interval = 0
+			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
+			step = 0
 		}
-		return promql.PreprocessExpr(expr, start, end, interval)
+
+		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
 	})
 
 	if err != nil {
