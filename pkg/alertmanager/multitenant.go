@@ -977,7 +977,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 		templatesFp ^= sum.Sum64()
 	}
 
-	// Ignore order in templates because they're usually built from the map
+	// Ignore order in content types because it does not matter
 	var contentTypesFp uint64
 	for _, ct := range f.EmailConfig.ContentTypes {
 		sum.Reset()
