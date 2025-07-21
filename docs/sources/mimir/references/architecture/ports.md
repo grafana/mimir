@@ -15,7 +15,7 @@ The ports required to run Grafana Mimir can vary slightly depending on your depl
 
 ## Core Mimir ports
 
-The following table shows the core Mimir ports.These ports are fundamental to operating Mimir, whether in a monolithic or distributed setup.
+The following table shows the ports that are fundamental to operating Mimir, whether in a monolithic or distributed setup. You can update these default values in your Mimir configuration.
 
 | Port | Function                    | Related components   | Description                                                                                                                                                                                                                    |
 | :--- | :-------------------------- | :------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
