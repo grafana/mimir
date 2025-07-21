@@ -1813,6 +1813,25 @@ If the block-builder permanently missed consuming some portion of the partition,
 - If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
 - Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
+#### MimirBlockBuilderDataSkipped
+
+This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
+
+How it **works**:
+
+- Block-builder-scheduler is in charge of both planning "jobs" for block-builders to consume, as well as advancing the per-partition commit when one of these jobs is completed. Each job has a start offset, which is inclusive, and an end offset, which is exclusive.
+- Block-builder-scheduler also verifies that neither planning nor committing jobs ever produce a gap. This alert fires when the scheduler detects one of these gaps.
+- Note that this problem only happens if there's a bug in the planning logic.
+
+How to **investigate**:
+
+- Look at the block-builder-scheduler logs around the affected time. There's a log line that mentions "gap detected in offset advancement" with relevant data.
+- Using this data, continue to look at block-builder-scheduler logs to find the jobs either planned or committed around this time, and see if you can determine how the gap occurred.
+
+Data recovery / temporary mitigation:
+
+You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
+
 ### MimirServerInvalidClusterValidationLabelRequests
 
 This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
