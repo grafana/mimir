@@ -185,6 +185,27 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 	m.Annotations.Add(generator(metricName, pos))
 }
 
+type IntermediateResultBlock struct {
+	Version          int
+	StartTimestampMs int
+	DurationMs       int
+	Series           []types.SeriesMetadata
+	Results          []IntermediateResult // Per-series, matching indexes of Series.
+}
+
+type IntermediateResult struct {
+}
+
+/*
+1. Break the range down into intervals
+2. Check if there's a cached value for each interval, keyed on the interval time range + inner node cache key.
+   If there is a cached value for that interval, load that cached set of data. (Ideally the loading here would
+   be done in a streaming way, but that could be a later improvement.)
+4. If some intervals aren't present in the cache: merge adjacent uncached intervals into one range, then
+   materialise operators for each range from the query plan
+5. Compute final results for each series as you've outlined above, storing intermediate results in the cache where necessary
+*/
+
 func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	err := m.Inner.Prepare(ctx, params)
 	if err != nil {
