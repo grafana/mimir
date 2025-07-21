@@ -1,6 +1,6 @@
 ---
 description: Learn about the network ports that Grafana Mimir uses
-menuTitle: Netowrk ports
+menuTitle: Network ports
 title: About Grafana Mimir network ports
 weight: 25
 ---
