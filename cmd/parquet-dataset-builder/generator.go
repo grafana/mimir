@@ -73,7 +73,7 @@ func (g *DatasetGenerator) Generate(ctx context.Context, config *GenerateConfig)
 	}
 
 	level.Info(g.logger).Log("msg", "Converting blocks to parquet format")
-	converter := NewConverter(g.bucket, g.logger)
+	converter := NewConverter(g.bucket, g.logger, config.LabelsCompression, config.ChunksCompression, config.LabelsCodec, config.ChunksCodec)
 	if err := converter.convertUserBlocks(ctx, config.UserID); err != nil {
 		return 0, fmt.Errorf("failed to convert blocks to parquet: %w", err)
 	}

@@ -7,13 +7,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus-community/parquet-common/schema"
+
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type ConvertConfig struct {
-	Storage  tsdb.BlocksStorageConfig
-	UsersRaw string
-	Verbose  bool
+	Storage           tsdb.BlocksStorageConfig
+	UsersRaw          string
+	Verbose           bool
+	LabelsCompression bool
+	ChunksCompression bool
+	LabelsCodec       string
+	ChunksCodec       string
 
 	// Parsed fields
 	Users []string
@@ -23,6 +29,10 @@ func (c *ConvertConfig) RegisterFlags(fs *flag.FlagSet) {
 	c.Storage.RegisterFlags(fs)
 	fs.StringVar(&c.UsersRaw, "users", "", "Comma-separated list of users to convert (empty = all users)")
 	fs.BoolVar(&c.Verbose, "verbose", false, "Enable verbose logging")
+	fs.BoolVar(&c.LabelsCompression, "labels-compression", true, "Enable parquet compression for labels")
+	fs.BoolVar(&c.ChunksCompression, "chunks-compression", true, "Enable parquet compression for chunks")
+	fs.StringVar(&c.LabelsCodec, "labels-codec", "zstd", "Compression codec for labels (zstd, snappy)")
+	fs.StringVar(&c.ChunksCodec, "chunks-codec", "zstd", "Compression codec for chunks (zstd, snappy)")
 }
 
 func (c *ConvertConfig) Validate() error {
@@ -32,6 +42,15 @@ func (c *ConvertConfig) Validate() error {
 			c.Users[i] = strings.TrimSpace(user)
 		}
 	}
+
+	if err := validateCodec(c.LabelsCodec); err != nil {
+		return fmt.Errorf("invalid labels codec: %w", err)
+	}
+
+	if err := validateCodec(c.ChunksCodec); err != nil {
+		return fmt.Errorf("invalid chunks codec: %w", err)
+	}
+
 	return nil
 }
 
@@ -46,6 +65,10 @@ type GenerateConfig struct {
 	ScrapeInterval      time.Duration
 	OutputPrefix        string
 	Verbose             bool
+	LabelsCompression   bool
+	ChunksCompression   bool
+	LabelsCodec         string
+	ChunksCodec         string
 
 	// Parsed fields
 	MetricNames      []string
@@ -64,6 +87,10 @@ func (c *GenerateConfig) RegisterFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.ScrapeInterval, "scrape-interval", 15*time.Second, "Scrape interval")
 	fs.StringVar(&c.OutputPrefix, "output-prefix", "benchmark-dataset", "Prefix for generated blocks")
 	fs.BoolVar(&c.Verbose, "verbose", false, "Enable verbose logging")
+	fs.BoolVar(&c.LabelsCompression, "labels-compression", true, "Enable parquet compression for labels")
+	fs.BoolVar(&c.ChunksCompression, "chunks-compression", true, "Enable parquet compression for chunks")
+	fs.StringVar(&c.LabelsCodec, "labels-codec", "zstd", "Compression codec for labels (zstd, snappy)")
+	fs.StringVar(&c.ChunksCodec, "chunks-codec", "zstd", "Compression codec for chunks (zstd, snappy)")
 }
 
 func (c *GenerateConfig) Validate() error {
@@ -82,6 +109,14 @@ func (c *GenerateConfig) Validate() error {
 			return fmt.Errorf("invalid cardinality value: %s", cardStr)
 		}
 		c.LabelCardinality[i] = val
+	}
+
+	if err := validateCodec(c.LabelsCodec); err != nil {
+		return fmt.Errorf("invalid labels codec: %w", err)
+	}
+
+	if err := validateCodec(c.ChunksCodec); err != nil {
+		return fmt.Errorf("invalid chunks codec: %w", err)
 	}
 
 	return nil
@@ -147,4 +182,25 @@ func (c *AttributesGeneratorConfig) Validate() error {
 		c.Cardinalities[attributes[i]] = val
 	}
 	return nil
+}
+
+func validateCodec(codec string) error {
+	switch strings.ToLower(codec) {
+	case "zstd", "snappy":
+		return nil
+	default:
+		return fmt.Errorf("unsupported codec %q, must be one of: zstd, snappy", codec)
+	}
+}
+
+func parseCodec(codec string) schema.CompressionCodec {
+	switch strings.ToLower(codec) {
+	case "snappy":
+		return schema.CompressionSnappy
+	case "zstd":
+		return schema.CompressionZstd
+	default:
+		// Default to zstd if somehow invalid codec gets through
+		return schema.CompressionZstd
+	}
 }

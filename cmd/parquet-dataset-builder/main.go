@@ -72,7 +72,7 @@ func runConvert() {
 		os.Exit(1)
 	}
 
-	converter := NewConverter(bkt, logger)
+	converter := NewConverter(bkt, logger, cfg.LabelsCompression, cfg.ChunksCompression, cfg.LabelsCodec, cfg.ChunksCodec)
 	if err := converter.ConvertAll(ctx, cfg.Users); err != nil {
 		fmt.Printf("Failed to convert blocks: %v\n", err)
 		os.Exit(1)
