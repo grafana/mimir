@@ -9,17 +9,21 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func FixUpEmptyLabels(r *promql.Result) {
+func FixUpEmptyLabels(r *promql.Result) error {
 	if r == nil || r.Value == nil {
-		return
+		return nil
 	}
 	switch r.Value.Type() {
 	case parser.ValueTypeMatrix:
-		matrix, _ := r.Matrix()
-		for i := 0; i < len(matrix); i++ {
-			if matrix[i].Metric == nil {
+		matrix, error := r.Matrix()
+		if error != nil {
+			return error
+		}
+		for i, sample := range matrix {
+			if sample.Metric == nil {
 				matrix[i].Metric = labels.Labels{}
 			}
 		}
 	}
+	return nil
 }

@@ -132,15 +132,15 @@ func requireHistogramMatch(t testing.TB, expected, actual *histogram.FloatHistog
 	}
 
 	require.Equal(t, expected.Schema, actual.Schema, "histogram schemas match")
-	requireInEpsilonIfNotZeroOrInf(t, expected.Count, expected.Count, "histogram counts match")
-	requireInEpsilonIfNotZeroOrInf(t, expected.Sum, expected.Sum, "histogram sums match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Count, expected.Count, "histogram counts match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Sum, expected.Sum, "histogram sums match")
 
 	if expected.UsesCustomBuckets() {
 		requireFloatBucketsMatch(t, expected.CustomValues, expected.CustomValues)
 	}
 
-	requireInEpsilonIfNotZeroOrInf(t, expected.ZeroThreshold, expected.ZeroThreshold, "histogram thresholds match")
-	requireInEpsilonIfNotZeroOrInf(t, expected.ZeroCount, expected.ZeroCount, "histogram zero counts match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroThreshold, expected.ZeroThreshold, "histogram thresholds match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroCount, expected.ZeroCount, "histogram zero counts match")
 
 	requireSpansMatch(t, expected.NegativeSpans, expected.NegativeSpans)
 	requireFloatBucketsMatch(t, expected.NegativeBuckets, expected.NegativeBuckets)
@@ -149,10 +149,19 @@ func requireHistogramMatch(t testing.TB, expected, actual *histogram.FloatHistog
 	requireFloatBucketsMatch(t, expected.PositiveBuckets, expected.PositiveBuckets)
 }
 
-func requireInEpsilonIfNotZeroOrInf(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
+// requireInEpsilonIfNotZeroOrInfOrNan will be a success if expected and actual are both NaN, 0, Inf or InEpsilon.
+func requireInEpsilonIfNotZeroOrInfOrNan(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
 	if math.IsNaN(expected) && math.IsNaN(actual) {
 		// ok
-	} else if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
+	} else {
+		requireInEpsilonIfNotZeroOrInf(t, expected, actual, msgAndArgs...)
+	}
+}
+
+// requireInEpsilonIfNotZeroOrInf will be a success if expected and actual are both 0, Inf or InEpsilon.
+// Note - will fail if expected and actual are both NaN
+func requireInEpsilonIfNotZeroOrInf(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
+	if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
 		require.Equal(t, expected, actual, msgAndArgs...)
 	} else {
 		require.InEpsilon(t, expected, actual, 1e-10, msgAndArgs...)
