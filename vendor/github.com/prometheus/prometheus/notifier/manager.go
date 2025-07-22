@@ -105,6 +105,20 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 		logger = promslog.NewNopLogger()
 	}
 
+	for i, rc := range o.RelabelConfigs {
+		switch rc.MetricNameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			//nolint:staticcheck // model.NameValidationScheme is deprecated.
+			o.RelabelConfigs[i].MetricNameValidationScheme = model.NameValidationScheme
+			logger.Warn(
+				"notifier.NewManager: using default metric/label name validation scheme",
+				"relabel_config", i,
+				"scheme", o.RelabelConfigs[i].MetricNameValidationScheme,
+			)
+		}
+	}
+
 	n := &Manager{
 		queue:         make([]*Alert, 0, o.QueueCapacity),
 		more:          make(chan struct{}, 1),
@@ -134,6 +148,14 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	for i, rc := range n.opts.RelabelConfigs {
+		switch rc.MetricNameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			//nolint:staticcheck // model.NameValidationScheme is deprecated.
+			n.opts.RelabelConfigs[i].MetricNameValidationScheme = model.NameValidationScheme
+		}
+	}
 
 	amSets := make(map[string]*alertmanagerSet)
 	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
@@ -255,7 +277,10 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 			select {
 			case <-n.stopRequested:
 				return
-			case ts := <-tsets:
+			case ts, ok := <-tsets:
+				if !ok {
+					break
+				}
 				n.reload(ts)
 			}
 		}
@@ -309,11 +334,6 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	for i, rc := range n.opts.RelabelConfigs {
-		if rc.MetricNameValidationScheme == model.UnsetValidation {
-			n.opts.RelabelConfigs[i].MetricNameValidationScheme = model.UTF8Validation
-		}
-	}
 	alerts = relabelAlerts(n.opts.RelabelConfigs, n.opts.ExternalLabels, alerts)
 	if len(alerts) == 0 {
 		return

@@ -133,6 +133,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		// Include name, version and schema URL.
 		scopeLabelCount = scope.attributes.Len() + 3
 	}
+
 	// Calculate the maximum possible number of labels we could return so we can preallocate l.
 	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + scopeLabelCount + len(extras)/2
 
@@ -175,15 +176,15 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 	}
 	if promoteScope {
-		l["otel_scope_name"] = scope.name
-		l["otel_scope_version"] = scope.version
-		l["otel_scope_schema_url"] = scope.schemaURL
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name := "otel_scope_" + k
-			name = labelNamer.Build(name)
+			name := labelNamer.Build("otel_scope_" + k)
 			l[name] = v.AsString()
 			return true
 		})
+		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
+		l["otel_scope_name"] = scope.name
+		l["otel_scope_version"] = scope.version
+		l["otel_scope_schema_url"] = scope.schemaURL
 	}
 
 	// Map service.name + service.namespace to job.

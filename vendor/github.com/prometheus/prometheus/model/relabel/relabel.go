@@ -114,8 +114,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
-	if c.MetricNameValidationScheme == model.UnsetValidation {
-		c.MetricNameValidationScheme = model.UTF8Validation
+	switch c.MetricNameValidationScheme {
+	case model.LegacyValidation, model.UTF8Validation:
+	case model.UnsetValidation:
+		//nolint:staticcheck // model.NameValidationScheme is deprecated.
+		c.MetricNameValidationScheme = model.NameValidationScheme
+	default:
+		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
 	}
 	return c.Validate()
 }
@@ -131,7 +136,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
 
-	if c.MetricNameValidationScheme == model.UnsetValidation {
+	switch c.MetricNameValidationScheme {
+	case model.LegacyValidation, model.UTF8Validation:
+	default:
 		return errors.New("MetricNameValidationScheme must be set in relabel configuration")
 	}
 

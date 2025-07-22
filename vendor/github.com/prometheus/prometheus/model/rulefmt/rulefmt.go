@@ -340,7 +340,8 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 type parseArgs struct {
-	validationScheme model.ValidationScheme
+	validationScheme    model.ValidationScheme
+	ignoreUnknownFields bool
 }
 
 type ParseOption func(*parseArgs)
@@ -352,11 +353,19 @@ func WithValidationScheme(scheme model.ValidationScheme) ParseOption {
 	}
 }
 
+// WithIgnoreUnknownFields returns a ParseOption setting whether to ignore unknown fields.
+func WithIgnoreUnknownFields(ignoreUnknownFields bool) ParseOption {
+	return func(args *parseArgs) {
+		args.ignoreUnknownFields = ignoreUnknownFields
+	}
+}
+
 // Parse parses and validates a set of rules.
-// The default metric/label name validation scheme is model.UTF8Validation.
-func Parse(content []byte, ignoreUnknownFields bool, opts ...ParseOption) (*RuleGroups, []error) {
+// The default metric/label name validation scheme is model.NameValidationScheme.
+func Parse(content []byte, opts ...ParseOption) (*RuleGroups, []error) {
 	args := &parseArgs{
-		validationScheme: model.UTF8Validation,
+		//nolint:staticcheck // model.NameValidationScheme is deprecated.
+		validationScheme: model.NameValidationScheme,
 	}
 	for _, opt := range opts {
 		opt(args)
@@ -369,7 +378,7 @@ func Parse(content []byte, ignoreUnknownFields bool, opts ...ParseOption) (*Rule
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
-	if !ignoreUnknownFields {
+	if !args.ignoreUnknownFields {
 		decoder.KnownFields(true)
 	}
 	err := decoder.Decode(&groups)
@@ -390,12 +399,12 @@ func Parse(content []byte, ignoreUnknownFields bool, opts ...ParseOption) (*Rule
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string, ignoreUnknownFields bool, opts ...ParseOption) (*RuleGroups, []error) {
+func ParseFile(file string, opts ...ParseOption) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b, ignoreUnknownFields, opts...)
+	rgs, errs := Parse(b, opts...)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
