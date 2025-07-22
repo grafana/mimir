@@ -288,7 +288,7 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 				numMetadata         = rnd.Intn(min(r+1, 100)) + 1
 			)
 
-			req := generateWriteRequestRW2(t, numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+			req := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
 			maxSize := req.Size() / (1 + rnd.Intn(10))
 			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
 
@@ -353,6 +353,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 	// initially unmarshalled, then sharded (skipped in this test), then split by max size and finally
 	// each partial request is marshalled.
 	benchmarkSplitWriteRequestByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
+		isRW2 := req.SymbolsRW2 != nil
 		marshalledReq, err := req.Marshal()
 		if err != nil {
 			b.Fatal(err)
@@ -360,7 +361,9 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 
 		for n := 0; n < b.N; n++ {
 			// Unmarshal the request.
-			unmarshalledReq := &WriteRequest{}
+			unmarshalledReq := &WriteRequest{
+				unmarshalFromRW2: isRW2,
+			}
 			if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
 				b.Fatal(err)
 			}
@@ -431,21 +434,31 @@ func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, run func(b *testin
 		},
 	}
 
+	generators := map[string]func(int, int, int, int) *WriteRequest{
+		"rw1": generateWriteRequest,
+		"rw2": generateWriteRequestRW2,
+	}
+
 	for testName, testData := range tests {
 		b.Run(testName, func(b *testing.B) {
-			req := generateWriteRequest(testData.numSeries, testData.numLabelsPerSeries, testData.numSamplesPerSeries, testData.numMetadata)
-			reqSize := req.Size()
+			for genName, gen := range generators {
+				b.Run(genName, func(b *testing.B) {
+					req := gen(testData.numSeries, testData.numLabelsPerSeries, testData.numSamplesPerSeries, testData.numMetadata)
+					reqSize := req.Size()
 
-			// Test with different split size.
-			splitScenarios := map[string]int{
-				"no splitting":           reqSize * 2,
-				"split in few requests":  int(float64(reqSize) * 0.8),
-				"split in many requests": int(float64(reqSize) * 0.11),
-			}
+					// Test with different split size.
+					splitScenarios := map[string]int{
+						"no splitting":           reqSize * 2,
+						"split in few requests":  int(float64(reqSize) * 0.8),
+						"split in many requests": int(float64(reqSize) * 0.11),
+					}
 
-			for splitName, maxSize := range splitScenarios {
-				b.Run(splitName, func(b *testing.B) {
-					run(b, req, maxSize)
+					for splitName, maxSize := range splitScenarios {
+						b.Run(splitName, func(b *testing.B) {
+							b.ResetTimer()
+							run(b, req, maxSize)
+						})
+					}
 				})
 			}
 		})
@@ -508,10 +521,8 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 	}
 }
 
-func generateWriteRequestRW2(t *testing.T, numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata int) *WriteRequest {
-	t.Helper()
+func generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata int) *WriteRequest {
 	rw1 := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
-	rw2, err := FromWriteRequestToRW2Request(rw1, nil, 0)
-	require.NoError(t, err)
+	rw2, _ := FromWriteRequestToRW2Request(rw1, nil, 0)
 	return rw2
 }
