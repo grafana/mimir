@@ -241,8 +241,6 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 	denormalizedSeries := 0
 	for postings.Next() {
 		seriesRef := postings.At()
-
-		// Read series labels and chunk metadata
 		if err := indexReader.Series(seriesRef, &labelsScratch, &chunksMeta); err != nil {
 			return fmt.Errorf("failed to read series: %w", err)
 		}
@@ -251,24 +249,21 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 
 		// Skip target_info series - we don't want them in the promoted block
 		// TODO: make parametrizable
-		// if originalLabels.Get("__name__") == "target_info" {
-		// 	continue
-		// }
+		if originalLabels.Get("__name__") == "target_info" {
+			continue
+		}
 
-		// Create promoted labels for this series
 		promotedLabels := sp.promoteSeriesLabels(originalLabels, targetInfoLabels)
 		if promotedLabels.Len() != len(originalLabels) {
 			denormalizedSeries++
 			level.Debug(sp.logger).Log("msg", "Promoted labels for series", "original_labels", originalLabels.String(), "promoted_labels", promotedLabels.String())
 		}
 
-		// Track any new symbols we need to add
 		for _, lbl := range promotedLabels {
 			allSymbols[lbl.Name] = struct{}{}
 			allSymbols[lbl.Value] = struct{}{}
 		}
 
-		// Store the series data
 		chunksCopy := make([]chunks.Meta, len(chunksMeta))
 		copy(chunksCopy, chunksMeta)
 		allSeries = append(allSeries, seriesData{
@@ -283,7 +278,6 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 		return fmt.Errorf("failed to iterate postings: %w", postings.Err())
 	}
 
-	// Add all symbols first (they must be added in sorted order)
 	var symbolsList []string
 	for symbol := range allSymbols {
 		symbolsList = append(symbolsList, symbol)
@@ -300,7 +294,6 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 		return labels.Compare(a.labels, b.labels)
 	})
 
-	// Now add all series
 	for i, series := range allSeries {
 		chnks := make([]chunks.Meta, 0, len(series.chunks))
 		for _, meta := range series.chunks {
@@ -335,19 +328,16 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 
 	seriesCount := len(allSeries)
 
-	// Close the index writer
 	if err := indexWriter.Close(); err != nil {
 		return fmt.Errorf("failed to close index writer: %w", err)
 	}
 
-	// Copy the meta.json file
 	originalMetaPath := filepath.Join(originalBlockDir, "meta.json")
 	newMetaPath := filepath.Join(outDir, "meta.json")
 	if err := copyFile(originalMetaPath, newMetaPath); err != nil {
 		return fmt.Errorf("failed to copy meta.json: %w", err)
 	}
 
-	// Copy tombstones if they exist
 	originalTombstonesPath := filepath.Join(originalBlockDir, "tombstones")
 	if _, err := os.Stat(originalTombstonesPath); err == nil {
 		newTombstonesPath := filepath.Join(outDir, "tombstones")
@@ -361,7 +351,6 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 }
 
 func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfoLabels func(string) labels.Labels) labels.Labels {
-	// Get job and instance from the original series
 	job := originalLabels.Get("job")
 	instance := originalLabels.Get("instance")
 
@@ -369,19 +358,15 @@ func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfo
 		return originalLabels
 	}
 
-	// Look up the target_info labels for this job:instance combination
 	key := fmt.Sprintf("%s:%s", job, instance)
 	promotedLabels := targetInfoLabels(key)
 
-	// Create a new label set starting with the original labels
 	newLabels := make(labels.Labels, 0, len(originalLabels)+len(promotedLabels))
 
-	// First, add all original labels
 	for _, lbl := range originalLabels {
 		newLabels = append(newLabels, lbl)
 	}
 
-	// Then add promoted labels, but only if they don't already exist
 	existingLabelNames := make(map[string]bool)
 	for _, lbl := range originalLabels {
 		existingLabelNames[lbl.Name] = true
@@ -393,7 +378,6 @@ func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfo
 		}
 	}
 
-	// Sort the labels
 	sort.Slice(newLabels, func(i, j int) bool {
 		return newLabels[i].Name < newLabels[j].Name
 	})
