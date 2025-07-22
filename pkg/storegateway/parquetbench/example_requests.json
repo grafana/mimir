@@ -40,27 +40,50 @@
     ],
     "series": [
         {
-            "name": "cpu_usage_no_chunks",
+            "name": "container network transmit all series",
             "min_time": 0,
             "max_time": 1767225601000,
             "matchers": [
                 {
                     "type": 0,
                     "name": "__name__",
-                    "value": "cpu_usage"
+                    "value": "container_network_transmit_packets_total"
                 }
             ],
-            "skip_chunks": true
+            "skip_chunks": false
         },
         {
-            "name": "cpu_usage_with_chunks",
+            "name": "container network transmig 3k series",
             "min_time": 0,
             "max_time": 1767225601000,
             "matchers": [
                 {
                     "type": 0,
                     "name": "__name__",
-                    "value": "cpu_usage"
+                    "value": "container_network_transmit_packets_total"
+                },
+                {
+                    "type": 0,
+                    "name": "cluster",
+                    "value": "dev-eu-west-2"
+                }
+            ],
+            "skip_chunks": false
+        },
+        {
+            "name": "container network transmig 36k series",
+            "min_time": 0,
+            "max_time": 1767225601000,
+            "matchers": [
+                {
+                    "type": 0,
+                    "name": "__name__",
+                    "value": "container_network_transmit_packets_total"
+                },
+                {
+                    "type": 0,
+                    "name": "cluster",
+                    "value": "dev-us-central-0"
                 }
             ],
             "skip_chunks": false
