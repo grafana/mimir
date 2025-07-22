@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1858,8 +1858,8 @@ func userToken(user string, skip int) uint32 {
 }
 
 func sortTokens(tokens []uint32) []uint32 {
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 	return tokens
 }
