@@ -41,6 +41,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] KEDA Autoscaling: Resolved an issue where the authModes field was missing from the ScaledObject definition for the querier when authentication was enabled. #11709
 * [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
+* [FEATURE] Config uption for emptyDir in store-gateway: #11951
+
 
 ## 5.7.0
 
