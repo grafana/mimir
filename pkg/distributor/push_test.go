@@ -45,13 +45,14 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	//"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -76,64 +77,67 @@ func TestHandler_remoteWriteWithMalformedRequest(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-// func TestOTelMetricsToMetadata(t *testing.T) {
-// 	otelMetrics := pmetric.NewMetrics()
-// 	rs := otelMetrics.ResourceMetrics().AppendEmpty()
-// 	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
+func TestOTelMetricsToMetadata(t *testing.T) {
+	otelMetrics := pmetric.NewMetrics()
+	rs := otelMetrics.ResourceMetrics().AppendEmpty()
+	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
 
-// 	metricOne := metrics.AppendEmpty()
-// 	metricOne.SetName("name")
-// 	metricOne.SetUnit("Count")
-// 	gaugeMetricOne := metricOne.SetEmptyGauge()
-// 	gaugeDatapoint := gaugeMetricOne.DataPoints().AppendEmpty()
-// 	gaugeDatapoint.Attributes().PutStr("label1", "value1")
+	metricOne := metrics.AppendEmpty()
+	metricOne.SetName("name")
+	metricOne.SetUnit("Count")
+	gaugeMetricOne := metricOne.SetEmptyGauge()
+	gaugeDatapoint := gaugeMetricOne.DataPoints().AppendEmpty()
+	gaugeDatapoint.Attributes().PutStr("label1", "value1")
 
-// 	metricTwo := metrics.AppendEmpty()
-// 	metricTwo.SetName("test")
-// 	metricTwo.SetUnit("Count")
-// 	gaugeMetricTwo := metricTwo.SetEmptyGauge()
-// 	gaugeDatapointTwo := gaugeMetricTwo.DataPoints().AppendEmpty()
-// 	gaugeDatapointTwo.Attributes().PutStr("label1", "value2")
+	metricTwo := metrics.AppendEmpty()
+	metricTwo.SetName("test")
+	metricTwo.SetUnit("Count")
+	gaugeMetricTwo := metricTwo.SetEmptyGauge()
+	gaugeDatapointTwo := gaugeMetricTwo.DataPoints().AppendEmpty()
+	gaugeDatapointTwo.Attributes().PutStr("label1", "value2")
 
-// 	testCases := []struct {
-// 		name           string
-// 		enableSuffixes bool
-// 	}{
-// 		{
-// 			name:           "OTel metric suffixes enabled",
-// 			enableSuffixes: true,
-// 		},
-// 		{
-// 			name:           "OTel metric suffixes disabled",
-// 			enableSuffixes: false,
-// 		},
-// 	}
-// 	for _, tc := range testCases {
-// 		t.Run(tc.name, func(t *testing.T) {
-// 			countSfx := ""
-// 			if tc.enableSuffixes {
-// 				countSfx = "_Count"
-// 			}
-// 			sampleMetadata := []*mimirpb.MetricMetadata{
-// 				{
-// 					Help:             "",
-// 					Unit:             "Count",
-// 					Type:             mimirpb.GAUGE,
-// 					MetricFamilyName: "name" + countSfx,
-// 				},
-// 				{
-// 					Help:             "",
-// 					Unit:             "Count",
-// 					Type:             mimirpb.GAUGE,
-// 					MetricFamilyName: "test" + countSfx,
-// 				},
-// 			}
-			
-// 			res := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
-// 			assert.Equal(t, sampleMetadata, res)
-// 		})
-// 	}
-// }
+	testCases := []struct {
+		name           string
+		enableSuffixes bool
+	}{
+		{
+			name:           "OTel metric suffixes enabled",
+			enableSuffixes: true,
+		},
+		{
+			name:           "OTel metric suffixes disabled",
+			enableSuffixes: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			countSfx := ""
+			if tc.enableSuffixes {
+				countSfx = "_Count"
+			}
+			sampleMetadata := []*mimirpb.MetricMetadata{
+				{
+					Help:             "",
+					Unit:             "Count",
+					Type:             mimirpb.GAUGE,
+					MetricFamilyName: "name" + countSfx,
+				},
+				{
+					Help:             "",
+					Unit:             "Count",
+					Type:             mimirpb.GAUGE,
+					MetricFamilyName: "test" + countSfx,
+				},
+			}
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
+				addSuffixes: tc.enableSuffixes,
+			}, log.NewNopLogger())
+			require.NoError(t, err)
+			assert.Equal(t, sampleMetadata, res)
+		})
+	}
+}
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
