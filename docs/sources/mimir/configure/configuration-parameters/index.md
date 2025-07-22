@@ -4797,6 +4797,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.parquet-labels-attributes-ttl
     [parquet_labels_attributes_ttl: <duration> | default = 168h]
 
+    # (advanced) How long to cache attributes of parquet chunks files.
+    # CLI flag: -blocks-storage.bucket-store.metadata-cache.parquet-chunks-attributes-ttl
+    [parquet_chunks_attributes_ttl: <duration> | default = 168h]
+
   # (advanced) Duration after which the blocks marked for deletion will be
   # filtered out while fetching blocks. The idea of ignore-deletion-marks-delay
   # is to ignore blocks that are marked for deletion with some delay. This

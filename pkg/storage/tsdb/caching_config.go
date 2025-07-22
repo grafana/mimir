@@ -70,6 +70,7 @@ type MetadataCacheConfig struct {
 	BucketIndexContentTTL      time.Duration `yaml:"bucket_index_content_ttl" category:"advanced"`
 	BucketIndexMaxSize         int           `yaml:"bucket_index_max_size_bytes" category:"advanced"`
 	ParquetLabelsAttributesTTL time.Duration `yaml:"parquet_labels_attributes_ttl" category:"advanced"`
+	ParquetChunksAttributesTTL time.Duration `yaml:"parquet_chunks_attributes_ttl" category:"advanced"`
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -90,6 +91,7 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.DurationVar(&cfg.BucketIndexContentTTL, prefix+"bucket-index-content-ttl", 5*time.Minute, "How long to cache content of the bucket index.")
 	f.IntVar(&cfg.BucketIndexMaxSize, prefix+"bucket-index-max-size-bytes", 1*1024*1024, "Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend).")
 	f.DurationVar(&cfg.ParquetLabelsAttributesTTL, prefix+"parquet-labels-attributes-ttl", 168*time.Hour, "How long to cache attributes of parquet labels files.")
+	f.DurationVar(&cfg.ParquetChunksAttributesTTL, prefix+"parquet-chunks-attributes-ttl", 168*time.Hour, "How long to cache attributes of parquet chunks files.")
 }
 
 func (cfg *MetadataCacheConfig) Validate() error {
@@ -114,6 +116,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 		cfg.CacheAttributes("parquet-labels", metadataCache, isParquetLabelsFile, metadataConfig.ParquetLabelsAttributesTTL)
+		cfg.CacheAttributes("parquet-chunks", metadataCache, isParquetChunksFile, metadataConfig.ParquetChunksAttributesTTL)
 
 		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
@@ -156,10 +159,13 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
 var parquetLabelsMatcher = regexp.MustCompile(`^.*/\d+\.labels\.parquet$`)
+var parquetChunksMatcher = regexp.MustCompile(`^.*/\d+\.chunks\.parquet$`)
 
 func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
 
 func isParquetLabelsFile(name string) bool { return parquetLabelsMatcher.MatchString(name) }
+
+func isParquetChunksFile(name string) bool { return parquetChunksMatcher.MatchString(name) }
 
 func isMetaFile(name string) bool {
 	return strings.HasSuffix(name, "/"+block.MetaFilename) || strings.HasSuffix(name, "/"+block.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)
