@@ -27,6 +27,8 @@ Native histograms are different from classic Prometheus histograms in a number o
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
+For more information on native histogram flavors and how to query them using PromQL, refer to the [Prometheus Native Histograms specification](https://prometheus.io/docs/specs/native_histograms/).
+
 ## Advantages and disadvantages
 
 There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, refer to the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.

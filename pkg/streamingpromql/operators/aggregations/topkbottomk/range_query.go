@@ -128,6 +128,10 @@ func (t *RangeQuery) getK(ctx context.Context) error {
 	for stepIdx := range t.TimeRange.StepCount {
 		v := paramValues.Samples[stepIdx].F
 
+		if math.IsNaN(v) {
+			return fmt.Errorf("parameter value is NaN for %v", t.functionName())
+		}
+
 		if !convertibleToInt64(v) {
 			return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
 		}
@@ -497,6 +501,7 @@ var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
 	nil,
+	nil,
 )
 
 var intSliceSlicePool = types.NewLimitingBucketedPool(
@@ -506,6 +511,7 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	limiter.IntSliceSlice,
 	uint64(unsafe.Sizeof([][]int{})),
 	true,
+	nil,
 	nil,
 )
 

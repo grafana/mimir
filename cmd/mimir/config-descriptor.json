@@ -833,6 +833,17 @@
                   "fieldFlag": "server.cluster-validation.http.excluded-paths",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "excluded_user_agents",
+                  "required": false,
+                  "desc": "Comma-separated list of user agents that are excluded from the cluster validation check.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "server.cluster-validation.http.excluded-user-agents",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -2225,6 +2236,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "querier.filter-queryables-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent_remote_read_queries",
+          "required": false,
+          "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "querier.max-concurrent-remote-read-queries",
+          "fieldType": "int",
           "fieldCategory": "advanced"
         },
         {
@@ -4943,9 +4965,45 @@
           "required": false,
           "desc": "List of queries to block.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "blocked_queries",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "pattern",
+                "required": false,
+                "desc": "PromQL expression pattern to match.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "regex",
+                "required": false,
+                "desc": "If true, the pattern is treated as a regular expression. If false, the pattern is treated as a literal match.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              },
+              {
+                "kind": "field",
+                "name": "reason",
+                "required": false,
+                "desc": "Reason returned to clients when rejecting matching queries.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -4953,19 +5011,110 @@
           "required": false,
           "desc": "List of queries to limit and duration to limit them for.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of query (string) and allowed_frequency (duration)",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "limited_queries",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "query",
+                "required": false,
+                "desc": "Literal PromQL expression to match.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "allowed_frequency",
+                "required": false,
+                "desc": "Minimum duration between matching queries. If a matching query arrives more often than this, it is rejected.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
           "name": "blocked_requests",
           "required": false,
-          "desc": "List of http requests to block.",
+          "desc": "List of HTTP requests to block.",
           "fieldValue": null,
           "fieldDefaultValue": null,
-          "fieldType": "blocked_requests_config...",
-          "fieldCategory": "experimental"
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "blocked_requests",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "path",
+                "required": false,
+                "desc": "Path to match, including leading slash (/). Leave blank to match all paths.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "method",
+                "required": false,
+                "desc": "HTTP method to match. Leave blank to match all methods.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "map",
+                "name": "query_params",
+                "required": false,
+                "desc": "Query parameters to match. Requests must have all of the provided query parameters to be considered a match.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "string",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "query_params",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "value",
+                      "required": false,
+                      "desc": "Value to match.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "is_regexp",
+                      "required": false,
+                      "desc": "If true, the value is treated as a regular expression. If false, the value is treated as a literal match.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldType": "boolean"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -5007,6 +5156,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.subquery-spin-off-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "labels_query_optimizer_enabled",
+          "required": false,
+          "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -5066,12 +5226,48 @@
           "kind": "field",
           "name": "cost_attribution_labels",
           "required": false,
-          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.",
+          "desc": "",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "validation.cost-attribution-labels",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_labels_structured",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_labels_structured",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "input",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "output",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -5804,6 +6000,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-promote-scope-metadata",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_native_delta_ingestion",
+          "required": false,
+          "desc": "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-native-delta-ingestion",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -8163,7 +8370,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.storage-class",
@@ -14731,7 +14938,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.storage-class",
@@ -17296,7 +17503,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
@@ -20123,7 +20330,7 @@
                   "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",

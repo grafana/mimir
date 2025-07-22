@@ -35,14 +35,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Update rollout-operator to latest release, this includes support for `OTEL_` tracing environment variables. #11748 #11794
 * [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931
 * [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
+* [CHANGE] Add `store_gateway.grpcMaxQueryResponseSizeBytes` value to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
+* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
 * [BUGFIX] KEDA Autoscaling: Resolved an issue where the authModes field was missing from the ScaledObject definition for the querier when authentication was enabled. #11709
 * [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
-* [FEATURE] Config uption for emptyDir in store-gateway: #11951
-
+* [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
+* [ENHANCEMENT] Config uption for emptyDir in store-gateway: #11951
 
 ## 5.7.0
 
@@ -62,7 +64,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add extra values for KEDA autoscaling to support authentication, `ignoreNullValues`, `unsafeSsl`, and `PromQLLabelSelector`. #10265
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
-* [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733
 
 ## 5.6.0
 

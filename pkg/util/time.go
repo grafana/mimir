@@ -68,7 +68,7 @@ func ParseDurationMS(s string) (int64, error) {
 func DurationWithJitter(input time.Duration, variancePerc float64) time.Duration {
 	variance := int64(float64(input) * variancePerc)
 	if variance <= 0 {
-		return 0
+		return input
 	}
 
 	jitter := rand.Int63n(variance*2) - variance
@@ -80,7 +80,7 @@ func DurationWithJitter(input time.Duration, variancePerc float64) time.Duration
 func DurationWithPositiveJitter(input time.Duration, variancePerc float64) time.Duration {
 	variance := int64(float64(input) * variancePerc)
 	if variance <= 0 {
-		return 0
+		return input
 	}
 
 	jitter := rand.Int63n(variance)
@@ -92,7 +92,7 @@ func DurationWithPositiveJitter(input time.Duration, variancePerc float64) time.
 func DurationWithNegativeJitter(input time.Duration, variancePerc float64) time.Duration {
 	variance := int64(float64(input) * variancePerc)
 	if variance <= 0 {
-		return 0
+		return input
 	}
 
 	jitter := rand.Int63n(variance)

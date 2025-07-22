@@ -109,3 +109,38 @@ func TestSeriesDataRingBuffer_Resizing(t *testing.T) {
 	require.True(t, buffer.IsPresent(122))
 	require.True(t, buffer.IsPresent(123))
 }
+
+func TestSeriesDataRingBuffer_RemovingThroughWrapAround(t *testing.T) {
+	buffer := &SeriesDataRingBuffer{}
+
+	// Add four series to fill the slice.
+	s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}
+	s2 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 2, F: 2}}}
+	s3 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 3, F: 3}}}
+	s4 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 4, F: 4}}}
+	buffer.Append(s1, 120)
+	buffer.Append(s2, 121)
+	buffer.Append(s3, 122)
+	buffer.Append(s4, 123)
+	require.Len(t, buffer.data, 4, "expected slice to be resized to length 4")
+	require.Equal(t, 4, buffer.Size())
+
+	// Remove the first three series, then add two more to wrap around to the front of the slice.
+	require.Equal(t, s1, buffer.Remove(120))
+	require.Equal(t, s2, buffer.Remove(121))
+	require.Equal(t, s3, buffer.Remove(122))
+	require.Len(t, buffer.data, 4, "expected slice to still be length 4")
+	require.Equal(t, 1, buffer.Size())
+
+	s5 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 5, F: 5}}}
+	s6 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 6, F: 6}}}
+	buffer.Append(s5, 124)
+	buffer.Append(s6, 125)
+	require.Len(t, buffer.data, 4, "expected slice to still be length 4")
+	require.Equal(t, 3, buffer.Size())
+
+	// Check we can still remove series as expected after wrap around.
+	require.Equal(t, s4, buffer.Remove(123))
+	require.Equal(t, s5, buffer.Remove(124))
+	require.Equal(t, s6, buffer.Remove(125))
+}

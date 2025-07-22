@@ -1,0 +1,1 @@
+../../docs/internal/contributing/contributing-to-helm-chart.md

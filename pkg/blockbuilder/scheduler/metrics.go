@@ -11,6 +11,7 @@ type schedulerMetrics struct {
 	updateScheduleDuration   prometheus.Histogram
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
+	partitionPlannedOffset   *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
 	flushFailed              prometheus.Counter
 	fetchOffsetsFailed       prometheus.Counter
@@ -18,6 +19,7 @@ type schedulerMetrics struct {
 	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
 	persistentJobFailures    prometheus.Counter
+	jobGapDetected           *prometheus.CounterVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -39,6 +41,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
 			Help: "The observed committed offset of each partition.",
+		}, []string{"partition"}),
+		partitionPlannedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_planned_offset",
+			Help: "The planned offset of each partition.",
 		}, []string{"partition"}),
 		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
@@ -64,5 +70,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 			Name: "cortex_blockbuilder_scheduler_pending_jobs",
 			Help: "The number of jobs in the pending queues.",
 		}, []string{"partition"}),
+		jobGapDetected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_job_gap_detected",
+			Help: "The number of times an unexpected gap was detected between jobs.",
+		}, []string{"offset_type", "partition"}),
 	}
 }

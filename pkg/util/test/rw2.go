@@ -108,6 +108,11 @@ func NewSymbolTableBuilder(symbols []string) *SymbolTableBuilder {
 }
 
 func NewSymbolTableBuilderWithCommon(symbols []string, offset uint32, commonSymbols []string) *SymbolTableBuilder {
+	// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
+	if len(symbols) == 0 || symbols[0] != "" {
+		symbols = append([]string{""}, symbols...)
+	}
+
 	symbolsMap := make(map[string]uint32)
 	for i, sym := range symbols {
 		symbolsMap[sym] = uint32(i) + offset

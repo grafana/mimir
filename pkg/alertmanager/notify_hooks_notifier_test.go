@@ -4,16 +4,20 @@ package alertmanager
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,11 +54,51 @@ type testHooksFixture struct {
 	limits   *fakeHookLimits
 	server   *httptest.Server
 	upstream *fakeNotifier
+	reg      *prometheus.Registry
 
 	notifier *notifyHooksNotifier
 }
 
-func newTestHooksFixture(t *testing.T) *testHooksFixture {
+func (f *testHooksFixture) assertMetricsSuccess(t *testing.T, total, noop int) {
+	t.Helper()
+
+	assert.NoError(t, testutil.GatherAndCompare(f.reg, strings.NewReader(fmt.Sprintf(`
+		# HELP alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
+		# TYPE alertmanager_notify_hook_total counter
+		alertmanager_notify_hook_total %d
+		# HELP alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
+		# TYPE alertmanager_notify_hook_noop_total counter
+		alertmanager_notify_hook_noop_total %d
+	`, total, noop)),
+		"alertmanager_notify_hook_total",
+		"alertmanager_notify_hook_noop_total",
+		"alertmanager_notify_hook_failed_total",
+		// Don't check duration.
+	))
+}
+
+func (f *testHooksFixture) assertMetricsFailed(t *testing.T, code string, failed int) {
+	t.Helper()
+
+	assert.NoError(t, testutil.GatherAndCompare(f.reg, strings.NewReader(fmt.Sprintf(`
+		# HELP alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
+		# TYPE alertmanager_notify_hook_total counter
+		alertmanager_notify_hook_total %d
+		# HELP alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
+		# TYPE alertmanager_notify_hook_noop_total counter
+		alertmanager_notify_hook_noop_total %d
+		# HELP alertmanager_notify_hook_failed_total Number of times a pre-notify was attempted but failed.
+		# TYPE alertmanager_notify_hook_failed_total counter
+		alertmanager_notify_hook_failed_total{status_code="%s"} %d
+	`, failed, 0, code, failed)),
+		"alertmanager_notify_hook_total",
+		"alertmanager_notify_hook_noop_total",
+		"alertmanager_notify_hook_failed_total",
+		// Don't check duration.
+	))
+}
+
+func newTestHooksFixture(t *testing.T, handlerStatus int, handlerResponse string) *testHooksFixture {
 	t.Helper()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,16 +122,8 @@ func newTestHooksFixture(t *testing.T) *testHooksFixture {
 			`"Timeout":false}],`+
 			`"groupLabels":{}}`+"\n", string(body))
 
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte(`{` +
-			`"alerts":[` +
-			`{"labels":{"label":"changed"},` +
-			`"annotations":null,` +
-			`"startsAt":"0001-01-01T00:00:00Z",` +
-			`"endsAt":"0001-01-01T00:00:00Z",` +
-			`"generatorURL":"",` +
-			`"UpdatedAt":"0001-01-01T00:00:00Z",` +
-			`"Timeout":false}]}`))
+		w.WriteHeader(handlerStatus)
+		_, err = w.Write([]byte(handlerResponse))
 		assert.NoError(t, err)
 	})
 
@@ -104,13 +140,15 @@ func newTestHooksFixture(t *testing.T) *testHooksFixture {
 
 	upstream := &fakeNotifier{}
 
-	notifier, err := newNotifyHooksNotifier(upstream, limits, "user", log.NewLogfmtLogger(os.Stdout))
+	reg := prometheus.NewPedanticRegistry()
+	notifier, err := newNotifyHooksNotifier(upstream, limits, "user", log.NewLogfmtLogger(os.Stdout), newNotifyHooksMetrics(reg))
 	require.NoError(t, err)
 
 	return &testHooksFixture{
 		limits:   limits,
 		server:   server,
 		upstream: upstream,
+		reg:      reg,
 		notifier: notifier,
 	}
 }
@@ -136,39 +174,94 @@ func makeContext() context.Context {
 }
 
 func TestNotifyHooksNotifier(t *testing.T) {
+	const okResponse = `{` +
+		`"alerts":[` +
+		`{"labels":{"label":"changed"},` +
+		`"annotations":null,` +
+		`"startsAt":"0001-01-01T00:00:00Z",` +
+		`"endsAt":"0001-01-01T00:00:00Z",` +
+		`"generatorURL":"",` +
+		`"UpdatedAt":"0001-01-01T00:00:00Z",` +
+		`"Timeout":false}]}`
+
 	t.Run("hook invoked", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
 
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
+		f.assertMetricsSuccess(t, 1, 0)
 	})
 	t.Run("hook not invoked when empty url configured", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.url = ""
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
 
 		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsSuccess(t, 0, 0)
 	})
 	t.Run("hook not invoked when matching receiver name configured ", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.receivers = []string{"otherrecv"}
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
 
 		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsSuccess(t, 0, 0)
 	})
 	t.Run("hook invoked when matching receiver name configured ", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.receivers = []string{"recv"}
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
 
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
+		f.assertMetricsSuccess(t, 1, 0)
+	})
+
+	t.Run("hook failing with 500 does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusInternalServerError, ``)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsFailed(t, "500", 1)
+	})
+	t.Run("hook failing with 500 but returning data does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusInternalServerError, okResponse)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsFailed(t, "500", 1)
+	})
+	t.Run("hook failing with 422 does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusUnprocessableEntity, ``)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsFailed(t, "422", 1)
+	})
+	t.Run("hook yielding 204 with empty response does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusNoContent, ``)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+		f.assertMetricsSuccess(t, 1, 1)
 	})
 }

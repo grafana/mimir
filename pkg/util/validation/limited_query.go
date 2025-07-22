@@ -5,18 +5,18 @@ package validation
 import "time"
 
 type LimitedQuery struct {
-	Query            string        `yaml:"query"`
-	AllowedFrequency time.Duration `yaml:"allowed_frequency"` // query may only be run once per this duration
+	Query            string        `yaml:"query" doc:"description=Literal PromQL expression to match."`
+	AllowedFrequency time.Duration `yaml:"allowed_frequency" doc:"description=Minimum duration between matching queries. If a matching query arrives more often than this, it is rejected."`
 }
 
-type LimitedQueriesConfig []*LimitedQuery
+type LimitedQueriesConfig []LimitedQuery
 
 func (lq *LimitedQueriesConfig) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration limits the query "rate(metric_counter[5m])" to running, at most, every minute.`,
-		[]map[string]string{
+		[]LimitedQuery{
 			{
-				"query":             "rate(metric_counter[5m])",
-				"allowed_frequency": "1m",
+				Query:            "rate(metric_counter[5m])",
+				AllowedFrequency: time.Minute,
 			},
 		}
 }

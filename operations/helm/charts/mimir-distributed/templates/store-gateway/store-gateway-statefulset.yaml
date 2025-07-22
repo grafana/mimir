@@ -25,7 +25,7 @@ metadata:
     grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}
     {{- end -}}
     {{- if $rolloutZone.downscaleLeader }}
-    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
+    grafana.com/rollout-downscale-leader: {{ $rolloutZone.downscaleLeader }}
     {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
@@ -157,6 +157,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
             {{- end }}
+            - "-server.grpc-max-send-msg-size-bytes={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}

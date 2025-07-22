@@ -63,6 +63,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
           {{- end }}
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
           {{- range $key, $value := .Values.ruler_querier.extraArgs }}
             - -{{ $key }}={{ $value }}
           {{- end }}

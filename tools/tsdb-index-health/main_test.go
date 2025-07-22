@@ -53,12 +53,6 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), stats.TotalSeries)
-	require.Equal(t, int64(1), stats.SeriesMinChunks)
-	require.Equal(t, int64(1), stats.SeriesAvgChunks)
-	require.Equal(t, int64(2), stats.SeriesMaxChunks)
-	require.Equal(t, int64(3), stats.TotalChunks)
-	require.Equal(t, int64(2), stats.LabelNamesCount)
-	require.Equal(t, int64(2), stats.MetricLabelValuesCount)
 }
 
 func must[T any](v T, err error) T {

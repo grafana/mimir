@@ -97,6 +97,7 @@ func InfluxHandler(
 		pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))
 
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 		// https://docs.influxdata.com/influxdb/cloud/api/v2/#tag/Response-codes
 		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {

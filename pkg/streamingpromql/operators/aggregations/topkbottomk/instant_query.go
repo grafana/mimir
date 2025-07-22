@@ -141,6 +141,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
@@ -169,6 +173,10 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
+
+	if math.IsNaN(v) {
+		return fmt.Errorf("parameter value is NaN for %v", t.functionName())
+	}
 
 	if !convertibleToInt64(v) {
 		return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
@@ -319,6 +327,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 

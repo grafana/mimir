@@ -229,34 +229,6 @@ func addUnitTokens(nameTokens []string, mainUnitSuffix, perUnitSuffix string) []
 	return nameTokens
 }
 
-// cleanUpUnit cleans up unit so it matches model.LabelNameRE.
-func cleanUpUnit(unit string) string {
-	// Multiple consecutive underscores are replaced with a single underscore.
-	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-	return strings.TrimPrefix(multipleUnderscoresRE.ReplaceAllString(
-		strings.Map(replaceInvalidMetricChar, unit),
-		"_",
-	), "_")
-}
-
-// Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit.
-// Returns the specified unit if not found in unitMap.
-func unitMapGetOrDefault(unit string) string {
-	if promUnit, ok := unitMap[unit]; ok {
-		return promUnit
-	}
-	return unit
-}
-
-// Retrieve the Prometheus "per" unit corresponding to the specified "per" unit.
-// Returns the specified unit if not found in perUnitMap.
-func perUnitMapGetOrDefault(perUnit string) string {
-	if promPerUnit, ok := perUnitMap[perUnit]; ok {
-		return promPerUnit
-	}
-	return perUnit
-}
-
 // Remove the specified value from the slice.
 func removeItem(slice []string, value string) []string {
 	newSlice := make([]string, 0, len(slice))
@@ -297,35 +269,4 @@ func (mn *MetricNamer) buildMetricName(name, unit string, metricType MetricType)
 		}
 	}
 	return name
-}
-
-// buildUnitSuffixes builds the main and per unit suffixes for the specified unit
-// but doesn't do any special character transformation to accommodate Prometheus naming conventions.
-// Removing trailing underscores or appending suffixes is done in the caller.
-func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
-	// Split unit at the '/' if any
-	unitTokens := strings.SplitN(unit, "/", 2)
-
-	if len(unitTokens) > 0 {
-		// Main unit
-		// Update if not blank and doesn't contain '{}'
-		mainUnitOTel := strings.TrimSpace(unitTokens[0])
-		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
-			mainUnitSuffix = unitMapGetOrDefault(mainUnitOTel)
-		}
-
-		// Per unit
-		// Update if not blank and doesn't contain '{}'
-		if len(unitTokens) > 1 && unitTokens[1] != "" {
-			perUnitOTel := strings.TrimSpace(unitTokens[1])
-			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
-				perUnitSuffix = perUnitMapGetOrDefault(perUnitOTel)
-			}
-			if perUnitSuffix != "" {
-				perUnitSuffix = "per_" + perUnitSuffix
-			}
-		}
-	}
-
-	return mainUnitSuffix, perUnitSuffix
 }

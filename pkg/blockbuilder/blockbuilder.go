@@ -305,8 +305,7 @@ consumerLoop:
 				break consumerLoop
 			}
 
-			// Process everything in this record.
-			_, err := builder.Process(ctx, rec, 0, 0, false, true)
+			err := builder.Process(ctx, rec)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return 0, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)

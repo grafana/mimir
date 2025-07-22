@@ -5,6 +5,7 @@ package listblocks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path"
 	"sort"
 	"sync"
@@ -43,7 +44,7 @@ func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, use
 		return nil
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("find tenant %s blocks marked for deletion and no-compact: %w", user, err)
 	}
 
 	metaPaths := []string(nil)

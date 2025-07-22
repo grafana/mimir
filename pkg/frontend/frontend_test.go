@@ -184,8 +184,13 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 			logger := log.NewNopLogger()
 			if testCase.enabled {
 				reg := prometheus.NewPedanticRegistry()
+				cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+					ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+						SoftValidation: testCase.softValidation,
+					},
+				}
 				handler = middleware.ClusterValidationMiddleware(
-					testCase.serverCluster, []string{}, testCase.softValidation,
+					testCase.serverCluster, cfg,
 					middleware.NewInvalidClusterRequests(reg, "cortex"), logger,
 				).Wrap(handler)
 			}
@@ -368,7 +373,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	if l != nil {
 		logger = l
 	}
-	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
+	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)

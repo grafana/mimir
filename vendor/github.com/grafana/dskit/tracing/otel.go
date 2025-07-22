@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
 var tracer = otel.Tracer("dskit/tracing")
@@ -35,6 +35,11 @@ var tracer = otel.Tracer("dskit/tracing")
 // Refer to official OTel SDK configuration docs to see the available options.
 // https://opentelemetry.io/docs/languages/sdk-configuration/general/
 func NewOTelFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (io.Closer, error) {
+	if os.Getenv("OTEL_TRACES_EXPORTER") == "" && os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		// No tracing is configured, so don't initialize the tracer as it would complain on every span about localhost:4718 not accepting traces.
+		return ioCloser(func() error { return nil }), nil
+	}
+
 	level.Info(logger).Log("msg", "initialising OpenTelemetry tracer")
 
 	exp, err := autoexport.NewSpanExporter(context.Background())
