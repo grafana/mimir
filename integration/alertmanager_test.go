@@ -1134,11 +1134,8 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
 
-			status, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, cfg.CreatedAt, status.CreatedAt)
-			require.Equal(t, cfg.Promoted, status.Promoted)
-			require.Equal(t, cfg.Hash, status.Hash)
+			_, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		}
 	}
 
