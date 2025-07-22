@@ -142,7 +142,7 @@ func (s *TSDBSchema) DataColumIdx(t int64) int {
 	return int((t - s.MinTs) / s.DataColDurationMs)
 }
 
-func (s *TSDBSchema) LabelsProjection() (*TSDBProjection, error) {
+func (s *TSDBSchema) LabelsProjection(opts ...CompressionOpts) (*TSDBProjection, error) {
 	g := make(parquet.Group)
 
 	lc, ok := s.Schema.Lookup(ColIndexes)
@@ -165,12 +165,12 @@ func (s *TSDBSchema) LabelsProjection() (*TSDBProjection, error) {
 		FilenameFunc: func(name string, shard int) string {
 			return LabelsPfileNameForShard(name, shard)
 		},
-		Schema:       WithCompression(parquet.NewSchema("labels-projection", g)),
+		Schema:       WithCompression(parquet.NewSchema("labels-projection", g), opts...),
 		ExtraOptions: []parquet.WriterOption{parquet.SkipPageBounds(ColIndexes)},
 	}, nil
 }
 
-func (s *TSDBSchema) ChunksProjection() (*TSDBProjection, error) {
+func (s *TSDBSchema) ChunksProjection(opts ...CompressionOpts) (*TSDBProjection, error) {
 	g := make(parquet.Group)
 	writeOptions := make([]parquet.WriterOption, 0, len(s.DataColsIndexes))
 
@@ -190,7 +190,7 @@ func (s *TSDBSchema) ChunksProjection() (*TSDBProjection, error) {
 		FilenameFunc: func(name string, shard int) string {
 			return ChunksPfileNameForShard(name, shard)
 		},
-		Schema:       WithCompression(parquet.NewSchema("chunk-projection", g)),
+		Schema:       WithCompression(parquet.NewSchema("chunk-projection", g), opts...),
 		ExtraOptions: writeOptions,
 	}, nil
 }
