@@ -47,7 +47,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	// Represent metadata as extra, empty timeseries rather than attaching it to existing series.
-	// It prevents duplication, and removes the need to match metadata to series, with very low actual size overhead.
+	// We never replicate metadata if there are multiple series with the same name, and it removes the requirement to match up the metadata to the right series.
 	for _, meta := range rw1.Metadata {
 		rw2meta := FromMetricMetadataToMetadataRW2(meta, symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{

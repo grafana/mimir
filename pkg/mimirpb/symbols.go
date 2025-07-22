@@ -93,6 +93,7 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
+	// Symbol indexes in the map start at 1 because 0 is always reserved, and we don't need to use space to store it.
 	ref := uint32(len(t.symbolsMap)) + t.offset + 1
 	t.symbolsMap[str] = ref
 	return ref
@@ -116,7 +117,7 @@ func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
 	}
 
 	for k, v := range t.symbolsMap {
-		(prealloc)[v-t.offset] = k
+		prealloc[v-t.offset] = k
 	}
 	return prealloc
 }

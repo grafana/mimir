@@ -247,7 +247,7 @@ func TestRecordSerializer(t *testing.T) {
 		require.Nil(t, resultReq.SymbolsRW2)
 		require.Nil(t, resultReq.TimeseriesRW2)
 		// Metadata order is currently not preserved by the RW2 deser layer.
-		assertMetadataEqualUnordered(t, req.Metadata, resultReq.Metadata)
+		require.ElementsMatch(t, req.Metadata, resultReq.Metadata)
 	})
 }
 
@@ -306,21 +306,4 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 			mimirpb.ReuseSlice(wr.Timeseries)
 		}
 	})
-}
-
-func assertMetadataEqualUnordered(t *testing.T, exp, actual []*mimirpb.MetricMetadata) {
-	t.Helper()
-
-	expMap := make(map[string]*mimirpb.MetricMetadata)
-	actualMap := make(map[string]*mimirpb.MetricMetadata)
-	for _, v := range exp {
-		require.NotContains(t, expMap, v.MetricFamilyName)
-		expMap[v.MetricFamilyName] = v
-	}
-	for _, v := range actual {
-		require.NotContains(t, actualMap, v.MetricFamilyName)
-		actualMap[v.MetricFamilyName] = v
-	}
-
-	require.Equal(t, expMap, actualMap)
 }
