@@ -448,26 +448,6 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
-	switch otelMetric.Type() {
-	case pmetric.MetricTypeGauge:
-		return mimirpb.GAUGE
-	case pmetric.MetricTypeSum:
-		metricType := mimirpb.GAUGE
-		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.COUNTER
-		}
-		return metricType
-	case pmetric.MetricTypeHistogram:
-		return mimirpb.HISTOGRAM
-	case pmetric.MetricTypeSummary:
-		return mimirpb.SUMMARY
-	case pmetric.MetricTypeExponentialHistogram:
-		return mimirpb.HISTOGRAM
-	}
-	return mimirpb.UNKNOWN
-}
-
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
