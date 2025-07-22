@@ -92,9 +92,9 @@ type UserGrafanaConfig struct {
 }
 
 type UserGrafanaConfigStatus struct {
-	Hash     string `json:"configuration_hash"`
-	CreateAt int64  `json:"created"`
-	Promoted bool   `json:"promoted"`
+	Hash      string `json:"configuration_hash"`
+	CreatedAt int64  `json:"created"`
+	Promoted  bool   `json:"promoted"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -519,9 +519,9 @@ func (am *MultitenantAlertmanager) GetGrafanaConfigStatus(w http.ResponseWriter,
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfigStatus{
-			Hash:     cfg.Hash,
-			CreateAt: cfg.CreatedAtTimestamp,
-			Promoted: cfg.Promoted,
+			Hash:      cfg.Hash,
+			CreatedAt: cfg.CreatedAtTimestamp,
+			Promoted:  cfg.Promoted,
 		},
 	})
 }
