@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250718123059-f0494e388de2
+	github.com/grafana/dskit v0.0.0-20250723143816-ff33c5829b96
 	github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -31,9 +31,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.28.1
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.23.0-rc.1
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3
+	github.com/prometheus/common v0.65.1-0.20250711183725-0e1982f10d4c
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -343,7 +343,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250722072545-5c3788e7c4fe
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250722145652-63483586a69c
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

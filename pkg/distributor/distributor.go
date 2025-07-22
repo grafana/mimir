@@ -1092,22 +1092,24 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
+		dropLabels := d.limits.DropLabels(userID)
 		validationScheme := d.limits.ValidationScheme(userID)
+		relabelConfigs := d.limits.MetricRelabelConfigs(userID)
+		for _, relabelConfig := range relabelConfigs {
+			if relabelConfig != nil {
+				relabelConfig.MetricNameValidationScheme = validationScheme
+			}
+		}
 
 		var removeTsIndexes []int
 		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
-			if mrcs := d.limits.MetricRelabelConfigs(userID); len(mrcs) > 0 {
-				for _, mrc := range mrcs {
-					if mrc != nil {
-						mrc.MetricNameValidationScheme = validationScheme
-					}
-				}
+			if len(relabelConfigs) > 0 {
 				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
 				lb.Set(metaLabelTenantID, userID)
-				keep := relabel.ProcessBuilder(lb, mrcs...)
+				keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
@@ -1116,7 +1118,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 				req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
 			}
 
-			for _, labelName := range d.limits.DropLabels(userID) {
+			for _, labelName := range dropLabels {
 				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
 

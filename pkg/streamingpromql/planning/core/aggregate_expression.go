@@ -151,16 +151,7 @@ func (a *AggregateExpression) OperatorFactory(children []types.Operator, timeRan
 			return nil, fmt.Errorf("expected StringOperator as parameter child of AggregateExpression with operation %s, got %T", a.Op.String(), children[0])
 		}
 
-		o = aggregations.NewCountValues(
-			inner,
-			param,
-			timeRange,
-			a.Grouping,
-			a.Without,
-			params.MemoryConsumptionTracker,
-			a.ExpressionPosition.ToPrometheusType(),
-			params.NameValidationScheme,
-		)
+		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.ExpressionPosition.ToPrometheusType())
 
 	default:
 		if len(children) != 1 {

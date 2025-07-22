@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution"
 	catestutils "github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -78,59 +80,72 @@ func TestValidateLabels(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	s := newSampleValidationMetrics(reg)
 
-	const userID = "testUser"
+	var cfg validateLabelsCfg
+	userID := "testUser"
 
-	legacyConfig := validateLabelsCfg{
-		maxLabelNamesPerSeries:     3,
-		maxLabelNamesPerInfoSeries: 4,
-		maxLabelNameLength:         25,
-		maxLabelValueLength:        25,
-		validationScheme:           model.LegacyValidation,
-	}
-
-	utf8Config := legacyConfig
-	utf8Config.validationScheme = model.UTF8Validation
-
+	cfg.maxLabelValueLength = 25
+	cfg.maxLabelNameLength = 25
+	cfg.maxLabelNamesPerSeries = 3
+	cfg.maxLabelNamesPerInfoSeries = 4
 	limits := catestutils.NewMockCostAttributionLimits(0, userID, "team")
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
 	cast := manager.SampleTracker(userID)
 
-	for _, c := range []struct {
+	validationSchemes := []model.ValidationScheme{
+		model.LegacyValidation,
+		model.UTF8Validation,
+	}
+
+	// alwaysErr ensures this error is returned for legacy and utf8 validation.
+	alwaysErr := func(err error) func(model.ValidationScheme) error {
+		return func(model.ValidationScheme) error {
+			return err
+		}
+	}
+
+	// legacyErr ensures err is only returned when legacy validation scheme is used.
+	legacyErr := func(err error) func(model.ValidationScheme) error {
+		return func(scheme model.ValidationScheme) error {
+			if scheme == model.LegacyValidation {
+				return err
+			}
+			return nil
+		}
+	}
+
+	testCases := []struct {
 		metric                   model.Metric
 		skipLabelNameValidation  bool
 		skipLabelCountValidation bool
-		config                   validateLabelsCfg
-		err                      error
+		wantErr                  func(model.ValidationScheme) error
 	}{
 		{
 			metric:                   map[model.LabelName]model.LabelValue{"team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      errors.New(noMetricNameMsgFormat),
+			wantErr:                  alwaysErr(errors.New(noMetricNameMsgFormat)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: " ", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      fmt.Errorf(invalidMetricNameMsgFormat, " "),
+			wantErr:                  legacyErr(fmt.Errorf(invalidMetricNameMsgFormat, " ")),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+			wantErr: alwaysErr(
+				fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+			),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: legacyErr(fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
 				mimirpb.FromLabelAdaptersToString(
@@ -140,21 +155,18 @@ func TestValidateLabels(t *testing.T) {
 						{Name: "team", Value: "a"},
 					},
 				),
-			),
+			)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "team": "c"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: alwaysErr(fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
 				mimirpb.FromLabelAdaptersToString(
@@ -164,14 +176,13 @@ func TestValidateLabels(t *testing.T) {
 						{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
 					},
 				),
-			),
+			)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: LabelValueTooLongError{
+			wantErr: alwaysErr(LabelValueTooLongError{
 				Label: mimirpb.LabelAdapter{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 				Limit: 25,
 				Series: []mimirpb.LabelAdapter{
@@ -179,14 +190,13 @@ func TestValidateLabels(t *testing.T) {
 					{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 					{Name: "team", Value: "biz"},
 				},
-			},
+			}),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop", "team": "plof"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: alwaysErr(fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -197,23 +207,20 @@ func TestValidateLabels(t *testing.T) {
 					},
 					3,
 				)...,
-			),
+			)),
 		},
 		{
 			// *_info metrics have higher label limits.
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			// *_info metrics have higher label limits.
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop", "blap": "blup", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: alwaysErr(fmt.Errorf(
 				tooManyInfoLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -225,52 +232,42 @@ func TestValidateLabels(t *testing.T) {
 					},
 					4,
 				)...,
-			),
+			)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop", "team": "a"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: true,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar", "team": "biz"},
 			skipLabelNameValidation:  true,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "你好", "team": "plof"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef", "team": "plof"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: alwaysErr(fmt.Errorf(
 				invalidLabelValueMsgFormat,
 				"label1", "abc\ufffddef", "foo",
-			),
+			)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
 			skipLabelNameValidation:  true,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err:                      nil,
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "name😀": "value", "team": "b"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   legacyConfig,
-			err: fmt.Errorf(
+			wantErr: legacyErr(fmt.Errorf(
 				invalidLabelMsgFormat,
 				"name😀",
 				mimirpb.FromLabelAdaptersToString(
@@ -280,57 +277,104 @@ func TestValidateLabels(t *testing.T) {
 						{Name: "team", Value: "b"},
 					},
 				),
-			),
+			)),
 		},
 		{
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "name😀": "value", "team": "b"},
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "name😀", "team": "b"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			config:                   utf8Config,
+			wantErr: legacyErr(fmt.Errorf(
+				invalidMetricNameMsgFormat, "name (non-ascii characters removed)"),
+			),
 		},
-	} {
-		err := validateLabels(s, c.config, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, cast, ts)
-		assert.Equal(t, c.err, err, "wrong error")
+	}
+
+	for i, c := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			for _, scheme := range validationSchemes {
+				t.Run(scheme.String(), func(t *testing.T) {
+					testConfig := cfg
+					testConfig.validationScheme = scheme
+					var wantErr error
+					if c.wantErr != nil {
+						wantErr = c.wantErr(scheme)
+					}
+					err := validateLabels(s, testConfig, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, cast, ts)
+					assert.Equal(t, wantErr, err, "wrong error")
+				})
+			}
+		})
+	}
+
+	discardedSamplesValues := map[string]map[string]int{}
+	for _, c := range testCases {
+		if c.wantErr == nil {
+			continue
+		}
+		for _, scheme := range validationSchemes {
+			if err := c.wantErr(scheme); err != nil {
+				for _, id := range []globalerror.ID{
+					globalerror.SeriesInvalidLabel,
+					globalerror.SeriesInvalidLabelValue,
+					globalerror.SeriesLabelNameTooLong,
+					globalerror.SeriesLabelValueTooLong,
+					globalerror.MaxLabelNamesPerSeries,
+					globalerror.MaxLabelNamesPerInfoSeries,
+					globalerror.InvalidMetricName,
+					globalerror.MissingMetricName,
+				} {
+					if strings.Contains(err.Error(), string(id)) {
+						if discardedSamplesValues[id.LabelValue()] == nil {
+							discardedSamplesValues[id.LabelValue()] = map[string]int{}
+						}
+						team := string(c.metric["team"])
+						discardedSamplesValues[id.LabelValue()][team]++
+					}
+				}
+			}
+		}
 	}
 
 	randomReason := validation.DiscardedSamplesCounter(reg, "random reason")
 	randomReason.WithLabelValues("different user", "custom label").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 2
-			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_value_invalid",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_info_series",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
-			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
-	`), "cortex_discarded_samples_total"))
+	wantDiscardedSamples := `
+		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+		# TYPE cortex_discarded_samples_total counter
+		cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
+	`
+	wantDiscardedAttrSamples := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+	`
 
-	require.NoError(t, testutil.GatherAndCompare(careg, strings.NewReader(`
-	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
-	# TYPE cortex_discarded_attributed_samples_total counter
-	cortex_discarded_attributed_samples_total{reason="label_invalid",team="a",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_invalid",team="b",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_name_too_long",team="biz",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_value_invalid",team="plof",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_value_too_long",team="biz",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="max_label_names_per_info_series",team="a",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="max_label_names_per_series",team="plof",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="metric_name_invalid",team="a",tenant="testUser",tracker="cost-attribution"} 2
-    cortex_discarded_attributed_samples_total{reason="missing_metric_name",team="a",tenant="testUser",tracker="cost-attribution"} 1
-`), "cortex_discarded_attributed_samples_total"))
+	sumSamples := func(m map[string]int) (sum int) {
+		for _, v := range m {
+			sum += v
+		}
+		return
+	}
+
+	for reason, countByTeam := range discardedSamplesValues {
+		wantDiscardedSamples += fmt.Sprintf(
+			`cortex_discarded_samples_total{group="custom label",reason="%s",user="testUser"} %d`+"\n",
+			reason,
+			sumSamples(countByTeam),
+		)
+		for team, count := range countByTeam {
+			wantDiscardedAttrSamples += fmt.Sprintf(
+				`cortex_discarded_attributed_samples_total{reason="%s",team="%s",tenant="testUser",tracker="cost-attribution"} %d`+"\n",
+				reason,
+				team,
+				count,
+			)
+		}
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(wantDiscardedSamples), "cortex_discarded_samples_total"))
+	require.NoError(t, testutil.GatherAndCompare(careg, strings.NewReader(wantDiscardedAttrSamples), "cortex_discarded_attributed_samples_total"))
 
 	s.deleteUserMetrics(userID)
-
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
-	`), "cortex_discarded_samples_total"))
 }
 
 func TestValidateExemplars(t *testing.T) {

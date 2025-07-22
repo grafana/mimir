@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -44,7 +43,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
@@ -96,7 +95,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation)
+	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
 	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
@@ -125,7 +124,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, model.UTF8Validation), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)

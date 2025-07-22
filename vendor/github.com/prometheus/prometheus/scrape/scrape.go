@@ -23,7 +23,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/http/httptrace"
 	"reflect"
 	"slices"
 	"strconv"
@@ -37,10 +36,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -149,9 +144,9 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		logger = promslog.NewNopLogger()
 	}
 
-	client, err := newScrapeClient(cfg.HTTPClientConfig, cfg.JobName, options.HTTPClientOptions...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, options.HTTPClientOptions...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	if cfg.MetricNameValidationScheme == model.UnsetValidation {
@@ -318,10 +313,10 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.metrics.targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	client, err := newScrapeClient(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		sp.metrics.targetScrapePoolReloadsFailed.Inc()
-		return err
+		return fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	reuseCache := reusableCache(sp.config, cfg)
@@ -834,8 +829,6 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
 
 	return s.client.Do(s.req.WithContext(ctx))
 }
@@ -2279,17 +2272,4 @@ func pickSchema(bucketFactor float64) int32 {
 	default:
 		return int32(floor)
 	}
-}
-
-func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
-	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %w", err)
-	}
-	client.Transport = otelhttp.NewTransport(
-		client.Transport,
-		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
-			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
-	return client, nil
 }

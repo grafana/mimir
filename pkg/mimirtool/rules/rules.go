@@ -227,7 +227,7 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 	return nil
 }
 
-// Validate whether each rule in the rule namespace is valid.
+// Validate each rule in the rule namespace is valid
 func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
 	set := map[string]struct{}{}
 	var errs []error
