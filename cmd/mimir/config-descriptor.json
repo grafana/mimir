@@ -10390,6 +10390,28 @@
                   "fieldFlag": "blocks-storage.bucket-store.metadata-cache.bucket-index-max-size-bytes",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "parquet_labels_attributes_ttl",
+                  "required": false,
+                  "desc": "How long to cache attributes of parquet labels files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.metadata-cache.parquet-labels-attributes-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "parquet_chunks_attributes_ttl",
+                  "required": false,
+                  "desc": "How long to cache attributes of parquet chunks files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.metadata-cache.parquet-chunks-attributes-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
