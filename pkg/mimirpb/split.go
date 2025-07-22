@@ -19,10 +19,17 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 		return []*WriteRequest{req}
 	}
 
+	if len(req.TimeseriesRW2) > 0 || len(req.SymbolsRW2) > 0 {
+		return splitWriteRequestByMaxMarshalSizeRW2(req, reqSize, maxSize)
+	}
+	return splitWriteRequestByMaxMarshalSizeRW1(req, reqSize, maxSize)
+}
+
+func splitWriteRequestByMaxMarshalSizeRW1(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
 	partialReqsWithTimeseries := splitTimeseriesByMaxMarshalSize(req, reqSize, maxSize)
 	partialReqsWithMetadata := splitMetadataByMaxMarshalSize(req, reqSize, maxSize)
 
-	// Most of the time, a write request only have either Timeseries or Metadata.
+	// Most of the time, a write request only have either Timeseries OR TimeseriesRW2 OR Metadata.
 	if len(partialReqsWithMetadata) == 0 {
 		return partialReqsWithTimeseries
 	}
@@ -35,6 +42,79 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 	merged = append(merged, partialReqsWithMetadata...)
 
 	return merged
+}
+
+func splitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
+	if len(req.TimeseriesRW2) == 0 {
+		return nil
+	}
+
+	newPartialReq := func() (*WriteRequest, int) {
+		r := &WriteRequest{
+			Source:              req.Source,
+			SkipLabelValidation: req.SkipLabelValidation,
+		}
+
+		return r, r.Size()
+	}
+
+	symbolSize := req.SymbolsRW2Size()
+	timeSeriesSize := req.TimeseriesRW2Size()
+
+	// Naive implementation: send all symbols on all sub-requests.
+	// Skip the work needed to slice up symbols and update references.
+	timeSeriesMaxSize := maxSize - symbolSize
+
+	// The partial requests returned by this function will not contain any Metadata,
+	// so we first compute the request size without it.
+	if timeSeriesSize <= timeSeriesMaxSize {
+		partialReq, _ := newPartialReq()
+		partialReq.TimeseriesRW2 = req.TimeseriesRW2
+		partialReq.SymbolsRW2 = req.SymbolsRW2
+		return []*WriteRequest{partialReq}
+	}
+
+	// We assume that different timeseries roughly have the same size (no huge outliers)
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
+	estimatedPartialReqs := (timeSeriesSize / timeSeriesMaxSize) + 2
+	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
+
+	// Split timeseries into partial write requests.
+	nextReq, nextReqSize := newPartialReq()
+	nextReqTimeseriesStart := 0
+	nextReqTimeseriesLength := 0
+
+	for i := 0; i < len(req.TimeseriesRW2); i++ {
+		seriesSize := req.TimeseriesRW2[i].Size()
+
+		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
+		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
+		// if a single timeseries is bigger than the limit.
+		if nextReqSize+seriesSize > timeSeriesMaxSize && nextReqTimeseriesLength > 0 {
+			// Finalize the next partial request.
+			nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
+			nextReq.SymbolsRW2 = req.SymbolsRW2
+			partialReqs = append(partialReqs, nextReq)
+
+			// Initialize a new partial request.
+			nextReq, nextReqSize = newPartialReq()
+			nextReqTimeseriesStart = i
+			nextReqTimeseriesLength = 0
+		}
+
+		// Add the current series to next partial request.
+		nextReqSize += seriesSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		nextReqTimeseriesLength++
+	}
+
+	if nextReqTimeseriesLength > 0 {
+		// Finalize the last partial request.
+		nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
+		nextReq.SymbolsRW2 = req.SymbolsRW2
+		partialReqs = append(partialReqs, nextReq)
+	}
+
+	return partialReqs
 }
 
 func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
