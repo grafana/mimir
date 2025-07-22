@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,7 +103,47 @@ func BenchmarkBucketStoresComparison(b *testing.B) {
 	}
 }
 
+type benchmarkBucket struct {
+	objstore.Bucket
+	mtx sync.Mutex
+
+	latency       time.Duration
+	getCount      int
+	getRangeCount int
+}
+
+func (b *benchmarkBucket) reset() {
+	b.latency = 0
+	b.getCount = 0
+	b.getRangeCount = 0
+}
+
+func (b *benchmarkBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	start := time.Now()
+	defer func() {
+		b.mtx.Lock()
+		defer b.mtx.Unlock()
+		b.latency += time.Since(start)
+		b.getCount++
+	}()
+	return b.Bucket.Get(ctx, name)
+}
+
+func (b *benchmarkBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	start := time.Now()
+	defer func() {
+		b.mtx.Lock()
+		defer b.mtx.Unlock()
+		b.latency += time.Since(start)
+		b.getRangeCount++
+	}()
+	return b.Bucket.GetRange(ctx, name, off, length)
+}
+
 func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer)) {
+	benchBkt := &benchmarkBucket{
+		Bucket: bkt,
+	}
 	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
 		fcpu, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_cpu.prof")
 		require.NoError(b, err)
@@ -128,15 +170,21 @@ func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Buck
 		}()
 
 		b.ReportAllocs()
+		benchBkt.reset()
 		b.ResetTimer()
 		for b.Loop() {
 			operation(store)
 		}
+		// Note: latency is accumulated over all calls, which might happen concurrently.
+		// So the acum latency is not directly comparable to operation time.
+		b.ReportMetric(float64(benchBkt.latency.Nanoseconds())/float64(b.N), "ns-bucket-wait/op")
+		b.ReportMetric(float64(benchBkt.getCount)/float64(b.N), "bucket-get/op")
+		b.ReportMetric(float64(benchBkt.getRangeCount)/float64(b.N), "bucket-get-range/op")
 		b.StopTimer()
 	}
 
 	b.Run("ParquetBucketStores", func(b *testing.B) {
-		pstores := createTestParquetBucketStores(b, bkt)
+		pstores := createTestParquetBucketStores(b, benchBkt)
 		require.NoError(b, services.StartAndAwaitRunning(ctx, pstores))
 		b.Cleanup(func() {
 			require.NoError(b, services.StopAndAwaitTerminated(context.Background(), pstores))
@@ -146,7 +194,7 @@ func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Buck
 	})
 
 	b.Run("BucketStores", func(b *testing.B) {
-		stores := createTestBucketStores(b, bkt)
+		stores := createTestBucketStores(b, benchBkt)
 		require.NoError(b, services.StartAndAwaitRunning(ctx, stores))
 		b.Cleanup(func() {
 			require.NoError(b, services.StopAndAwaitTerminated(context.Background(), stores))
