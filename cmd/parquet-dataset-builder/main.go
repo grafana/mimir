@@ -32,6 +32,8 @@ func main() {
 		runGenerate()
 	case "promote":
 		runPromoterStreaming()
+	case "fake-attributes":
+		runFakeAttributes()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
@@ -194,4 +196,34 @@ func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string, 
 	}
 	level.Info(logger).Log("msg", "Successfully created bucket index", "user", userID, "blocks", len(idx.Blocks))
 	return nil
+}
+
+func runFakeAttributes() {
+	fs := flag.NewFlagSet("fake-attributes", flag.ExitOnError)
+
+	cfg := &AttributesGeneratorConfig{}
+	cfg.RegisterFlags(fs)
+
+	fs.Parse(os.Args[2:])
+
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	logger := log.NewNopLogger()
+	if cfg.Verbose {
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	}
+
+	ctx := context.Background()
+
+	ag := NewAttributesGenerator(*cfg, logger)
+
+	if err := ag.GenerateAttributes(ctx); err != nil {
+		fmt.Printf("Failed to generate attributes: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Successfully generated fake attributes for all series")
 }

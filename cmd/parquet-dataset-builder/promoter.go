@@ -343,7 +343,7 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 	// Copy the meta.json file
 	originalMetaPath := filepath.Join(originalBlockDir, "meta.json")
 	newMetaPath := filepath.Join(outDir, "meta.json")
-	if err := sp.copyFile(originalMetaPath, newMetaPath); err != nil {
+	if err := copyFile(originalMetaPath, newMetaPath); err != nil {
 		return fmt.Errorf("failed to copy meta.json: %w", err)
 	}
 
@@ -351,7 +351,7 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 	originalTombstonesPath := filepath.Join(originalBlockDir, "tombstones")
 	if _, err := os.Stat(originalTombstonesPath); err == nil {
 		newTombstonesPath := filepath.Join(outDir, "tombstones")
-		if err := sp.copyFile(originalTombstonesPath, newTombstonesPath); err != nil {
+		if err := copyFile(originalTombstonesPath, newTombstonesPath); err != nil {
 			return fmt.Errorf("failed to copy tombstones: %w", err)
 		}
 	}
@@ -401,7 +401,7 @@ func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfo
 	return newLabels
 }
 
-func (sp *Promoter) copyFile(src, dst string) error {
+func copyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %w", err)
