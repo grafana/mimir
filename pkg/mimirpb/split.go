@@ -63,7 +63,8 @@ func splitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 
 	// Naive implementation: send all symbols on all sub-requests.
 	// Skip the work needed to slice up symbols and update references.
-	timeSeriesMaxSize := maxSize - symbolSize
+	const sizeLimitLowerBound = 1
+	timeSeriesMaxSize := max(sizeLimitLowerBound, maxSize-symbolSize)
 
 	// The partial requests returned by this function will not contain any Metadata,
 	// so we first compute the request size without it.

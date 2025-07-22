@@ -247,34 +247,66 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 	rnd := rand.New(rand.NewSource(seed))
 	t.Log("random generator seed:", seed)
 
-	for r := 0; r < numRuns; r++ {
-		var (
-			// Gradually increasing request series in each run, up to a limit.
-			numSeries           = rnd.Intn(min(r+1, 100)) + 1
-			numLabelsPerSeries  = rnd.Intn(min(r+1, 100)) + 1
-			numSamplesPerSeries = rnd.Intn(min(r+1, 100)) + 1
-			numMetadata         = rnd.Intn(min(r+1, 100)) + 1
-		)
+	t.Run("rw1", func(t *testing.T) {
+		for r := 0; r < numRuns; r++ {
+			var (
+				// Gradually increasing request series in each run, up to a limit.
+				numSeries           = rnd.Intn(min(r+1, 100)) + 1
+				numLabelsPerSeries  = rnd.Intn(min(r+1, 100)) + 1
+				numSamplesPerSeries = rnd.Intn(min(r+1, 100)) + 1
+				numMetadata         = rnd.Intn(min(r+1, 100)) + 1
+			)
 
-		req := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
-		maxSize := req.Size() / (1 + rnd.Intn(10))
-		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+			req := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+			maxSize := req.Size() / (1 + rnd.Intn(10))
+			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
 
-		// Ensure the merge of all partial requests is equal to the original one.
-		merged := &WriteRequest{
-			Timeseries:          []PreallocTimeseries{},
-			Source:              partials[0].Source,
-			Metadata:            []*MetricMetadata{},
-			SkipLabelValidation: partials[0].SkipLabelValidation,
+			// Ensure the merge of all partial requests is equal to the original one.
+			merged := &WriteRequest{
+				Timeseries:          []PreallocTimeseries{},
+				Source:              partials[0].Source,
+				Metadata:            []*MetricMetadata{},
+				SkipLabelValidation: partials[0].SkipLabelValidation,
+			}
+
+			for _, partial := range partials {
+				merged.Timeseries = append(merged.Timeseries, partial.Timeseries...)
+				merged.Metadata = append(merged.Metadata, partial.Metadata...)
+			}
+
+			assert.Equal(t, req, merged)
 		}
+	})
 
-		for _, partial := range partials {
-			merged.Timeseries = append(merged.Timeseries, partial.Timeseries...)
-			merged.Metadata = append(merged.Metadata, partial.Metadata...)
+	t.Run("rw2", func(t *testing.T) {
+		for r := 0; r < numRuns; r++ {
+			var (
+				// Gradually increasing request series in each run, up to a limit.
+				numSeries           = rnd.Intn(min(r+1, 100)) + 1
+				numLabelsPerSeries  = rnd.Intn(min(r+1, 100)) + 1
+				numSamplesPerSeries = rnd.Intn(min(r+1, 100)) + 1
+				numMetadata         = rnd.Intn(min(r+1, 100)) + 1
+			)
+
+			req := generateWriteRequestRW2(t, numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+			maxSize := req.Size() / (1 + rnd.Intn(10))
+			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+
+			// Ensure the merge of all partial requests is equal to the original one.
+			merged := &WriteRequest{
+				Source:              partials[0].Source,
+				SkipLabelValidation: partials[0].SkipLabelValidation,
+				SymbolsRW2:          partials[0].SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{},
+			}
+
+			for _, partial := range partials {
+				merged.TimeseriesRW2 = append(merged.TimeseriesRW2, partial.TimeseriesRW2...)
+			}
+
+			assert.Equal(t, req, merged)
 		}
-
-		assert.Equal(t, req, merged)
-	}
+	})
 }
 
 func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) {
@@ -474,4 +506,12 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 		Timeseries:          timeseries,
 		Metadata:            metadata,
 	}
+}
+
+func generateWriteRequestRW2(t *testing.T, numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata int) *WriteRequest {
+	t.Helper()
+	rw1 := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+	rw2, err := FromWriteRequestToRW2Request(rw1, nil, 0)
+	require.NoError(t, err)
+	return rw2
 }
