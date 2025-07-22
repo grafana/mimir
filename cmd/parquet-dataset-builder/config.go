@@ -193,6 +193,30 @@ func validateCodec(codec string) error {
 	}
 }
 
+type UploadConfig struct {
+	Storage           tsdb.BlocksStorageConfig
+	SourceDirectory   string
+	UserID            string
+	Verbose           bool
+}
+
+func (c *UploadConfig) RegisterFlags(fs *flag.FlagSet) {
+	c.Storage.RegisterFlags(fs)
+	fs.StringVar(&c.SourceDirectory, "source-dir", "", "Source directory containing blocks to upload")
+	fs.StringVar(&c.UserID, "user", "", "User ID to upload blocks under (required)")
+	fs.BoolVar(&c.Verbose, "verbose", false, "Enable verbose logging")
+}
+
+func (c *UploadConfig) Validate() error {
+	if c.SourceDirectory == "" {
+		return fmt.Errorf("source-dir is required")
+	}
+	if c.UserID == "" {
+		return fmt.Errorf("user is required")
+	}
+	return nil
+}
+
 func parseCodec(codec string) schema.CompressionCodec {
 	switch strings.ToLower(codec) {
 	case "snappy":

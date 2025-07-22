@@ -20,6 +20,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  convert         Convert existing TSDB blocks to parquet\n")
 		fmt.Fprintf(os.Stderr, "  generate        Generate TSDB blocks along with their parquet versions\n")
 		fmt.Fprintf(os.Stderr, "  promote         Promote labels\n")
+		fmt.Fprintf(os.Stderr, "  upload          Upload blocks into storage\n")
 		fmt.Fprintf(os.Stderr, "  fake-attributes Add fake attributes for all series\n")
 		os.Exit(1)
 	}
@@ -35,6 +36,8 @@ func main() {
 		runPromoterStreaming()
 	case "fake-attributes":
 		runFakeAttributes()
+	case "upload":
+		runUploadBlocks()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
@@ -197,6 +200,53 @@ func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string, 
 	}
 	level.Info(logger).Log("msg", "Successfully created bucket index", "user", userID, "blocks", len(idx.Blocks))
 	return nil
+}
+
+func runUploadBlocks() {
+	fs := flag.NewFlagSet("upload", flag.ExitOnError)
+
+	cfg := &UploadConfig{}
+	cfg.RegisterFlags(fs)
+
+	fs.Parse(os.Args[2:])
+
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	logger := log.NewNopLogger()
+	if cfg.Verbose {
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	}
+
+	ctx := context.Background()
+
+	bkt, err := bucket.NewClient(ctx, cfg.Storage.Bucket, "parquet-dataset-builder", logger, nil)
+	if err != nil {
+		fmt.Printf("Failed to create bucket client: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, err := bkt.Exists(ctx, "test"); err != nil {
+		fmt.Printf("Failed to connect to bucket: %v\n", err)
+		os.Exit(1)
+	}
+
+	uploader := NewUploader(bkt, logger)
+	blocksUploaded, err := uploader.UploadBlocks(ctx, cfg.SourceDirectory, cfg.UserID)
+	if err != nil {
+		fmt.Printf("Failed to upload blocks: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create bucket index for the user
+	if err := createBucketIndex(ctx, bkt, cfg.UserID, logger); err != nil {
+		fmt.Printf("Failed to create bucket index for user %s: %v\n", cfg.UserID, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Successfully uploaded %d blocks for user %s and created bucket index\n", blocksUploaded, cfg.UserID)
 }
 
 func runFakeAttributes() {
