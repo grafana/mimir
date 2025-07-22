@@ -19,7 +19,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  convert         Convert existing TSDB blocks to parquet\n")
 		fmt.Fprintf(os.Stderr, "  generate        Generate TSDB blocks along with their parquet versions\n")
-		fmt.Fprintf(os.Stderr, "  promote  Promote labels\n")
+		fmt.Fprintf(os.Stderr, "  promote         Promote labels\n")
+		fmt.Fprintf(os.Stderr, "  fake-attributes Add fake attributes for all series\n")
 		os.Exit(1)
 	}
 

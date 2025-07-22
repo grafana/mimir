@@ -87,24 +87,21 @@ func (sp *Promoter) promoteLabelsInBlock(ctx context.Context, blockDir string) e
 	}
 	defer tsdbBlock.Close()
 
-	// Create a querier to read the block
 	q, err := tsdb.NewBlockQuerier(tsdbBlock, 0, math.MaxInt64)
 	if err != nil {
 		return fmt.Errorf("failed to create querier for block %s: %w", blockDir, err)
 	}
 	defer q.Close()
 
-	// Extract target_info labels
 	targetInfoLabels, err := sp.getTargetInfoLabelsFetcher(ctx, q)
 	if err != nil {
 		return fmt.Errorf("failed to extract target_info labels: %w", err)
 	}
 
-	// Create a new block with promoted labels in the index only
 	return sp.createPromotedBlockWithIndexUpdate(ctx, blockDir, tsdbBlock, targetInfoLabels)
 }
 
-func (sp *Promoter) getTargetInfoLabelsFetcher(ctx context.Context, querier storage.Querier) (func(string) labels.Labels, error) {
+func (sp *Promoter) getTargetInfoLabelsFetcher(ctx context.Context, querier storage.Querier) (func(labels.Labels) labels.Labels, error) {
 	targetInfoLabels := make(map[string]labels.Labels)
 
 	// Get all series with __name__ = "target_info"
@@ -147,10 +144,18 @@ func (sp *Promoter) getTargetInfoLabelsFetcher(ctx context.Context, querier stor
 	if len(targetInfoLabelsSlice) == 0 {
 		level.Info(sp.logger).Log("msg", "No target_info series found in block")
 	} else {
-		level.Info(sp.logger).Log("msg", "Found target_info series", "count", len(targetInfoLabels))
+		level.Info(sp.logger).Log("msg", "Found target_info series", "unique_job_instance_count", len(targetInfoLabels))
 	}
 
-	getAttributes := func(key string) labels.Labels {
+	getAttributes := func(originalLabels labels.Labels) labels.Labels {
+		job := originalLabels.Get("job")
+		instance := originalLabels.Get("instance")
+
+		if job == "" || instance == "" {
+			return originalLabels
+		}
+
+		key := fmt.Sprintf("%s:%s", job, instance)
 		if lbls, exists := targetInfoLabels[key]; exists {
 			return lbls
 		}
@@ -168,7 +173,7 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 	ctx context.Context,
 	originalBlockDir string,
 	tsdbBlock *tsdb.Block,
-	targetInfoLabels func(string) labels.Labels,
+	targetInfoLabels func(labels.Labels) labels.Labels,
 ) error {
 	outDir := originalBlockDir + ".promoted"
 	sp.logger.Log("msg", "Creating directory for promoted block", "temp_dir", outDir)
@@ -350,16 +355,11 @@ func (sp *Promoter) createPromotedBlockWithIndexUpdate(
 	return nil
 }
 
-func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfoLabels func(string) labels.Labels) labels.Labels {
-	job := originalLabels.Get("job")
-	instance := originalLabels.Get("instance")
-
-	if job == "" || instance == "" {
+func (sp *Promoter) promoteSeriesLabels(originalLabels labels.Labels, targetInfoLabels func(labels.Labels) labels.Labels) labels.Labels {
+	promotedLabels := targetInfoLabels(originalLabels)
+	if promotedLabels.Len() == 0 {
 		return originalLabels
 	}
-
-	key := fmt.Sprintf("%s:%s", job, instance)
-	promotedLabels := targetInfoLabels(key)
 
 	newLabels := make(labels.Labels, 0, len(originalLabels)+len(promotedLabels))
 

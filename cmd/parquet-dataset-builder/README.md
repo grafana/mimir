@@ -1,6 +1,6 @@
 # Parquet Dataset Builder
 
-CLI tool for building parquet datasets meant to be used with pkg/storegateway/parquetbench. It writes and reads directly to a bucket.
+A set of hacky tools for building datasets meant to be used with pkg/storegateway/parquetbench.
 
 
 ## Commands
@@ -8,6 +8,10 @@ CLI tool for building parquet datasets meant to be used with pkg/storegateway/pa
 **convert** - Convert existing TSDB blocks to parquet format for all users in a bucket.
 
 **generate** - Generate synthetic TSDB blocks and convert them to parquet format.
+
+**promote** - Promote labels from `target_info` series to series with matching `job` and `instance` labels.
+
+**fake-attributes** - Add fake attributes for all series in a block, directly promoting them to labels.
 
 ## Usage
 
