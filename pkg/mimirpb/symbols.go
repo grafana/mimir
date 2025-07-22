@@ -17,17 +17,17 @@ type StringSymbolizer interface {
 var _ StringSymbolizer = &writev2.SymbolsTable{}
 
 var (
-	baseSymbolsMapCapacity   = 0
-	baseSymbolsSliceCapacity = 40
+	minPreallocatedSymbolsPerRequest = 40
+	maxPreallocatedSymbolsPerRequest = 400
 
 	symbolsTablePool = sync.Pool{
 		New: func() interface{} {
-			return NewFastSymbolsTable(baseSymbolsMapCapacity)
+			return NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		},
 	}
 	symbolsSlicePool = sync.Pool{
 		New: func() interface{} {
-			return make([]string, 0, baseSymbolsSliceCapacity)
+			return make([]string, 0, minPreallocatedSymbolsPerRequest)
 		},
 	}
 )
@@ -37,6 +37,13 @@ func symbolsTableFromPool() *FastSymbolsTable {
 }
 
 func reuseSymbolsTable(t *FastSymbolsTable) {
+	// Prevent very large capacity maps from being put back in the pool.
+	// Otherwise, a few requests with a huge number of symbols might poison the pool by growing all the pooled maps,
+	// which never shrink (in go 1.24.x) causing in-use heap memory to significantly increase.
+	if t.CapLowerBound() > maxPreallocatedSymbolsPerRequest {
+		return
+	}
+
 	t.Reset()
 	symbolsTablePool.Put(t)
 }
@@ -49,6 +56,12 @@ func reuseSymbolsSlice(s []string) {
 	if cap(s) == 0 {
 		return
 	}
+	// Prevent very large slices from being put back in the pool.
+	// Otherwise, a few requests with a huge number of symbols might poison the pool by growing all the pooled slices,
+	// causing in-use heap memory to significantly increase and never shrink.
+	if cap(s) > maxPreallocatedSymbolsPerRequest {
+		return
+	}
 
 	for i := range s {
 		s[i] = ""
@@ -58,7 +71,9 @@ func reuseSymbolsSlice(s []string) {
 
 // FastSymbolsTable is an optimized, alternate implementation of writev2.SymbolsTable.
 type FastSymbolsTable struct {
-	symbolsMap     map[string]uint32
+	symbolsMap                   map[string]uint32
+	symbolsMapCapacityLowerBound int
+
 	usedSymbolRefs int
 	commonSymbols  []string
 	offset         uint32
@@ -66,8 +81,9 @@ type FastSymbolsTable struct {
 
 func NewFastSymbolsTable(capacityHint int) *FastSymbolsTable {
 	return &FastSymbolsTable{
-		symbolsMap:     make(map[string]uint32, capacityHint),
-		usedSymbolRefs: 0,
+		symbolsMap:                   make(map[string]uint32, capacityHint),
+		symbolsMapCapacityLowerBound: capacityHint,
+		usedSymbolRefs:               0,
 	}
 }
 
@@ -94,13 +110,21 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 		return ref
 	}
 	// Symbol indexes in the map start at 1 because 0 is always reserved, and we don't need to use space to store it.
-	ref := uint32(len(t.symbolsMap)) + t.offset + 1
+	symMapLen := len(t.symbolsMap)
+	ref := uint32(symMapLen) + t.offset + 1
 	t.symbolsMap[str] = ref
+	if symMapLen+1 > t.symbolsMapCapacityLowerBound {
+		t.symbolsMapCapacityLowerBound = symMapLen + 1
+	}
 	return ref
 }
 
 func (t *FastSymbolsTable) CountSymbols() int {
 	return len(t.symbolsMap) + 1
+}
+
+func (t *FastSymbolsTable) CapLowerBound() int {
+	return t.symbolsMapCapacityLowerBound
 }
 
 func (t *FastSymbolsTable) Symbols() []string {
@@ -124,6 +148,9 @@ func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
 
 func (t *FastSymbolsTable) Reset() {
 	clear(t.symbolsMap)
+	// We intentionally don't reset symbolsMapCapacityLowerBound.
+	// At the time of writing (go 1.24.x) the map will never reduce its capacity
+	// when its contents are cleared, but also the capacity cannot be queried.
 	t.usedSymbolRefs = 0
 	t.offset = 0
 	t.commonSymbols = nil

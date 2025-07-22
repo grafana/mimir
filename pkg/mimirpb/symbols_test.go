@@ -19,7 +19,7 @@ func TestSymbolsTable(t *testing.T) {
 		return &st
 	}
 	fastImplBuilder := func() StringSymbolizer {
-		st := NewFastSymbolsTable(baseSymbolsMapCapacity)
+		st := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		return st
 	}
 	impls := [](func() StringSymbolizer){promImplBuilder, fastImplBuilder}
@@ -68,7 +68,7 @@ func TestSymbolsTable(t *testing.T) {
 
 	// Tests specific to the Mimir implementation, which is a superset of the Prometheus one.
 	t.Run("symbols offset, no common symbols", func(t *testing.T) {
-		s := NewFastSymbolsTable(baseSymbolsMapCapacity)
+		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		s.ConfigureCommonSymbols(128, nil)
 
 		require.Equal(t, []string{""}, s.Symbols(), "required empty reference does not exist")
@@ -87,7 +87,7 @@ func TestSymbolsTable(t *testing.T) {
 
 	t.Run("common symbols", func(t *testing.T) {
 		commonSymbols := []string{"", "__name__", "__aggregation__"}
-		s := NewFastSymbolsTable(baseSymbolsMapCapacity)
+		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		s.ConfigureCommonSymbols(8, commonSymbols)
 
 		require.Equal(t, []string{""}, s.Symbols(), "required empty reference does not exist")
@@ -108,6 +108,32 @@ func TestSymbolsTable(t *testing.T) {
 
 		s.Reset()
 		require.Nil(t, s.commonSymbols)
+	})
+
+	t.Run("capacity estimation", func(t *testing.T) {
+		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
+		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+
+		s.Symbolize("abc")
+		s.Symbolize("def")
+		s.Symbolize("ghi")
+		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+
+		s.Reset()
+		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+
+		for i := range 50 {
+			s.Symbolize(fmt.Sprintf("%d", i))
+		}
+		require.Equal(t, 50, s.CapLowerBound())
+
+		s.Reset()
+		require.Equal(t, 50, s.CapLowerBound())
+
+		s.Symbolize("abc")
+		s.Symbolize("def")
+		s.Symbolize("ghi")
+		require.Equal(t, 50, s.CapLowerBound())
 	})
 }
 
