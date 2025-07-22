@@ -13,10 +13,10 @@ Grafana Mimir uses various network ports to facilitate communication between its
 
 The ports required to run Grafana Mimir can vary slightly depending on your deployment mode and whether you're using additional components like Grafana or a load balancer.
 
-The following table shows the ports that are fundamental to operating Mimir, whether in a monolithic or distributed setup. You can update these default values in your Mimir configuration.
+The following table shows the default ports that are fundamental to operating Mimir, whether in a monolithic or distributed setup. You can update these values in your Mimir configuration.
 
 | Port | Function                    | Related components   | Description                                                                                                                                                                                                                    |
 | :--- | :-------------------------- | :------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 9009 | HTTP API / remote write     | All Mimir components | This is the main entry point for Prometheus to remote-write metrics to Mimir through the Distributor and for Grafana and Prometheus to query data through the Querier or Query-frontend. This is the primary user-facing port. |
+| 8080 | HTTP API / remote write     | All Mimir components | This is the main entry point for Prometheus to remote-write metrics to Mimir through the Distributor and for Grafana and Prometheus to query data through the Querier or Query-frontend. This is the primary user-facing port. |
 | 9095 | Internal gRPC communication | All Mimir components | Used for high-performance communication between different Mimir components, such as Distributor to Ingester, or Querier to Ingester. This communication is essential for distributed deployments.                              |
 | 7946 | Memberlist / Gossip         | All Mimir components | Used for service discovery and maintaining the consistent hash ring that allows Mimir components to find and communicate with each other. This process is critical for high availability and scaling.                          |
