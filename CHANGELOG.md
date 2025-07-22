@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Remove support for Redis as a cache backend. #12163
 * [FEATURE] Distributor: Add experimental `-distributor.otel-native-delta-ingestion` option to allow primitive delta metrics ingestion via the OTLP endpoint. #11631
 * [FEATURE] MQE: Add support for experimental `sort_by_label` and `sort_by_label_desc` PromQL functions. #11930
 * [FEATURE] Ingester/Block-builder: Handle the created timestamp field for remote-write requests. #11977
