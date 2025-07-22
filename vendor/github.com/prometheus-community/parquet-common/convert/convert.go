@@ -58,17 +58,19 @@ type Convertible interface {
 }
 
 type convertOpts struct {
-	numRowGroups       int
-	rowGroupSize       int
-	colDuration        time.Duration
-	name               string
-	sortedLabels       []string
-	bloomfilterLabels  []string
-	pageBufferSize     int
-	writeBufferSize    int
-	columnPageBuffers  parquet.BufferPool
-	concurrency        int
-	maxSamplesPerChunk int
+	numRowGroups          int
+	rowGroupSize          int
+	colDuration           time.Duration
+	name                  string
+	sortedLabels          []string
+	bloomfilterLabels     []string
+	pageBufferSize        int
+	writeBufferSize       int
+	columnPageBuffers     parquet.BufferPool
+	concurrency           int
+	maxSamplesPerChunk    int
+	labelsCompressionOpts []schema.CompressionOpts
+	chunksCompressionOpts []schema.CompressionOpts
 }
 
 func (cfg convertOpts) buildBloomfilterColumns() []parquet.BloomFilterColumn {
@@ -152,6 +154,28 @@ func WithColumnPageBuffers(buffers parquet.BufferPool) ConvertOption {
 	}
 }
 
+// WithCompression adds compression options to the conversion process.
+// These options will be applied to both labels and chunks projections.
+// For separate configuration, use WithLabelsCompression and WithChunksCompression.
+func WithCompression(compressionOpts ...schema.CompressionOpts) ConvertOption {
+	return func(opts *convertOpts) {
+		opts.labelsCompressionOpts = compressionOpts
+		opts.chunksCompressionOpts = compressionOpts
+	}
+}
+
+func WithLabelsCompression(compressionOpts ...schema.CompressionOpts) ConvertOption {
+	return func(opts *convertOpts) {
+		opts.labelsCompressionOpts = compressionOpts
+	}
+}
+
+func WithChunksCompression(compressionOpts ...schema.CompressionOpts) ConvertOption {
+	return func(opts *convertOpts) {
+		opts.chunksCompressionOpts = compressionOpts
+	}
+}
+
 func ConvertTSDBBlock(
 	ctx context.Context,
 	bkt objstore.Bucket,
@@ -171,11 +195,11 @@ func ConvertTSDBBlock(
 	}
 	defer func() { _ = rr.Close() }()
 
-	labelsProjection, err := rr.Schema().LabelsProjection()
+	labelsProjection, err := rr.Schema().LabelsProjection(cfg.labelsCompressionOpts...)
 	if err != nil {
 		return 0, errors.Wrap(err, "error getting labels projection from tsdb schema")
 	}
-	chunksProjection, err := rr.Schema().ChunksProjection()
+	chunksProjection, err := rr.Schema().ChunksProjection(cfg.chunksCompressionOpts...)
 	if err != nil {
 		return 0, errors.Wrap(err, "error getting chunks projection from tsdb schema")
 	}
