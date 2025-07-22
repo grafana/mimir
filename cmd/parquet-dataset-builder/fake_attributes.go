@@ -64,7 +64,6 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Get the index and chunk readers from the original block
 	indexReader, err := tsdbBlock.Index()
 	if err != nil {
 		return fmt.Errorf("failed to get index reader: %w", err)
@@ -77,10 +76,8 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 	}
 	defer chunkReader.Close()
 
-	// Create new index file
 	indexPath := filepath.Join(outDir, "index")
 
-	// Create index writer
 	indexWriter, err := index.NewWriter(ctx, indexPath)
 	if err != nil {
 		return fmt.Errorf("failed to create index writer: %w", err)
@@ -94,10 +91,8 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 		return fmt.Errorf("open chunk writer: %w", err)
 	}
 
-	// First, collect all symbols we need (original + any new ones from promotion)
 	allSymbols := make(map[string]struct{})
 
-	// Copy all symbols from the original index
 	symbols := indexReader.Symbols()
 	for symbols.Next() {
 		allSymbols[symbols.At()] = struct{}{}
@@ -109,14 +104,12 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 	var labelsScratch labels.ScratchBuilder
 	var chunksMeta []chunks.Meta
 
-	// Store all series data for later processing
 	type seriesData struct {
 		labels labels.Labels
 		chunks []chunks.Meta
 	}
 	var allSeries []seriesData
 
-	// Get all series from the original block first to determine additional symbols needed
 	postings, err := indexReader.Postings(ctx, "", "")
 	if err != nil {
 		return fmt.Errorf("failed to get postings: %w", err)
@@ -164,7 +157,6 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 		return fmt.Errorf("failed to iterate postings: %w", postings.Err())
 	}
 
-	// Add all symbols first (they must be added in sorted order)
 	var symbolsList []string
 	for symbol := range allSymbols {
 		symbolsList = append(symbolsList, symbol)
@@ -181,7 +173,6 @@ func (ag *AttributesGenerator) GenerateAttributes(ctx context.Context) error {
 		return labels.Compare(a.labels, b.labels)
 	})
 
-	// Now add all series
 	for i, series := range allSeries {
 		chnks := make([]chunks.Meta, 0, len(series.chunks))
 		for _, meta := range series.chunks {
@@ -255,7 +246,6 @@ func (ag *AttributesGenerator) extendWithAttributes(originalLabels labels.Labels
 	ag.jobInstanceSeen[key] = struct{}{}
 	for attr, choices := range ag.attributes {
 		if newLabels.Get(attr) != "" {
-			// If the label already exists, skip it
 			continue
 		}
 		newLabels = append(newLabels, labels.Label{
