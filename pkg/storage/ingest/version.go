@@ -153,22 +153,14 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
 
-	// TODO: V1 contains logic that splits large records up across multiple records if they exceed maxSize.
-	// TODO: V2 needs to do this as well, for parity.
-	data := make([]byte, reqv2.Size())
-	n, err := reqv2.MarshalToSizedBuffer(data)
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to serialise write request")
 	}
-	data = data[:n]
-
-	rec := &kgo.Record{
-		Key:       []byte(tenantID),
-		Value:     data,
-		Partition: partitionID,
-		Headers:   []kgo.RecordHeader{RecordVersionHeader(2)},
+	for _, r := range records {
+		r.Headers = append(r.Headers, RecordVersionHeader(2))
 	}
-	return []*kgo.Record{rec}, nil
+	return records, nil
 }
 
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
