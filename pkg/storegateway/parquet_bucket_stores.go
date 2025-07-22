@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
@@ -82,6 +83,16 @@ func NewParquetBucketStores(
 	reg prometheus.Registerer,
 ) (*ParquetBucketStores, error) {
 
+	chunksCacheClient, err := cache.CreateClient("parquet-chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "parquet-chunks-cache")
+	}
+
+	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bkt, logger, reg)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create caching bucket for parquet bucket stores")
+	}
+
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
@@ -111,7 +122,7 @@ func NewParquetBucketStores(
 			MaxRetries: 3,
 		},
 
-		bkt:    bkt,
+		bkt:    cachingBucket,
 		stores: map[string]*ParquetBucketStore{},
 
 		bucketStoreMetrics: NewParquetBucketStoreMetrics(reg),
@@ -125,24 +136,24 @@ func NewParquetBucketStores(
 
 	// Register metrics.
 	stores.syncTimes = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_stores_blocks_sync_seconds",
+		Name:    "cortex_parquet_bucket_stores_blocks_sync_seconds",
 		Help:    "The total time it takes to perform a sync stores",
 		Buckets: []float64{0.1, 1, 10, 30, 60, 120, 300, 600, 900},
 	})
 	stores.syncLastSuccess = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
+		Name: "cortex_parquet_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
 		Help: "Unix timestamp of the last successful blocks sync.",
 	})
 	stores.tenantsDiscovered = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_bucket_stores_tenants_discovered",
+		Name: "cortex_parquet_bucket_stores_tenants_discovered",
 		Help: "Number of tenants discovered in the bucket.",
 	})
 	stores.tenantsSynced = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_bucket_stores_tenants_synced",
+		Name: "cortex_parquet_bucket_stores_tenants_synced",
 		Help: "Number of tenants synced.",
 	})
 	stores.blocksLoaded = prometheus.NewDesc(
-		"cortex_bucket_store_blocks_loaded",
+		"cortex_parquet_bucket_store_blocks_loaded",
 		"Number of currently loaded blocks.",
 		nil, nil,
 	)
