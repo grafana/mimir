@@ -833,6 +833,17 @@
                   "fieldFlag": "server.cluster-validation.http.excluded-paths",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "excluded_user_agents",
+                  "required": false,
+                  "desc": "Comma-separated list of user agents that are excluded from the cluster validation check.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "server.cluster-validation.http.excluded-user-agents",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
