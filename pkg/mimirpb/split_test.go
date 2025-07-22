@@ -15,7 +15,7 @@ import (
 )
 
 func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
-	req := &WriteRequest{
+	reqv1 := &WriteRequest{
 		Source:              RULE,
 		SkipLabelValidation: true,
 		Timeseries: []PreallocTimeseries{
@@ -37,72 +37,199 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		},
 	}
 
+	reqv2 := &WriteRequest{
+		Source:              RULE,
+		SkipLabelValidation: true,
+		SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
+		TimeseriesRW2: []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 5,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 6, 3, 4},
+				Samples:    []Sample{{TimestampMs: 30}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 8},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 9,
+				},
+			},
+		},
+	}
+
 	// Pre-requisite check: WriteRequest fields are set to non-zero values.
-	require.NotZero(t, req.Source)
-	require.NotZero(t, req.SkipLabelValidation)
-	require.NotZero(t, req.Timeseries)
-	require.NotZero(t, req.Metadata)
+	require.NotZero(t, reqv1.Source)
+	require.NotZero(t, reqv1.SkipLabelValidation)
+	require.NotZero(t, reqv1.Timeseries)
+	require.NotZero(t, reqv1.Metadata)
+	require.NotZero(t, reqv2.Source)
+	require.NotZero(t, reqv2.SkipLabelValidation)
+	require.NotZero(t, reqv2.TimeseriesRW2)
+	require.NotZero(t, reqv2.SymbolsRW2)
 
 	t.Run("should return the input WriteRequest if its size is less than the size limit", func(t *testing.T) {
-		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), 100000)
+		partials := SplitWriteRequestByMaxMarshalSize(reqv1, reqv1.Size(), 100000)
 		require.Len(t, partials, 1)
-		assert.Equal(t, req, partials[0])
+		assert.Equal(t, reqv1, partials[0])
+	})
+
+	t.Run("should return the input WriteRequest if its size is less than the size limit - RW2", func(t *testing.T) {
+		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), 100000)
+		require.Len(t, partials, 1)
+		assert.Equal(t, reqv2, partials[0])
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit", func(t *testing.T) {
 		const limit = 100
 
-		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSize(reqv1, reqv1.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []PreallocTimeseries{req.Timeseries[0]},
+				Timeseries:          []PreallocTimeseries{reqv1.Timeseries[0]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []PreallocTimeseries{req.Timeseries[1]},
+				Timeseries:          []PreallocTimeseries{reqv1.Timeseries[1]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*MetricMetadata{req.Metadata[0], req.Metadata[1]},
+				Metadata:            []*MetricMetadata{reqv1.Metadata[0], reqv1.Metadata[1]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*MetricMetadata{req.Metadata[2]},
+				Metadata:            []*MetricMetadata{reqv1.Metadata[2]},
 			},
 		}, partials)
 
 		for _, partial := range partials {
-			assert.Less(t, partial.Size(), limit)
+			assert.LessOrEqual(t, partial.Size(), limit)
+		}
+	})
+
+	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit - RW2", func(t *testing.T) {
+		const limit = 200
+
+		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		assert.Equal(t, []*WriteRequest{
+			{
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
+			},
+		}, partials)
+
+		for _, partial := range partials {
+			assert.LessOrEqual(t, partial.Size(), limit)
+		}
+	})
+
+	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit if limit < size(symbols)", func(t *testing.T) {
+		const limit = 50
+
+		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		assert.Equal(t, []*WriteRequest{
+			{
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
+			},
+		}, partials)
+
+		for _, partial := range partials {
+			assert.Greater(t, partial.Size(), limit)
 		}
 	})
 
 	t.Run("should return partial WriteRequests with size bigger than limit if a single entity (Timeseries or Metadata) is larger than the limit", func(t *testing.T) {
 		const limit = 10
 
-		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSize(reqv1, reqv1.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []PreallocTimeseries{req.Timeseries[0]},
+				Timeseries:          []PreallocTimeseries{reqv1.Timeseries[0]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []PreallocTimeseries{req.Timeseries[1]},
+				Timeseries:          []PreallocTimeseries{reqv1.Timeseries[1]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*MetricMetadata{req.Metadata[0]},
+				Metadata:            []*MetricMetadata{reqv1.Metadata[0]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*MetricMetadata{req.Metadata[1]},
+				Metadata:            []*MetricMetadata{reqv1.Metadata[1]},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*MetricMetadata{req.Metadata[2]},
+				Metadata:            []*MetricMetadata{reqv1.Metadata[2]},
+			},
+		}, partials)
+
+		for _, partial := range partials {
+			assert.Greater(t, partial.Size(), limit)
+		}
+	})
+
+	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit, if limit > size(symbols) but each request < limit", func(t *testing.T) {
+		const limit = 180
+
+		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		assert.Equal(t, []*WriteRequest{
+			{
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          reqv2.SymbolsRW2,
+				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
 			},
 		}, partials)
 
