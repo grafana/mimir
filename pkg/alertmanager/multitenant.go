@@ -336,7 +336,7 @@ type MultitenantAlertmanager struct {
 
 	alertmanagersMtx sync.Mutex
 	alertmanagers    map[string]*Alertmanager
-	// Stores the current set of configurations hashes we're running in each tenant's Alertmanager.
+	// Stores the current set of configuration hashes we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
 	cfgs map[string]model.Fingerprint
 
@@ -940,7 +940,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	if f.TmplExternalURL != nil {
 		writeString(f.TmplExternalURL.String())
 	} else {
-		writeBytes([]byte{})
+		writeBytes(nil)
 	}
 	writeString(f.EmailConfig.AuthPassword)
 	writeString(f.EmailConfig.AuthUser)
@@ -956,7 +956,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeString(f.EmailConfig.SentBy)
 	result := sum.Sum64()
 
-	writeBytes([]byte{})
+	writeBytes(nil)
 	// Calculate hash for each key-value pair independently and combine it using XOR
 	// so we do not need to care about the random order of the pairs in the map.
 	var mapFp uint64
