@@ -3,10 +3,12 @@
 package mimirpb
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -460,4 +462,35 @@ func TestMetricMetadataConversion(t *testing.T) {
 			require.Equal(t, tt.v2, gotV2)
 		})
 	}
+}
+
+func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
+	// Get WriteRequest field names.
+	val := reflect.ValueOf(&WriteRequest{})
+	typ := val.Type()
+
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	var fieldNames []string
+	for i := 0; i < typ.NumField(); i++ {
+		fieldNames = append(fieldNames, typ.Field(i).Name)
+	}
+
+	// If the fields of WriteRequest have changed, then you will probably need to modify
+	// the FromWriteRequestToRW2Request() implementation accordingly!
+	assert.ElementsMatch(t, []string{
+		"Timeseries",
+		"Source",
+		"Metadata",
+		"SymbolsRW2",
+		"TimeseriesRW2",
+		"SkipLabelValidation",
+		"SkipLabelCountValidation",
+		"skipUnmarshalingExemplars",
+		"unmarshalFromRW2",
+		"rw2symbols",
+		"BufferHolder",
+	}, fieldNames)
 }
