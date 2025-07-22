@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus-community/parquet-common/convert"
+	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
@@ -22,14 +23,22 @@ import (
 )
 
 type Converter struct {
-	bucket objstore.Bucket
-	logger log.Logger
+	bucket            objstore.Bucket
+	logger            log.Logger
+	labelsCompression bool
+	chunksCompression bool
+	labelsCodec       string
+	chunksCodec       string
 }
 
-func NewConverter(bucket objstore.Bucket, logger log.Logger) *Converter {
+func NewConverter(bucket objstore.Bucket, logger log.Logger, labelsCompression, chunksCompression bool, labelsCodec, chunksCodec string) *Converter {
 	return &Converter{
-		bucket: bucket,
-		logger: logger,
+		bucket:            bucket,
+		logger:            logger,
+		labelsCompression: labelsCompression,
+		chunksCompression: chunksCompression,
+		labelsCodec:       labelsCodec,
+		chunksCodec:       chunksCodec,
 	}
 }
 
@@ -164,13 +173,37 @@ func (c *Converter) convertBlockToParquet(ctx context.Context, meta *block.Meta,
 	}
 	defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
+	convertOpts := []convert.ConvertOption{
+		convert.WithName(meta.ULID.String()),
+	}
+	
+	if c.labelsCompression {
+		labelsCodec := parseCodec(c.labelsCodec)
+		convertOpts = append(convertOpts, convert.WithLabelsCompression(
+			schema.WithCompressionEnabled(true),
+			schema.WithCompressionCodec(labelsCodec),
+		))
+	} else {
+		convertOpts = append(convertOpts, convert.WithLabelsCompression(schema.WithCompressionEnabled(false)))
+	}
+	
+	if c.chunksCompression {
+		chunksCodec := parseCodec(c.chunksCodec)
+		convertOpts = append(convertOpts, convert.WithChunksCompression(
+			schema.WithCompressionEnabled(true),
+			schema.WithCompressionCodec(chunksCodec),
+		))
+	} else {
+		convertOpts = append(convertOpts, convert.WithChunksCompression(schema.WithCompressionEnabled(false)))
+	}
+
 	_, err = convert.ConvertTSDBBlock(
 		ctx,
 		bkt,
 		meta.MinTime,
 		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
-		convert.WithName(meta.ULID.String()),
+		convertOpts...,
 	)
 	return err
 }
