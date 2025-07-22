@@ -3241,12 +3241,12 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	firstInterval, standardInterval := i.compactionServiceInterval()
+	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
 
 	// After the first interval, we want the compaction to run at a specified interval for the partial zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
 	// If the criteria to have staggered compactions is not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
-	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
 		// reference may change during the lifetime of compactionServiceRunning().
@@ -3269,7 +3269,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// Check if the desired interval has changed. We only compare the standard interval
 			// before the first interval may be random due to jittering.
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(); standardInterval != newStandardInterval {
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
@@ -3298,22 +3298,42 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
 // The returned standardInterval is guaranteed to have no jittering applied.
 // The returned intervals may change over time, depending on the ingester service state.
-func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval time.Duration) {
+func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (firstInterval, standardInterval time.Duration) {
+	startingInterval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting
+	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+
+	// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
+	// if ingest storage is enabled.
 	if i.State() == services.Starting {
-		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
-		// if ingest storage is enabled.
-		standardInterval = min(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
-	} else {
-		standardInterval = i.calculateStaggeredCompactionInterval(time.Now(), i.lifecycler.Zones())
+		standardInterval = min(startingInterval, interval)
+
+		if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+			firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
+		} else {
+			firstInterval = standardInterval
+		}
+
+		return firstInterval, standardInterval
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
-		firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
-	} else {
-		firstInterval = standardInterval
+	staggeredInterval := i.calculateStaggeredCompactionInterval(now, zones)
+
+	// If we don't have jittering enabled, we return the standard interval as-is.
+	if !i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+		return staggeredInterval, interval
 	}
 
-	return
+	// With jittering enabled, we want to apply a positive jitter to the staggered interval.
+	// We estimate that roughly 50% of the interval window is a good enough heuristic than when the 50% jitter is applied,
+	// we get enough variability to not get overlap between zones and ingesters.
+	var offset time.Duration
+	if len(zones) > 0 {
+		offset = (interval / time.Duration(len(zones))) / 2
+	}
+
+	offsetWithJitter := util.DurationWithNegativeJitter(offset, 0.50)
+
+	return staggeredInterval + offsetWithJitter, interval
 }
 
 // calculateStaggeredCompactionInterval calculates when the next compaction should occur,

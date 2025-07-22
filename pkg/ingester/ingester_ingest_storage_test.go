@@ -201,7 +201,7 @@ func TestIngester_Start(t *testing.T) {
 		})
 
 		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
-		firstInterval, standardInterval := ingester.compactionServiceInterval()
+		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.lifecycler.Zones())
 		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
 		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
 
@@ -569,28 +569,95 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 }
 
 func TestIngester_compactionServiceInterval(t *testing.T) {
-	cfg := defaultIngesterTestConfig(t)
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+	fakeNow := time.Date(2025, 7, 21, 10, 27, 0, 0, time.UTC)
 
-	t.Run("with default compaction interval without jittering enabled", func(t *testing.T) {
-		// Default compaction interval is 1 minute.
-		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	tc := map[string]struct {
+		state         services.State
+		interval      time.Duration
+		jitterEnabled bool
+		zones         []string
+		expected      func(t *testing.T, first, standard time.Duration)
+		instanceZone  string
+	}{
+		"when starting without jittering enabled": {
+			state:         services.Starting,
+			interval:      time.Minute,
+			jitterEnabled: false,
+			expected: func(t *testing.T, first, standard time.Duration) {
+				assert.Equal(t, 30*time.Second, first)
+				assert.Equal(t, 30*time.Second, standard)
+			},
+		},
+		"when starting with jittering enabled": {
+			state:         services.Starting,
+			interval:      time.Minute,
+			jitterEnabled: true,
+			expected: func(t *testing.T, first, standard time.Duration) {
+				assert.Less(t, first, 30*time.Second)
+				assert.Equal(t, 30*time.Second, standard)
+			},
+		},
+		"for zone 1 out 2 with jittering and zone awareness enabled at a 10m interval": {
+			state:         services.Running,
+			interval:      20 * time.Minute,
+			jitterEnabled: true,
+			zones:         []string{"zone-a", "zone-b"},
+			instanceZone:  "zone-a",
+			expected: func(t *testing.T, first, standard time.Duration) {
+				// It's 10:27:00, so the next compaction interval for zone-a is 10:40:00, which means we need a minimum of
+				// 13 minutes and then a maximum of 18 minutes to reach the next compaction interval.
+				assert.GreaterOrEqual(t, first, 13*time.Minute)
+				assert.LessOrEqual(t, first, 18*time.Minute)
+				assert.Equal(t, 20*time.Minute, standard)
+			},
+		},
+		"for zone 2 out 2 with jittering and zone awareness enabled at a 10m interval": {
+			state:         services.Running,
+			interval:      20 * time.Minute,
+			jitterEnabled: true,
+			zones:         []string{"zone-a", "zone-b"},
+			instanceZone:  "zone-b",
+			expected: func(t *testing.T, first, standard time.Duration) {
+				// It's 10:27:00, so the next compaction interval for zone-b is 10:30:00, which means we need a minimum of
+				// 3 minutes and then a maximum of 8 minutes to reach the next compaction interval.
+				assert.GreaterOrEqual(t, first, 3*time.Minute)
+				assert.LessOrEqual(t, first, 8*time.Minute)
+				assert.Equal(t, 20*time.Minute, standard)
+			},
+		},
+	}
 
-		firstInterval, standardInterval := ingester.compactionServiceInterval()
-		assert.Equal(t, time.Minute, firstInterval)
-		assert.Equal(t, time.Minute, standardInterval)
-	})
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultIngesterTestConfig(t)
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
 
-	t.Run("with default compaction interval and jittering enabled", func(t *testing.T) {
-		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-		ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = true
+			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = tt.interval
+			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = tt.jitterEnabled
+			ingester.cfg.IngesterRing.InstanceZone = tt.instanceZone
+			if len(tt.zones) > 0 {
+				ingester.cfg.IngesterRing.ZoneAwarenessEnabled = true
+			}
 
-		firstInterval, standardInterval := ingester.compactionServiceInterval()
-		assert.Less(t, firstInterval, time.Minute)
-		assert.Equal(t, time.Minute, standardInterval)
-	})
+			switch tt.state {
+			case services.Starting:
+				// force the ingester to be in a starting state by creating a shutdown marker.
+				require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
+				require.NoError(t, shutdownmarker.Create(shutdownmarker.GetPath(cfg.BlocksStorageConfig.TSDB.Dir)))
+				require.NoError(t, ingester.StartAsync(context.Background()))
+				t.Cleanup(func() {
+					_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+				})
+			case services.Running:
+			default:
+				t.Fatalf("unsupported state %s", tt.state)
+			}
+
+			firstInterval, standardInterval := ingester.compactionServiceInterval(fakeNow, tt.zones)
+			tt.expected(t, firstInterval, standardInterval)
+		})
+	}
 }
 
 func TestIngester_calculateHeadCompactionInterval(t *testing.T) {
