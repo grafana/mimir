@@ -34,6 +34,8 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
+var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
+
 var benchmarkCases = []struct {
 	name     string
 	matchers []*labels.Matcher
@@ -131,7 +133,7 @@ func BenchmarkBucketStores_Main(b *testing.B) {
 	// for _, reqConfig := range requests.LabelValues {
 	// 	req := &reqConfig.LabelValuesRequest
 	// 	b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-	// 		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
+	// 		runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 	// 			_, err := store.LabelValues(ctx, req)
 	// 			require.NoError(b, err)
 	// 		})
@@ -141,7 +143,7 @@ func BenchmarkBucketStores_Main(b *testing.B) {
 	// for _, reqConfig := range requests.LabelNames {
 	// 	req := &reqConfig.LabelNamesRequest
 	// 	b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-	// 		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
+	// 		runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 	// 			_, err := store.LabelNames(ctx, req)
 	// 			require.NoError(b, err)
 	// 		})
@@ -160,7 +162,7 @@ func BenchmarkBucketStores_Main(b *testing.B) {
 				Hints:                    nil,
 				StreamingChunksBatchSize: 0,
 			}
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
+			runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
 				require.NoError(tb, err)
@@ -208,46 +210,47 @@ func (b *benchmarkBucket) GetRange(ctx context.Context, name string, off, length
 	return b.Bucket.GetRange(ctx, name, off, length)
 }
 
-func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer)) {
+func runBenchmark(b *testing.B, ctx context.Context, bkt objstore.Bucket, operation func(storegatewaypb.StoreGatewayServer)) {
 	benchBkt := &benchmarkBucket{
 		Bucket: bkt,
 	}
-	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
-		// Warm up
-		operation(store)
 
-		b.ReportAllocs()
-		benchBkt.reset()
-		b.ResetTimer()
-		for b.Loop() {
-			operation(store)
-		}
-		// Note: latency is accumulated over all calls, which might happen concurrently.
-		// So the acum latency is not directly comparable to operation time.
-		b.ReportMetric(float64(benchBkt.latency.Nanoseconds())/float64(b.N), "ns-bucket-wait/op")
-		b.ReportMetric(float64(benchBkt.getCount)/float64(b.N), "bucket-get/op")
-		b.ReportMetric(float64(benchBkt.getRangeCount)/float64(b.N), "bucket-get-range/op")
-		b.StopTimer()
-	}
-
-	b.Run("ParquetBucketStores", func(b *testing.B) {
+	var store storegatewaypb.StoreGatewayServer
+	switch *benchmarkStore {
+	case "parquet":
 		pstores := createTestParquetBucketStores(b, benchBkt)
 		require.NoError(b, services.StartAndAwaitRunning(ctx, pstores))
 		b.Cleanup(func() {
 			require.NoError(b, services.StopAndAwaitTerminated(context.Background(), pstores))
 		})
-
-		run(b, pstores)
-	})
-
-	b.Run("BucketStores", func(b *testing.B) {
-		stores := createTestBucketStores(b, benchBkt)
-		require.NoError(b, services.StartAndAwaitRunning(ctx, stores))
+		store = pstores
+	case "tsdb":
+		bstores := createTestBucketStores(b, benchBkt)
+		require.NoError(b, services.StartAndAwaitRunning(ctx, bstores))
 		b.Cleanup(func() {
-			require.NoError(b, services.StopAndAwaitTerminated(context.Background(), stores))
+			require.NoError(b, services.StopAndAwaitTerminated(context.Background(), bstores))
 		})
-		run(b, stores)
-	})
+		store = bstores
+	default:
+		b.Fatalf("Unknown benchmark store type: %s. Valid options are 'parquet' or 'bucket'", *benchmarkStore)
+	}
+
+	// Warm up
+	operation(store)
+
+	b.ReportAllocs()
+	benchBkt.reset()
+	b.ResetTimer()
+	for b.Loop() {
+		operation(store)
+	}
+
+	// Note: latency is accumulated over all calls, which might happen concurrently.
+	// So the acum latency is not directly comparable to operation time.
+	b.ReportMetric(float64(benchBkt.latency.Nanoseconds())/float64(b.N), "ns-bucket-wait/op")
+	b.ReportMetric(float64(benchBkt.getCount)/float64(b.N), "bucket-get/op")
+	b.ReportMetric(float64(benchBkt.getRangeCount)/float64(b.N), "bucket-get-range/op")
+	b.StopTimer()
 }
 
 func createTestBucketClient(endpoint, bucketName, accessKey, secretKey string, insecure bool) (objstore.Bucket, error) {
