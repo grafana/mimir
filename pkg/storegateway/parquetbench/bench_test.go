@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc"
@@ -36,68 +37,138 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-var (
-	user            = flag.String("user", "user-1", "User ID for benchmark")
-	bucketEndpoint  = flag.String("bucket.endpoint", "localhost:9000", "S3 endpoint address (e.g., minio instance)")
-	bucketName      = flag.String("bucket.name", "tsdb", "S3 bucket name")
-	bucketAccessKey = flag.String("bucket.access-key", "mimir", "S3 access key")
-	bucketSecretKey = flag.String("bucket.secret-key", "supersecret", "S3 secret key")
-	bucketInsecure  = flag.Bool("bucket.insecure", true, "Use insecure S3 connection")
-	casesFile       = flag.String("cases", "example_requests.json", "Path to JSON file containing benchmark requests")
-)
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	os.Exit(m.Run())
+var benchmarkCases = []struct {
+	name     string
+	matchers []*labels.Matcher
+}{
+	{
+		name: "SingleMetricAllSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+		},
+	},
+	// {
+	// 	name: "SingleMetricReducedSeries",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-1"),
+	// 	},
+	// },
+	// {
+	// 	name: "SingleMetricOneSeries",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-2"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "region", "region-1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "service", "service-10"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-1"),
+	// 	},
+	// },
+	// {
+	// 	name: "SingleMetricSparseSeries",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-0"),
+	// 	},
+	// },
+	// {
+	// 	name: "NonExistentSeries",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "non-existent-environment"),
+	// 	},
+	// },
+	// {
+	// 	name: "MultipleMetricsRange",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+	// 	},
+	// },
+	// {
+	// 	name: "MultipleMetricsSparse",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+	// 	},
+	// },
+	// {
+	// 	name: "NegativeRegexSingleMetric",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+	// 	},
+	// },
+	// {
+	// 	name: "NegativeRegexMultipleMetrics",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+	// 		labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+	// 	},
+	// },
+	// {
+	// 	name: "ExpensiveRegexSingleMetric",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
+	// 	},
+	// },
+	// {
+	// 	name: "ExpensiveRegexMultipleMetrics",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+	// 		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|container-2|container-3|container-4|container-5)"),
+	// 	},
+	// },
 }
 
-func BenchmarkBucketStoresComparison(b *testing.B) {
+func BenchmarkBucketStores_Main(b *testing.B) {
 	flag.Parse()
-
-	bkt, err := createTestBucketClient(*bucketEndpoint, *bucketName, *bucketAccessKey, *bucketSecretKey, *bucketInsecure)
-	require.NoError(b, err)
-	// Test bucket connection
-	_, err = bkt.Exists(context.Background(), "test")
-	require.NoError(b, err, "Failed to connect to bucket, aborting")
-
-	requests, err := loadBenchmarkRequests(*casesFile)
-	require.NoError(b, err)
+	const user = "benchmark-user"
+	bkt, mint, maxt := setupBenchmarkData(b, user)
 
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
-		storegateway.GrpcContextMetadataTenantID: []string{*user},
+		storegateway.GrpcContextMetadataTenantID: []string{user},
 	})
 
-	for _, reqConfig := range requests.LabelValues {
-		req := &reqConfig.LabelValuesRequest
-		b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
-				_, err := store.LabelValues(ctx, req)
-				require.NoError(b, err)
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelValues {
+	// 	req := &reqConfig.LabelValuesRequest
+	// 	b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
+	// 		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
+	// 			_, err := store.LabelValues(ctx, req)
+	// 			require.NoError(b, err)
+	// 		})
+	// 	})
+	// }
 
-	for _, reqConfig := range requests.LabelNames {
-		req := &reqConfig.LabelNamesRequest
-		b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
-				_, err := store.LabelNames(ctx, req)
-				require.NoError(b, err)
-			})
-		})
-	}
+	// for _, reqConfig := range requests.LabelNames {
+	// 	req := &reqConfig.LabelNamesRequest
+	// 	b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
+	// 		runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
+	// 			_, err := store.LabelNames(ctx, req)
+	// 			require.NoError(b, err)
+	// 		})
+	// 	})
+	// }
 
-	for _, reqConfig := range requests.Series {
-		req := &reqConfig.SeriesRequest
-		b.Run(fmt.Sprintf("Series-%s", reqConfig.Name), func(tb *testing.B) {
+	for _, tc := range benchmarkCases {
+		b.Run(tc.name, func(tb *testing.B) {
+			matchers, err := storepb.PromMatchersToMatchers(tc.matchers...)
+			require.NoError(tb, err, "error converting matchers to Prometheus format")
+			req := &storepb.SeriesRequest{
+				MinTime:                  mint,
+				MaxTime:                  maxt,
+				Matchers:                 matchers,
+				SkipChunks:               false,
+				Hints:                    nil,
+				StreamingChunksBatchSize: 0,
+			}
 			runBenchmarkComparison(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
 				require.NoError(tb, err)
 				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response")
-				if !reqConfig.SkipChunks {
-					require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
-				}
+				require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
 			})
 		})
 	}
