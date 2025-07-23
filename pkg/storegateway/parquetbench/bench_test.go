@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"runtime/pprof"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -216,29 +213,8 @@ func runBenchmarkComparison(b *testing.B, ctx context.Context, bkt objstore.Buck
 		Bucket: bkt,
 	}
 	run := func(b *testing.B, store storegatewaypb.StoreGatewayServer) {
-		fcpu, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_cpu.prof")
-		require.NoError(b, err)
-		fmem, err := os.Create("profiles/" + strings.ReplaceAll(b.Name(), "/", "_") + "_mem.prof")
-		require.NoError(b, err)
-		runtime.GC()
-
 		// Warm up
 		operation(store)
-
-		err = pprof.StartCPUProfile(fcpu)
-		require.NoError(b, err)
-
-		defer func() {
-			pprof.StopCPUProfile()
-			err = fcpu.Close()
-			require.NoError(b, err)
-
-			runtime.GC()
-			err = pprof.WriteHeapProfile(fmem)
-			require.NoError(b, err)
-			err = fmem.Close()
-			require.NoError(b, err)
-		}()
 
 		b.ReportAllocs()
 		benchBkt.reset()
