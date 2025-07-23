@@ -418,6 +418,11 @@ lint: check-makefiles
 		"sort.{Strings,Ints}=slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Use the faster slices.IsSortedFunc where we can.
+	faillint -paths \
+		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Don't use generic ring.Read operation.
 	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
 	faillint -paths \

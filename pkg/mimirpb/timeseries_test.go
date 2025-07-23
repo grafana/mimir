@@ -6,11 +6,11 @@
 package mimirpb
 
 import (
+	"cmp"
 	"crypto/rand"
 	"fmt"
 	"reflect"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 	"unsafe"
@@ -411,8 +411,8 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 
 		unsorted.SortLabelsIfNeeded()
 
-		require.True(t, sort.SliceIsSorted(unsorted.Labels, func(i, j int) bool {
-			return unsorted.Labels[i].Name < unsorted.Labels[j].Name
+		require.True(t, slices.IsSortedFunc(unsorted.Labels, func(a, b LabelAdapter) int {
+			return cmp.Compare(a.Name, b.Name)
 		}))
 		require.Nil(t, unsorted.marshalledData)
 	})
