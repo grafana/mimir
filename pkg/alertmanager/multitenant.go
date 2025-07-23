@@ -7,8 +7,10 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,6 +41,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -332,9 +336,9 @@ type MultitenantAlertmanager struct {
 
 	alertmanagersMtx sync.Mutex
 	alertmanagers    map[string]*Alertmanager
-	// Stores the current set of configurations we're running in each tenant's Alertmanager.
+	// Stores the current set of configuration hashes we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
-	cfgs map[string]amConfig
+	cfgs map[string]model.Fingerprint
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -420,7 +424,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
-		cfgs:                map[string]amConfig{},
+		cfgs:                map[string]model.Fingerprint{},
 		alertmanagers:       map[string]*Alertmanager{},
 		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
@@ -760,12 +764,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
-	cfg := amConfig{
-		User:            cfgs.Mimir.User,
-		RawConfig:       cfgs.Mimir.RawConfig,
-		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
-		TmplExternalURL: am.cfg.ExternalURL.URL,
-	}
+	cfg := newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
 	// Check if tenants can be skipped (strict initialization enabled).
 	skippable := am.cfg.StrictInitializationEnabled
@@ -901,6 +900,105 @@ type amConfig struct {
 	EmailConfig        alertingReceivers.EmailSenderConfig
 }
 
+func newMimirAmConfigFromDesc(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
+	return amConfig{
+		User:               dec.User,
+		RawConfig:          dec.RawConfig,
+		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
+		TmplExternalURL:    url,
+		UsingGrafanaConfig: false,
+	}
+}
+
+func (f amConfig) fingerprint() model.Fingerprint {
+	sum := fnv.New64a()
+
+	writeBytes := func(b []byte) {
+		_, _ = sum.Write(b)
+		_, _ = sum.Write([]byte{255}) // add separator between fields. It is impossible in strings so, it reduces collisions in strings
+	}
+	writeString := func(s string) {
+		if len(s) == 0 {
+			writeBytes(nil)
+			return
+		}
+		// #nosec G103
+		// avoid allocation when converting string to byte slice
+		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
+	}
+	writeBool := func(b bool) {
+		if b {
+			writeBytes([]byte{1})
+		} else {
+			writeBytes([]byte{0})
+		}
+	}
+
+	writeString(f.User)
+	writeString(f.RawConfig)
+	writeBool(f.UsingGrafanaConfig)
+	if f.TmplExternalURL != nil {
+		writeString(f.TmplExternalURL.String())
+	} else {
+		writeBytes(nil)
+	}
+	writeString(f.EmailConfig.AuthPassword)
+	writeString(f.EmailConfig.AuthUser)
+	writeString(f.EmailConfig.CertFile)
+	writeString(f.EmailConfig.EhloIdentity)
+	writeString(f.EmailConfig.ExternalURL)
+	writeString(f.EmailConfig.FromName)
+	writeString(f.EmailConfig.FromAddress)
+	writeString(f.EmailConfig.Host)
+	writeString(f.EmailConfig.KeyFile)
+	writeBool(f.EmailConfig.SkipVerify)
+	writeString(f.EmailConfig.StartTLSPolicy)
+	writeString(f.EmailConfig.SentBy)
+	result := sum.Sum64()
+
+	writeBytes(nil)
+	// Calculate hash for each key-value pair independently and combine it using XOR
+	// so we do not need to care about the random order of the pairs in the map.
+	var mapFp uint64
+	for k, v := range f.EmailConfig.StaticHeaders {
+		sum.Reset()
+		writeString(k)
+		writeString(v)
+		mapFp ^= sum.Sum64()
+	}
+
+	// Ignore order in templates because they're usually built from the map
+	var templatesFp uint64
+	for _, template := range f.Templates {
+		sum.Reset()
+		writeString(template.Name)
+		writeString(template.Content)
+		writeString(string(template.Kind))
+		templatesFp ^= sum.Sum64()
+	}
+
+	// Ignore order in content types because it does not matter
+	var contentTypesFp uint64
+	for _, ct := range f.EmailConfig.ContentTypes {
+		sum.Reset()
+		writeString(ct)
+		contentTypesFp ^= sum.Sum64()
+	}
+
+	// combine all hashes, including ones for empty slices\map
+	sum.Reset()
+	tmp := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tmp, result)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, mapFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, templatesFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, contentTypesFp)
+	writeBytes(tmp)
+	return model.Fingerprint(sum.Sum64())
+}
+
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
@@ -954,6 +1052,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
+	cfgFp := cfg.fingerprint()
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
@@ -962,16 +1061,20 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg) {
-		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
-		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
-		if err != nil {
-			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+	} else {
+		curFp := am.cfgs[cfg.User]
+		if curFp != cfgFp {
+			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
+			am.cfgs[cfg.User] = cfgFp
+			// If the config changed, apply the new one.
+			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
+			if err != nil {
+				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+			}
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg
+	am.cfgs[cfg.User] = cfgFp
 	return nil
 }
 
@@ -1175,11 +1278,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfig{
-		User:            cfgDesc.User,
-		RawConfig:       cfgDesc.RawConfig,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
-	}
+	amConfig := newMimirAmConfigFromDesc(cfgDesc, am.cfg.ExternalURL.URL)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
@@ -1504,34 +1603,4 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func configChanged(left, right amConfig) bool {
-	if left.User != right.User {
-		return true
-	}
-	if left.RawConfig != right.RawConfig {
-		return true
-	}
-
-	existing := make(map[string]string)
-	for _, tm := range left.Templates {
-		existing[fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)] = tm.Content
-	}
-
-	for _, tm := range right.Templates {
-		key := fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)
-		corresponding, ok := existing[key]
-		if !ok {
-			return true // Right has a template that left does not.
-		}
-		if corresponding != tm.Content {
-			return true // The template content is different.
-		}
-		delete(existing, key)
-	}
-
-	// TODO add remaining fields to comparison
-
-	return len(existing) != 0 // Left has a template that right does not.
 }
