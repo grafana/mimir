@@ -67,12 +67,6 @@ import (
 
 var tracer = otel.Tracer("pkg/distributor")
 
-func init() {
-	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
-	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
-}
-
 var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
@@ -1099,15 +1093,22 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
+		validationScheme := d.limits.ValidationScheme(userID)
+
 		var removeTsIndexes []int
 		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
-			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
+			if mrcs := d.limits.MetricRelabelConfigs(userID); len(mrcs) > 0 {
+				for _, mrc := range mrcs {
+					if mrc != nil {
+						mrc.MetricNameValidationScheme = validationScheme
+					}
+				}
 				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
 				lb.Set(metaLabelTenantID, userID)
-				keep := relabel.ProcessBuilder(lb, mrc...)
+				keep := relabel.ProcessBuilder(lb, mrcs...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
