@@ -42,6 +42,29 @@ type Selector struct {
 	series    *seriesList
 
 	seriesIdx int
+
+	// Sample count multiplicator for correct stats counting when applying CSE.
+	sampleCountMultiplicator int32
+}
+
+func NewSelector(queryable storage.Queryable, timeRange types.QueryTimeRange, timestamp *int64, offset int64, matchers []*labels.Matcher, eagerLoad bool, skipHistogramBuckets bool, lookbackDelta time.Duration, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *Selector {
+	return &Selector{
+		Queryable:                queryable,
+		TimeRange:                timeRange,
+		Timestamp:                timestamp,
+		Offset:                   offset,
+		LookbackDelta:            lookbackDelta,
+		Matchers:                 matchers,
+		EagerLoad:                eagerLoad,
+		SkipHistogramBuckets:     skipHistogramBuckets,
+		ExpressionPosition:       expressionPosition,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		sampleCountMultiplicator: 1,
+	}
+}
+
+func (s *Selector) MultiplexStats(multiplicator int32) {
+	s.sampleCountMultiplicator = multiplicator
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
