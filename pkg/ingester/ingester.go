@@ -339,8 +339,8 @@ type Ingester struct {
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
 
-	// Tracks if a forced compaction is in progress
-	forcedCompactionInProgress atomic.Bool
+	// Tracks the number of compactions in progress.
+	numCompactionsInProgress atomic.Uint32
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -3218,6 +3218,11 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
+			// Count the number of compactions in progress to keep the downscale handler from
+			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+			i.numCompactionsInProgress.Inc()
+			defer i.numCompactionsInProgress.Dec()
+
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
@@ -3235,6 +3240,12 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			}
 
 		case req := <-i.forceCompactTrigger:
+			// Note:
+			// Prepare compaction is not done here but before the force compaction is triggered.
+			// This is because we want to track the number of compactions accurately before the
+			// downscale handler is called. This ensures that the ingester will never leave the
+			// read-only state. (See [Ingester.FlushHandler])
+
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			i.compactBlocks(ctx, true, math.MaxInt64, req.users)
 			close(req.callback) // Notify back.
@@ -3273,10 +3284,8 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		i.forcedCompactionInProgress.Store(true)
 		defer func() {
 			i.metrics.forcedCompactionInProgress.Set(0)
-			i.forcedCompactionInProgress.Store(false)
 		}()
 	}
 
@@ -3606,6 +3615,11 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: ingester not running, ignoring flush request")
 			return
 		}
+
+		// Count the number of compactions in progress to keep the downscale handler from
+		// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+		i.numCompactionsInProgress.Inc()
+		defer i.numCompactionsInProgress.Dec()
 
 		compactionCallbackCh := make(chan struct{})
 
