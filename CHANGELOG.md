@@ -5,7 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Remove support for Redis as a cache backend. #12163
-* [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in #10895 is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
+* [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
 * [FEATURE] Distributor: Add experimental `-distributor.otel-native-delta-ingestion` option to allow primitive delta metrics ingestion via the OTLP endpoint. #11631
 * [FEATURE] MQE: Add support for experimental `sort_by_label` and `sort_by_label_desc` PromQL functions. #11930
 * [FEATURE] Ingester/Block-builder: Handle the created timestamp field for remote-write requests. #11977
