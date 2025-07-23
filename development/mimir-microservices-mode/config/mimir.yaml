@@ -155,7 +155,6 @@ frontend:
   # scheduler_address: "query-scheduler:9011"
 
   results_cache:
-    # Cache is configured via CLI flags. See docker-compose.jsonnet
     compression: snappy
     backend: memcached
     memcached:
