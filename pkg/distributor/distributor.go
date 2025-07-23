@@ -1048,20 +1048,19 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		sampleTimestamp := timestamp.FromTime(now)
 		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
 			earliestSampleTimestamp := sampleTimestamp
-			latestSampleTimestamp := sampleTimestamp
 			for _, ts := range req.Timeseries {
 				if len(ts.Samples) > 0 {
 					tsms := ts.Samples[0].TimestampMs
 					if tsms < earliestSampleTimestamp {
 						earliestSampleTimestamp = tsms
-					} else if tsms > latestSampleTimestamp {
-						latestSampleTimestamp = tsms
 					}
 				}
-			}
-			if deltaBetweenEarliestAndNow := now.UnixMilli() - earliestSampleTimestamp; deltaBetweenEarliestAndNow > 10000 {
-				deltaBetweenLatestAndNow := latestSampleTimestamp - now.UnixMilli()
-				level.Warn(d.log).Log("msg", "earliest sample timestamp is a lot earlier than now", "deltaBetweenEarliestAndNow", deltaBetweenEarliestAndNow, "deltaBetweenLatestAndNow", deltaBetweenLatestAndNow, "user", userID, "cluster", cluster, "replica", replica, "earliestSampleTime", timestamp.Time(earliestSampleTimestamp), "sampleTime", timestamp.Time(sampleTimestamp), "latestSampleTime", timestamp.Time(latestSampleTimestamp), "now", now)
+				if len(ts.Histograms) > 0 {
+					tsms := ts.Histograms[0].Timestamp
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
 			}
 			sampleTimestamp = earliestSampleTimestamp
 		}
