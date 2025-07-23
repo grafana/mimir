@@ -6,10 +6,10 @@
 package mimirpb
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -184,7 +184,7 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.
 func (p *PreallocTimeseries) SortLabelsIfNeeded() {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// no need to run slices.SortFunc, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
 	last := ""
@@ -252,8 +252,8 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 }
 
 func (p *PreallocTimeseries) SortExemplars() {
-	sort.Slice(p.Exemplars, func(i, j int) bool {
-		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	slices.SortFunc(p.Exemplars, func(a, b Exemplar) int {
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	p.clearUnmarshalData()
 }

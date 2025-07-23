@@ -3,9 +3,11 @@
 package compactor
 
 import (
+	"cmp"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -177,13 +179,16 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 
 	// Jobs will be sorted later using configured job sorting algorithm.
 	// Here we sort them by sharding key, to keep the output stable for testing.
-	sort.SliceStable(jobs, func(i, j int) bool {
-		if iKey, jKey := jobs[i].shardingKey(), jobs[j].shardingKey(); iKey != jKey {
-			return iKey < jKey
+	slices.SortStableFunc(jobs, func(a, b *job) int {
+		aKey, bKey := a.shardingKey(), b.shardingKey()
+		if aKey != bKey {
+			return strings.Compare(aKey, bKey)
 		}
 
 		// The sharding key could be equal but external labels can still be different.
-		return defaultGroupKeyWithoutShardID(jobs[i].blocks[0].Thanos) < defaultGroupKeyWithoutShardID(jobs[j].blocks[0].Thanos)
+		aGroupKey := defaultGroupKeyWithoutShardID(a.blocks[0].Thanos)
+		bGroupKey := defaultGroupKeyWithoutShardID(b.blocks[0].Thanos)
+		return strings.Compare(aGroupKey, bGroupKey)
 	})
 
 	return jobs
@@ -348,13 +353,13 @@ func getRangeStart(m *block.Meta, tr int64) int64 {
 }
 
 func sortMetasByMinTime(metas []*block.Meta) []*block.Meta {
-	sort.Slice(metas, func(i, j int) bool {
-		if metas[i].MinTime != metas[j].MinTime {
-			return metas[i].MinTime < metas[j].MinTime
+	slices.SortFunc(metas, func(a, b *block.Meta) int {
+		if a.MinTime != b.MinTime {
+			return cmp.Compare(a.MinTime, b.MinTime)
 		}
 
 		// Compare labels in case of same MinTime to get stable results.
-		return labels.Compare(labels.FromMap(metas[i].Thanos.Labels), labels.FromMap(metas[j].Thanos.Labels)) < 0
+		return labels.Compare(labels.FromMap(a.Thanos.Labels), labels.FromMap(b.Thanos.Labels))
 	})
 
 	return metas
