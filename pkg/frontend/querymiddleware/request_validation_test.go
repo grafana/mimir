@@ -70,6 +70,21 @@ func TestMetricsQueryRequestValidationRoundTripper(t *testing.T) {
 			url:             instantQueryPathSuffix + "?query=up&start=123&end=456&step=60s",
 			expectedErrType: "",
 		},
+		{
+			// accepts utf-8 label names
+			url:             instantQueryPathSuffix + `?query=up{"test.label"="test"}`,
+			expectedErrType: "",
+		},
+		{
+			// accepts utf-8 metric name
+			url:             instantQueryPathSuffix + `?query={"test.label"}`,
+			expectedErrType: "",
+		},
+		{
+			// invalid utf-8 string
+			url:             instantQueryPathSuffix + "?query=up{\"test.label\"=\"\xff\"}",
+			expectedErrType: apierror.TypeBadData,
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, srv.URL+tc.url, nil)
