@@ -225,24 +225,12 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
-	// Parse all selectors
-	var pbQueries []*prompb.Query
+	// Validate matchers
 	for _, selector := range c.selectors {
-		matchers, err := parser.ParseMetricSelector(selector)
+		_, err := parser.ParseMetricSelector(selector)
 		if err != nil {
 			return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing selector '%s': %w", selector, err)
 		}
-
-		pbQuery, err := remote.ToQuery(
-			int64(model.TimeFromUnixNano(from.UnixNano())),
-			int64(model.TimeFromUnixNano(to.UnixNano())),
-			matchers,
-			nil,
-		)
-		if err != nil {
-			return nil, time.Time{}, time.Time{}, fmt.Errorf("error creating query for selector '%s': %w", selector, err)
-		}
-		pbQueries = append(pbQueries, pbQuery)
 	}
 
 	readClient, err := c.readClient()
@@ -252,9 +240,27 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 
 	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
 		log.Infof("Querying time from=%s to=%s with %d selectors", queryFrom.Format(time.RFC3339), queryTo.Format(time.RFC3339), len(c.selectors))
+		// Parse all selectors
+		var pbQueries []*prompb.Query
 		for i, selector := range c.selectors {
 			log.Debugf("Selector %d: %s", i+1, selector)
+			matchers, err := parser.ParseMetricSelector(selector)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing selector '%s': %w", selector, err)
+			}
+
+			pbQuery, err := remote.ToQuery(
+				int64(model.TimeFromUnixNano(queryFrom.UnixNano())),
+				int64(model.TimeFromUnixNano(queryTo.UnixNano())),
+				matchers,
+				nil,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("error creating query for selector '%s': %w", selector, err)
+			}
+			pbQueries = append(pbQueries, pbQuery)
 		}
+
 		return c.executeMultipleQueries(ctx, readClient, pbQueries)
 	}, from, to, nil
 }
