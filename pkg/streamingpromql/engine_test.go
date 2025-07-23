@@ -4300,23 +4300,3 @@ func TestInstantQueryDurationExpression(t *testing.T) {
 
 	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
 }
-
-func runQueryAndGetSamplesStats(t *testing.T, storage storage.Queryable, engine promql.QueryEngine, expr string, isInstantQuery bool, start, end time.Time, interval time.Duration) *promstats.QuerySamples {
-	var q promql.Query
-	var err error
-	opts := promql.NewPrometheusQueryOpts(true, 0)
-	if isInstantQuery {
-		q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
-	} else {
-		q, err = engine.NewRangeQuery(context.Background(), storage, opts, expr, start, end, time.Minute)
-	}
-
-	require.NoError(t, err)
-
-	defer q.Close()
-
-	res := q.Exec(context.Background())
-	require.NoError(t, res.Err)
-
-	return q.Stats().Samples
-}
