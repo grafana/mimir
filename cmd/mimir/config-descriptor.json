@@ -7476,6 +7476,17 @@
         },
         {
           "kind": "field",
+          "name": "extra_propagate_headers",
+          "required": false,
+          "desc": "Comma-separated list of request header names to allow to pass through.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.extra-propagate-headers",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
