@@ -143,16 +143,17 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		}
 	})
 
-	/*t.Run("should split the input WriteRequest into multiple requests, honoring the size limit, and bin-packing - RW2", func(t *testing.T) {
+	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit, and bin-packing - RW2", func(t *testing.T) {
 		// 200 allows the first and second WriteRequests to fit into one request, but not the third.
 		const limit = 200
+		reqv2 := testReqV2Static(t)
 
 		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -165,11 +166,11 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 						},
 					},
 					{
-						LabelsRefs: []uint32{1, 2, 3, 4},
+						LabelsRefs: []uint32{1, 6, 3, 4},
 						Samples:    []Sample{{TimestampMs: 30}},
 						Metadata: MetadataRW2{
 							Type:    METRIC_TYPE_COUNTER,
-							HelpRef: 5,
+							HelpRef: 7,
 						},
 					},
 				},
@@ -192,7 +193,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		for _, partial := range partials {
 			assert.LessOrEqual(t, partial.Size(), limit)
 		}
-	})*/
+	})
 
 	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit if limit < size(symbols)", func(t *testing.T) {
 		const limit = 50
