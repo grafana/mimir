@@ -16,6 +16,7 @@
 * [ENHANCEMENT] Query-frontend: Added labels query optimizer that automatically removes redundant `__name__!=""` matchers from label names and label values queries, improving query performance. You can enable the optimizer per-tenant with the `labels_query_optimizer_enabled` runtime configuration flag. #12054 #12066 #12076 #12080
 * [ENHANCEMENT] Query-frontend: Standardise non-regex patterns in query blocking upon loading of config. #12102
 * [ENHANCEMENT] Ruler: Propagate GCS object mutation rate limit for rule group uploads. #12086
+* [ENHANCEMENT] Compactor: Keep bucket index update progress across failed cleanUser() runs to reduce duplicated work when cleanup jobs fail and retry. The compactor now caches the in-progress bucket index in memory and reuses it in subsequent runs if the stored bucket index hasn't been updated by other compactors. #<PR>
 * [BUGFIX] Distributor: Validate the RW2 symbols field and reject invalid requests that don't have an empty string as the first symbol. #11953
 * [BUGFIX] Distributor: Check `max_inflight_push_requests_bytes` before decompressing incoming requests. #11967
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054

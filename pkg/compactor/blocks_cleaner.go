@@ -51,6 +51,19 @@ type BlocksCleanerConfig struct {
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
+// inProgressBucketIndex holds a partially updated bucket index and metadata
+// to allow resuming bucket index updates from where previous runs left off.
+type inProgressBucketIndex struct {
+	// The partially updated bucket index
+	index *bucketindex.Index
+	
+	// The UpdatedAt timestamp from the original bucket index this is based on
+	basedOnIndexUpdatedAt int64
+	
+	// Timestamp when this in-progress index was created
+	createdAt time.Time
+}
+
 type BlocksCleaner struct {
 	services.Service
 
@@ -63,6 +76,10 @@ type BlocksCleaner struct {
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
+
+	// In-progress bucket index cache to avoid duplicate work between failed cleanup runs
+	inProgressIndexesMux sync.RWMutex
+	inProgressIndexes    map[string]*inProgressBucketIndex
 
 	// Metrics.
 	runsStarted                         prometheus.Counter
@@ -83,12 +100,13 @@ type BlocksCleaner struct {
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
-		cfg:          cfg,
-		bucketClient: bucketClient,
-		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
-		cfgProvider:  cfgProvider,
-		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
-		logger:       log.With(logger, "component", "cleaner"),
+		cfg:               cfg,
+		bucketClient:      bucketClient,
+		usersScanner:      mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
+		cfgProvider:       cfgProvider,
+		singleFlight:      concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
+		logger:            log.With(logger, "component", "cleaner"),
+		inProgressIndexes: make(map[string]*inProgressBucketIndex),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
 			Help: "Total number of blocks cleanup runs started.",
@@ -162,6 +180,53 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 func (c *BlocksCleaner) stopping(error) error {
 	c.singleFlight.Wait()
 	return nil
+}
+
+// getInProgressIndex returns the cached in-progress bucket index for a user, if available and valid.
+// Returns nil if no cached index exists or if the cached index is stale.
+func (c *BlocksCleaner) getInProgressIndex(userID string, currentIndexUpdatedAt int64) *bucketindex.Index {
+	c.inProgressIndexesMux.RLock()
+	defer c.inProgressIndexesMux.RUnlock()
+	
+	inProgress, exists := c.inProgressIndexes[userID]
+	if !exists || inProgress == nil {
+		return nil
+	}
+	
+	// If the bucket index in storage is newer than what our in-progress index is based on,
+	// discard the cached in-progress index to avoid overwriting newer data.
+	// This handles the case where another compactor updated the bucket index while this
+	// compactor had a cleanup job in progress.
+	if currentIndexUpdatedAt > inProgress.basedOnIndexUpdatedAt {
+		level.Warn(log.With(c.logger, "user", userID)).Log(
+			"msg", "discarding stale in-progress bucket index due to newer bucket index in storage",
+			"storage_index_updated_at", currentIndexUpdatedAt,
+			"cached_index_based_on", inProgress.basedOnIndexUpdatedAt,
+			"cached_index_age", time.Since(inProgress.createdAt))
+		return nil
+	}
+	
+	return inProgress.index
+}
+
+// saveInProgressIndex caches a partially updated bucket index for a user.
+func (c *BlocksCleaner) saveInProgressIndex(userID string, index *bucketindex.Index, basedOnIndexUpdatedAt int64) {
+	c.inProgressIndexesMux.Lock()
+	defer c.inProgressIndexesMux.Unlock()
+	
+	c.inProgressIndexes[userID] = &inProgressBucketIndex{
+		index:                 index,
+		basedOnIndexUpdatedAt: basedOnIndexUpdatedAt,
+		createdAt:             time.Now(),
+	}
+}
+
+// clearInProgressIndex removes the cached in-progress bucket index for a user.
+func (c *BlocksCleaner) clearInProgressIndex(userID string) {
+	c.inProgressIndexesMux.Lock()
+	defer c.inProgressIndexesMux.Unlock()
+	
+	delete(c.inProgressIndexes, userID)
 }
 
 type ownedUsers struct {
@@ -433,6 +498,8 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			level.Warn(userLogger).Log("msg", "failed blocks cleanup and maintenance", "err", returnErr, "duration", time.Since(startTime))
 		} else {
 			level.Info(userLogger).Log("msg", "completed blocks cleanup and maintenance", "duration", time.Since(startTime))
+			// Clear the cached in-progress index on successful completion
+			c.clearInProgressIndex(userID)
 		}
 	}()
 
@@ -444,7 +511,21 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		return err
 	}
 
-	level.Info(userLogger).Log("msg", "fetched existing bucket index")
+	var originalIndexUpdatedAt int64
+	if idx != nil {
+		originalIndexUpdatedAt = idx.UpdatedAt
+	}
+
+	// Check if we have a cached in-progress index that we can use to resume work
+	if cachedIdx := c.getInProgressIndex(userID, originalIndexUpdatedAt); cachedIdx != nil {
+		level.Info(userLogger).Log("msg", "using cached in-progress bucket index to resume cleanup", "cached_index_updated_at", cachedIdx.UpdatedAt, "storage_index_updated_at", originalIndexUpdatedAt)
+		idx = cachedIdx
+	} else {
+		level.Info(userLogger).Log("msg", "fetched existing bucket index")
+		// If there was a cached in-progress index but it was discarded because it's stale,
+		// clear it from the cache to free memory
+		c.clearInProgressIndex(userID)
+	}
 
 	// Mark blocks for future deletion based on the retention period for the user.
 	// Note doing this before UpdateIndex, so it reads in the deletion marks.
@@ -463,6 +544,9 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	if err != nil {
 		return err
 	}
+
+	// Save the updated index to the in-progress cache in case subsequent operations fail
+	c.saveInProgressIndex(userID, idx, originalIndexUpdatedAt)
 
 	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
 
