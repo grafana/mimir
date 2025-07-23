@@ -2,6 +2,43 @@
   _config+:: {
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
 
+    // Memory HPA query configuration
+    autoscaling_memory_hpa_ready_trigger_query: |||
+      quantile_over_time(0.95,
+        sum(
+          (
+            sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+            and
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+          ) or vector(0)
+        )[15m:]
+      )
+    |||,
+
+    autoscaling_memory_hpa_non_ready_trigger_query: |||
+      max_over_time(
+        sum(
+          (
+            sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+            and
+            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+          ) or vector(0)
+        )[15m:]
+      )
+    |||,
+
+    autoscaling_memory_hpa_oom_query: |||
+      +
+      sum(
+        sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(extra_matchers)s}[15m]))
+        and
+        max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
+        and
+        max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
+        or vector(0)
+      )
+    |||,
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
@@ -312,48 +349,18 @@
         // all replicas over 15m.
         //
         // When computing the actual memory utilization, We only take in account ready pods.
-        |||
-          quantile_over_time(0.95,
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        $._config.autoscaling_memory_hpa_ready_trigger_query
       else
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
         // all replicas over 15m.
         //
-        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
         // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
         // of containers there are running at any given time, without suffering the PromQL lookback period.
-        |||
-          max_over_time(
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        $._config.autoscaling_memory_hpa_non_ready_trigger_query
     ) + (
       // Add pods that were terminated due to an OOM in the memory calculation.
-      |||
-        +
-        sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(extra_matchers)s}[15m]))
-          and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
-          and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
-          or vector(0)
-        )
-      |||
+      $._config.autoscaling_memory_hpa_oom_query
     ),
 
   newResourceScaledObject(
