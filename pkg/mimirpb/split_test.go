@@ -450,7 +450,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 	}, fieldNames)
 }
 
-/*func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
+func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
 	benchmarkSplitWriteRequestByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
 		for n := 0; n < b.N; n++ {
 			SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
@@ -491,7 +491,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 			}
 		}
 	})
-}*/
+}
 
 func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
 	tests := map[string]struct {
