@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -47,7 +46,6 @@ type Query struct {
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
-	nameValidationScheme     model.ValidationScheme
 
 	// Time range of the top-level query.
 	// Subqueries may use a different range.
@@ -61,7 +59,7 @@ type Query struct {
 
 func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange, originalExpression string) (*Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
+		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -72,11 +70,6 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
-	}
-
-	validationScheme, err := e.limitsProvider.GetValidationScheme(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get validation scheme for query: %w", err)
 	}
 
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, originalExpression)
@@ -93,7 +86,6 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 		originalExpression:       originalExpression,
-		nameValidationScheme:     validationScheme,
 	}
 
 	return q, nil

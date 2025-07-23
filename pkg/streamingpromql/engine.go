@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel"
@@ -144,31 +143,23 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, o
 type QueryLimitsProvider interface {
 	// GetMaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory allowed to be consumed by a query in bytes, or 0 to disable the limit.
 	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
-	// GetValidationScheme returns the label/metric name validation scheme to use for a query.
-	GetValidationScheme(ctx context.Context) (model.ValidationScheme, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 //
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64, validationScheme model.ValidationScheme) QueryLimitsProvider {
+func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64) QueryLimitsProvider {
 	return staticQueryLimitsProvider{
 		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
-		validationScheme:                      validationScheme,
 	}
 }
 
 type staticQueryLimitsProvider struct {
 	maxEstimatedMemoryConsumptionPerQuery uint64
-	validationScheme                      model.ValidationScheme
 }
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
-}
-
-func (p staticQueryLimitsProvider) GetValidationScheme(_ context.Context) (model.ValidationScheme, error) {
-	return p.validationScheme, nil
 }
 
 type NoopQueryTracker struct{}

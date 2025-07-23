@@ -185,8 +185,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		// TODO: Check whether this approach is a good idea.
-		eng = compat.NameValidatingEngine(promql.NewEngine(opts), limits)
+		eng = promql.NewEngine(opts)
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
@@ -195,8 +194,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			// TODO: Check whether this approach is a good idea.
-			prometheusEngine := compat.NameValidatingEngine(promql.NewEngine(opts), limits)
+			prometheusEngine := promql.NewEngine(opts)
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -794,20 +792,4 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
-}
-
-// GetValidationScheme computes the validation scheme for tenants injected into ctx. Returns LegacyValidation if
-// at least one tenant uses LegacyValidation, UTF8Validation otherwise.
-func (p *TenantQueryLimitsProvider) GetValidationScheme(ctx context.Context) (model.ValidationScheme, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, tenantID := range tenantIDs {
-		validationScheme := p.limits.ValidationScheme(tenantID)
-		if validationScheme == model.LegacyValidation {
-			return validationScheme, nil
-		}
-	}
-	return model.UTF8Validation, nil
 }
