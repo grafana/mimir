@@ -46,32 +46,33 @@ var benchmarkCases = []struct {
 			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
 		},
 	},
-	// {
-	// 	name: "SingleMetricReducedSeries",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-1"),
-	// 	},
-	// },
-	// {
-	// 	name: "SingleMetricOneSeries",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-2"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "region", "region-1"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "service", "service-10"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-1"),
-	// 	},
-	// },
-	// {
-	// 	name: "SingleMetricSparseSeries",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-0"),
-	// 	},
-	// },
+	{
+		name: "SingleMetricReducedSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-1"),
+		},
+	},
+	{
+		name: "SingleMetricOneSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-2"),
+			labels.MustNewMatcher(labels.MatchEqual, "region", "region-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-10"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-1"),
+		},
+	},
+	{
+		name: "SingleMetricSparseSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-0"),
+		},
+	},
+	// TODO this one is commented because it returns no series and current implementation requires it
 	// {
 	// 	name: "NonExistentSeries",
 	// 	matchers: []*labels.Matcher{
@@ -79,45 +80,46 @@ var benchmarkCases = []struct {
 	// 		labels.MustNewMatcher(labels.MatchEqual, "environment", "non-existent-environment"),
 	// 	},
 	// },
+	{
+		name: "MultipleMetricsRange",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+		},
+	},
+	{
+		name: "MultipleMetricsSparse",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+		},
+	},
+	{
+		name: "NegativeRegexSingleMetric",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+		},
+	},
+	{
+		name: "NegativeRegexMultipleMetrics",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+		},
+	},
+	{
+		name: "ExpensiveRegexSingleMetric",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
+		},
+	},
+	// TODO find out why it fails
 	// {
-	// 	name: "MultipleMetricsRange",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
-	// 	},
-	// },
-	// {
-	// 	name: "MultipleMetricsSparse",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
-	// 	},
-	// },
-	// {
-	// 	name: "NegativeRegexSingleMetric",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-	// 		labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
-	// 	},
-	// },
-	// {
-	// 	name: "NegativeRegexMultipleMetrics",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-	// 		labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
-	// 	},
-	// },
-	// {
-	// 	name: "ExpensiveRegexSingleMetric",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
-	// 	},
-	// },
-	// {
-	// 	name: "ExpensiveRegexMultipleMetrics",
-	// 	matchers: []*labels.Matcher{
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-	// 		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|container-2|container-3|container-4|container-5)"),
-	// 	},
+	//	name: "ExpensiveRegexMultipleMetrics",
+	//	matchers: []*labels.Matcher{
+	//		labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+	//		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|container-2|container-3|container-4|container-5)"),
+	//	},
 	// },
 }
 
@@ -166,8 +168,8 @@ func BenchmarkBucketStores_Main(b *testing.B) {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
 				require.NoError(tb, err)
-				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response")
-				require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response")
+				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response, tc: %s", tc.name)
+				require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response, tc: %s", tc.name)
 			})
 		})
 	}
