@@ -260,9 +260,9 @@ func TestIterBlockMetas(t *testing.T) {
 	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
-	require.Equal(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
+	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
 		return cmp.Compare(a.MinTime, b.MinTime)
-	}), true)
+	}))
 }
 
 func TestShipperAddsSegmentFiles(t *testing.T) {
