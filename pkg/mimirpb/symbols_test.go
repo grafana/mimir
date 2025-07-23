@@ -111,16 +111,16 @@ func TestSymbolsTable(t *testing.T) {
 	})
 
 	t.Run("capacity estimation", func(t *testing.T) {
-		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
-		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+		s := NewFastSymbolsTable(50)
+		require.Equal(t, 50, s.CapLowerBound())
 
 		s.Symbolize("abc")
 		s.Symbolize("def")
 		s.Symbolize("ghi")
-		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+		require.Equal(t, 50, s.CapLowerBound())
 
 		s.Reset()
-		require.Equal(t, minPreallocatedSymbolsPerRequest, s.CapLowerBound())
+		require.Equal(t, 50, s.CapLowerBound())
 
 		for i := range 50 {
 			s.Symbolize(fmt.Sprintf("%d", i))
