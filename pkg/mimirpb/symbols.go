@@ -16,10 +16,12 @@ type StringSymbolizer interface {
 
 var _ StringSymbolizer = &writev2.SymbolsTable{}
 
-var (
-	minPreallocatedSymbolsPerRequest = 40
-	maxPreallocatedSymbolsPerRequest = 400
+const (
+	minPreallocatedSymbolsPerRequest = 100
+	maxPreallocatedSymbolsPerRequest = 100000
+)
 
+var (
 	symbolsTablePool = sync.Pool{
 		New: func() interface{} {
 			return NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
