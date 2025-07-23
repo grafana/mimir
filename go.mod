@@ -378,5 +378,8 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
 
+// TODO: usage-tracker specific: Replacing client_golang with https://github.com/prometheus/client_golang/pull/1766
+replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
+
 // Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
 replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
