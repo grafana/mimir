@@ -1775,13 +1775,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 			// Before comparing response, we sort headers, to keep comparison stable.
 			slices.SortFunc(resp.Headers, func(a, b *httpgrpc.Header) int {
-				if a.Key < b.Key {
-					return -1
-				}
-				if a.Key > b.Key {
-					return 1
-				}
-				return 0
+				return strings.Compare(a.Key, b.Key)
 			})
 			require.Equal(t, tc.expectedResponse, resp)
 		})

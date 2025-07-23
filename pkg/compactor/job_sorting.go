@@ -3,7 +3,9 @@
 package compactor
 
 import (
+	"cmp"
 	"slices"
+	"strings"
 )
 
 const (
@@ -52,28 +54,16 @@ func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
 			bLength := b.MaxTime() - b.MinTime()
 
 			if aLength != bLength {
-				if aLength < bLength {
-					return -1
-				}
-				return 1
+				return cmp.Compare(aLength, bLength)
 			}
 		}
 
 		if a.MinTime() != b.MinTime() {
-			if a.MinTime() < b.MinTime() {
-				return -1
-			}
-			return 1
+			return cmp.Compare(a.MinTime(), b.MinTime())
 		}
 
 		// Guarantee stable sort for tests.
-		if a.Key() < b.Key() {
-			return -1
-		}
-		if a.Key() > b.Key() {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.Key(), b.Key())
 	})
 
 	return jobs
@@ -88,29 +78,17 @@ func sortJobsByNewestBlocksFirst(jobs []*Job) []*Job {
 		aMaxTime := a.MaxTime()
 		bMaxTime := b.MaxTime()
 		if aMaxTime != bMaxTime {
-			if aMaxTime > bMaxTime {
-				return -1
-			}
-			return 1
+			return cmp.Compare(bMaxTime, aMaxTime)
 		}
 
 		aLength := aMaxTime - a.MinTime()
 		bLength := bMaxTime - b.MinTime()
 		if aLength != bLength {
-			if aLength < bLength {
-				return -1
-			}
-			return 1
+			return cmp.Compare(aLength, bLength)
 		}
 
 		// Guarantee stable sort for tests.
-		if a.Key() < b.Key() {
-			return -1
-		}
-		if a.Key() > b.Key() {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.Key(), b.Key())
 	})
 
 	return jobs

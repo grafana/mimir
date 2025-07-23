@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -6895,13 +6896,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 		require.Equal(t, recvMsgs, 1)
 		// Sort chunks by time
 		slices.SortFunc(chunks, func(a, b client.Chunk) int {
-			if a.StartTimestampMs < b.StartTimestampMs {
-				return -1
-			}
-			if a.StartTimestampMs > b.StartTimestampMs {
-				return 1
-			}
-			return 0
+			return cmp.Compare(a.StartTimestampMs, b.StartTimestampMs)
 		})
 
 		headers := []chunkenc.CounterResetHeader{}

@@ -285,26 +285,14 @@ func (a AnalyzeResult) metricsCounts() []analyze.MetricCount {
 			})
 		}
 		slices.SortFunc(jobCounts, func(a, b analyze.JobCount) int {
-			if a.Count > b.Count {
-				return -1
-			}
-			if a.Count < b.Count {
-				return 1
-			}
-			return 0
+			return b.Count - a.Count
 		})
 
 		metricCount = append(metricCount, analyze.MetricCount{Metric: string(metric), Count: counts.totalCount, JobCounts: jobCounts})
 	}
 
 	slices.SortFunc(metricCount, func(a, b analyze.MetricCount) int {
-		if a.Count > b.Count {
-			return -1
-		}
-		if a.Count < b.Count {
-			return 1
-		}
-		return 0
+		return b.Count - a.Count
 	})
 
 	return metricCount

@@ -2736,13 +2736,7 @@ func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBuc
 		})
 	}
 	slices.SortFunc(result, func(a, b cardinality.ActiveMetricWithBucketCount) int {
-		if a.Metric < b.Metric {
-			return -1
-		}
-		if a.Metric > b.Metric {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.Metric, b.Metric)
 	})
 	return result, fetchedSeries
 }

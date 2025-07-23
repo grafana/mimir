@@ -337,13 +337,7 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 		}
 	}
 	slices.SortFunc(values, func(a, b PostingListOffset) int {
-		if a.LabelValue < b.LabelValue {
-			return -1
-		}
-		if a.LabelValue > b.LabelValue {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.LabelValue, b.LabelValue)
 	})
 	return values, nil
 }

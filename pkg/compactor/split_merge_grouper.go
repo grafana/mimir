@@ -3,9 +3,11 @@
 package compactor
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -180,22 +182,13 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 	slices.SortStableFunc(jobs, func(a, b *job) int {
 		aKey, bKey := a.shardingKey(), b.shardingKey()
 		if aKey != bKey {
-			if aKey < bKey {
-				return -1
-			}
-			return 1
+			return strings.Compare(aKey, bKey)
 		}
 
 		// The sharding key could be equal but external labels can still be different.
 		aGroupKey := defaultGroupKeyWithoutShardID(a.blocks[0].Thanos)
 		bGroupKey := defaultGroupKeyWithoutShardID(b.blocks[0].Thanos)
-		if aGroupKey < bGroupKey {
-			return -1
-		}
-		if aGroupKey > bGroupKey {
-			return 1
-		}
-		return 0
+		return strings.Compare(aGroupKey, bGroupKey)
 	})
 
 	return jobs
@@ -362,10 +355,7 @@ func getRangeStart(m *block.Meta, tr int64) int64 {
 func sortMetasByMinTime(metas []*block.Meta) []*block.Meta {
 	slices.SortFunc(metas, func(a, b *block.Meta) int {
 		if a.MinTime != b.MinTime {
-			if a.MinTime < b.MinTime {
-				return -1
-			}
-			return 1
+			return cmp.Compare(a.MinTime, b.MinTime)
 		}
 
 		// Compare labels in case of same MinTime to get stable results.

@@ -3,6 +3,7 @@
 package compactor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -66,13 +67,7 @@ func (job *Job) AppendMeta(meta *block.Meta) error {
 
 	job.metasByMinTime = append(job.metasByMinTime, meta)
 	slices.SortFunc(job.metasByMinTime, func(a, b *block.Meta) int {
-		if a.MinTime < b.MinTime {
-			return -1
-		}
-		if a.MinTime > b.MinTime {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return nil
 }

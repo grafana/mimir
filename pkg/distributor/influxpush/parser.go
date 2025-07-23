@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -136,13 +137,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			})
 		}
 		slices.SortFunc(lbls, func(a, b mimirpb.LabelAdapter) int {
-			if a.Name < b.Name {
-				return -1
-			}
-			if a.Name > b.Name {
-				return 1
-			}
-			return 0
+			return strings.Compare(a.Name, b.Name)
 		})
 
 		ts := mimirpb.TimeSeries{

@@ -6,10 +6,12 @@
 package distributor
 
 import (
+	"cmp"
 	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -58,19 +60,10 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.electedLock.RUnlock()
 
 	slices.SortFunc(electedReplicas, func(a, b haTrackerReplica) int {
-		if a.UserID != b.UserID {
-			if a.UserID < b.UserID {
-				return -1
-			}
-			return 1
-		}
-		if a.Cluster < b.Cluster {
-			return -1
-		}
-		if a.Cluster > b.Cluster {
-			return 1
-		}
-		return 0
+		return cmp.Or(
+			strings.Compare(a.UserID, b.UserID),
+			strings.Compare(a.Cluster, b.Cluster),
+		)
 	})
 
 	util.RenderHTTPResponse(w, haTrackerStatusPageContents{

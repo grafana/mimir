@@ -4674,13 +4674,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 						}
 
 						slices.SortFunc(cardinalityMap.Items, func(l, r *client.LabelValueSeriesCount) int {
-							if l.LabelName < r.LabelName {
-								return -1
-							}
-							if l.LabelName > r.LabelName {
-								return 1
-							}
-							return 0
+							return strings.Compare(l.LabelName, r.LabelName)
 						})
 						return assert.EqualValues(t, testData.expectedResult, cardinalityMap)
 					}, 1*time.Second, 50*time.Millisecond)

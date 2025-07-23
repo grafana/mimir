@@ -126,10 +126,7 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 			return a.ULID.Compare(b.ULID)
 		}
 
-		if alen < blen {
-			return -1
-		}
-		return 1
+		return alen - blen
 	})
 
 	root := newBlockWithSuccessors(nil)

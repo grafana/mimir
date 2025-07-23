@@ -3,6 +3,7 @@
 package blockbuilder
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -381,22 +382,10 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	require.NoError(t, querier.Close())
 
 	slices.SortFunc(expSamples, func(a, b mimirpb.Sample) int {
-		if a.TimestampMs < b.TimestampMs {
-			return -1
-		}
-		if a.TimestampMs > b.TimestampMs {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	slices.SortFunc(expHistograms, func(a, b mimirpb.Histogram) int {
-		if a.Timestamp < b.Timestamp {
-			return -1
-		}
-		if a.Timestamp > b.Timestamp {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.Timestamp, b.Timestamp)
 	})
 	require.Equal(t, expSamples, actSamples)
 	require.Equal(t, expHistograms, actHistograms)

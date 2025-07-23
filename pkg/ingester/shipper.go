@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
@@ -235,13 +236,7 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		metas = append(metas, m)
 	}
 	slices.SortFunc(metas, func(a, b *block.Meta) int {
-		if a.MinTime < b.MinTime {
-			return -1
-		}
-		if a.MinTime > b.MinTime {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return metas, nil
 }

@@ -6,6 +6,7 @@
 package mimirpb
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
@@ -252,13 +253,7 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 
 func (p *PreallocTimeseries) SortExemplars() {
 	slices.SortFunc(p.Exemplars, func(a, b Exemplar) int {
-		if a.TimestampMs < b.TimestampMs {
-			return -1
-		}
-		if a.TimestampMs > b.TimestampMs {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	p.clearUnmarshalData()
 }

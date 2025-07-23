@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -171,13 +172,7 @@ func printBlocks(metas map[ulid.ULID]*block.Meta) {
 	}
 
 	slices.SortFunc(blocks, func(a, b *block.Meta) int {
-		if a.MinTime < b.MinTime {
-			return -1
-		}
-		if a.MinTime > b.MinTime {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)

@@ -3,11 +3,13 @@
 package listblocks
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,21 +153,15 @@ func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 
 	slices.SortFunc(blocks, func(a, b *block.Meta) int {
 		// By min-time
-		if a.MinTime < b.MinTime {
-			return -1
-		}
-		if a.MinTime > b.MinTime {
-			return 1
+		if a.MinTime != b.MinTime {
+			return cmp.Compare(a.MinTime, b.MinTime)
 		}
 
 		// Duration
 		dura := a.MaxTime - a.MinTime
 		durb := b.MaxTime - b.MinTime
-		if dura < durb {
-			return -1
-		}
-		if dura > durb {
-			return 1
+		if dura != durb {
+			return cmp.Compare(dura, durb)
 		}
 
 		// Compactor shard
@@ -177,43 +173,19 @@ func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 			shardbIndex, shardbCount, errb := sharding.ParseShardIDLabelValue(shardb)
 			if erra != nil || errb != nil {
 				// If parsing any of the labels failed, fallback to lexicographical sort.
-				if sharda < shardb {
-					return -1
-				}
-				if sharda > shardb {
-					return 1
-				}
-				return 0
+				return strings.Compare(sharda, shardb)
 			}
 			if shardaCount != shardbCount {
 				// If parsed but shard count differs, first sort by shard count.
-				if shardaCount < shardbCount {
-					return -1
-				}
-				if shardaCount > shardbCount {
-					return 1
-				}
-				return 0
+				return cmp.Compare(shardaCount, shardbCount)
 			}
 
 			// Otherwise, sort by shard index, this should be the happy path when there are sharded blocks.
-			if shardaIndex < shardbIndex {
-				return -1
-			}
-			if shardaIndex > shardbIndex {
-				return 1
-			}
-			return 0
+			return cmp.Compare(shardaIndex, shardbIndex)
 		}
 
 		// ULID time.
-		if a.ULID.Time() < b.ULID.Time() {
-			return -1
-		}
-		if a.ULID.Time() > b.ULID.Time() {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.ULID.Time(), b.ULID.Time())
 	})
 	return blocks
 }
