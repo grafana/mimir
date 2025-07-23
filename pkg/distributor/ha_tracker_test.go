@@ -303,18 +303,18 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now, now)
 	assert.NoError(t, err)
 
 	// Throw away a sample from replica2.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
 	now = now.Add(failoverTimeoutPlus100ms)
 
 	// Another sample from replica2 to update its timestamp.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
 	assert.Error(t, err)
 
 	// Update KVStore - this should elect replica 2.
@@ -323,11 +323,11 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	checkReplicaTimestamp(t, 100*time.Millisecond, tracker, "user", cluster, replica2, now, now)
 
 	// Now we should accept from replica 2.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
 	assert.NoError(t, err)
 
 	// We timed out accepting samples from replica 1 and should now reject them.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now, now)
 	assert.Error(t, err)
 }
 
@@ -386,7 +386,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	now := time.Now()
 
 	// Write the first time.
-	err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now, now)
 	assert.NoError(t, err)
 
 	key := fmt.Sprintf("%s/%s", tenant, cluster)
@@ -407,11 +407,11 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	now = now.Add(failoverTimeoutPlus100ms)
 	// check replica2
-	err = tracker.checkReplica(context.Background(), tenant, cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica2, now, now)
 	assert.NoError(t, err)
 
 	// check replica1
-	assert.ErrorAs(t, tracker.checkReplica(context.Background(), tenant, cluster, replica1, now), &replicasDidNotMatchError{})
+	assert.ErrorAs(t, tracker.checkReplica(context.Background(), tenant, cluster, replica1, now, now), &replicasDidNotMatchError{})
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
@@ -447,7 +447,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	assert.Equal(t, 0, int(mockCountingClient.GetCalls.Load()))
 
 	now = time.Now()
-	err = c.checkReplica(context.Background(), "user", cluster, replicaOne, now)
+	err = c.checkReplica(context.Background(), "user", cluster, replicaOne, now, now)
 	assert.NoError(t, err)
 
 	err = services.StopAndAwaitTerminated(context.Background(), c)
@@ -475,7 +475,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	assert.Equal(t, 1, int(mockCountingClient.GetCalls.Load()))
 
 	now = time.Now()
-	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
+	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now, now)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
 }
@@ -506,7 +506,7 @@ func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	// Write the first time.
 	now := time.Now()
 
-	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
+	err = c.checkReplica(context.Background(), "user", cluster, replica, now, now)
 	assert.NoError(t, err)
 
 	// Check to see if the value in the trackers cache is correct.
@@ -533,18 +533,18 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time.
-	err = c.checkReplica(context.Background(), "user", "test", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "test", replica1, now, now)
 	assert.NoError(t, err)
 
 	// Throw away a sample from replica2.
-	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "test", replica2, now, now)
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
 	now = now.Add(1100 * time.Millisecond)
 
 	// Another sample from replica2 to update its timestamp.
-	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "test", replica2, now, now)
 	assert.Error(t, err)
 
 	// Update KVStore - this should elect replica 2.
@@ -554,11 +554,11 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "test", replica2, now, now)
 
 	// Now we should accept from replica 2.
-	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "test", replica2, now, now)
 	assert.NoError(t, err)
 
 	// We timed out accepting samples from replica 1 and should now reject them.
-	err = c.checkReplica(context.Background(), "user", "test", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "test", replica1, now, now)
 	assert.Error(t, err)
 }
 
@@ -583,21 +583,21 @@ func TestHATrackerCheckReplicaMultiCluster(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time.
-	err = c.checkReplica(context.Background(), "user", "c1", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica1, now, now)
 	assert.NoError(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica1, now, now)
 	assert.NoError(t, err)
 
 	// Reject samples from replica 2 in each cluster.
-	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now, now)
 	assert.Error(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica2, now, now)
 	assert.Error(t, err)
 
 	// We should still accept from replica 1.
-	err = c.checkReplica(context.Background(), "user", "c1", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica1, now, now)
 	assert.NoError(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica1, now, now)
 	assert.NoError(t, err)
 
 	// We expect no CAS operation failures.
@@ -635,46 +635,46 @@ func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time.
-	err = c.checkReplica(context.Background(), "user", "c1", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica1, now, now)
 	assert.NoError(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica1, now, now)
 	assert.NoError(t, err)
 
 	// Reject samples from replica 2 in each cluster.
-	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now, now)
 	assert.Error(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica2, now, now)
 	assert.Error(t, err)
 
 	// Accept a sample for replica1 in C2.
 	now = now.Add(500 * time.Millisecond)
-	err = c.checkReplica(context.Background(), "user", "c2", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica1, now, now)
 	assert.NoError(t, err)
 
 	// Reject samples from replica 2 in each cluster.
-	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now, now)
 	assert.Error(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica2, now, now)
 	assert.Error(t, err)
 
 	// Wait more than the failover timeout.
 	now = now.Add(1100 * time.Millisecond)
 
 	// Another sample from c1/replica2 to update its timestamp.
-	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now, now)
 	assert.Error(t, err)
 	c.updateKVStoreAll(context.Background(), now)
 
 	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "c1", replica2, now, now)
 
 	// Accept a sample from c1/replica2.
-	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now, now)
 	assert.NoError(t, err)
 
 	// We should still accept from c2/replica1 but reject from c1/replica1.
-	err = c.checkReplica(context.Background(), "user", "c1", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c1", replica1, now, now)
 	assert.Error(t, err)
-	err = c.checkReplica(context.Background(), "user", "c2", replica1, now)
+	err = c.checkReplica(context.Background(), "user", "c2", replica1, now, now)
 	assert.NoError(t, err)
 
 	// We expect no CAS operation failures.
@@ -717,13 +717,13 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 
 	// Write the first time.
 	startTime := time.Now()
-	err = c.checkReplica(context.Background(), user, cluster, replica, startTime)
+	err = c.checkReplica(context.Background(), user, cluster, replica, startTime, startTime)
 	assert.NoError(t, err)
 
 	checkReplicaTimestamp(t, 2*time.Second, c, user, cluster, replica, startTime, startTime)
 
 	// Timestamp should not update here, since time has not advanced.
-	err = c.checkReplica(context.Background(), user, cluster, replica, startTime)
+	err = c.checkReplica(context.Background(), user, cluster, replica, startTime, startTime)
 	assert.NoError(t, err)
 
 	checkReplicaTimestamp(t, 2*time.Second, c, user, cluster, replica, startTime, startTime)
@@ -732,7 +732,7 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	updateTime := time.Unix(0, startTime.UnixNano()).Add(500 * time.Millisecond)
 	c.updateKVStoreAll(context.Background(), updateTime)
 
-	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
+	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime, updateTime)
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, 2*time.Second, c, user, cluster, replica, startTime, startTime)
 
@@ -745,7 +745,7 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	// Timestamp stored in KV should be time when we have received a request (called "checkReplica"), not current time (updateTime).
 	checkReplicaTimestamp(t, 2*time.Second, c, user, cluster, replica, receivedAt, receivedAt)
 
-	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
+	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime, updateTime)
 	assert.NoError(t, err)
 }
 
@@ -797,7 +797,7 @@ func TestHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp(t *testing.T) {
 
 	// Advance time and replica timestamp. This should fix the ElectedAt timestamp too.
 	updatedReceivedAt := initialReceivedAt.Add(2 * time.Second)
-	require.NoError(t, c.checkReplica(context.Background(), userID, cluster, replica, updatedReceivedAt))
+	require.NoError(t, c.checkReplica(context.Background(), userID, cluster, replica, updatedReceivedAt, updatedReceivedAt))
 	checkReplicaTimestamp(t, 2*time.Second, c, userID, cluster, replica, updatedReceivedAt, updatedReceivedAt)
 }
 
@@ -827,18 +827,18 @@ func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time for user 1.
-	err = c.checkReplica(context.Background(), "user1", cluster, replica, now)
+	err = c.checkReplica(context.Background(), "user1", cluster, replica, now, now)
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, 2*time.Second, c, "user1", cluster, replica, now, now)
 
 	// Write the first time for user 2.
-	err = c.checkReplica(context.Background(), "user2", cluster, replica, now)
+	err = c.checkReplica(context.Background(), "user2", cluster, replica, now, now)
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, 2*time.Second, c, "user2", cluster, replica, now, now)
 
 	// Now we've waited > 1s, so the timestamp should update.
 	updated := now.Add(1100 * time.Millisecond)
-	err = c.checkReplica(context.Background(), "user1", cluster, replica, updated)
+	err = c.checkReplica(context.Background(), "user1", cluster, replica, updated, updated)
 	assert.NoError(t, err)
 	c.updateKVStoreAll(context.Background(), updated)
 
@@ -919,12 +919,12 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 			}
 
 			// Init the replica in the KV Store
-			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.startTime)
+			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.startTime, testData.startTime)
 			require.NoError(t, err)
 			checkReplicaTimestamp(t, 2*time.Second, c, "user1", "cluster", "replica-1", testData.startTime, testData.startTime)
 
 			// Refresh the replica in the KV Store
-			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.updateTime)
+			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.updateTime, testData.updateTime)
 			require.NoError(t, err)
 			c.updateKVStoreAll(context.Background(), testData.updateTime)
 
@@ -1017,26 +1017,26 @@ func TestHATrackerClustersLimit(t *testing.T) {
 
 	now := time.Now()
 
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, "a", "a1", now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, "a", "a1", now, now))
 	waitForClustersUpdate(t, 1, t1, userID)
 
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now, now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	expectedErr := newTooManyClustersError(2)
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), expectedErr.Error())
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now, now), expectedErr.Error())
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
 
 	// Another sample to update internal timestamp.
-	err = t1.checkReplica(context.Background(), userID, "b", "b2", now)
+	err = t1.checkReplica(context.Background(), userID, "b", "b2", now, now)
 	assert.Error(t, err)
 	// Update KVStore.
 	t1.updateKVStoreAll(context.Background(), now)
 	checkReplicaTimestamp(t, 2*time.Second, t1, userID, "b", "b2", now, now)
 
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b2", now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b2", now, now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// Mark cluster "a" for deletion (it was last updated 5 seconds ago)
@@ -1045,12 +1045,12 @@ func TestHATrackerClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 1, t1, userID)
 
 	// Now adding cluster "c" works.
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now, now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
 	expectedErr = newTooManyClustersError(2)
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), expectedErr.Error())
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now, now), expectedErr.Error())
 
 	now = now.Add(5 * time.Second)
 
@@ -1059,7 +1059,7 @@ func TestHATrackerClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 0, t1, userID)
 
 	// Now "a" works again.
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, "a", "a1", now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, "a", "a1", now, now))
 	waitForClustersUpdate(t, 1, t1, userID)
 }
 
@@ -1074,10 +1074,11 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *defaultHaTracker, use
 }
 
 type trackerLimits struct {
-	maxClusters            int
-	updateTimeout          time.Duration
-	updateTimeoutJitterMax time.Duration
-	failoverTimeout        time.Duration
+	maxClusters              int
+	updateTimeout            time.Duration
+	updateTimeoutJitterMax   time.Duration
+	failoverTimeout          time.Duration
+	useSampleTimeForFailover bool
 
 	forUser map[string]trackerLimits
 }
@@ -1098,6 +1099,13 @@ func (l trackerLimits) HATrackerTimeouts(userID string) (update time.Duration, u
 
 func (l trackerLimits) DefaultHATrackerUpdateTimeout() time.Duration {
 	return l.updateTimeout
+}
+
+func (l trackerLimits) HATrackerUseSampleTimeForFailover(userID string) bool {
+	if ul, ok := l.forUser[userID]; ok {
+		l = ul
+	}
+	return l.useSampleTimeForFailover
 }
 
 func TestHATracker_MetricsCleanup(t *testing.T) {
@@ -1260,7 +1268,7 @@ func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 
 	now := time.Now()
 
-	err = c.checkReplica(context.Background(), userID, cluster, replica, now)
+	err = c.checkReplica(context.Background(), userID, cluster, replica, now, now)
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, 2*time.Second, c, userID, cluster, replica, now, now)
 
@@ -1277,7 +1285,7 @@ func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 
 	// This will "revive" the replica.
 	now = time.Now()
-	err = c.checkReplica(context.Background(), userID, cluster, replica, now)
+	err = c.checkReplica(context.Background(), userID, cluster, replica, now, now)
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, 2*time.Second, c, userID, cluster, replica, now, now) // This also checks that entry is not marked for deletion.
 	checkUserClusters(t, time.Second, c, userID, 1)
@@ -1433,17 +1441,17 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	const firstReplica = "first"
 	const secondReplica = "second"
 
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now, now))
 	// Both trackers will see "first" replica as current.
 	checkReplicaTimestamp(t, 2*time.Second, t1, userID, cluster, firstReplica, now, now)
 	checkReplicaTimestamp(t, 2*time.Second, t2, userID, cluster, firstReplica, now, now)
 
 	// Ten seconds later, t1 receives request from first replica again
 	now = now.Add(10 * time.Second)
-	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now, now))
 
 	// And t2 receives request from second replica.
-	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, secondReplica, now))
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, secondReplica, now, now))
 	secondReplicaReceivedAtT2 := now
 
 	// Now t2 updates the KV store... and overwrite elected replica.
@@ -1465,10 +1473,10 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	// They both reject it.
 	now = now.Add(9 * time.Second)
 	firstReceivedAtT1 := now
-	assert.Error(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	assert.Error(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now, now))
 	now = now.Add(1 * time.Second)
 	firstReceivedAtT2 := now
-	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, firstReplica, now, now))
 
 	// Now t1 updates the KV Store.
 	t1.updateKVStoreAll(context.Background(), now)
@@ -1531,7 +1539,7 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	now := time.Now()
 
 	// First request should succeed (establishes the replica as elected)
-	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
+	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now, now.UnixMilli(), false)
 	assert.NoError(t, err)
 	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
@@ -1541,7 +1549,7 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 
 	// Second request within user-specific timeout should not update KV store
 	now = now.Add(2 * time.Second)
-	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
+	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now, now.UnixMilli(), false)
 	assert.NoError(t, err)
 	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
@@ -1550,7 +1558,7 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 
 	// Request after user-specific timeout should trigger an update
 	now = now.Add(userSpecificUpdateTimeout) // Beyond user-specific timeout
-	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
+	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now, now.UnixMilli(), false)
 	assert.NoError(t, err)
 	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
@@ -1558,7 +1566,7 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	tracker.electedLock.Unlock()
 
 	// Failover shouldn't happen before FailoverTimeout
-	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now.UnixMilli())
+	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now, now.UnixMilli(), false)
 	assert.NoError(t, err)
 	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
@@ -1566,9 +1574,131 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 
 	// After FailoverTimeout, new value should be set
 	now = now.Add(userSpecificFailoverTimeout)
-	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now.UnixMilli())
+	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now, now.UnixMilli(), false)
 	assert.NoError(t, err)
 	tracker.electedLock.Lock()
 	assert.Equal(t, otherReplica, tracker.clusters[userID][cluster].elected.Replica)
 	tracker.electedLock.Unlock()
+}
+
+func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
+	const userID = "test-user"
+	const cluster = "test-cluster"
+	const replica1 = "replica-1"
+	const replica2 = "replica-2"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	failoverTimeout := 30 * time.Second
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore:         kv.Config{Mock: mock},
+	}, trackerLimits{
+		maxClusters:              100,
+		updateTimeout:            15 * time.Second,
+		updateTimeoutJitterMax:   0,
+		failoverTimeout:          failoverTimeout,
+		useSampleTimeForFailover: true,
+	}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+
+	now := time.Now()
+	sampleDelay := 20 * time.Second
+	sampleTime := now.Add(-sampleDelay)
+
+	// Establish replica1 as elected
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	require.NoError(t, err)
+
+	// Wait past failover timeout
+	now2 := now.Add(failoverTimeout)
+	sampleTime2 := sampleTime.Add(failoverTimeout)
+
+	// Attempt failover to replica2
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica1 should still be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica1, now, now)
+
+	// Wait past sample delay
+	now3 := now2.Add(sampleDelay)
+	sampleTime3 := sampleTime2.Add(sampleDelay)
+
+	// Attempt failover to replica2 again
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica2 should be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now3, now3)
+
+	// Verify replica2 is now accepted
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	require.NoError(t, err)
+}
+
+func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
+	const userID = "test-user"
+	const cluster = "test-cluster"
+	const replica1 = "replica-1"
+	const replica2 = "replica-2"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	failoverTimeout := 30 * time.Second
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore:         kv.Config{Mock: mock},
+	}, trackerLimits{
+		maxClusters:              100,
+		updateTimeout:            15 * time.Second,
+		updateTimeoutJitterMax:   0,
+		failoverTimeout:          failoverTimeout,
+		useSampleTimeForFailover: false,
+	}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+
+	now := time.Now()
+	sampleDelay := 20 * time.Second
+	sampleTime := now.Add(-sampleDelay)
+
+	// Establish replica1 as elected
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	require.NoError(t, err)
+
+	// Wait past failover timeout
+	now2 := now.Add(failoverTimeout)
+	sampleTime2 := sampleTime.Add(failoverTimeout)
+
+	// Attempt failover to replica2
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	require.Error(t, err)
+
+	// Update KV store to try and trigger failover
+	tracker.updateKVStoreAll(context.Background(), now2)
+
+	// Now replica2 should be elected
+	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now2, now2)
+
+	// Verify replica2 is now accepted
+	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, now2)
+	require.NoError(t, err)
 }
