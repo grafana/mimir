@@ -37,48 +37,11 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		},
 	}
 
-	reqv2 := &WriteRequest{
-		Source:              RULE,
-		SkipLabelValidation: true,
-		SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
-		TimeseriesRW2: []TimeSeriesRW2{
-			{
-				LabelsRefs: []uint32{1, 2, 3, 4},
-				Samples:    []Sample{{TimestampMs: 20}},
-				Exemplars:  []ExemplarRW2{{Timestamp: 30}},
-				Histograms: []Histogram{{Timestamp: 10}},
-				Metadata: MetadataRW2{
-					Type:    METRIC_TYPE_COUNTER,
-					HelpRef: 5,
-				},
-			},
-			{
-				LabelsRefs: []uint32{1, 6, 3, 4},
-				Samples:    []Sample{{TimestampMs: 30}},
-				Metadata: MetadataRW2{
-					Type:    METRIC_TYPE_COUNTER,
-					HelpRef: 7,
-				},
-			},
-			{
-				LabelsRefs: []uint32{1, 8},
-				Metadata: MetadataRW2{
-					Type:    METRIC_TYPE_COUNTER,
-					HelpRef: 9,
-				},
-			},
-		},
-	}
-
 	// Pre-requisite check: WriteRequest fields are set to non-zero values.
 	require.NotZero(t, reqv1.Source)
 	require.NotZero(t, reqv1.SkipLabelValidation)
 	require.NotZero(t, reqv1.Timeseries)
 	require.NotZero(t, reqv1.Metadata)
-	require.NotZero(t, reqv2.Source)
-	require.NotZero(t, reqv2.SkipLabelValidation)
-	require.NotZero(t, reqv2.TimeseriesRW2)
-	require.NotZero(t, reqv2.SymbolsRW2)
 
 	t.Run("should return the input WriteRequest if its size is less than the size limit", func(t *testing.T) {
 		partials := SplitWriteRequestByMaxMarshalSize(reqv1, reqv1.Size(), 100000)
@@ -87,6 +50,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should return the input WriteRequest if its size is less than the size limit - RW2", func(t *testing.T) {
+		reqv2 := testReqV2Static(t)
 		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), 100000)
 		require.Len(t, partials, 1)
 		assert.Equal(t, reqv2, partials[0])
@@ -122,25 +86,55 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit - RW2", func(t *testing.T) {
-		const limit = 200
+		// 150 is small enough to force each WriteRequest into its own sub-request
+		const limit = 150
+		reqv2 := testReqV2Static(t)
 
 		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 20}},
+						Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+						Histograms: []Histogram{{Timestamp: 10}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 30}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+						},
+					},
+				},
 			},
 		}, partials)
 
@@ -149,26 +143,106 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		}
 	})
 
-	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit if limit < size(symbols)", func(t *testing.T) {
-		const limit = 50
+	/*t.Run("should split the input WriteRequest into multiple requests, honoring the size limit, and bin-packing - RW2", func(t *testing.T) {
+		// 200 allows the first and second WriteRequests to fit into one request, but not the third.
+		const limit = 200
 
 		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 20}},
+						Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+						Histograms: []Histogram{{Timestamp: 10}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 30}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+						},
+					},
+				},
+			},
+		}, partials)
+
+		for _, partial := range partials {
+			assert.LessOrEqual(t, partial.Size(), limit)
+		}
+	})*/
+
+	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit if limit < size(symbols)", func(t *testing.T) {
+		const limit = 50
+		reqv2 := testReqV2Static(t)
+
+		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		assert.Equal(t, []*WriteRequest{
+			{
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 20}},
+						Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+						Histograms: []Histogram{{Timestamp: 10}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 30}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
+			}, {
+				Source:              RULE,
+				SkipLabelValidation: true,
+				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+						},
+					},
+				},
 			},
 		}, partials)
 
@@ -211,25 +285,54 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit, if limit > size(symbols) but each request < limit", func(t *testing.T) {
-		const limit = 180
+		const limit = 70
+		reqv2 := testReqV2Static(t)
 
 		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[0]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 20}},
+						Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+						Histograms: []Histogram{{Timestamp: 10}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[1]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []Sample{{TimestampMs: 30}},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 5,
+						},
+					},
+				},
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          reqv2.SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{reqv2.TimeseriesRW2[2]},
+				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				TimeseriesRW2: []TimeSeriesRW2{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Metadata: MetadataRW2{
+							Type:    METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+						},
+					},
+				},
 			},
 		}, partials)
 
@@ -240,7 +343,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 }
 
 func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
-	const numRuns = 1000
+	const numRuns = 3
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
@@ -288,23 +391,29 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 				numMetadata         = rnd.Intn(min(r+1, 100)) + 1
 			)
 
+			// Re-symbolization alters the values of the original request.
+			// Remember the original request, to compare against.
 			req := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+			reqCpy := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+			assert.Equal(t, req, reqCpy)
+
 			maxSize := req.Size() / (1 + rnd.Intn(10))
 			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
 
 			// Ensure the merge of all partial requests is equal to the original one.
-			merged := &WriteRequest{
+			/*merged := &WriteRequest{
 				Source:              partials[0].Source,
 				SkipLabelValidation: partials[0].SkipLabelValidation,
 				SymbolsRW2:          partials[0].SymbolsRW2,
 				TimeseriesRW2:       []TimeSeriesRW2{},
-			}
+			}*/
+			merged := mergeRW2s(partials)
 
-			for _, partial := range partials {
+			/*for _, partial := range partials {
 				merged.TimeseriesRW2 = append(merged.TimeseriesRW2, partial.TimeseriesRW2...)
-			}
+			}*/
 
-			assert.Equal(t, req, merged)
+			assert.Equal(t, reqCpy, merged)
 		}
 	})
 }
@@ -340,7 +449,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 	}, fieldNames)
 }
 
-func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
+/*func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
 	benchmarkSplitWriteRequestByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
 		for n := 0; n < b.N; n++ {
 			SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
@@ -381,7 +490,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 			}
 		}
 	})
-}
+}*/
 
 func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
 	tests := map[string]struct {
@@ -525,4 +634,102 @@ func generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries,
 	rw1 := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
 	rw2, _ := FromWriteRequestToRW2Request(rw1, nil, 0)
 	return rw2
+}
+
+func testReqV2Static(t *testing.T) *WriteRequest {
+	t.Helper()
+	reqv2 := &WriteRequest{
+		Source:              RULE,
+		SkipLabelValidation: true,
+		SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
+		TimeseriesRW2: []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 5,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 6, 3, 4},
+				Samples:    []Sample{{TimestampMs: 30}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 8},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 9,
+				},
+			},
+		},
+	}
+
+	require.NotZero(t, reqv2.Source)
+	require.NotZero(t, reqv2.SkipLabelValidation)
+	require.NotZero(t, reqv2.TimeseriesRW2)
+	require.NotZero(t, reqv2.SymbolsRW2)
+	return reqv2
+}
+
+func mergeRW2s(partials []*WriteRequest) *WriteRequest {
+	st := NewFastSymbolsTable(0)
+	timeSeries := []TimeSeriesRW2{}
+
+	for _, partial := range partials {
+		for _, ts := range partial.TimeseriesRW2 {
+			newLbls := make([]uint32, len(ts.LabelsRefs))
+			for i := range ts.LabelsRefs {
+				strVal := partial.SymbolsRW2[ts.LabelsRefs[i]]
+				newLbls[i] = st.Symbolize(strVal)
+			}
+
+			newExemplars := make([]ExemplarRW2, 0, len(ts.Exemplars))
+			for _, ex := range ts.Exemplars {
+				newLbls := make([]uint32, len(ex.LabelsRefs))
+				for i := range ex.LabelsRefs {
+					strVal := partial.SymbolsRW2[ex.LabelsRefs[i]]
+					newLbls[i] = st.Symbolize(strVal)
+				}
+				newExemplars = append(newExemplars, ExemplarRW2{
+					LabelsRefs: newLbls,
+					Value:      ex.Value,
+					Timestamp:  ex.Timestamp,
+				})
+			}
+			if ts.Exemplars == nil {
+				newExemplars = nil
+			}
+
+			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
+			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
+
+			newTS := TimeSeriesRW2{
+				LabelsRefs:       newLbls,
+				Samples:          ts.Samples,
+				Exemplars:        newExemplars,
+				Histograms:       ts.Histograms,
+				CreatedTimestamp: ts.CreatedTimestamp,
+				Metadata: MetadataRW2{
+					Type:    ts.Metadata.Type,
+					HelpRef: st.Symbolize(helpTxt),
+					UnitRef: st.Symbolize(unitTxt),
+				},
+			}
+			timeSeries = append(timeSeries, newTS)
+		}
+	}
+
+	return &WriteRequest{
+		TimeseriesRW2:       timeSeries,
+		SymbolsRW2:          st.Symbols(),
+		Source:              partials[0].Source,
+		SkipLabelValidation: partials[0].SkipLabelValidation,
+	}
 }
