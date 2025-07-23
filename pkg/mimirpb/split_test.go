@@ -709,7 +709,9 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 			}
 
 			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
+			helpRef := st.Symbolize(helpTxt)
 			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
+			unitRef := st.Symbolize(unitTxt)
 
 			newTS := TimeSeriesRW2{
 				LabelsRefs:       newLbls,
@@ -719,8 +721,8 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 				CreatedTimestamp: ts.CreatedTimestamp,
 				Metadata: MetadataRW2{
 					Type:    ts.Metadata.Type,
-					HelpRef: st.Symbolize(helpTxt),
-					UnitRef: st.Symbolize(unitTxt),
+					HelpRef: helpRef,
+					UnitRef: unitRef,
 				},
 			}
 			timeSeries = append(timeSeries, newTS)
