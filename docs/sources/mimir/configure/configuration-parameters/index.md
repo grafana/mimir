@@ -5351,11 +5351,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 
-# (experimental) DNS provider used for resolving memcached addresses. Available
-# providers golang, miekgdns, miekgdns2
-# CLI flag: -<prefix>.memcached.addresses-provider
-[addresses_provider: <string> | default = "miekgdns"]
-
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]

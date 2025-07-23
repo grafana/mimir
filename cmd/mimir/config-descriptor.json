@@ -7155,17 +7155,6 @@
                 },
                 {
                   "kind": "field",
-                  "name": "addresses_provider",
-                  "required": false,
-                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "miekgdns",
-                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-provider",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -9096,17 +9085,6 @@
                     },
                     {
                       "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -9360,17 +9338,6 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -9651,17 +9618,6 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -14711,17 +14667,6 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.cache.memcached.addresses",
                   "fieldType": "string"
-                },
-                {
-                  "kind": "field",
-                  "name": "addresses_provider",
-                  "required": false,
-                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "miekgdns",
-                  "fieldFlag": "ruler-storage.cache.memcached.addresses-provider",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
