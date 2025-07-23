@@ -402,18 +402,7 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
 
 			// Ensure the merge of all partial requests is equal to the original one.
-			/*merged := &WriteRequest{
-				Source:              partials[0].Source,
-				SkipLabelValidation: partials[0].SkipLabelValidation,
-				SymbolsRW2:          partials[0].SymbolsRW2,
-				TimeseriesRW2:       []TimeSeriesRW2{},
-			}*/
 			merged := mergeRW2s(partials)
-
-			/*for _, partial := range partials {
-				merged.TimeseriesRW2 = append(merged.TimeseriesRW2, partial.TimeseriesRW2...)
-			}*/
-
 			assert.Equal(t, reqCpy, merged)
 		}
 	})
