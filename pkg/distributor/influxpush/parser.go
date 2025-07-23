@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -135,8 +135,14 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 				Value: yoloString(tag.Value),
 			})
 		}
-		sort.Slice(lbls, func(i, j int) bool {
-			return lbls[i].Name < lbls[j].Name
+		slices.SortFunc(lbls, func(a, b mimirpb.LabelAdapter) int {
+			if a.Name < b.Name {
+				return -1
+			}
+			if a.Name > b.Name {
+				return 1
+			}
+			return 0
 		})
 
 		ts := mimirpb.TimeSeries{

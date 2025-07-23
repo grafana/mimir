@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -404,8 +403,14 @@ func sanitizeChunkSequence(chks []chunks.Meta, mint, maxt int64, clampChunks boo
 		return nil, nil
 	}
 	// First, ensure that chunks are ordered by their start time.
-	sort.Slice(chks, func(i, j int) bool {
-		return chks[i].MinTime < chks[j].MinTime
+	slices.SortFunc(chks, func(a, b chunks.Meta) int {
+		if a.MinTime < b.MinTime {
+			return -1
+		}
+		if a.MinTime > b.MinTime {
+			return 1
+		}
+		return 0
 	})
 
 	// Remove duplicates, complete outsiders and near outsiders.

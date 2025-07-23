@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -65,8 +65,14 @@ func (job *Job) AppendMeta(meta *block.Meta) error {
 	}
 
 	job.metasByMinTime = append(job.metasByMinTime, meta)
-	sort.Slice(job.metasByMinTime, func(i, j int) bool {
-		return job.metasByMinTime[i].MinTime < job.metasByMinTime[j].MinTime
+	slices.SortFunc(job.metasByMinTime, func(a, b *block.Meta) int {
+		if a.MinTime < b.MinTime {
+			return -1
+		}
+		if a.MinTime > b.MinTime {
+			return 1
+		}
+		return 0
 	})
 	return nil
 }
@@ -76,8 +82,8 @@ func (job *Job) IDs() (ids []ulid.ULID) {
 	for _, m := range job.metasByMinTime {
 		ids = append(ids, m.ULID)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i].Compare(ids[j]) < 0
+	slices.SortFunc(ids, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 	return ids
 }

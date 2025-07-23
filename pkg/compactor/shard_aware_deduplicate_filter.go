@@ -7,7 +7,7 @@ package compactor
 
 import (
 	"context"
-	"sort"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/oklog/ulid/v2"
@@ -118,15 +118,18 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 	// 2) iterating through each input block, and adding it to the correct place in the tree of blocks with successors.
 
 	// Sort blocks with fewer sources first.
-	sort.Slice(input, func(i, j int) bool {
-		ilen := len(input[i].Compaction.Sources)
-		jlen := len(input[j].Compaction.Sources)
+	slices.SortFunc(input, func(a, b *block.Meta) int {
+		alen := len(a.Compaction.Sources)
+		blen := len(b.Compaction.Sources)
 
-		if ilen == jlen {
-			return input[i].ULID.Compare(input[j].ULID) < 0
+		if alen == blen {
+			return a.ULID.Compare(b.ULID)
 		}
 
-		return ilen < jlen
+		if alen < blen {
+			return -1
+		}
+		return 1
 	})
 
 	root := newBlockWithSuccessors(nil)

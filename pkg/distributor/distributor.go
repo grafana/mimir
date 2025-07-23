@@ -14,7 +14,6 @@ import (
 	"math/rand"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2736,8 +2735,14 @@ func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBuc
 			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
 		})
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Metric < result[j].Metric
+	slices.SortFunc(result, func(a, b cardinality.ActiveMetricWithBucketCount) int {
+		if a.Metric < b.Metric {
+			return -1
+		}
+		if a.Metric > b.Metric {
+			return 1
+		}
+		return 0
 	})
 	return result, fetchedSeries
 }

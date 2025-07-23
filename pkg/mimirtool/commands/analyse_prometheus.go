@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -284,15 +284,27 @@ func (a AnalyzeResult) metricsCounts() []analyze.MetricCount {
 				Count: count,
 			})
 		}
-		sort.Slice(jobCounts, func(i, j int) bool {
-			return jobCounts[i].Count > jobCounts[j].Count
+		slices.SortFunc(jobCounts, func(a, b analyze.JobCount) int {
+			if a.Count > b.Count {
+				return -1
+			}
+			if a.Count < b.Count {
+				return 1
+			}
+			return 0
 		})
 
 		metricCount = append(metricCount, analyze.MetricCount{Metric: string(metric), Count: counts.totalCount, JobCounts: jobCounts})
 	}
 
-	sort.Slice(metricCount, func(i, j int) bool {
-		return metricCount[i].Count > metricCount[j].Count
+	slices.SortFunc(metricCount, func(a, b analyze.MetricCount) int {
+		if a.Count > b.Count {
+			return -1
+		}
+		if a.Count < b.Count {
+			return 1
+		}
+		return 0
 	})
 
 	return metricCount

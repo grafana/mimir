@@ -14,7 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1774,8 +1774,14 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			}
 
 			// Before comparing response, we sort headers, to keep comparison stable.
-			sort.Slice(resp.Headers, func(i, j int) bool {
-				return resp.Headers[i].Key < resp.Headers[j].Key
+			slices.SortFunc(resp.Headers, func(a, b *httpgrpc.Header) int {
+				if a.Key < b.Key {
+					return -1
+				}
+				if a.Key > b.Key {
+					return 1
+				}
+				return 0
 			})
 			require.Equal(t, tc.expectedResponse, resp)
 		})

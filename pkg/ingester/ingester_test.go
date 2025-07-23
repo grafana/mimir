@@ -6894,8 +6894,14 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 		require.Equal(t, recvMsgs, 1)
 		// Sort chunks by time
-		sort.Slice(chunks, func(i, j int) bool {
-			return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+		slices.SortFunc(chunks, func(a, b client.Chunk) int {
+			if a.StartTimestampMs < b.StartTimestampMs {
+				return -1
+			}
+			if a.StartTimestampMs > b.StartTimestampMs {
+				return 1
+			}
+			return 0
 		})
 
 		headers := []chunkenc.CounterResetHeader{}

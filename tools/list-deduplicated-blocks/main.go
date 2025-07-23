@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -170,8 +170,14 @@ func printBlocks(metas map[ulid.ULID]*block.Meta) {
 		blocks = append(blocks, b)
 	}
 
-	sort.Slice(blocks, func(i, j int) bool {
-		return blocks[i].MinTime < blocks[j].MinTime
+	slices.SortFunc(blocks, func(a, b *block.Meta) int {
+		if a.MinTime < b.MinTime {
+			return -1
+		}
+		if a.MinTime > b.MinTime {
+			return 1
+		}
+		return 0
 	})
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)

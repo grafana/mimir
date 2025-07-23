@@ -11,7 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -234,8 +234,14 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		}
 		metas = append(metas, m)
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
+	slices.SortFunc(metas, func(a, b *block.Meta) int {
+		if a.MinTime < b.MinTime {
+			return -1
+		}
+		if a.MinTime > b.MinTime {
+			return 1
+		}
+		return 0
 	})
 	return metas, nil
 }

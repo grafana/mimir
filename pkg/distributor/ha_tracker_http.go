@@ -9,7 +9,7 @@ import (
 	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -57,14 +57,20 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	h.electedLock.RUnlock()
 
-	sort.Slice(electedReplicas, func(i, j int) bool {
-		first := electedReplicas[i]
-		second := electedReplicas[j]
-
-		if first.UserID != second.UserID {
-			return first.UserID < second.UserID
+	slices.SortFunc(electedReplicas, func(a, b haTrackerReplica) int {
+		if a.UserID != b.UserID {
+			if a.UserID < b.UserID {
+				return -1
+			}
+			return 1
 		}
-		return first.Cluster < second.Cluster
+		if a.Cluster < b.Cluster {
+			return -1
+		}
+		if a.Cluster > b.Cluster {
+			return 1
+		}
+		return 0
 	})
 
 	util.RenderHTTPResponse(w, haTrackerStatusPageContents{

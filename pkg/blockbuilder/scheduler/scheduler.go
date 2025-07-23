@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -872,8 +871,14 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		}
 
 		// Sort observations by start offset
-		sort.Slice(observations, func(i, j int) bool {
-			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
+		slices.SortFunc(observations, func(a, b *observation) int {
+			if a.spec.StartOffset < b.spec.StartOffset {
+				return -1
+			}
+			if a.spec.StartOffset > b.spec.StartOffset {
+				return 1
+			}
+			return 0
 		})
 
 		// Find the highest contiguous coverage by processing jobs in order.

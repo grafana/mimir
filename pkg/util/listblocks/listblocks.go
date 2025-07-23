@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -149,40 +149,71 @@ func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 		blocks = append(blocks, b)
 	}
 
-	sort.Slice(blocks, func(i, j int) bool {
+	slices.SortFunc(blocks, func(a, b *block.Meta) int {
 		// By min-time
-		if blocks[i].MinTime != blocks[j].MinTime {
-			return blocks[i].MinTime < blocks[j].MinTime
+		if a.MinTime < b.MinTime {
+			return -1
+		}
+		if a.MinTime > b.MinTime {
+			return 1
 		}
 
 		// Duration
-		duri := blocks[i].MaxTime - blocks[i].MinTime
-		durj := blocks[j].MaxTime - blocks[j].MinTime
-		if duri != durj {
-			return duri < durj
+		dura := a.MaxTime - a.MinTime
+		durb := b.MaxTime - b.MinTime
+		if dura < durb {
+			return -1
+		}
+		if dura > durb {
+			return 1
 		}
 
 		// Compactor shard
-		shardi := blocks[i].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
-		shardj := blocks[j].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		sharda := a.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		shardb := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
 
-		if shardi != "" && shardj != "" && shardi != shardj {
-			shardiIndex, shardiCount, erri := sharding.ParseShardIDLabelValue(shardi)
-			shardjIndex, shardjCount, errj := sharding.ParseShardIDLabelValue(shardj)
-			if erri != nil || errj != nil {
-				// Ff failed parsing any of labels, fallback to lexicographical sort.
-				return shardi < shardj
-			} else if shardiCount != shardjCount {
+		if sharda != "" && shardb != "" && sharda != shardb {
+			shardaIndex, shardaCount, erra := sharding.ParseShardIDLabelValue(sharda)
+			shardbIndex, shardbCount, errb := sharding.ParseShardIDLabelValue(shardb)
+			if erra != nil || errb != nil {
+				// If parsing any of the labels failed, fallback to lexicographical sort.
+				if sharda < shardb {
+					return -1
+				}
+				if sharda > shardb {
+					return 1
+				}
+				return 0
+			}
+			if shardaCount != shardbCount {
 				// If parsed but shard count differs, first sort by shard count.
-				return shardiCount < shardjCount
+				if shardaCount < shardbCount {
+					return -1
+				}
+				if shardaCount > shardbCount {
+					return 1
+				}
+				return 0
 			}
 
-			// Otherwise, sort by shard count, this should be the happy path when there are sharded blocks.
-			return shardiIndex < shardjIndex
+			// Otherwise, sort by shard index, this should be the happy path when there are sharded blocks.
+			if shardaIndex < shardbIndex {
+				return -1
+			}
+			if shardaIndex > shardbIndex {
+				return 1
+			}
+			return 0
 		}
 
 		// ULID time.
-		return blocks[i].ULID.Time() < blocks[j].ULID.Time()
+		if a.ULID.Time() < b.ULID.Time() {
+			return -1
+		}
+		if a.ULID.Time() > b.ULID.Time() {
+			return 1
+		}
+		return 0
 	})
 	return blocks
 }
