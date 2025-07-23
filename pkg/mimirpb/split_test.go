@@ -344,7 +344,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 }
 
 func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
-	const numRuns = 3
+	const numRuns = 1000
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
