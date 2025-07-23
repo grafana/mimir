@@ -1859,6 +1859,47 @@ user1:
 	}, blockedRequests[1])
 }
 
+func TestLimitsCanonicalizeQueries(t *testing.T) {
+	testCases := []struct {
+		name            string
+		inputQueries    BlockedQueriesConfig
+		expectedQueries BlockedQueriesConfig
+	}{
+		{
+			name: "mixed queries",
+			inputQueries: BlockedQueriesConfig{
+				// Valid exact queries are canonicalized.
+				{Pattern: `up{pod="test", job="test"}`, Regex: false},
+				// Invalid exact queries are unchanged.
+				{Pattern: `up{pod="test", job="test"`, Regex: false},
+				// Regex queries are unchanged.
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
+			},
+			expectedQueries: BlockedQueriesConfig{
+				// Order is preserved.
+				{Pattern: `up{job="test",pod="test"}`, Regex: false},
+				{Pattern: `up{pod="test", job="test"`, Regex: false},
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
+			},
+		},
+		{
+			name:            "empty blocked queries list",
+			inputQueries:    BlockedQueriesConfig{},
+			expectedQueries: BlockedQueriesConfig{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := Limits{
+				BlockedQueries: tc.inputQueries,
+			}
+			limits.canonicalizeQueries()
+			require.Equal(t, tc.expectedQueries, limits.BlockedQueries)
+		})
+	}
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)

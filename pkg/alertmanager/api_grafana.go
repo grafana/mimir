@@ -58,9 +58,9 @@ var (
 )
 
 type GrafanaAlertmanagerConfig struct {
-	Templates          map[string]string                    `json:"template_files"`
+	TemplateFiles      map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
-
+	Templates          []definition.PostableApiTemplate     `json:"templates,omitempty"`
 	// original is the string from which the config was parsed
 	original string
 }
@@ -89,6 +89,12 @@ type UserGrafanaConfig struct {
 	// TODO: Remove once everythins is sent in SmtpConfig.
 	SmtpFrom      string            `json:"smtp_from"`
 	StaticHeaders map[string]string `json:"static_headers"`
+}
+
+type UserGrafanaConfigStatus struct {
+	Hash      string `json:"configuration_hash"`
+	CreatedAt int64  `json:"created"`
+	Promoted  bool   `json:"promoted"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -485,6 +491,39 @@ func (am *MultitenantAlertmanager) DeleteUserGrafanaConfig(w http.ResponseWriter
 
 	w.WriteHeader(http.StatusOK)
 	util.WriteJSONResponse(w, successResult{Status: statusSuccess})
+}
+
+func (am *MultitenantAlertmanager) GetGrafanaConfigStatus(w http.ResponseWriter, r *http.Request) {
+	logger := util_log.WithContext(r.Context(), am.logger)
+
+	userID, err := tenant.TenantID(r.Context())
+	if err != nil {
+		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errNoOrgID, err.Error())})
+		return
+	}
+
+	cfg, err := am.store.GetGrafanaAlertConfig(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		}
+		return
+	}
+
+	util.WriteJSONResponse(w, successResult{
+		Status: statusSuccess,
+		Data: &UserGrafanaConfigStatus{
+			Hash:      cfg.Hash,
+			CreatedAt: cfg.CreatedAtTimestamp,
+			Promoted:  cfg.Promoted,
+		},
+	})
 }
 
 // ValidateUserGrafanaConfig validates the Grafana Alertmanager configuration.

@@ -35,6 +35,8 @@ The following examples show common ways to derive floating point data type from 
 
 Note that the native histogram queries do not include the `_bucket`, `_sum` and `_count` suffixes of classic histograms.
 
+For more information on native histogram flavors and how to query them using PromQL, refer to the [Prometheus Native Histograms specification](https://prometheus.io/docs/specs/native_histograms/).
+
 ### Query your histogram’s count or sum
 
 To query the total count of observations within a histogram, use the following queries:

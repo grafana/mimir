@@ -8,29 +8,35 @@
 * [FEATURE] MQE: Add support for experimental `sort_by_label` and `sort_by_label_desc` PromQL functions. #11930
 * [FEATURE] Ingester/Block-builder: Handle the created timestamp field for remote-write requests. #11977
 * [FEATURE] Cost attribution: Labels specified in the limit configuration may specify an output label in order to override emitted label names. #12035
+* [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
 * [ENHANCEMENT] Ingester: Display user grace interval in the tenant list obtained through the `/ingester/tenants` endpoint. #11961
 * [ENHANCEMENT] `kafkatool`: add `consumer-group delete-offset` command as a way to delete the committed offset for a consumer group. #11988
 * [ENHANCEMENT] Block-builder-scheduler: Detect gaps in scheduled and completed jobs. #11867
 * [ENHANCEMENT] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol has been updated. Created timestamps are now supported. This feature includes some limitations. If samples in a write request aren't ordered by time, the created timestamp might be dropped. Additionally, per-series metadata is automatically merged on the metric family level. Ingestion might fail if the client sends ProtoBuf fields out-of-order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0`, depending on the detected remote-write protocol. #11977
 * [ENHANCEMENT] Query-frontend: Added labels query optimizer that automatically removes redundant `__name__!=""` matchers from label names and label values queries, improving query performance. You can enable the optimizer per-tenant with the `labels_query_optimizer_enabled` runtime configuration flag. #12054 #12066 #12076 #12080
-* [ENHANCEMENT]: Ruler: Propagate GCS object mutation rate limit for rule group uploads. #12086
+* [ENHANCEMENT] Query-frontend: Standardise non-regex patterns in query blocking upon loading of config. #12102
+* [ENHANCEMENT] Ruler: Propagate GCS object mutation rate limit for rule group uploads. #12086
 * [BUGFIX] Distributor: Validate the RW2 symbols field and reject invalid requests that don't have an empty string as the first symbol. #11953
 * [BUGFIX] Distributor: Check `max_inflight_push_requests_bytes` before decompressing incoming requests. #11967
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054
 * [BUGFIX] Distributor: Fix a possible panic in the OTLP push path while handling a gRPC status error. #12072
 * [BUGFIX] Query-frontend: Evaluate experimental duration expressions before sharding, splitting, and caching. Otherwise, the result is not correct. #12038
 * [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #12128
+* [BUGFIX] Block-builder-scheduler: Fix bugs in handling of partitions with no commit. #12130
 
 ### Mixin
 
+* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 * [CHANGE] Remove support for the experimental read-write deployment mode. #11975
 * [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
 
 ### Jsonnet
 
 * [CHANGE] Removed support for the experimental read-write deployment mode. #11974
+* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [ENHANCEMENT] Add assertion to ensure ingester ScaledObject has minimum and maximum replicas set to a value greater than 0. #11979
 * [ENHANCEMENT] Add `ingest_storage_migration_ignore_ingest_storage_errors` and `ingest_storage_migration_ingest_storage_max_wait_time` configs to control error handling of the partition ingesters during ingest storage migrations. #12105
+* [ENHANCEMENT] Add block-builder job processing duration timings and offset-skipped errors to the Block-builder dashboard. #12118
 
 ### Documentation
 

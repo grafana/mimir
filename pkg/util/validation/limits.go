@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
@@ -530,7 +531,12 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	return l.validate()
+	if err = l.validate(); err != nil {
+		return err
+	}
+
+	l.canonicalizeQueries()
+	return nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -577,6 +583,23 @@ func (l *Limits) validate() error {
 	}
 
 	return nil
+}
+
+func (l *Limits) canonicalizeQueries() {
+	for i, q := range l.BlockedQueries {
+		if q.Regex {
+			continue
+		}
+		expr, err := parser.ParseExpr(q.Pattern)
+		if err != nil {
+			continue
+		}
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.BlockedQueries[i].Pattern = newPattern
+	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
