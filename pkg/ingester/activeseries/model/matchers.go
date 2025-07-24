@@ -3,8 +3,6 @@
 package activeseriesmodel
 
 import (
-	"sort"
-
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -15,9 +13,6 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, name)
 	}
-	// Sort the result to make it deterministic for tests.
-	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
-	sort.Sort(asm)
 	return asm
 }
 
