@@ -40,6 +40,11 @@ var (
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
 
+func generateFloatSeriesModel(name string, ts time.Time, additionalLabels ...prompb.Label) prompb.TimeSeries {
+	series, _, _ := generateFloatSeries(name, ts, additionalLabels...)
+	return series[0]
+}
+
 // Generates different typed series based on an index in i.
 // Use with a large enough number of series, e.g. i>100
 func generateAlternatingSeries(i int) generateSeriesFunc {

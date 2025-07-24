@@ -708,6 +708,10 @@ func (m multiTenantMockLimits) SubquerySpinOffEnabled(userID string) bool {
 	return m.byTenant[userID].subquerySpinOffEnabled
 }
 
+func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
+	return m.byTenant[userID].labelsQueryOptimizerEnabled
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -739,6 +743,7 @@ type mockLimits struct {
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
 	subquerySpinOffEnabled               bool
+	labelsQueryOptimizerEnabled          bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -863,6 +868,10 @@ func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 	return m.subquerySpinOffEnabled
 }
 
+func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
+	return m.labelsQueryOptimizerEnabled
+}
+
 type mockHandler struct {
 	mock.Mock
 }
@@ -892,7 +901,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -936,7 +945,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -977,7 +986,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -1034,7 +1043,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 		}, nil
 	})
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),

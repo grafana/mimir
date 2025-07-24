@@ -70,7 +70,7 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					c := cache.NewInstrumentedMockCache()
-					keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+					keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 					reg := prometheus.NewPedanticRegistry()
 					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 						Name: "cortex_query_frontend_rejected_queries_total",
@@ -171,7 +171,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					c := cache.NewInstrumentedMockCache()
-					keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+					keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 					reg := prometheus.NewPedanticRegistry()
 					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 						Name: "cortex_query_frontend_rejected_queries_total",
@@ -246,7 +246,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := cache.NewInstrumentedMockCache()
-			keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
 			require.NoError(t, err)
 			reg := prometheus.NewPedanticRegistry()
@@ -343,7 +343,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := cache.NewInstrumentedMockCache()
-			keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
 			require.NoError(t, err)
 			reg := prometheus.NewPedanticRegistry()

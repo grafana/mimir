@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
@@ -123,6 +122,9 @@ type Limits interface {
 
 	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
 	SubquerySpinOffEnabled(userID string) bool
+
+	// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+	LabelsQueryOptimizerEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
@@ -287,10 +289,6 @@ func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (R
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	response, err := rth.next.RoundTrip(request)

@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
+func TestCodec_JSONResponse_Metrics(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
 	expectedRespHeaders := []*PrometheusHeader{
 		{
@@ -166,7 +166,7 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -252,7 +252,7 @@ func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
 	// No need to reset the bodies since they're typically not used after this comparison
 }
 
-func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
+func TestCodec_JSONResponse_Labels(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
 	expectedRespHeaders := []*PrometheusHeader{
 		{
@@ -319,7 +319,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
+func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 	responseHistogram := mimirpb.FloatHistogram{
 		CounterResetHint: histogram.GaugeType,
 		Schema:           3,
@@ -479,7 +479,7 @@ func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
@@ -508,7 +508,7 @@ func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_JSONEncoding_Labels(t *testing.T) {
+func TestCodec_JSONEncoding_Labels(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		expectedJSON     string
@@ -564,7 +564,7 @@ func TestPrometheusCodec_JSONEncoding_Labels(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}

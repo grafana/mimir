@@ -282,6 +282,15 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                `count_over_time(metric_counter[3m] offset -30s)`,
 					expectedSplitQueries: 3,
 				},
+				// Duration arithmetic offset and range
+				"sum_over_time[3m] offset (1m+2m)": {
+					query:                `sum_over_time(metric_counter[3m] offset (1m+2m))`,
+					expectedSplitQueries: 3,
+				},
+				"sum_over_time[1m+2m] offset 3m": {
+					query:                `sum_over_time(metric_counter[1m+2m] offset 3m)`,
+					expectedSplitQueries: 3,
+				},
 				// @ modifier
 				"sum_over_time @ start()": {
 					query:                `sum_over_time(metric_counter[3m] @ start())`,
@@ -346,6 +355,12 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 				"subquery sum grouping 'by'": {
 					query:                   `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
+				},
+				// Subqueries with arithmetic operations
+				"subquery sum_over_time with aritmethics": {
+					query:                   `sum_over_time(metric_counter[59m+60:2m+3m])`,
 					expectedSplitQueries:    0,
 					expectedSkippedSubquery: 1,
 				},
@@ -539,11 +554,11 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 									removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
 									removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
 								}
-
+								durationsware := newDurationsMiddleware(log.NewNopLogger())
 								splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), eng, reg)
 
 								// Run the query with splitting
-								splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(ctx, "test"), req)
+								splitRes, err := durationsware.Wrap(splittingware.Wrap(downstream)).Do(user.InjectOrgID(ctx, "test"), req)
 								require.Nil(t, err)
 
 								splitPrometheusRes, _ := splitRes.GetPrometheusResponse()

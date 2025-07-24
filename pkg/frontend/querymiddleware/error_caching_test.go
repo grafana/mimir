@@ -21,7 +21,7 @@ import (
 )
 
 func TestErrorCachingHandler_Do(t *testing.T) {
-	keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+	keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 
 	runHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
 		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
@@ -240,7 +240,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 }
 
 func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
-	keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), 0)
+	keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), 0)
 
 	testHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
 		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
