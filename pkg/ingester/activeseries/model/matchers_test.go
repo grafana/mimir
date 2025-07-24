@@ -24,6 +24,12 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		"does_not_have_foo_label":       `{foo=""}`,
 		"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
 		"has_foo_label":                 `{foo!=""}`,
+		"foo_is_true":                   `{foo="true"}`,
+		"foo_is_false":                  `{foo="false"}`,
+		"foo_is_true_bar_starts_with_1": `{foo="true", bar=~"1.*"}`,
+		"foo_is_true_bar_is_100":        `{foo="true", bar="100"}`,
+		"baz_is_boolean":                `{baz=~"true|false"}`,
+		"baz_is_boolean_zzz_is_ok":      `{baz=~"true|false", zzz="ok"}`,
 	}))
 
 	for _, tc := range []struct {
@@ -33,6 +39,7 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		{
 			series: labels.FromStrings("foo", "true", "baz", "unrelated"),
 			expected: []string{
+				"foo_is_true",
 				"has_foo_label",
 			},
 		},
@@ -40,6 +47,9 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 			series: labels.FromStrings("foo", "true", "bar", "100", "baz", "unrelated"),
 			expected: []string{
 				"bar_starts_with_1",
+				"foo_is_true",
+				"foo_is_true_bar_is_100",
+				"foo_is_true_bar_starts_with_1",
 				"has_foo_and_bar_starts_with_1",
 				"has_foo_label",
 			},
@@ -47,6 +57,7 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		{
 			series: labels.FromStrings("foo", "true", "bar", "200", "baz", "unrelated"),
 			expected: []string{
+				"foo_is_true",
 				"has_foo_label",
 			},
 		},
@@ -66,6 +77,179 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		{
 			series: labels.FromStrings("baz", "unrelated"),
 			expected: []string{
+				"does_not_have_foo_label",
+			},
+		},
+		// Test cases for foo=false
+		{
+			series: labels.FromStrings("foo", "false"),
+			expected: []string{
+				"foo_is_false",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "bar", "100"),
+			expected: []string{
+				"bar_starts_with_1",
+				"foo_is_false",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "bar", "200"),
+			expected: []string{
+				"foo_is_false",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "bar", "150"),
+			expected: []string{
+				"bar_starts_with_1",
+				"foo_is_false",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		// Test cases for baz boolean values
+		{
+			series: labels.FromStrings("baz", "true"),
+			expected: []string{
+				"baz_is_boolean",
+				"does_not_have_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("baz", "false"),
+			expected: []string{
+				"baz_is_boolean",
+				"does_not_have_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "true", "baz", "true"),
+			expected: []string{
+				"baz_is_boolean",
+				"foo_is_true",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "baz", "false"),
+			expected: []string{
+				"baz_is_boolean",
+				"foo_is_false",
+				"has_foo_label",
+			},
+		},
+		// Test cases for zzz label combinations
+		{
+			series: labels.FromStrings("baz", "true", "zzz", "ok"),
+			expected: []string{
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"does_not_have_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("baz", "false", "zzz", "ok"),
+			expected: []string{
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"does_not_have_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "true", "baz", "true", "zzz", "ok"),
+			expected: []string{
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"foo_is_true",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "baz", "false", "zzz", "ok"),
+			expected: []string{
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"foo_is_false",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("baz", "true", "zzz", "not_ok"),
+			expected: []string{
+				"baz_is_boolean",
+				"does_not_have_foo_label",
+			},
+		},
+		// Complex combinations
+		{
+			series: labels.FromStrings("foo", "true", "bar", "123", "baz", "true", "zzz", "ok"),
+			expected: []string{
+				"bar_starts_with_1",
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"foo_is_true",
+				"foo_is_true_bar_starts_with_1",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "bar", "155", "baz", "false", "zzz", "ok"),
+			expected: []string{
+				"bar_starts_with_1",
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
+				"foo_is_false",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "other_value", "bar", "100"),
+			expected: []string{
+				"bar_starts_with_1",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "other_value"),
+			expected: []string{
+				"has_foo_label",
+			},
+		},
+		// Edge cases
+		{
+			series: labels.FromStrings("foo", "true", "bar", "100", "baz", "invalid"),
+			expected: []string{
+				"bar_starts_with_1",
+				"foo_is_true",
+				"foo_is_true_bar_is_100",
+				"foo_is_true_bar_starts_with_1",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("foo", "false", "bar", "not_a_number", "baz", "true"),
+			expected: []string{
+				"baz_is_boolean",
+				"foo_is_false",
+				"has_foo_label",
+			},
+		},
+		{
+			series: labels.FromStrings("bar", "1", "baz", "true", "zzz", "ok"),
+			expected: []string{
+				"bar_starts_with_1",
+				"baz_is_boolean",
+				"baz_is_boolean_zzz_is_ok",
 				"does_not_have_foo_label",
 			},
 		},
