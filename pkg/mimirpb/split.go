@@ -19,13 +19,6 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 		return []*WriteRequest{req}
 	}
 
-	if len(req.TimeseriesRW2) > 0 || len(req.SymbolsRW2) > 0 {
-		return splitWriteRequestByMaxMarshalSizeRW2(req, reqSize, maxSize)
-	}
-	return splitWriteRequestByMaxMarshalSizeRW1(req, reqSize, maxSize)
-}
-
-func splitWriteRequestByMaxMarshalSizeRW1(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
 	partialReqsWithTimeseries := splitTimeseriesByMaxMarshalSize(req, reqSize, maxSize)
 	partialReqsWithMetadata := splitMetadataByMaxMarshalSize(req, reqSize, maxSize)
 
@@ -44,9 +37,26 @@ func splitWriteRequestByMaxMarshalSizeRW1(req *WriteRequest, reqSize, maxSize in
 	return merged
 }
 
-func splitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
+// SplitWriteRequestByMaxMarshalSizeRW2 splits RW2 write-requests into multiple ones, where each partial WriteRequest marshalled size
+// is at most maxSize. The input reqSize must be the value returned by WriteRequest.Size(); it's passed because the called
+// may have already computed it.
+//
+// This function guarantees that a single Timeseries or Metadata entry is never split across multiple requests.
+// For this reason, this function is a best-effort: if a single Timeseries or Metadata marshalled size is bigger
+// than maxSize, then the returned partial WriteRequest marshalled size will be bigger than maxSize too.
+//
+// The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
+// and data from the original WriteRequest.
+// The returned requests may still retain references to fields in the original WriteRequest, i.e. they are tied to its lifecycle.
+//
+// The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
+// Timeseries are re-symbolized in place, so this function mutates the input.
+func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
+	if reqSize <= maxSize {
+		return []*WriteRequest{req}
+	}
 	if len(req.TimeseriesRW2) == 0 {
-		return nil
+		return []*WriteRequest{}
 	}
 
 	newPartialReq := func() (*WriteRequest, int) {
