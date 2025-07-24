@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -3243,9 +3244,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
 
-	// After the first interval, we want the compaction to run at a specified interval for the partial zone if we have multiple zones,
+	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
-	// If the criteria to have staggered compactions is not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
+	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
 	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
@@ -3326,12 +3327,11 @@ func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (fir
 	// With jittering enabled, we want to apply a positive jitter to the staggered interval.
 	// We estimate that roughly 50% of the interval window is a good enough heuristic than when the 50% jitter is applied,
 	// we get enough variability to not get overlap between zones and ingesters.
-	var offset time.Duration
+	var jitter time.Duration
 	if len(zones) > 0 {
-		offset = (interval / time.Duration(len(zones))) / 2
+		jitter = time.Duration(rand.Int63n((interval.Nanoseconds() / int64(len(zones))) / 2))
 	}
 
-	jitter := util.DurationWithNegativeJitter(offset, 0.50)
 	return zoneAwareInterval + jitter, interval
 }
 
