@@ -561,6 +561,8 @@ func (l *Limits) validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
+		// TODO: when we make validation scheme configurable, set
+		// cfg.MetricNameValidationScheme to match that value.
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -1056,7 +1058,12 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
-	return o.getOverridesForUser(userID).MetricRelabelConfigs
+	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
+	validationScheme := o.ValidationScheme(userID)
+	for i := range relabelConfigs {
+		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+	}
+	return relabelConfigs
 }
 
 func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
