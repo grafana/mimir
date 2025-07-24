@@ -10,6 +10,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -37,7 +38,9 @@ type FunctionOverRangeVector struct {
 	timeRange    types.QueryTimeRange
 	rangeSeconds float64
 
-	intermediateResults []IntermediateResultBlock
+	buildingIntermediate bool
+	usingIntermediate    bool
+	intermediateResults  []IntermediateResultBlock
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -87,11 +90,17 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
-	if m.Func.PiecewiseStepFunc != nil {
+	if m.Func.GenerateFunc != nil {
 		if m.Inner.Range() > minDurationToCache {
 			// We probably have the user somewhere.
 			// Probably don't have the selector?  FIXME
+			// Should we have an upper limit on the range we will attempt to cache?  FIXME
 			m.intermediateResults = fakeCache("user", m.Func.Name, "selector", m.timeRange.StartT, m.Inner.Range())
+			if len(m.intermediateResults) == int(m.Inner.Range()/intermediateCacheBlockLength) {
+				m.usingIntermediate = true
+			} else {
+				m.buildingIntermediate = true
+			}
 		}
 	}
 
@@ -140,6 +149,7 @@ func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
 	return nil
 }
 
+// Compute the function for one series, and return results for all steps computed by m.Inner.
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -150,8 +160,14 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}()
 
 	data := types.InstantVectorSeriesData{}
+	var pieces []IntermediateResult
+
+	if m.usingIntermediate || m.buildingIntermediate {
+		pieces = make([]IntermediateResult, m.Inner.Range()/intermediateCacheBlockLength)
+	}
 
 	for {
+		// FIXME when using cached pieces we only want the head and tail here; when building pieces we want multiple blocks.
 		step, err := m.Inner.NextStepSamples()
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
@@ -165,7 +181,17 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		var (
+			f        float64
+			hasFloat bool
+			h        *histogram.FloatHistogram
+		)
+		// when building pieces, we want to do a range query where the step is the cache block length
+		if m.usingIntermediate {
+			f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		} else {
+			f, hasFloat, h, err = m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		}
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -223,7 +249,7 @@ type IntermediateResultBlock struct {
 }
 
 type IntermediateResult struct {
-	sumOverTime []sumOverTimeIntermediate
+	sumOverTime sumOverTimeIntermediate
 }
 
 /*
