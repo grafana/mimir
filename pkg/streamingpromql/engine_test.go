@@ -3481,6 +3481,12 @@ func TestQueryStatsAreSameWhenCommonSubexpressionEliminationApplied(t *testing.T
 		  bar  0 1 2 3 4 5 6 7 8 9 10
 		  baz{a="1",b="1"} 0 1 2 3 4 5 6 7 8 9 10
 		  baz{a="2",b="2"} 0 1 2 3 4 5 6 7 8 9 10
+		  classic_histogram_series{le="0.1"}   0+1x10
+		  classic_histogram_series{le="1"}     0+5x10
+		  classic_histogram_series{le="10"}    0+8x10
+		  classic_histogram_series{le="100"}   0+12x10
+		  classic_histogram_series{le="1000"}  0+21x10
+		  classic_histogram_series{le="+Inf"}  0+21x10
 	`)
 
 	start := timestamp.Time(0)
@@ -3650,6 +3656,18 @@ func TestQueryStatsAreSameWhenCommonSubexpressionEliminationApplied(t *testing.T
 			isInstantQuery:              true,
 			expectedTotalSamples:        2,
 			expectedTotalSamplesPerStep: []int64{2},
+		},
+		"duplicate expression where 'skip histogram decoding' applies to one expression": {
+			expr:                        `histogram_count(classic_histogram_series) * histogram_quantile(0.5, classic_histogram_series)`,
+			isInstantQuery:              true,
+			expectedTotalSamples:        12,
+			expectedTotalSamplesPerStep: []int64{12},
+		},
+		"duplicate expression where 'skip histogram decoding' applies to both expressions": {
+			expr:                        `histogram_count(classic_histogram_series) * histogram_sum(classic_histogram_series)`,
+			isInstantQuery:              true,
+			expectedTotalSamples:        12,
+			expectedTotalSamplesPerStep: []int64{12},
 		},
 	}
 
