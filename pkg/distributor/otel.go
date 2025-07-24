@@ -507,7 +507,7 @@ func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric
 
 	_, c.err = c.converter.FromMetrics(ctx, md, settings)
 
-	timeseries, metadata, _ := c.appender.GetResult()
+	timeseries, metadata := c.appender.GetResult()
 	return timeseries, metadata
 }
 

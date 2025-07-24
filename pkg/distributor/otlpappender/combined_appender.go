@@ -60,9 +60,9 @@ func (c *CombinedAppender) WithOptions(options CombinedAppenderOptions) *Combine
 	return c
 }
 
-// GetResult returns the created timeseries and metadata and number of dropped metrics.
-func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int) {
-	return c.series, c.metadata, 0
+// GetResult returns the created timeseries and metadata.
+func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+	return c.series, c.metadata
 }
 
 func (c *CombinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {

@@ -476,7 +476,7 @@ func TestCombinedAppender(t *testing.T) {
 						}
 					}
 
-					series, metadata, _ := appender.GetResult()
+					series, metadata := appender.GetResult()
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)
 				})
