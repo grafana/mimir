@@ -22,8 +22,8 @@ type RuleFileAnalyzeCommand struct {
 }
 
 func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-
-	output, err := AnalyzeRuleFiles(cmd.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	output, err := AnalyzeRuleFiles(cmd.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return err
 	}
@@ -37,11 +37,11 @@ func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeRuleFiles analyze rules files and return the list metrics used in them.
-func AnalyzeRuleFiles(ruleFiles []string) (*analyze.MetricsInRuler, error) {
+func AnalyzeRuleFiles(ruleFiles []string, scheme model.ValidationScheme) (*analyze.MetricsInRuler, error) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles)
+	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles, scheme)
 	if err != nil {
 		return nil, errors.Wrap(err, "analyze operation unsuccessful, unable to parse rules files")
 	}

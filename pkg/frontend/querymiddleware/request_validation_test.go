@@ -70,6 +70,21 @@ func TestMetricsQueryRequestValidationRoundTripper(t *testing.T) {
 			url:             instantQueryPathSuffix + "?query=up&start=123&end=456&step=60s",
 			expectedErrType: "",
 		},
+		{
+			// accepts utf label names
+			url:             instantQueryPathSuffix + `?query=up{"test.label"="test"}`,
+			expectedErrType: "",
+		},
+		{
+			// accepts utf metric name
+			url:             instantQueryPathSuffix + `?query={"test.label"}`,
+			expectedErrType: "",
+		},
+		{
+			// invalid utf-string
+			url:             instantQueryPathSuffix + "?query=up{\"test.label\"=\"\xff\"}",
+			expectedErrType: apierror.TypeBadData,
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, srv.URL+tc.url, nil)
@@ -132,7 +147,7 @@ func TestLabelsQueryRequestValidationRoundTripper(t *testing.T) {
 			expectedErrType: "",
 		},
 		{
-			url:             labelNamesPathSuffix + "?match=up{}&start=123&end=456&limit=100",
+			url:             labelNamesPathSuffix + "?match[]=up{}&start=123&end=456&limit=100",
 			expectedErrType: "",
 		},
 	} {
@@ -209,8 +224,12 @@ func TestCardinalityQueryRequestValidationRoundTripper(t *testing.T) {
 		},
 		{
 			// non-utf8 label name will be rejected even when we transition to UTF-8 label names
-			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=\\xbd\\xb2\\x3d\\xbc\\x20\\xe2\\x8c\\x98",
+			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=\xbd\xb2\x3d\xbc\x20\xe2\x8c\x98",
 			expectedErrType: apierror.TypeBadData,
+		},
+		{
+			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=some.label",
+			expectedErrType: "",
 		},
 		{
 			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=foo",

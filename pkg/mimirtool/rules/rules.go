@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
@@ -227,7 +228,7 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 }
 
 // Validate each rule in the rule namespace is valid
-func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode) []error {
+func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
 	set := map[string]struct{}{}
 	var errs []error
 
@@ -245,17 +246,17 @@ func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode) []error {
 
 		set[g.Name] = struct{}{}
 
-		errs = append(errs, ValidateRuleGroup(g, groupNodes[i])...)
+		errs = append(errs, ValidateRuleGroup(g, groupNodes[i], scheme)...)
 	}
 
 	return errs
 }
 
 // ValidateRuleGroup validates a rulegroup
-func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
+func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
 	var errs []error
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i]) {
+		for _, err := range r.Validate(node.Rules[i], scheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert
