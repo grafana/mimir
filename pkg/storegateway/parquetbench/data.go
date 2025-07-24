@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func setupBenchmarkData(b *testing.B, user string, compression bool) (bkt objstore.Bucket, mint, maxt int64) {
+func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string) (bkt objstore.Bucket, mint, maxt int64) {
 
 	ctx := context.Background()
 
@@ -91,6 +91,10 @@ func setupBenchmarkData(b *testing.B, user string, compression bool) (bkt objsto
 		convert.WithName(blockId.String()),
 		convert.WithLabelsCompression(schema.WithCompressionEnabled(compression)),
 		convert.WithChunksCompression(schema.WithCompressionEnabled(compression)),
+	}
+
+	if len(sortByLabels) > 0 {
+		convertOpts = append(convertOpts, convert.WithSortBy(sortByLabels...))
 	}
 
 	_, err = convert.ConvertTSDBBlock(

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ import (
 
 var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
 var benchmarkCompression = flag.Bool("benchmark-compression", true, "Enable compression for parquet data")
+var benchmarkSortBy = flag.String("benchmark-sort-by", "", "Comma-separated list of fields to sort by in parquet data")
 
 var benchmarkCases = []struct {
 	name     string
@@ -127,7 +129,17 @@ var benchmarkCases = []struct {
 func BenchmarkBucketStores_Main(b *testing.B) {
 	flag.Parse()
 	const user = "benchmark-user"
-	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression)
+	var sortByFields []string
+	if *benchmarkSortBy != "" {
+		fields := strings.Split(*benchmarkSortBy, ",")
+		for _, field := range fields {
+			if trimmed := strings.TrimSpace(field); trimmed != "" {
+				sortByFields = append(sortByFields, trimmed)
+			}
+		}
+	}
+
+	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression, sortByFields)
 
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
 		storegateway.GrpcContextMetadataTenantID: []string{user},
