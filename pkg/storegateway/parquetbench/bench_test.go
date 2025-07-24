@@ -35,6 +35,7 @@ import (
 )
 
 var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
+var benchmarkCompression = flag.Bool("benchmark-compression", true, "Enable compression for parquet data")
 
 var benchmarkCases = []struct {
 	name     string
@@ -126,7 +127,7 @@ var benchmarkCases = []struct {
 func BenchmarkBucketStores_Main(b *testing.B) {
 	flag.Parse()
 	const user = "benchmark-user"
-	bkt, mint, maxt := setupBenchmarkData(b, user)
+	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression)
 
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
 		storegateway.GrpcContextMetadataTenantID: []string{user},

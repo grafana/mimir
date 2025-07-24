@@ -9,21 +9,23 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
+	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func setupBenchmarkData(b *testing.B, user string) (bkt objstore.Bucket, mint, maxt int64) {
+func setupBenchmarkData(b *testing.B, user string, compression bool) (bkt objstore.Bucket, mint, maxt int64) {
 
 	ctx := context.Background()
 
@@ -85,13 +87,19 @@ func setupBenchmarkData(b *testing.B, user string) (bkt objstore.Bucket, mint, m
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(context.Background(), log.NewNopLogger(), userBkt, filepath.Join(blockDir, blockId.String()), nil))
 
+	convertOpts := []convert.ConvertOption{
+		convert.WithName(blockId.String()),
+		convert.WithLabelsCompression(schema.WithCompressionEnabled(compression)),
+		convert.WithChunksCompression(schema.WithCompressionEnabled(compression)),
+	}
+
 	_, err = convert.ConvertTSDBBlock(
 		ctx,
 		userBkt,
 		head.MinTime(),
 		head.MaxTime(),
 		[]convert.Convertible{head},
-		convert.WithName(blockId.String()))
+		convertOpts...)
 
 	require.NoError(b, err, "error converting TSDB block to Parquet")
 
