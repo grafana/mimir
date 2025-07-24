@@ -660,7 +660,7 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 	}
 }
 
-func TestIngester_calculateHeadCompactionInterval(t *testing.T) {
+func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
 	defaultBaseHeadCompactionInterval := 15 * time.Minute
 	// July 21st 2025, 10:00 AM
 	fakeNow := time.Date(2025, 7, 21, 10, 27, 0, 0, time.UTC)
@@ -760,13 +760,13 @@ func TestIngester_calculateHeadCompactionInterval(t *testing.T) {
 
 			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
 
-			headCompactionInterval := ingester.calculateStaggeredCompactionInterval(fakeNow, tt.zones)
+			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
 			require.Equal(t, tt.expected, headCompactionInterval)
 		})
 	}
 }
 
-func TestIngester_nextCompactionInterval(t *testing.T) {
+func TestIngester_timeUntilCompaction(t *testing.T) {
 	// July 21st 2025, 10:00 AM
 	fakeNow := time.Date(2025, 7, 21, 10, 0, 0, 0, time.UTC)
 
@@ -828,7 +828,7 @@ func TestIngester_nextCompactionInterval(t *testing.T) {
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-			result := nextCompactionInterval(tt.now, tt.interval, tt.zoneOffset)
+			result := timeUntilCompaction(tt.now, tt.interval, tt.zoneOffset)
 			require.Equal(t, tt.expected, result)
 		})
 	}

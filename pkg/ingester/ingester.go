@@ -3267,14 +3267,14 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
 			// If the ingester state is no longer "Starting", we switch to a different interval.
-			// We only compare the standard interval before the first interval may be random due to jittering.
+			// We only compare the standard interval because the first interval may be random due to jittering.
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
 				standardInterval = newStandardInterval
-				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval)
 			}
 
 		case req := <-i.forceCompactTrigger:
@@ -3316,11 +3316,11 @@ func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (fir
 		return firstInterval, standardInterval
 	}
 
-	staggeredInterval := i.calculateStaggeredCompactionInterval(now, zones)
+	zoneAwareInterval := i.timeToNextZoneAwareCompaction(now, zones)
 
 	// If we don't have jittering enabled, we return the standard interval as-is.
 	if !i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
-		return staggeredInterval, interval
+		return zoneAwareInterval, interval
 	}
 
 	// With jittering enabled, we want to apply a positive jitter to the staggered interval.
@@ -3331,19 +3331,21 @@ func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (fir
 		offset = (interval / time.Duration(len(zones))) / 2
 	}
 
-	offsetWithJitter := util.DurationWithNegativeJitter(offset, 0.50)
-
-	return staggeredInterval + offsetWithJitter, interval
+	jitter := util.DurationWithNegativeJitter(offset, 0.50)
+	return zoneAwareInterval + jitter, interval
 }
 
-// calculateStaggeredCompactionInterval calculates when the next compaction should occur,
+// timeToNextZoneAwareCompaction calculates when the next compaction should occur,
 // staggering compactions across zones to distribute load over time.
 //
 // With zone awareness enabled, each zone gets a unique offset within the compaction interval.
 // Example with 15min interval and 2 zones:
 // - Zone 'a' compacts at 0:00, 0:15, 0:30, 0:45
 // - Zone 'b' compacts at 0:07, 0:22, 0:37, 0:52
-func (i *Ingester) calculateStaggeredCompactionInterval(now time.Time, zones []string) time.Duration {
+func (i *Ingester) timeToNextZoneAwareCompaction(now time.Time, zones []string) time.Duration {
+	// To make the computed offset deterministic, zones must be sorted.
+	slices.Sort(zones)
+
 	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
 
 	// If we don't have zone awareness enabled, we return the configured head compaction interval as-is,
@@ -3363,22 +3365,22 @@ func (i *Ingester) calculateStaggeredCompactionInterval(now time.Time, zones []s
 
 	// Zone not found in the list - this shouldn't happen but handle gracefully
 	if zoneIndex == -1 {
-		level.Warn(i.logger).Log("msg", "current zone not found in zones list, using default interval", "current_zone", current, "available_zones", strings.Join(zones, ","))
+		level.Warn(i.logger).Log("msg", "could not compute when the next zone-aware TSDB head compaction should occur, current zone not found in zones list, using default interval", "current_zone", current, "available_zones", strings.Join(zones, ","))
 		return interval
 	}
 
 	// Calculate this zone's offset and the next compaction interval.
 	offsetStep := interval / time.Duration(len(zones))
 	zoneOffset := time.Duration(zoneIndex) * offsetStep
-	result := nextCompactionInterval(now, interval, zoneOffset)
+	result := timeUntilCompaction(now, interval, zoneOffset)
 
-	level.Debug(i.logger).Log("msg", "calculated zone-aware compaction interval",
+	level.Debug(i.logger).Log("msg", "computed timing for the next TSDB head zone-aware compaction",
 		"zone", current,
 		"zone_index", zoneIndex,
 		"total_zones", len(zones),
-		"interval", interval,
+		"configured_interval", interval,
 		"zone_offset", zoneOffset,
-		"wait_duration", result)
+		"next_compaction_in", result)
 
 	return result
 }
@@ -4392,18 +4394,19 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 	return manager, nil
 }
 
-// nextCompactionInterval calculates the precise time until the next compaction for a specific zone
+// timeUntilCompaction calculates the precise time until the next compaction for a specific zone
 // based on the current time, the configured compaction interval, and the computed zone's offset.
 //
 // This creates a predictable, clock-aligned schedule where each zone compacts at fixed times
 // (e.g., zone 'a' at :00, :15, :30, :45 and zone 'b' at :07, :22, :37, :52 for a 15-minute interval).
 //
 // Returns the interval until the next scheduled compaction for the zone as a time.Duration.
-func nextCompactionInterval(now time.Time, compactionInterval, zoneOffset time.Duration) time.Duration {
+func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Duration) time.Duration {
 	// Calculate how much time has elapsed since the start of the current hour.
 	elapsed := now.Sub(now.Truncate(time.Hour))
 
 	// Calculate how long elapsed since the last time compaction should have run for this zone.
+	// compactionInterval is guaranteed to be more than 0 and less than 15m.
 	timeSinceLastCompaction := (elapsed - zoneOffset) % compactionInterval
 	if timeSinceLastCompaction < 0 {
 		timeSinceLastCompaction += compactionInterval
