@@ -845,9 +845,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+	roundTripper, frontendV2, err := frontend.InitFrontend(
 		t.Cfg.Frontend,
-		t.Overrides,
 		t.Overrides,
 		t.Cfg.Server.GRPCListenPort,
 		util_log.Logger,
@@ -859,11 +858,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}
 
 	var frontendSvc services.Service
-	if frontendV1 != nil {
-		t.API.RegisterQueryFrontend1(frontendV1)
-		t.FrontendV1 = frontendV1
-		frontendSvc = frontendV1
-	} else if frontendV2 != nil {
+	if frontendV2 != nil {
 		t.API.RegisterQueryFrontend2(frontendV2)
 		frontendSvc = frontendV2
 	}
