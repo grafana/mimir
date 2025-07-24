@@ -824,6 +824,30 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			// The upper bound should not be vastly larger
 			require.Less(t, seriesSizeBigRefs, 2*actualSize)
 		})
+
+		t.Run("common symbol refs only count the ref and not the symbol", func(t *testing.T) {
+			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{11, 14, 15, 16, 7, 8}, // References a couple common symbols, outside the range
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{17, 18}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 19,
+				},
+			}
+			req := &WriteRequest{TimeseriesRW2: []TimeSeriesRW2{ts}}
+			actualSize := req.TimeseriesRW2Size()
+
+			seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&ts, syms, 10)
+
+			referencedSyms := []string{"", syms[1], syms[4], syms[5], syms[6], syms[7], syms[8], syms[9]}
+			req = &WriteRequest{SymbolsRW2: referencedSyms}
+			require.Equal(t, req.SymbolsRW2Size(), symbolsSize)
+			const expOverestimate = 8
+			require.Equal(t, actualSize+expOverestimate, seriesSize)
+		})
 	})
 
 	t.Run("resymbolizeTimeSeriesRW2", func(t *testing.T) {
