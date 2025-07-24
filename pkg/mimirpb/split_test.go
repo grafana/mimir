@@ -816,7 +816,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
 			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
 			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
-			require.Equal(t, newTable.SymbolsSizeProto(), delta)
+			require.Equal(t, 0, delta)
 		})
 
 		t.Run("excludes unrelated strings in original symbols", func(t *testing.T) {
@@ -840,7 +840,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
 			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
 			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
-			require.Equal(t, newTable.SymbolsSizeProto(), delta)
+			require.Equal(t, 0, delta)
 		})
 
 		t.Run("re-uses symbols already loaded in new symbols table", func(t *testing.T) {
@@ -869,7 +869,8 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			require.Equal(t, []uint32{3, 4, 5, 6}, ts.LabelsRefs)
 			require.Equal(t, []uint32{7, 8}, ts.Exemplars[0].LabelsRefs)
 			require.Equal(t, uint32(9), ts.Metadata.HelpRef)
-			require.Equal(t, newTable.SymbolsSizeProto()-prevSize, delta)
+			require.Equal(t, 0, delta)
+			require.Greater(t, newTable.SymbolsSizeProto(), prevSize)
 		})
 
 		t.Run("resymbolize with different symbol magnitudes", func(t *testing.T) {
@@ -896,8 +897,8 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			require.Equal(t, []uint32{10005, 10006}, ts.Exemplars[0].LabelsRefs)
 			require.Equal(t, uint32(10007), ts.Metadata.HelpRef)
 			require.Equal(t, uint32(10008), ts.Metadata.UnitRef)
-			expGrowth := 6
-			require.Equal(t, newTable.SymbolsSizeProto()+expGrowth, delta)
+			const expGrowth = 6
+			require.Equal(t, expGrowth, delta)
 		})
 	})
 }

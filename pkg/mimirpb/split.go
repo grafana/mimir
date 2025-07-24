@@ -70,6 +70,7 @@ func splitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	nextReq, nextReqSize := newPartialReq()
 	nextReqTimeseriesStart := 0
 	nextReqTimeseriesLength := 0
+	nextReqSymbolsSize := 0
 
 	for i := 0; i < len(req.TimeseriesRW2); i++ {
 		// Both are upper bounds. In particular symbolsSize does have knowledge of whether symbols can be re-used.
@@ -89,12 +90,14 @@ func splitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 			nextReq, nextReqSize = newPartialReq()
 			nextReqTimeseriesStart = i
 			nextReqTimeseriesLength = 0
+			nextReqSymbolsSize = 0
 			nextReqSymbols.Reset()
 		}
 
 		// Add the current series to next partial request.
 		deltaSize := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
 		nextReqSize += deltaSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		nextReqSize += nextReqSymbols.SymbolsSizeProto() - nextReqSymbolsSize
 		nextReqTimeseriesLength++
 	}
 
@@ -269,49 +272,35 @@ func maxRW2SeriesSizeAfterResymbolization(ts *TimeSeriesRW2, symbols []string, s
 
 // resymbolizeTimeSeriesRW2 resolves and re-symbolizes a TimeSeriesRW2 in the context of a new request.
 // Work is done in-place, the provided timeseries is modified.
-// It returns the total size delta (change in the Timeseries + growth in the new symbols table).
+// It returns the total size delta for the timeseries.
 func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *FastSymbolsTable) int {
 	delta := 0
 
 	for i := range ts.LabelsRefs {
 		oldRef := ts.LabelsRefs[i]
-		newRef, growth := symbolizeWithDeltaLen(symbols, origSymbols[oldRef])
+		newRef := symbols.Symbolize(origSymbols[oldRef])
 		ts.LabelsRefs[i] = newRef
-		delta += growth
 		delta += sovMimir(uint64(newRef)) - sovMimir(uint64(oldRef))
 	}
 
 	for i := range ts.Exemplars {
 		for j := range ts.Exemplars[i].LabelsRefs {
 			oldRef := ts.Exemplars[i].LabelsRefs[j]
-			newRef, growth := symbolizeWithDeltaLen(symbols, origSymbols[oldRef])
+			newRef := symbols.Symbolize(origSymbols[oldRef])
 			ts.Exemplars[i].LabelsRefs[j] = newRef
-			delta += growth
 			delta += sovMimir(uint64(ts.Exemplars[i].LabelsRefs[j])) - sovMimir(uint64(oldRef))
 		}
 	}
 
 	oldRef := ts.Metadata.HelpRef
-	newRef, growth := symbolizeWithDeltaLen(symbols, origSymbols[oldRef])
-	delta += growth
+	newRef := symbols.Symbolize(origSymbols[oldRef])
 	delta += sovMimir(uint64(ts.Metadata.HelpRef)) - sovMimir(uint64(oldRef))
 	ts.Metadata.HelpRef = newRef
 
 	oldRef = ts.Metadata.UnitRef
-	newRef, growth = symbolizeWithDeltaLen(symbols, origSymbols[oldRef])
-	delta += growth
+	newRef = symbols.Symbolize(origSymbols[oldRef])
 	delta += sovMimir(uint64(ts.Metadata.UnitRef)) - sovMimir(uint64(oldRef))
 	ts.Metadata.UnitRef = newRef
 
 	return delta
-}
-
-func symbolizeWithDeltaLen(st *FastSymbolsTable, v string) (ref uint32, growth int) {
-	newRef, isNew := st.SymbolizeCheckNew(v)
-	if isNew {
-		l := len(v)
-		growth = 1 + l + sovMimir(uint64(l))
-	}
-	ref = newRef
-	return
 }
