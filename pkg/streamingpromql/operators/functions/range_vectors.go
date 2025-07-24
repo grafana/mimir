@@ -142,6 +142,8 @@ func minOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 var SumOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       sumOverTime,
+	GenerateFunc:                   sumOverTimeGenerate,
+	CombineFunc:                    sumOverTimeCombine,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
@@ -178,12 +180,21 @@ type sumOverTimeIntermediate struct {
 	RangeEnd   int64
 }
 
-func sumOverTimePiecewise(emitAnnotation types.EmitAnnotationFunc, pieces []sumOverTimeIntermediate) (float64, bool, *histogram.FloatHistogram, error) {
+func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (IntermediateResult, error) {
+	f, hasFloat, h, err := sumOverTime(step, 0, nil, queryRange, emitAnnotation, nil)
+	if err != nil {
+		return IntermediateResult{}, err
+	}
+	return IntermediateResult{sumOverTimeIntermediate{sumF: f, hasFloat: hasFloat, sumH: h, RangeStart: queryRange.StartT, RangeEnd: queryRange.EndT}}, nil
+}
+
+func sumOverTimeCombine(pieces []IntermediateResult, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	haveFloats := false
 	sumF, c := 0.0, 0.0
 	var sumH *histogram.FloatHistogram
 
-	for _, p := range pieces {
+	for _, ir := range pieces {
+		p := ir.sumOverTime
 		if p.hasFloat {
 			haveFloats = true
 			sumF, c = floats.KahanSumInc(p.sumF, sumF, c)
