@@ -3267,9 +3267,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
-			// Check if the desired interval has changed. We only compare the standard interval
-			// before the first interval may be random due to jittering.
 			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
+			// If the ingester state is no longer "Starting", we switch to a different interval.
+			// We only compare the standard interval before the first interval may be random due to jittering.
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
@@ -3296,7 +3296,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
-// The returned standardInterval is guaranteed to have no jittering applied.
+// The returned standardInterval is guaranteed to have no jittering or staggering per zone applied.
 // The returned intervals may change over time, depending on the ingester service state.
 func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (firstInterval, standardInterval time.Duration) {
 	startingInterval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting
@@ -3359,13 +3359,7 @@ func (i *Ingester) calculateStaggeredCompactionInterval(now time.Time, zones []s
 
 	// Find the index of the current zone in the zones list to determine its offset
 	current := i.cfg.IngesterRing.InstanceZone
-	zoneIndex := -1
-	for idx, zone := range zones {
-		if zone == current {
-			zoneIndex = idx
-			break
-		}
-	}
+	zoneIndex := slices.Index(zones, current)
 
 	// Zone not found in the list - this shouldn't happen but handle gracefully
 	if zoneIndex == -1 {
@@ -4407,28 +4401,13 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 // Returns the interval until the next scheduled compaction for the zone as a time.Duration.
 func nextCompactionInterval(now time.Time, compactionInterval, zoneOffset time.Duration) time.Duration {
 	// Calculate how much time has elapsed since the start of the current hour.
-	elapsed := time.Duration(now.Minute())*time.Minute +
-		time.Duration(now.Second())*time.Second +
-		time.Duration(now.Nanosecond())*time.Nanosecond
+	elapsed := now.Sub(now.Truncate(time.Hour))
 
-	// Find the start of the current compaction interval by rounding down elapsed time
-	// to the nearest interval boundary.
-	currentIntervalStart := (elapsed / compactionInterval) * compactionInterval
-
-	// Calculate when this specific zone should compact within the current interval.
-	// Since zoneOffset <= compactionInterval, this will always be within the current interval.
-	currentCompactionTime := currentIntervalStart + zoneOffset
-
-	// If this zone's compaction time hasn't passed yet in the current interval,
-	// return the interval duration until that time.
-	if currentCompactionTime > elapsed {
-		return currentCompactionTime - elapsed
+	// Calculate how long elapsed since the last time compaction should have run for this zone.
+	timeSinceLastCompaction := (elapsed - zoneOffset) % compactionInterval
+	if timeSinceLastCompaction < 0 {
+		timeSinceLastCompaction += compactionInterval
 	}
 
-	// The compaction time has already passed in the current interval,
-	// so schedule it for the next interval at the same offset.
-	nextCompactionTime := currentIntervalStart + compactionInterval + zoneOffset
-
-	// Return the interval duration until the next scheduled compaction time.
-	return nextCompactionTime - elapsed
+	return compactionInterval - timeSinceLastCompaction
 }
