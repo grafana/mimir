@@ -82,19 +82,42 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 		}
 	}
 
+	// singleLabelMatchers is a map of label names to matchers that match on that single label.
+	// This is an optimization under the assumption that there are more of these than labels in a series,
+	// so we don't have to lookup the label value every time.
+	// This does not include matchers that match on empty labels.
+	singleLabelMatchers := make(map[string][]indexedMatchers)
+	for ui := 0; ui < len(unoptimized); {
+		um := unoptimized[ui]
+		if len(um.labelsMatchers) != 1 {
+			ui++
+			continue
+		}
+		m := um.labelsMatchers[0]
+		if m.Matches("") {
+			// Can't optimize these, because they match on empty label value, so we won't try it when iterating series labels.
+			ui++
+			continue
+		}
+		singleLabelMatchers[m.Name] = append(singleLabelMatchers[m.Name], um)
+		unoptimized = slices.Delete(unoptimized, ui, ui+1)
+	}
+
 	return &Matchers{
-		cfg:         matchersConfig,
-		names:       names,
-		unoptimized: unoptimized,
-		setMatchers: setMatchers,
+		cfg:                 matchersConfig,
+		names:               names,
+		unoptimized:         unoptimized,
+		setMatchers:         setMatchers,
+		singleLabelMatchers: singleLabelMatchers,
 	}
 }
 
 type Matchers struct {
-	cfg         CustomTrackersConfig
-	names       []string
-	unoptimized []indexedMatchers
-	setMatchers map[string]map[string][]indexedMatchers
+	cfg                 CustomTrackersConfig
+	names               []string
+	unoptimized         []indexedMatchers
+	setMatchers         map[string]map[string][]indexedMatchers
+	singleLabelMatchers map[string][]indexedMatchers
 }
 
 func (m *Matchers) MatcherNames() []string {
@@ -108,13 +131,22 @@ func (m *Matchers) Config() CustomTrackersConfig {
 // Matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
 func (m *Matchers) Matches(series labels.Labels) PreAllocDynamicSlice {
 	var matches PreAllocDynamicSlice
-	if len(m.setMatchers) > 0 {
+	if len(m.setMatchers)+len(m.singleLabelMatchers) > 0 {
 		series.Range(func(l labels.Label) {
 			// Are there setMatchers for this label?
 			if sm, ok := m.setMatchers[l.Name]; ok {
 				// Is this label value in the setMatchers?
 				// Check all matchers for this label value.
 				for _, ms := range sm[l.Value] {
+					if ms.Matches(series) {
+						matches.Append(ms.index)
+					}
+				}
+			}
+			// Are there singleLabelMatchers for this label?
+			if sm, ok := m.singleLabelMatchers[l.Name]; ok {
+				// Check all singleLabelMatchers for this label.
+				for _, ms := range sm {
 					if ms.Matches(series) {
 						matches.Append(ms.index)
 					}
