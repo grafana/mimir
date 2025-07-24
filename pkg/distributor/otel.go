@@ -89,7 +89,7 @@ func OTLPHandler(
 			}
 		}
 
-		appender := otlpappender.NewCombinedAppender()
+		appender := otlpappender.NewCombinedAppender(otlpappender.CombinedAppenderOptions{})
 		otlpConverter := newOTLPMimirConverter(appender)
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)

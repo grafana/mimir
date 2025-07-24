@@ -394,7 +394,9 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender(
+				otlpappender.CombinedAppenderOptions{},
+			))
 			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
@@ -468,7 +470,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender(otlpappender.CombinedAppenderOptions{}))
 		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
@@ -679,7 +681,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender(otlpappender.CombinedAppenderOptions{}))
 			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
