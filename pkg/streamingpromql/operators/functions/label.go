@@ -29,7 +29,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
 			if !model.LabelName(src).IsValid() {
-				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
+				return nil, fmt.Errorf("invalid source label name in label_join(): %s", src)
 			}
 			srcLabels[i] = src
 		}
