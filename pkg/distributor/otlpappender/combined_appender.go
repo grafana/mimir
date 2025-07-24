@@ -35,16 +35,29 @@ type CombinedAppender struct {
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
-	// multiple times, we keep track of the last appended time series.
+	// multiple times, we keep track of the appended time series.
 	refs map[uint64]labelsIdx
 	// TODO(krajorama): add overflow for handling hash collisions.
+	// Do we really need this? The code will just create a new series.
 }
 
-func NewCombinedAppender(options CombinedAppenderOptions) *CombinedAppender {
+func NewCombinedAppender() *CombinedAppender {
 	return &CombinedAppender{
-		options: options,
-		refs:    make(map[uint64]labelsIdx),
+		options: CombinedAppenderOptions{
+			ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+		},
+		refs: make(map[uint64]labelsIdx),
 	}
+}
+
+func (c *CombinedAppender) WithOptions(options CombinedAppenderOptions) *CombinedAppender {
+	c.options.EnableCreatedTimestampZeroIngestion = options.EnableCreatedTimestampZeroIngestion
+	if options.ValidIntervalCreatedTimestampZeroIngestion > 0 {
+		c.options.ValidIntervalCreatedTimestampZeroIngestion = options.ValidIntervalCreatedTimestampZeroIngestion
+	} else {
+		c.options.ValidIntervalCreatedTimestampZeroIngestion = defaultIntervalForStartTimestamps
+	}
+	return c
 }
 
 // GetResult returns the created timeseries and metadata and number of dropped metrics.
@@ -53,92 +66,62 @@ func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb
 }
 
 func (c *CombinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
-	if !c.options.EnableCreatedTimestampZeroIngestion {
-		// Ignore created timestamps if the feature is disabled.
-		ct = 0
-	}
-	hash := ls.Hash()
-	idx, ok := c.refs[hash]
-	seenSeries := false // Whether we have seen this series or not.
-	appendMeta := false // Whether we append new metadata or not.
-	if ok && labels.Equal(idx.lbls, ls) {
-		seenSeries = true
-		if idx.meta.Type != meta.Type || idx.meta.Help != meta.Help || idx.meta.Unit != meta.Unit {
-			// If the label set already exists, but the metadata has changed,
-			// we need to update the metadata. Should be rare.
-			appendMeta = true
-			idx.meta = meta
-			c.refs[hash] = idx
-		}
-	} else {
-		// This is a new series.
-		appendMeta = true
-		idx.lbls = ls
-		idx.meta = meta
+	ct = c.recalcCreatedTimestamp(t, ct)
+
+	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
+
+	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
+		c.createNewSeries(&idx, hash, ls, ct)
 	}
 
-	if seenSeries && c.series[idx.idx].CreatedTimestamp == ct {
-		// If the label set already exists, append the sample to the last time series.
-		// Unless the created timestamp is different, in which case we create a new time series.
-		c.series[idx.idx].TimeSeries.Samples = append(c.series[idx.idx].TimeSeries.Samples, mimirpb.Sample{TimestampMs: t, Value: v})
-		if len(es) > 0 {
-			c.series[idx.idx].TimeSeries.Exemplars = append(c.series[idx.idx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
-		}
-
-		// If the metric metadata changed, we send an update for it.
-		// No need to find and clear the previous metadata, as we always
-		// append new metadata.
-		if appendMeta {
-			c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
-				Type:             metricTypeToMimirType(meta.Type),
-				MetricFamilyName: ls.Get(model.MetricNameLabel),
-				Help:             meta.Help,
-				Unit:             meta.Unit,
-			})
-		}
-		return nil
-	}
-
-	c.series = append(c.series, mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(ls),
-			Samples: []mimirpb.Sample{
-				{
-					TimestampMs: t,
-					Value:       v,
-				},
-			},
-			CreatedTimestamp: ct,
-		},
-	})
-	idx.idx = len(c.series) - 1
-	c.refs[hash] = idx
-
-	if len(es) > 0 {
-		c.series[idx.idx].TimeSeries.Exemplars = append(c.series[idx.idx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
-	}
-
-	if appendMeta {
-		c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
-			Type:             metricTypeToMimirType(meta.Type),
-			MetricFamilyName: ls.Get(model.MetricNameLabel),
-			Help:             meta.Help,
-			Unit:             meta.Unit,
-		})
-	}
+	c.series[idx.idx].TimeSeries.Samples = append(c.series[idx.idx].TimeSeries.Samples, mimirpb.Sample{TimestampMs: t, Value: v})
+	c.appendExemplars(idx.idx, es)
+	c.appendMetadata(appendMeta, ls, meta)
 
 	return nil
 }
 
 func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
-	if !c.options.EnableCreatedTimestampZeroIngestion {
-		// Ignore created timestamps if the feature is disabled.
-		ct = 0
+	ct = c.recalcCreatedTimestamp(t, ct)
+
+	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
+
+	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
+		c.createNewSeries(&idx, hash, ls, ct)
 	}
-	hash := ls.Hash()
+
+	c.series[idx.idx].TimeSeries.Histograms = append(c.series[idx.idx].TimeSeries.Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+	c.appendExemplars(idx.idx, es)
+	c.appendMetadata(appendMeta, ls, meta)
+
+	return nil
+}
+
+func (c *CombinedAppender) recalcCreatedTimestamp(t, ct int64) int64 {
+	if !c.options.EnableCreatedTimestampZeroIngestion || ct < 0 || ct > t || (c.options.ValidIntervalCreatedTimestampZeroIngestion > 0 && t-ct > c.options.ValidIntervalCreatedTimestampZeroIngestion) {
+		// Ignore created timestamps if the feature is disabled.
+		// Or if the created timestamp is negative, which is invalid.
+		// Or if the created timestamp is greater than the sample timestamp,
+		// which does not make sense.
+		// Or if the created timestamp is too far in the past compared to the sample timestamp.
+		return 0
+	}
+
+	return ct
+}
+
+// ctRequiresNewSeries checks if the created timestamp is meaningful and different
+// from the one already stored in the series at the given index.
+func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
+	return ct > 0 && c.series[seriesIdx].CreatedTimestamp != ct
+}
+
+// processLabelsAndMetadata figures out if we have already seen this
+// exact label set and whether we need to update the metadata.
+// krajorama: I could not make this inline.
+func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels, meta metadata.Metadata) (hash uint64, idx labelsIdx, seenSeries, appendMeta bool) {
+	hash = ls.Hash()
 	idx, ok := c.refs[hash]
-	seenSeries := false // Whether we have seen this series or not.
-	appendMeta := false // Whether we append new metadata or not.
 	if ok && labels.Equal(idx.lbls, ls) {
 		seenSeries = true
 		if idx.meta.Type != meta.Type || idx.meta.Help != meta.Help || idx.meta.Unit != meta.Unit {
@@ -154,55 +137,41 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metad
 		idx.lbls = ls
 		idx.meta = meta
 	}
+	return
+}
 
-	if seenSeries && c.series[idx.idx].CreatedTimestamp == ct {
-		// If the label set already exists, append the sample to the last time series.
-		// Unless the created timestamp is different, in which case we create a new time series.
-		c.series[idx.idx].TimeSeries.Histograms = append(c.series[idx.idx].TimeSeries.Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
-		if len(es) > 0 {
-			c.series[idx.idx].TimeSeries.Exemplars = append(c.series[idx.idx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
-		}
-
-		// If the metric metadata changed, we send an update for it.
-		// No need to find and clear the previous metadata, as we always
-		// append new metadata.
-		if appendMeta {
-			c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
-				Type:             metricTypeToMimirType(meta.Type),
-				MetricFamilyName: ls.Get(model.MetricNameLabel),
-				Help:             meta.Help,
-				Unit:             meta.Unit,
-			})
-		}
-		return nil
-	}
-
+func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
 	c.series = append(c.series, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(ls),
-			Histograms: []mimirpb.Histogram{
-				mimirpb.FromHistogramToHistogramProto(t, h),
-			},
+			Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
 			CreatedTimestamp: ct,
 		},
 	})
 	idx.idx = len(c.series) - 1
-	c.refs[hash] = idx
+	c.refs[hash] = *idx
+}
 
-	if len(es) > 0 {
-		c.series[idx.idx].TimeSeries.Exemplars = append(c.series[idx.idx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
+// appendExemplars appends exemplars to the time series at the given index.
+// It's split from appenndMetadata to be eligible for inlining.
+func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar) {
+	if len(es) == 0 {
+		return
 	}
+	c.series[seriesIdx].TimeSeries.Exemplars = append(c.series[seriesIdx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
+}
 
-	if appendMeta {
-		c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
-			Type:             metricTypeToMimirType(meta.Type),
-			MetricFamilyName: ls.Get(model.MetricNameLabel),
-			Help:             meta.Help,
-			Unit:             meta.Unit,
-		})
+// appendMetadata appends metadata to the time series at the given index.
+// It's split from appendExemplars to be eligible for inlining.
+func (c *CombinedAppender) appendMetadata(appendMeta bool, ls labels.Labels, meta metadata.Metadata) {
+	if !appendMeta {
+		return
 	}
-
-	return nil
+	c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
+		Type:             metricTypeToMimirType(meta.Type),
+		MetricFamilyName: ls.Get(model.MetricNameLabel),
+		Help:             meta.Help,
+		Unit:             meta.Unit,
+	})
 }
 
 func metricTypeToMimirType(mt model.MetricType) mimirpb.MetricMetadata_MetricType {

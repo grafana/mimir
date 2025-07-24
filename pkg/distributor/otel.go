@@ -89,7 +89,7 @@ func OTLPHandler(
 			}
 		}
 
-		appender := otlpappender.NewCombinedAppender(otlpappender.CombinedAppenderOptions{})
+		appender := otlpappender.NewCombinedAppender()
 		otlpConverter := newOTLPMimirConverter(appender)
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)
@@ -467,15 +467,16 @@ func otelMetricsToSeriesAndMetadata(
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
 	settings := otlptranslator.Settings{
-		AddMetricSuffixes: opts.addSuffixes,
-		// EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
-		// EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		AddMetricSuffixes:                 opts.addSuffixes,
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
 		PromoteScopeMetadata:              opts.promoteScopeMetadata,
 		AllowDeltaTemporality:             opts.allowDeltaTemporality,
 	}
+	converter.appender.WithOptions(otlpappender.CombinedAppenderOptions{
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+	})
 	timeseries, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()

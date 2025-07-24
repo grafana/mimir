@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestCombinedAppender(t *testing.T) {
@@ -18,7 +19,7 @@ func TestCombinedAppender(t *testing.T) {
 		validIntervalCreatedTimestampZeroIngestion int64
 		appends                                    func(*testing.T, *CombinedAppender)
 		expectTimeseries                           []mimirpb.PreallocTimeseries
-		expectTimeseriesNoCT                       []mimirpb.PreallocTimeseries
+		expectTimeseriesNoCT                       []mimirpb.PreallocTimeseries // Same as expectTimeseries if nil.
 		expectMetadata                             []*mimirpb.MetricMetadata
 	}{
 		"no appends": {
@@ -26,9 +27,8 @@ func TestCombinedAppender(t *testing.T) {
 			appends: func(_ *testing.T, _ *CombinedAppender) {
 				// No appends to test.
 			},
-			expectTimeseries:     nil,
-			expectTimeseriesNoCT: nil, // Same as expectTimeseries if nil.
-			expectMetadata:       nil,
+			expectTimeseries: nil,
+			expectMetadata:   nil,
 		},
 		"single float sample": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
@@ -257,6 +257,194 @@ func TestCombinedAppender(t *testing.T) {
 				},
 			},
 		},
+		"single float sample, with created timestamp too old": {
+			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+			appends: func(t *testing.T, ca *CombinedAppender) {
+				ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					defaultIntervalForStartTimestamps+2000, 1000, 42.0,
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+				ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+			},
+			expectTimeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Samples: []mimirpb.Sample{
+							{TimestampMs: defaultIntervalForStartTimestamps + 2000, Value: 42.0},
+							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
+						},
+						CreatedTimestamp: 0,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Value:       27,
+								TimestampMs: 1500,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Value:       45,
+								TimestampMs: 2500,
+							},
+						},
+					},
+				},
+			},
+			expectMetadata: []*mimirpb.MetricMetadata{
+				{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+			},
+		},
+		"single float sample, with created timestamp too old for some samples": {
+			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+			appends: func(t *testing.T, ca *CombinedAppender) {
+				ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					defaultIntervalForStartTimestamps-2000, 1000, 42.0,
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+				ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+			},
+			expectTimeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Samples: []mimirpb.Sample{
+							{TimestampMs: defaultIntervalForStartTimestamps - 2000, Value: 42.0},
+							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
+						},
+						CreatedTimestamp: 1000,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Value:       27,
+								TimestampMs: 1500,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Value:       45,
+								TimestampMs: 2500,
+							},
+						},
+					},
+				},
+			},
+			expectMetadata: []*mimirpb.MetricMetadata{
+				{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+			},
+		},
+		"single histogram sample": {
+			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+			appends: func(t *testing.T, ca *CombinedAppender) {
+				ca.AppendHistogram(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					2000, 1000, test.GenerateTestHistogram(1),
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+			},
+			expectTimeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Histograms: []mimirpb.Histogram{
+							mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+						},
+						CreatedTimestamp: 1000,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Value:       27,
+								TimestampMs: 1500,
+							},
+						},
+					},
+				},
+			},
+			expectMetadata: []*mimirpb.MetricMetadata{
+				{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+			},
+		},
+		"mixed float and histogram samples, same series": {
+			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+			appends: func(t *testing.T, ca *CombinedAppender) {
+				ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					2000, 1000, 42.0,
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+				ca.AppendHistogram(
+					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "help!"},
+					3000, 1000, test.GenerateTestHistogram(2),
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+			},
+			expectTimeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Samples: []mimirpb.Sample{
+							{TimestampMs: 2000, Value: 42.0},
+						},
+						Histograms: []mimirpb.Histogram{
+							mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)),
+						},
+						CreatedTimestamp: 1000,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Value:       27,
+								TimestampMs: 1500,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Value:       45,
+								TimestampMs: 2500,
+							},
+						},
+					},
+				},
+			},
+			expectMetadata: []*mimirpb.MetricMetadata{
+				// Yes, this is weird, but remote write does not have support for attaching metadata to samples.
+				// Should we split the time series into two? Proably not worth it since the storage will just
+				// overwrite the metadata anyway - krajorama.
+				{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+				{
+					Type:             mimirpb.HISTOGRAM,
+					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -268,7 +456,7 @@ func TestCombinedAppender(t *testing.T) {
 						EnableCreatedTimestampZeroIngestion:        enableCreatedTimestampZeroIngestion,
 						ValidIntervalCreatedTimestampZeroIngestion: tc.validIntervalCreatedTimestampZeroIngestion,
 					}
-					appender := NewCombinedAppender(options)
+					appender := NewCombinedAppender().WithOptions(options)
 					tc.appends(t, appender)
 
 					expectedTimeseries := tc.expectTimeseries

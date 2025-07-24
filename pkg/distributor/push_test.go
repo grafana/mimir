@@ -129,7 +129,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender(otlpappender.CombinedAppenderOptions{}))
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			}, log.NewNopLogger())
