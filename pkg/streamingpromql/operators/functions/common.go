@@ -85,6 +85,21 @@ type RangeVectorStepFunction func(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
+type RangeVectorPiecewiseGenerateFunction func(
+	step *types.RangeVectorStepData,
+	rangeSeconds float64,
+	scalarArgsData []types.ScalarData,
+	timeRange types.QueryTimeRange,
+	emitAnnotation types.EmitAnnotationFunc,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+) (intermediateResult IntermediateResult, err error)
+
+type RangeVectorPiecewiseCombineFunction func(
+	pieces []IntermediateResult,
+	emitAnnotation types.EmitAnnotationFunc,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
+
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
 type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation types.EmitAnnotationFunc)
 
@@ -106,7 +121,8 @@ type FunctionOverRangeVectorDefinition struct {
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
 
-	PiecewiseStepFunc RangeVectorStepFunction
+	GenerateFunc RangeVectorPiecewiseGenerateFunction
+	CombineFunc  RangeVectorPiecewiseCombineFunction
 
 	// SeriesValidationFuncFactory is the function that creates a validator for a complete series, emitting any annotations
 	// for that series.

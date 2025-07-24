@@ -8,6 +8,7 @@ package selectors
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -168,4 +169,8 @@ func (m *RangeVectorSelector) Close() {
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
+}
+
+func (m *RangeVectorSelector) Range() time.Duration {
+	return m.Selector.Range
 }
