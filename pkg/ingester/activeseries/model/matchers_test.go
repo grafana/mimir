@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,51 +28,57 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 
 	for _, tc := range []struct {
 		series   labels.Labels
-		expected []int
+		expected []string
 	}{
 		{
 			series: labels.FromStrings("foo", "true", "baz", "unrelated"),
-			expected: []int{
-				3, // has_foo_label
+			expected: []string{
+				"has_foo_label",
 			},
 		},
 		{
 			series: labels.FromStrings("foo", "true", "bar", "100", "baz", "unrelated"),
-			expected: []int{
-				0, // bar_starts_with_1
-				2, // has_foo_and_bar_starts_with_1
-				3, // has_foo_label
+			expected: []string{
+				"bar_starts_with_1",
+				"has_foo_and_bar_starts_with_1",
+				"has_foo_label",
 			},
 		},
 		{
 			series: labels.FromStrings("foo", "true", "bar", "200", "baz", "unrelated"),
-			expected: []int{
-				3, // has_foo_label
+			expected: []string{
+				"has_foo_label",
 			},
 		},
 		{
 			series: labels.FromStrings("bar", "200", "baz", "unrelated"),
-			expected: []int{
-				1, // does_not_have_foo_label
+			expected: []string{
+				"does_not_have_foo_label",
 			},
 		},
 		{
 			series: labels.FromStrings("bar", "100", "baz", "unrelated"),
-			expected: []int{
-				0, // bar_starts_with_1
-				1, // does_not_have_foo_label
+			expected: []string{
+				"bar_starts_with_1",
+				"does_not_have_foo_label",
 			},
 		},
 		{
 			series: labels.FromStrings("baz", "unrelated"),
-			expected: []int{
-				1, // does_not_have_foo_label
+			expected: []string{
+				"does_not_have_foo_label",
 			},
 		},
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
 			got := asm.Matches(tc.series)
-			assert.Equal(t, tc.expected, preAllocDynamicSliceToSlice(got))
+			gotValues := make([]string, 0, got.Len())
+			for i := 0; i < got.Len(); i++ {
+				gotValues = append(gotValues, asm.MatcherNames()[int(got.Get(i))])
+			}
+			sort.Strings(gotValues)
+			sort.Strings(tc.expected)
+			assert.Equal(t, tc.expected, gotValues)
 		})
 	}
 }
