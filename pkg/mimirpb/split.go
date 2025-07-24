@@ -51,7 +51,7 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 //
 // The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
 // Timeseries are re-symbolized in place, so this function mutates the input.
-func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
+func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols []string) []*WriteRequest {
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
 	}
@@ -75,7 +75,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 
 	// Split timeseries into partial write requests, and resymbolize each batch.
 	nextReqSymbols := symbolsTableFromPool()
-	// TODO: Common Symbols...
+	nextReqSymbols.ConfigureCommonSymbols(offset, commonSymbols)
 	defer reuseSymbolsTable(nextReqSymbols)
 	nextReq, nextReqSize := newPartialReq()
 	nextReqTimeseriesStart := 0
