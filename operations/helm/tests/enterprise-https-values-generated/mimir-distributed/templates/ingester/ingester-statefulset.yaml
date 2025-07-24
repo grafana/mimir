@@ -130,7 +130,7 @@ spec:
               containerPort: 7946
               protocol: TCP
           livenessProbe:
-            null
+            {}
           readinessProbe:
             httpGet:
               path: /ready
@@ -283,7 +283,7 @@ spec:
               containerPort: 7946
               protocol: TCP
           livenessProbe:
-            null
+            {}
           readinessProbe:
             httpGet:
               path: /ready
@@ -436,7 +436,7 @@ spec:
               containerPort: 7946
               protocol: TCP
           livenessProbe:
-            null
+            {}
           readinessProbe:
             httpGet:
               path: /ready
