@@ -768,7 +768,6 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("upper bound grows with possible symbol magnitude", func(t *testing.T) {
-			// Protobuf varints under 128 are stored with 1 byte.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -793,6 +792,112 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			require.Greater(t, seriesSizeBigRefs, seriesSizeSmallRefs)
 			// The upper bound should not be vastly larger
 			require.Less(t, seriesSizeBigRefs, 2*actualSize)
+		})
+	})
+
+	t.Run("resymbolizeTimeSeriesRW2", func(t *testing.T) {
+		t.Run("no change required", func(t *testing.T) {
+			newTable := NewFastSymbolsTable(0)
+			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{5, 6}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			}
+
+			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+
+			require.Equal(t, syms, newTable.Symbols())
+			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
+			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
+			require.Equal(t, newTable.SymbolsSizeProto(), delta)
+		})
+
+		t.Run("excludes unrelated strings in original symbols", func(t *testing.T) {
+			newTable := NewFastSymbolsTable(0)
+			syms := []string{"", "unrelated1", "unrelated2", "unrelated3", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{4, 5, 6, 7},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{8, 9}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 10,
+				},
+			}
+
+			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+
+			expSymbols := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			require.Equal(t, expSymbols, newTable.Symbols())
+			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
+			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
+			require.Equal(t, newTable.SymbolsSizeProto(), delta)
+		})
+
+		t.Run("re-uses symbols already loaded in new symbols table", func(t *testing.T) {
+			newTable := NewFastSymbolsTable(0)
+			newTable.Symbolize("unrelated1")
+			newTable.Symbolize("unrelated2")
+			newTable.Symbolize(labels.MetricName)
+			newTable.Symbolize("series_1")
+			prevSize := newTable.SymbolsSizeProto()
+			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{5, 6}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			}
+
+			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+
+			expSyms := []string{"", "unrelated1", "unrelated2", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			require.Equal(t, expSyms, newTable.Symbols())
+			require.Equal(t, []uint32{3, 4, 5, 6}, ts.LabelsRefs)
+			require.Equal(t, []uint32{7, 8}, ts.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(9), ts.Metadata.HelpRef)
+			require.Equal(t, newTable.SymbolsSizeProto()-prevSize, delta)
+		})
+
+		t.Run("resymbolize with different symbol magnitudes", func(t *testing.T) {
+			newTable := NewFastSymbolsTable(0)
+			// Big references use more bytes when encoded.
+			newTable.ConfigureCommonSymbols(10000, nil)
+			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unit"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{5, 6}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+					UnitRef: 8,
+				},
+			}
+
+			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+
+			require.Equal(t, syms, newTable.Symbols())
+			require.Equal(t, []uint32{10001, 10002, 10003, 10004}, ts.LabelsRefs)
+			require.Equal(t, []uint32{10005, 10006}, ts.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(10007), ts.Metadata.HelpRef)
+			require.Equal(t, uint32(10008), ts.Metadata.UnitRef)
+			expGrowth := 6
+			require.Equal(t, newTable.SymbolsSizeProto()+expGrowth, delta)
 		})
 	})
 }
