@@ -201,7 +201,7 @@ func TestIngester_Start(t *testing.T) {
 		})
 
 		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
-		firstInterval, standardInterval := ingester.compactionServiceInterval()
+		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.lifecycler.Zones())
 		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
 		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
 
@@ -569,23 +569,269 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 }
 
 func TestIngester_compactionServiceInterval(t *testing.T) {
-	cfg := defaultIngesterTestConfig(t)
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+	fakeNow := time.Date(2025, 7, 21, 10, 27, 0, 0, time.UTC)
 
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	tc := map[string]struct {
+		state         services.State
+		interval      time.Duration
+		jitterEnabled bool
+		zones         []string
+		expected      func(t *testing.T, first, standard time.Duration)
+		instanceZone  string
+	}{
+		"when starting without jittering enabled": {
+			state:         services.Starting,
+			interval:      time.Minute,
+			jitterEnabled: false,
+			expected: func(t *testing.T, first, standard time.Duration) {
+				assert.Equal(t, 30*time.Second, first)
+				assert.Equal(t, 30*time.Second, standard)
+			},
+		},
+		"when starting with jittering enabled": {
+			state:         services.Starting,
+			interval:      time.Minute,
+			jitterEnabled: true,
+			expected: func(t *testing.T, first, standard time.Duration) {
+				assert.Less(t, first, 30*time.Second)
+				assert.Equal(t, 30*time.Second, standard)
+			},
+		},
+		"for zone 1 out 2 with jittering and zone awareness enabled at a 10m interval": {
+			state:         services.Running,
+			interval:      20 * time.Minute,
+			jitterEnabled: true,
+			zones:         []string{"zone-a", "zone-b"},
+			instanceZone:  "zone-a",
+			expected: func(t *testing.T, first, standard time.Duration) {
+				// It's 10:27:00, so the next compaction interval for zone-a is 10:40:00, which means we need a minimum of
+				// 13 minutes and then a maximum of 18 minutes to reach the next compaction interval.
+				assert.GreaterOrEqual(t, first, 13*time.Minute)
+				assert.LessOrEqual(t, first, 18*time.Minute)
+				assert.Equal(t, 20*time.Minute, standard)
+			},
+		},
+		"for zone 2 out 2 with jittering and zone awareness enabled at a 10m interval": {
+			state:         services.Running,
+			interval:      20 * time.Minute,
+			jitterEnabled: true,
+			zones:         []string{"zone-a", "zone-b"},
+			instanceZone:  "zone-b",
+			expected: func(t *testing.T, first, standard time.Duration) {
+				// It's 10:27:00, so the next compaction interval for zone-b is 10:30:00, which means we need a minimum of
+				// 3 minutes and then a maximum of 8 minutes to reach the next compaction interval.
+				assert.GreaterOrEqual(t, first, 3*time.Minute)
+				assert.LessOrEqual(t, first, 8*time.Minute)
+				assert.Equal(t, 20*time.Minute, standard)
+			},
+		},
+	}
 
-	firstInterval, standardInterval := ingester.compactionServiceInterval()
-	assert.Equal(t, time.Minute, firstInterval)
-	assert.Equal(t, time.Minute, standardInterval)
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultIngesterTestConfig(t)
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
 
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute
-	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = true
+			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = tt.interval
+			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = tt.jitterEnabled
+			ingester.cfg.IngesterRing.InstanceZone = tt.instanceZone
+			if len(tt.zones) > 0 {
+				ingester.cfg.IngesterRing.ZoneAwarenessEnabled = true
+			}
 
-	firstInterval, standardInterval = ingester.compactionServiceInterval()
-	assert.Less(t, firstInterval, time.Minute)
-	assert.Equal(t, time.Minute, standardInterval)
+			switch tt.state {
+			case services.Starting:
+				// force the ingester to be in a starting state by creating a shutdown marker.
+				require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
+				require.NoError(t, shutdownmarker.Create(shutdownmarker.GetPath(cfg.BlocksStorageConfig.TSDB.Dir)))
+				require.NoError(t, ingester.StartAsync(context.Background()))
+				t.Cleanup(func() {
+					_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+				})
+			case services.Running:
+			default:
+				t.Fatalf("unsupported state %s", tt.state)
+			}
+
+			firstInterval, standardInterval := ingester.compactionServiceInterval(fakeNow, tt.zones)
+			tt.expected(t, firstInterval, standardInterval)
+		})
+	}
+}
+
+func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
+	defaultBaseHeadCompactionInterval := 15 * time.Minute
+	// July 21st 2025, 10:00 AM
+	fakeNow := time.Date(2025, 7, 21, 10, 27, 0, 0, time.UTC)
+
+	tc := map[string]struct {
+		zoneAwarenessEnabled bool
+		instanceZone         string
+		zones                []string
+		expected             time.Duration
+	}{
+		"zone awareness disabled": {
+			zoneAwarenessEnabled: false,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"empty instance zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"zone awareness disabled and empty instance zone": {
+			zoneAwarenessEnabled: false,
+			instanceZone:         "",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"single zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a"},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"empty zones list": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"current zone not found in zones list": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-missing",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             defaultBaseHeadCompactionInterval,
+		},
+		"two zones - first zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             3 * time.Minute, // It's 00:27:00, so the next compaction interval is 00:30:00, which is 3 minutes from now.
+		},
+		"two zones - second zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-b",
+			zones:                []string{"zone-a", "zone-b"},
+			expected:             10*time.Minute + 30*time.Second, // It's 00:27:00, so the next compaction interval is 00:37:30, which is 10 minutes and 30 seconds from now.
+		},
+		"three zones - first zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-a",
+			zones:                []string{"zone-a", "zone-b", "zone-c"},
+			expected:             3 * time.Minute, // It's 00:27:00, so the next compaction interval for zone a is 00:30:00, which is 3 minutes from now.
+		},
+		"three zones - middle zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-b",
+			zones:                []string{"zone-a", "zone-b", "zone-c"},
+			expected:             8 * time.Minute, // It's 00:27:00, so the next compaction interval for zone b is 00:35:00, which is 8 minutes from now.
+		},
+		"three zones - last zone": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-c",
+			zones:                []string{"zone-a", "zone-b", "zone-c"},
+			expected:             13 * time.Minute, // It's 00:27:00, so the next compaction interval for zone c is 00:40:00, which is 13 minutes from now.
+		},
+		"many zones - verify staggering by picking one random": {
+			zoneAwarenessEnabled: true,
+			instanceZone:         "zone-c",
+			zones:                []string{"zone-a", "zone-b", "zone-c", "zone-d", "zone-e"},
+			expected:             9 * time.Minute, // It's 00:27:00, so the next compaction interval for zone-3 is 00:36:00, which is 9 minutes from now.
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				cfg       = defaultIngesterTestConfig(t)
+				overrides = validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			)
+
+			cfg.IngesterRing.ZoneAwarenessEnabled = tt.zoneAwarenessEnabled
+			cfg.IngesterRing.InstanceZone = tt.instanceZone
+			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = defaultBaseHeadCompactionInterval
+
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+
+			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
+			require.Equal(t, tt.expected, headCompactionInterval)
+		})
+	}
+}
+
+func TestIngester_timeUntilCompaction(t *testing.T) {
+	// July 21st 2025, 10:00 AM
+	fakeNow := time.Date(2025, 7, 21, 10, 0, 0, 0, time.UTC)
+
+	tc := map[string]struct {
+		now        time.Time
+		interval   time.Duration
+		zoneOffset time.Duration
+		expected   time.Duration
+	}{
+		"no offset zone and starting at :00 gives us interval as-is": {
+			now:        fakeNow,
+			interval:   15 * time.Minute,
+			zoneOffset: 0,
+			expected:   15 * time.Minute, // Next interval at 10:15
+		},
+		"with offset zone of 7m30s and starting at :00 gives interval of 7m30s": {
+			now:        fakeNow,
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   7*time.Minute + 30*time.Second, // Next interval at 10:07:30
+		},
+		"with offset zone of 15m and equal to interval gives us offset interval as-is": {
+			now:        fakeNow,
+			interval:   15 * time.Minute,
+			zoneOffset: 15 * time.Minute,
+			expected:   15 * time.Minute, // Offset wraps around to the beginning of the interval
+		},
+		"with offset zone of 7m30s and starting at :10 gives us offset 12m30s": {
+			now:        fakeNow.Add(10 * time.Minute), // 10:10:00
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   12*time.Minute + 30*time.Second, // Next interval at 10:22:30
+		},
+		"with offset zone of 7m30s, current time around the second interval": {
+			now:        fakeNow.Add(26 * time.Minute), // 10:26:00
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   11*time.Minute + 30*time.Second, // Next interval at 10:37:30, 11m30s to the next interval.
+		},
+		"with offset zone of 7m30s, current time around the third interval": {
+			now:        fakeNow.Add(39*time.Minute + 13*time.Second), // 10:39:13
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   13*time.Minute + 17*time.Second, // Next interval at 10:52:30, 13m17s to the next interval.
+		},
+		"with offset zone of 7m30s, current time around the fourth interval": {
+			now:        fakeNow.Add(52*time.Minute + 29*time.Second), // 10:52:29
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   1 * time.Second, // Next interval at 10:52:30, 1s to the next interval.
+		},
+		"with offset zone of 7m30s, current time around past the fourth interval": {
+			now:        fakeNow.Add(58*time.Minute + 40*time.Second), // 10:58:40
+			interval:   15 * time.Minute,
+			zoneOffset: 7*time.Minute + 30*time.Second,
+			expected:   8*time.Minute + 50*time.Second, // Next interval at 11:07:30, 1s to the next interval.
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			result := timeUntilCompaction(tt.now, tt.interval, tt.zoneOffset)
+			require.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 // Returned ingester is NOT started.
