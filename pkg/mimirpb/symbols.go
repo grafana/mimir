@@ -95,28 +95,21 @@ func (t *FastSymbolsTable) ConfigureCommonSymbols(offset uint32, commonSymbols [
 }
 
 func (t *FastSymbolsTable) Symbolize(str string) uint32 {
-	sym, _ := t.SymbolizeCheckNew(str)
-	return sym
-}
-
-// SymbolizeCheckNew symbolizes a string and gives information about the table.
-// It returns the symbol, and an indication of whether the symbol is newly added to the table.
-func (t *FastSymbolsTable) SymbolizeCheckNew(str string) (uint32, bool) {
 	if str == "" {
 		// 0 means empty string, even if an offset is provided.
-		return 0, false
+		return 0
 	}
 	if t.commonSymbols != nil {
 		// TODO: CommonSymbols is bounded size, it small enough to where linear search is faster?
 		for i := range t.commonSymbols {
 			if str == t.commonSymbols[i] {
-				return uint32(i), false
+				return uint32(i)
 			}
 		}
 	}
 
 	if ref, ok := t.symbolsMap[str]; ok {
-		return ref, false
+		return ref
 	}
 	// Symbol indexes in the map start at 1 because 0 is always reserved, and we don't need to use space to store it.
 	symMapLen := len(t.symbolsMap)
@@ -125,7 +118,7 @@ func (t *FastSymbolsTable) SymbolizeCheckNew(str string) (uint32, bool) {
 	if symMapLen+1 > t.symbolsMapCapacityLowerBound {
 		t.symbolsMapCapacityLowerBound = symMapLen + 1
 	}
-	return ref, true
+	return ref
 }
 
 func (t *FastSymbolsTable) CountSymbols() int {
