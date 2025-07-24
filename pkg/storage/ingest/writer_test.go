@@ -1072,7 +1072,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		for _, rec := range records {
 			assert.Equal(t, int32(1), rec.Partition)
 			assert.Equal(t, "user-1", string(rec.Key))
-			assert.Less(t, len(rec.Value), limit)
+			assert.LessOrEqual(t, len(rec.Value), limit)
 
 			actual := &mimirpb.PreallocWriteRequest{
 				UnmarshalFromRW2: true,
@@ -1089,19 +1089,87 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			{
 				Source:              mimirpb.RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[0], req.Timeseries[1]},
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{},
 			}, {
 				Source:              mimirpb.RULE,
 				SkipLabelValidation: true,
-				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[2]},
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+							Samples:   []mimirpb.Sample{},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_1",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the first test metric.",
+					},
+				},
 			}, {
 				Source:              mimirpb.RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[0], req.Metadata[1]},
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+							Samples:   []mimirpb.Sample{},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_2",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the second test metric.",
+					},
+				},
 			}, {
 				Source:              mimirpb.RULE,
 				SkipLabelValidation: true,
-				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[2]},
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+							Samples:   []mimirpb.Sample{},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_3",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the third test metric.",
+					},
+				},
 			},
 		}, partials)
 	})
