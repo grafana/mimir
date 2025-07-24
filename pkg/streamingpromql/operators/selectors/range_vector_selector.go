@@ -103,7 +103,7 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
 
-	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, (int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())*int64(m.Selector.sampleCountMultiplicator))
+	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, (int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())*int64(m.Selector.GetSampleCountFactor()))
 
 	return m.stepData, nil
 }

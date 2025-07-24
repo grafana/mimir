@@ -67,9 +67,20 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		return nil, err
 	}
 
-	selector := selectors.NewSelector(params.Queryable, timeRange, TimestampFromTime(m.Timestamp), m.Offset.Milliseconds(), matchers, params.EagerLoadSelectors, m.SkipHistogramBuckets, params.LookbackDelta, m.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	selector := &selectors.Selector{
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(m.Timestamp),
+		Offset:                   m.Offset.Milliseconds(),
+		Range:                    m.Range,
+		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     m.SkipHistogramBuckets,
+		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+	}
 	if m.SampleCountMultiplicator != 0 {
-		selector.MultiplexStats(m.SampleCountMultiplicator)
+		selector.SetSampleCountFactor(m.SampleCountMultiplicator)
 	}
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 

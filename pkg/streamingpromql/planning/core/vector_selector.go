@@ -72,9 +72,20 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	if err != nil {
 		return nil, err
 	}
-	selector := selectors.NewSelector(params.Queryable, timeRange, TimestampFromTime(v.Timestamp), v.Offset.Milliseconds(), matchers, params.EagerLoadSelectors, v.SkipHistogramBuckets, params.LookbackDelta, v.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	selector := &selectors.Selector{
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(v.Timestamp),
+		Offset:                   v.Offset.Milliseconds(),
+		LookbackDelta:            params.LookbackDelta,
+		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     v.SkipHistogramBuckets,
+		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+	}
 	if v.SampleCountMultiplicator != 0 {
-		selector.MultiplexStats(v.SampleCountMultiplicator)
+		selector.SetSampleCountFactor(v.SampleCountMultiplicator)
 	}
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
 }
