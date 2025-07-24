@@ -51,7 +51,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 
 	t.Run("should return the input WriteRequest if its size is less than the size limit - RW2", func(t *testing.T) {
 		reqv2 := testReqV2Static(t)
-		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), 100000)
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), 100000)
 		require.Len(t, partials, 1)
 		assert.Equal(t, reqv2, partials[0])
 	})
@@ -90,7 +90,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		const limit = 150
 		reqv2 := testReqV2Static(t)
 
-		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
@@ -148,7 +148,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		const limit = 200
 		reqv2 := testReqV2Static(t)
 
-		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
@@ -199,7 +199,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		const limit = 50
 		reqv2 := testReqV2Static(t)
 
-		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
@@ -289,7 +289,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		const limit = 70
 		reqv2 := testReqV2Static(t)
 
-		partials := SplitWriteRequestByMaxMarshalSize(reqv2, reqv2.Size(), limit)
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
 				Source:              RULE,
@@ -399,7 +399,7 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 			assert.Equal(t, req, reqCpy)
 
 			maxSize := req.Size() / (1 + rnd.Intn(10))
-			partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+			partials := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize)
 
 			// Ensure the merge of all partial requests is equal to the original one.
 			merged := mergeRW2s(partials)
@@ -423,7 +423,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 	}
 
 	// If the fields of WriteRequest have changed, then you will probably need to modify
-	// the SplitWriteRequestByMaxMarshalSize() implementation accordingly!
+	// the SplitWriteRequestByMaxMarshalSize() and SplitWriteRequestByMaxMarshalSize() implementations accordingly!
 	assert.ElementsMatch(t, []string{
 		"Timeseries",
 		"Source",
@@ -440,10 +440,19 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 }
 
 func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
-	benchmarkSplitWriteRequestByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
-		for n := 0; n < b.N; n++ {
-			SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
-		}
+	b.Run("rw1", func(b *testing.B) {
+		benchmarkSplitWriteRequestByMaxMarshalSize(b, generateWriteRequest, func(b *testing.B, req *WriteRequest, maxSize int) {
+			for n := 0; n < b.N; n++ {
+				SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+			}
+		})
+	})
+	b.Run("rw2", func(b *testing.B) {
+		benchmarkSplitWriteRequestByMaxMarshalSize(b, generateWriteRequestRW2, func(b *testing.B, req *WriteRequest, maxSize int) {
+			for n := 0; n < b.N; n++ {
+				SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize)
+			}
+		})
 	})
 }
 
@@ -451,38 +460,69 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 	// In this benchmark we simulate a behaviour similar to distributor one, where the WriteRequest is
 	// initially unmarshalled, then sharded (skipped in this test), then split by max size and finally
 	// each partial request is marshalled.
-	benchmarkSplitWriteRequestByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
-		isRW2 := req.SymbolsRW2 != nil
-		marshalledReq, err := req.Marshal()
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		for n := 0; n < b.N; n++ {
-			// Unmarshal the request.
-			unmarshalledReq := &WriteRequest{
-				unmarshalFromRW2: isRW2,
-			}
-			if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
+	b.Run("rw1", func(b *testing.B) {
+		benchmarkSplitWriteRequestByMaxMarshalSize(b, generateWriteRequest, func(b *testing.B, req *WriteRequest, maxSize int) {
+			marshalledReq, err := req.Marshal()
+			if err != nil {
 				b.Fatal(err)
 			}
 
-			// Split the request.
-			partialReqs := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
-
-			// Marshal each split request.
-			for _, partialReq := range partialReqs {
-				if data, err := partialReq.Marshal(); err != nil {
+			for n := 0; n < b.N; n++ {
+				// Unmarshal the request.
+				unmarshalledReq := &WriteRequest{}
+				if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
 					b.Fatal(err)
-				} else if len(data) >= maxSize {
-					b.Fatalf("the marshalled partial request (%d bytes) is larger than max size (%d bytes)", len(data), maxSize)
+				}
+
+				// Split the request.
+				partialReqs := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+
+				// Marshal each split request.
+				for _, partialReq := range partialReqs {
+					if data, err := partialReq.Marshal(); err != nil {
+						b.Fatal(err)
+					} else if len(data) >= maxSize {
+						b.Fatalf("the marshalled partial request (%d bytes) is larger than max size (%d bytes)", len(data), maxSize)
+					}
 				}
 			}
-		}
+		})
 	})
+
+	b.Run("rw2", func(b *testing.B) {
+		benchmarkSplitWriteRequestByMaxMarshalSize(b, generateWriteRequestRW2, func(b *testing.B, req *WriteRequest, maxSize int) {
+			marshalledReq, err := req.Marshal()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			for n := 0; n < b.N; n++ {
+				// Unmarshal the request.
+				unmarshalledReq := &WriteRequest{
+					unmarshalFromRW2: true,
+				}
+				if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
+					b.Fatal(err)
+				}
+
+				// Split the request.
+				partialReqs := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize)
+
+				// Marshal each split request.
+				for _, partialReq := range partialReqs {
+					if data, err := partialReq.Marshal(); err != nil {
+						b.Fatal(err)
+					} else if len(data) >= maxSize {
+						b.Fatalf("the marshalled partial request (%d bytes) is larger than max size (%d bytes)", len(data), maxSize)
+					}
+				}
+			}
+		})
+	})
+
 }
 
-func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
+func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, generator func(int, int, int, int) *WriteRequest, run func(b *testing.B, req *WriteRequest, maxSize int)) {
 	tests := map[string]struct {
 		numSeries           int
 		numLabelsPerSeries  int
@@ -533,31 +573,22 @@ func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, run func(b *testin
 		},
 	}
 
-	generators := map[string]func(int, int, int, int) *WriteRequest{
-		"rw1": generateWriteRequest,
-		"rw2": generateWriteRequestRW2,
-	}
-
 	for testName, testData := range tests {
 		b.Run(testName, func(b *testing.B) {
-			for genName, gen := range generators {
-				b.Run(genName, func(b *testing.B) {
-					req := gen(testData.numSeries, testData.numLabelsPerSeries, testData.numSamplesPerSeries, testData.numMetadata)
-					reqSize := req.Size()
+			req := generator(testData.numSeries, testData.numLabelsPerSeries, testData.numSamplesPerSeries, testData.numMetadata)
+			reqSize := req.Size()
 
-					// Test with different split size.
-					splitScenarios := map[string]int{
-						"no splitting":           reqSize * 2,
-						"split in few requests":  int(float64(reqSize) * 0.8),
-						"split in many requests": int(float64(reqSize) * 0.11),
-					}
+			// Test with different split size.
+			splitScenarios := map[string]int{
+				"no splitting":           reqSize * 2,
+				"split in few requests":  int(float64(reqSize) * 0.8),
+				"split in many requests": int(float64(reqSize) * 0.11),
+			}
 
-					for splitName, maxSize := range splitScenarios {
-						b.Run(splitName, func(b *testing.B) {
-							b.ResetTimer()
-							run(b, req, maxSize)
-						})
-					}
+			for splitName, maxSize := range splitScenarios {
+				b.Run(splitName, func(b *testing.B) {
+					b.ResetTimer()
+					run(b, req, maxSize)
 				})
 			}
 		})
