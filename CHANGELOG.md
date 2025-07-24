@@ -44,6 +44,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Update the `MimirIngestedDataTooFarInTheFuture` runbook with a note about false positives and the endpoint to flush TSDB blocks by user. #11961
+* [BUGFIX] Add missing attribute from list of default promoted OTel resource attributes in docs: deployment.environment. #12181
 
 ## 2.17.0-rc.0
 
