@@ -12,6 +12,7 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
+    $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
 
@@ -71,13 +72,6 @@
 
   query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
-
-  query_frontend_discovery_service: if $._config.query_scheduler_enabled then null else
-    // Make sure that query frontend worker, running in the querier, do resolve
-    // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
-    // use the service cluster IP so that when the service DNS is resolved it
-    // returns the set of query-frontend IPs.
-    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
 
   query_frontend_pdb:
     $.newMimirPdb('query-frontend'),

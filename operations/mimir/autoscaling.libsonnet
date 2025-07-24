@@ -50,9 +50,6 @@
     autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
-  assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
-         : 'you must enable query-scheduler in order to use querier autoscaling',
-
   // KEDA defaults to apiVersion: apps/v1 and kind: Deployment for scaleTargetRef, this function
   // avoids specifying apiVersion and kind if they are at their defaults.
   local scaleTargetRef(apiVersion, kind, name) = if apiVersion != 'apps/v1' || kind != 'Deployment' then {
