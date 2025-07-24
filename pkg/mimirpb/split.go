@@ -85,7 +85,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	for i := 0; i < len(req.TimeseriesRW2); i++ {
 		// Both are upper bounds. In particular symbolsSize does have knowledge of whether symbols can be re-used.
 		// The actual growth will be less than or equal to these values.
-		seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&req.TimeseriesRW2[i], req.SymbolsRW2, req.rw2symbols.offset)
+		seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&req.TimeseriesRW2[i], req.SymbolsRW2, offset)
 
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
@@ -258,26 +258,32 @@ func maxRW2SeriesSizeAfterResymbolization(ts *TimeSeriesRW2, symbols []string, s
 	seriesSize = ts.Size()
 	symbolsSize = 0
 
-	var l int
 	for _, e := range ts.LabelsRefs {
 		seriesSize += (symbolSizeUpperBound - sovMimir(uint64(e)))
-		l = len(symbols[e])
-		symbolsSize += 1 + l + sovMimir(uint64(l))
+		symbolsSize += resolvedSymbolSize(e, symbols, symbolOffset)
 	}
 	for _, ex := range ts.Exemplars {
 		for _, e := range ex.LabelsRefs {
 			seriesSize += (symbolSizeUpperBound - sovMimir(uint64(e)))
-			l = len(symbols[e])
-			symbolsSize += 1 + l + sovMimir(uint64(l))
+			symbolsSize += resolvedSymbolSize(e, symbols, symbolOffset)
 		}
 	}
 	seriesSize += (symbolSizeUpperBound - sovMimir(uint64(ts.Metadata.HelpRef)))
-	l = len(symbols[ts.Metadata.HelpRef])
-	symbolsSize += 1 + l + sovMimir(uint64(l))
+	symbolsSize += resolvedSymbolSize(ts.Metadata.HelpRef, symbols, symbolOffset)
 	seriesSize += (symbolSizeUpperBound - sovMimir(uint64(ts.Metadata.UnitRef)))
-	l = len(symbols[ts.Metadata.UnitRef])
-	symbolsSize += 1 + l + sovMimir(uint64(l))
+	symbolsSize += resolvedSymbolSize(ts.Metadata.UnitRef, symbols, symbolOffset)
 	return
+}
+
+func resolvedSymbolSize(ref uint32, symbols []string, offset uint32) int {
+	if ref == 0 {
+		return 1 + sovMimir(uint64(0))
+	}
+	if ref > 0 && ref < offset {
+		return 0
+	}
+	l := len(symbols[ref-offset])
+	return 1 + l + sovMimir(uint64(l))
 }
 
 // resymbolizeTimeSeriesRW2 resolves and re-symbolizes a TimeSeriesRW2 in the context of a new request.

@@ -153,10 +153,7 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
 
-	split := func(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
-		return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V2RecordSymbolOffset, V2CommonSymbols)
-	}
-	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, split)
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, splitRequestVersionTwo)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to serialise write request")
 	}
@@ -189,4 +186,9 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
 	wr.RW2CommonSymbols = V2CommonSymbols
 	return wr.Unmarshal(content)
+}
+
+// splitRequestVersionTwo adapts mimirpb.SplitWriteRequestByMaxMarshalSizeRW2 to requestSplitter
+func splitRequestVersionTwo(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
+	return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V2RecordSymbolOffset, V2CommonSymbols)
 }
