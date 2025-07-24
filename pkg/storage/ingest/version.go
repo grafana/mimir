@@ -153,7 +153,10 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
 
-	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSizeRW2)
+	split := func(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
+		return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V2RecordSymbolOffset, V2CommonSymbols)
+	}
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, split)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to serialise write request")
 	}
