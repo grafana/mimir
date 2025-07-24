@@ -102,6 +102,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 			nextReqTimeseriesLength = 0
 			nextReqSymbolsSize = 0
 			nextReqSymbols.Reset()
+			nextReqSymbols.ConfigureCommonSymbols(offset, commonSymbols)
 		}
 
 		// Add the current series to next partial request.
@@ -289,12 +290,15 @@ func resolvedSymbolSize(ref uint32, symbols []string, offset uint32) int {
 // resymbolizeTimeSeriesRW2 resolves and re-symbolizes a TimeSeriesRW2 in the context of a new request.
 // Work is done in-place, the provided timeseries is modified.
 // It returns the total size delta for the timeseries.
+// It is expected that the old and new requests use the same common symbols set.
 func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *FastSymbolsTable) int {
 	delta := 0
+	offset := symbols.offset
+	commonSymbols := symbols.commonSymbols
 
 	for i := range ts.LabelsRefs {
 		oldRef := ts.LabelsRefs[i]
-		newRef := symbols.Symbolize(origSymbols[oldRef])
+		newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
 		ts.LabelsRefs[i] = newRef
 		delta += sovMimir(uint64(newRef)) - sovMimir(uint64(oldRef))
 	}
@@ -302,21 +306,28 @@ func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *
 	for i := range ts.Exemplars {
 		for j := range ts.Exemplars[i].LabelsRefs {
 			oldRef := ts.Exemplars[i].LabelsRefs[j]
-			newRef := symbols.Symbolize(origSymbols[oldRef])
+			newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
 			ts.Exemplars[i].LabelsRefs[j] = newRef
 			delta += sovMimir(uint64(ts.Exemplars[i].LabelsRefs[j])) - sovMimir(uint64(oldRef))
 		}
 	}
 
 	oldRef := ts.Metadata.HelpRef
-	newRef := symbols.Symbolize(origSymbols[oldRef])
+	newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
 	delta += sovMimir(uint64(ts.Metadata.HelpRef)) - sovMimir(uint64(oldRef))
 	ts.Metadata.HelpRef = newRef
 
 	oldRef = ts.Metadata.UnitRef
-	newRef = symbols.Symbolize(origSymbols[oldRef])
+	newRef = symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
 	delta += sovMimir(uint64(ts.Metadata.UnitRef)) - sovMimir(uint64(oldRef))
 	ts.Metadata.UnitRef = newRef
 
 	return delta
+}
+
+func resolveRef(ref uint32, symbols []string, commonSymbols []string, offset uint32) string {
+	if ref < offset {
+		return commonSymbols[ref]
+	}
+	return symbols[ref-offset]
 }

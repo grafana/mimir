@@ -519,7 +519,6 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 			}
 		})
 	})
-
 }
 
 func benchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B, generator func(int, int, int, int) *WriteRequest, run func(b *testing.B, req *WriteRequest, maxSize int)) {
@@ -930,8 +929,12 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 		t.Run("resymbolize with different symbol magnitudes", func(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
-			// Big references use more bytes when encoded.
-			newTable.ConfigureCommonSymbols(10000, nil)
+			// Proto encodes larger references (i.e. larger varints) with more bytes.
+			// Fill the table with a bunch of junk, to make our new strings have numerically large references.
+			for i := range 10000 {
+				newTable.Symbolize(fmt.Sprintf("%d", i))
+			}
+
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unit"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -947,7 +950,8 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
-			require.Equal(t, syms, newTable.Symbols())
+			require.Equal(t, "", newTable.Symbols()[0])
+			require.Equal(t, syms[1:], newTable.Symbols()[10001:])
 			require.Equal(t, []uint32{10001, 10002, 10003, 10004}, ts.LabelsRefs)
 			require.Equal(t, []uint32{10005, 10006}, ts.Exemplars[0].LabelsRefs)
 			require.Equal(t, uint32(10007), ts.Metadata.HelpRef)
