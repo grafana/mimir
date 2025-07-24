@@ -267,14 +267,6 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 	}
 }
 
-func preAllocDynamicSliceToSlice(prealloc PreAllocDynamicSlice) []int {
-	slice := make([]int, prealloc.Len())
-	for i := 0; i < prealloc.Len(); i++ {
-		slice[i] = int(prealloc.Get(i))
-	}
-	return slice
-}
-
 func BenchmarkMatchesSeries(b *testing.B) {
 	trackerCounts := []int{10, 100, 1000}
 	asms := make([]*Matchers, len(trackerCounts))
@@ -761,7 +753,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 		}
 	}
 
-	// Pattern matches integrations/cloud/cloudprovider with \d+-Glue-.+ 
+	// Pattern matches integrations/cloud/cloudprovider with \d+-Glue-.+
 	for i := 0; i < 5; i++ {
 		jobName := fmt.Sprintf("%d-Glue-job-%d", 1000+i, i)
 		for _, metricName := range []string{"cloudprovider_glue_data_processing_units", "cloudprovider_glue_job_runs_total"} {
