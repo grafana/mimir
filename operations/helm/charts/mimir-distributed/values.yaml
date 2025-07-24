@@ -262,7 +262,7 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+      {{- if not .Values.federation_frontend.disableOtherComponents }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
@@ -272,11 +272,7 @@ mimir:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
-      {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- else }}
-      frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- end }}
 
     {{- if and .Values.enterprise.enabled }}
     gateway:
