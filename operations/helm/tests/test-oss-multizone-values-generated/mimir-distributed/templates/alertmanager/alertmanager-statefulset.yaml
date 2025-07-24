@@ -104,6 +104,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r350-d2a17f27
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -260,6 +261,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r350-d2a17f27
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -416,6 +418,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r350-d2a17f27
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

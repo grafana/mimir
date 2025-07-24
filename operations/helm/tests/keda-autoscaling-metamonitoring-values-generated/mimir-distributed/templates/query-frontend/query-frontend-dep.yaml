@@ -43,6 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
+          image: docker.io/grafana/mimir:r350-d2a17f27
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"

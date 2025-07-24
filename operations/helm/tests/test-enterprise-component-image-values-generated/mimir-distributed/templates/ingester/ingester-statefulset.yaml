@@ -93,7 +93,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
-          image: test/ingester:1-ingester
+          image: /test/ingester:1-ingester
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -238,7 +238,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
-          image: test/ingester:1-ingester
+          image: /test/ingester:1-ingester
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -383,7 +383,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
-          image: test/ingester:1-ingester
+          image: /test/ingester:1-ingester
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

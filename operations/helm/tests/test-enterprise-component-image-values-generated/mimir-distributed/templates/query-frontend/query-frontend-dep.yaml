@@ -45,7 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
-          image: test/query_frontend:1-query-frontend
+          image: /test/query_frontend:1-query-frontend
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"

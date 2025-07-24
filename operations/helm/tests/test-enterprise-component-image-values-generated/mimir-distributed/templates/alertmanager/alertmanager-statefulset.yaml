@@ -85,7 +85,7 @@ spec:
             name: test-enterprise-component-image-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: test/alertmanager:1-alertmanager
+          image: /test/alertmanager:1-alertmanager
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

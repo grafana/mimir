@@ -81,7 +81,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
-          image: test/compactor:1-compactor
+          image: /test/compactor:1-compactor
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

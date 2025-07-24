@@ -47,7 +47,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: distributor
-          image: test/distributor:1-distributor
+          image: /test/distributor:1-distributor
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

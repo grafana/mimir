@@ -81,6 +81,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: /grafana/enterprise-metrics:r350-05f08dfd
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

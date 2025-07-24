@@ -90,7 +90,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: test/store_gateway:1-store-gateway
+          image: docker.io/test/store_gateway:1-store-gateway
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -232,7 +232,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: test/store_gateway:1-store-gateway
+          image: docker.io/test/store_gateway:1-store-gateway
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -374,7 +374,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: test/store_gateway:1-store-gateway
+          image: docker.io/test/store_gateway:1-store-gateway
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
