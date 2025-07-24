@@ -116,6 +116,19 @@ var benchmarkCases = []struct {
 			labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
 		},
 	},
+	{
+		name: "SpecificZoneWithMetricName",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_3"),
+			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+		},
+	},
+	{
+		name: "SpecificZoneNoMetricName",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+		},
+	},
 	// TODO find out why it fails
 	// {
 	//	name: "ExpensiveRegexMultipleMetrics",
