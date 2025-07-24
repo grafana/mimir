@@ -725,3 +725,74 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 		SkipLabelValidation: partials[0].SkipLabelValidation,
 	}
 }
+
+func TestRW2SymbolSplitting(t *testing.T) {
+	t.Run("timeseries size estimation", func(t *testing.T) {
+		t.Run("symbols size matches proto size", func(t *testing.T) {
+			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{5, 6}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			}
+
+			_, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&ts, syms, 0)
+
+			req := &WriteRequest{SymbolsRW2: syms}
+			require.Equal(t, req.SymbolsRW2Size(), symbolsSize)
+		})
+
+		t.Run("symbols size only considers referenced symbols", func(t *testing.T) {
+			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 4, 5, 6},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{7, 8}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 9,
+				},
+			}
+
+			_, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&ts, syms, 0)
+
+			referencedSyms := []string{"", syms[1], syms[4], syms[5], syms[6], syms[7], syms[8], syms[9]}
+			req := &WriteRequest{SymbolsRW2: referencedSyms}
+			require.Equal(t, req.SymbolsRW2Size(), symbolsSize)
+		})
+
+		t.Run("upper bound grows with possible symbol magnitude", func(t *testing.T) {
+			// Protobuf varints under 128 are stored with 1 byte.
+			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			ts := TimeSeriesRW2{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []ExemplarRW2{{Timestamp: 30, LabelsRefs: []uint32{5, 6}}},
+				Histograms: []Histogram{{Timestamp: 10}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 7,
+				},
+			}
+
+			req := &WriteRequest{TimeseriesRW2: []TimeSeriesRW2{ts}}
+			actualSize := req.TimeseriesRW2Size()
+
+			seriesSizeSmallRefs, _ := maxRW2SeriesSizeAfterResymbolization(&ts, syms, 0)
+			require.Greater(t, seriesSizeSmallRefs, actualSize)
+			// The upper bound should not be vastly larger
+			require.Less(t, seriesSizeSmallRefs, 2*actualSize)
+
+			seriesSizeBigRefs, _ := maxRW2SeriesSizeAfterResymbolization(&ts, syms, 10000)
+			require.Greater(t, seriesSizeBigRefs, seriesSizeSmallRefs)
+			// The upper bound should not be vastly larger
+			require.Less(t, seriesSizeBigRefs, 2*actualSize)
+		})
+	})
+}

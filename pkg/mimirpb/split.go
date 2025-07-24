@@ -236,6 +236,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 }
 
 // maxSeriesSizeAfterResymbolization calculates an upper bound for the size of the given TimeSeries, and its referenced symbols.
+// It is only an upper bound. The actual series might end up being smaller if it re-uses symbols or has low magnitude references.
 func maxRW2SeriesSizeAfterResymbolization(ts *TimeSeriesRW2, symbols []string, symbolOffset uint32) (seriesSize int, symbolsSize int) {
 	// Symbol references are eventually encoded as protobuf varints which do not have a stable size.
 	// So, resymbolization might alter the size of the timeseries by a few bytes.
