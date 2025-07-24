@@ -269,7 +269,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group []*path, duplicatePathLe
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
-	setSampleCountMultiplicator(duplicatedExpression, uint32(len(group)))
+	setSampleCountFactor(duplicatedExpression, uint32(len(group)))
 
 	for _, path := range group {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
@@ -378,22 +378,22 @@ func (p *path) String() string {
 	return b.String()
 }
 
-// setSampleCountMultiplicator sets SampleCountMultiplicator on the VectorSelector and MatrixSelector nodes.
+// setSampleCountFactor sets SampleCountFactor on the VectorSelector and MatrixSelector nodes.
 // It sets it only if multipilcator was not set before to avoid overwriting it for nested duplicate expressions.
-func setSampleCountMultiplicator(node planning.Node, multiplicator uint32) {
+func setSampleCountFactor(node planning.Node, factor uint32) {
 	switch selector := node.(type) {
 	case *core.VectorSelector:
-		if selector.SampleCountMultiplicator == 0 {
-			selector.SampleCountMultiplicator = multiplicator
+		if selector.SampleCountFactor == 0 {
+			selector.SampleCountFactor = factor
 		}
 		return
 	case *core.MatrixSelector:
-		if selector.SampleCountMultiplicator == 0 {
-			selector.SampleCountMultiplicator = multiplicator
+		if selector.SampleCountFactor == 0 {
+			selector.SampleCountFactor = factor
 		}
 		return
 	}
 	for _, child := range node.Children() {
-		setSampleCountMultiplicator(child, multiplicator)
+		setSampleCountFactor(child, factor)
 	}
 }

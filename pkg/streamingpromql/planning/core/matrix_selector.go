@@ -79,8 +79,8 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
-	if m.SampleCountMultiplicator != 0 {
-		selector.SetSampleCountFactor(m.SampleCountMultiplicator)
+	if m.SampleCountFactor != 0 {
+		selector.SetSampleCountFactor(m.SampleCountFactor)
 	}
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
