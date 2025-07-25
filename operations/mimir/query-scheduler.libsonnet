@@ -1,4 +1,4 @@
-// Query-scheduler is optional service. When query-scheduler.libsonnet is added to Mimir, querier and frontend
+// Query-scheduler is a required service. When query-scheduler.libsonnet is added to Mimir, querier and frontend
 // are reconfigured to use query-scheduler service.
 {
   local container = $.core.v1.container,
@@ -50,28 +50,28 @@
     // Set a termination grace period greater than query timeout.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
-  query_scheduler_deployment: if !$._config.query_scheduler_enabled then {} else
+  query_scheduler_deployment:
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container, $.query_scheduler_node_affinity_matchers),
 
-  query_scheduler_service: if !$._config.query_scheduler_enabled then {} else
+  query_scheduler_service:
     $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels),
 
   local discoveryServiceName(prefix) = '%s-discovery' % prefix,
+
+  local querySchedulerAddress(name) =
+    '%s.%s.svc.%s:9095' % [discoveryServiceName(name), $._config.namespace, $._config.cluster_domain],
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   newQuerySchedulerDiscoveryService(name, deployment)::
     $.newMimirDiscoveryService(discoveryServiceName(name), deployment),
 
-  query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
+  query_scheduler_discovery_service:
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
 
-  query_scheduler_pdb: if !$._config.query_scheduler_enabled then null else
+  query_scheduler_pdb:
     $.newMimirPdb('query-scheduler'),
 
-  // Reconfigure querier and query-frontend to use scheduler.
-
-  local querySchedulerAddress(name) =
-    '%s.%s.svc.%s:9095' % [discoveryServiceName(name), $._config.namespace, $._config.cluster_domain],
+  // Methods to generate querier and query-frontend args to use the scheduler.
 
   querierUseQuerySchedulerArgs(name):: {
     'querier.frontend-address': null,
@@ -91,10 +91,4 @@
     } else {
       'query-frontend.scheduler-address': querySchedulerAddress(name),
     },
-
-  querier_args+:: if !$._config.query_scheduler_enabled then {} else
-    self.querierUseQuerySchedulerArgs('query-scheduler'),
-
-  query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else
-    self.queryFrontendUseQuerySchedulerArgs('query-scheduler'),
 }
