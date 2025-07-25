@@ -116,7 +116,7 @@ func TestCombinedAppender(t *testing.T) {
 				},
 			},
 		},
-		"multiple float samples, different series": {
+		"multiple float samples, different series, same family": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
@@ -167,12 +167,6 @@ func TestCombinedAppender(t *testing.T) {
 				},
 			},
 			expectMetadata: []*mimirpb.MetricMetadata{
-				{
-					Type:             mimirpb.COUNTER,
-					MetricFamilyName: "spam",
-					Help:             "help!",
-					Unit:             "bytes",
-				},
 				{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: "spam",

@@ -15,7 +15,6 @@ import (
 type labelsIdx struct {
 	idx  int
 	lbls labels.Labels
-	meta metadata.Metadata
 }
 
 // defaultIntervalForStartTimestamps is hardcoded to 5 minutes in milliseconds.
@@ -39,6 +38,11 @@ type CombinedAppender struct {
 	// TODO(krajorama): add overflow for handling hash collisions.
 	// Do we really need this? The code will just create a new series.
 	refs map[uint64]labelsIdx
+
+	// metricFamilies is used to store metadata for each metric family.
+	// This is needed to not send metadata duplicates all the time.
+	// We could get rid of this if we switched to RW2 all the way through.
+	metricFamilies map[string]metadata.Metadata
 }
 
 func NewCombinedAppender() *CombinedAppender {
@@ -46,7 +50,8 @@ func NewCombinedAppender() *CombinedAppender {
 		options: CombinedAppenderOptions{
 			ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		},
-		refs: make(map[uint64]labelsIdx),
+		refs:           make(map[uint64]labelsIdx),
+		metricFamilies: make(map[string]metadata.Metadata),
 	}
 }
 
@@ -68,7 +73,7 @@ func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb
 func (c *CombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
-	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
+	hash, idx, seenSeries := c.processLabelsAndMetadata(ls)
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
 		c.createNewSeries(&idx, hash, ls, ct)
@@ -76,7 +81,7 @@ func (c *CombinedAppender) AppendSample(metricFamilyName string, ls labels.Label
 
 	c.series[idx.idx].TimeSeries.Samples = append(c.series[idx.idx].TimeSeries.Samples, mimirpb.Sample{TimestampMs: t, Value: v})
 	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(appendMeta, metricFamilyName, meta)
+	c.appendMetadata(metricFamilyName, meta)
 
 	return nil
 }
@@ -84,7 +89,7 @@ func (c *CombinedAppender) AppendSample(metricFamilyName string, ls labels.Label
 func (c *CombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
-	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
+	hash, idx, seenSeries := c.processLabelsAndMetadata(ls)
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
 		c.createNewSeries(&idx, hash, ls, ct)
@@ -92,7 +97,7 @@ func (c *CombinedAppender) AppendHistogram(metricFamilyName string, ls labels.La
 
 	c.series[idx.idx].TimeSeries.Histograms = append(c.series[idx.idx].TimeSeries.Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(appendMeta, metricFamilyName, meta)
+	c.appendMetadata(metricFamilyName, meta)
 
 	return nil
 }
@@ -119,23 +124,13 @@ func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 // processLabelsAndMetadata figures out if we have already seen this
 // exact label set and whether we need to update the metadata.
 // krajorama: I could not make this inline.
-func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels, meta metadata.Metadata) (hash uint64, idx labelsIdx, seenSeries, appendMeta bool) {
+func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, seenSeries bool) {
 	hash = ls.Hash()
 	idx, ok := c.refs[hash]
 	if ok && labels.Equal(idx.lbls, ls) {
 		seenSeries = true
-		if idx.meta.Type != meta.Type || idx.meta.Help != meta.Help || idx.meta.Unit != meta.Unit {
-			// If the label set already exists, but the metadata has changed,
-			// we need to update the metadata. Should be rare.
-			appendMeta = true
-			idx.meta = meta
-			c.refs[hash] = idx
-		}
 	} else {
-		// This is a new series.
-		appendMeta = true
 		idx.lbls = ls
-		idx.meta = meta
 	}
 	return
 }
@@ -161,11 +156,13 @@ func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar
 }
 
 // appendMetadata appends metadata to the time series at the given index.
-// It's split from appendExemplars to be eligible for inlining.
-func (c *CombinedAppender) appendMetadata(appendMeta bool, metricFamilyName string, meta metadata.Metadata) {
-	if !appendMeta {
+func (c *CombinedAppender) appendMetadata(metricFamilyName string, meta metadata.Metadata) {
+	storedMeta, ok := c.metricFamilies[metricFamilyName]
+	if ok && storedMeta.Help == meta.Help && storedMeta.Unit == meta.Unit && storedMeta.Type == meta.Type {
 		return
 	}
+	c.metricFamilies[metricFamilyName] = meta
+
 	c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
 		Type:             metricTypeToMimirType(meta.Type),
 		MetricFamilyName: metricFamilyName,
