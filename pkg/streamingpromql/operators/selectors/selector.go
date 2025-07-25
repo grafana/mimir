@@ -42,6 +42,20 @@ type Selector struct {
 	series    *seriesList
 
 	seriesIdx int
+
+	// Sample count factor for stats counting when applying CSE.
+	sampleCountFactor uint32
+}
+
+func (s *Selector) SetSampleCountFactor(factor uint32) {
+	s.sampleCountFactor = factor
+}
+
+func (s *Selector) GetSampleCountFactor() uint32 {
+	if s.sampleCountFactor == 0 {
+		return 1
+	}
+	return s.sampleCountFactor
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
