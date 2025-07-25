@@ -83,7 +83,7 @@ type Config struct {
 	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
-	ExtraPropagateHeaders flagext.StringSliceCSV `yaml:"extra_propagate_headers" category:"advanced"`
+	ExtraPropagateHeaders flagext.StringSliceCSV `yaml:"extra_propagated_headers" category:"advanced"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 

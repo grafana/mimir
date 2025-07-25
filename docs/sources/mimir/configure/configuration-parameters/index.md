@@ -1815,7 +1815,7 @@ results_cache:
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
 # CLI flag: -query-frontend.extra-propagated-headers
-[extra_propagate_headers: <string> | default = ""]
+[extra_propagated_headers: <string> | default = ""]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf

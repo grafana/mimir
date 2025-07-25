@@ -7476,7 +7476,7 @@
         },
         {
           "kind": "field",
-          "name": "extra_propagate_headers",
+          "name": "extra_propagated_headers",
           "required": false,
           "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",
           "fieldValue": null,
