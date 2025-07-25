@@ -1,7 +1,7 @@
-matcher;expectedCardinality;epsilonTolerance
+matcher;expectedCardinality;deltaTolerance
 job="nonexistent";0;0.000
 job="";0;0.000
-job=~".*prometheus.*";210;0.100
+job=~".*prometheus.*";210;0.001
 job="prometheus";800;0.000
 job!~"prometheus|grafana";700;0.000
 job!="prometheus";1300;0.000

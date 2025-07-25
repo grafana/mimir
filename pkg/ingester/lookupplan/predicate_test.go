@@ -108,22 +108,22 @@ func TestCardinalityEstimation(t *testing.T) {
 	type testCase struct {
 		matcher             *labels.Matcher
 		expectedCardinality uint64
-		epsilonTolerance    float64
+		deltaTolerance      float64
 		actualCardinality   uint64
 	}
 
 	mapper := newCSVMapper(
-		[]string{"matcher", "expectedCardinality", "epsilonTolerance"},
+		[]string{"matcher", "expectedCardinality", "deltaTolerance"},
 		filepath.Join("testdata", "cardinality_estimation_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
 				matcher:             parseMatcher(t, record[0]),
 				expectedCardinality: parseUint(t, record[1]),
-				epsilonTolerance:    parseFloat(t, record[2]),
+				deltaTolerance:      parseFloat(t, record[2]),
 			}
 		},
 		func(tc testCase) []string {
-			return []string{tc.matcher.String(), fmt.Sprintf("%.0f", float64(tc.actualCardinality)), fmt.Sprintf("%.3f", tc.epsilonTolerance)}
+			return []string{tc.matcher.String(), fmt.Sprintf("%.0f", float64(tc.actualCardinality)), fmt.Sprintf("%.5f", tc.deltaTolerance)}
 		},
 	)
 
@@ -141,8 +141,8 @@ func TestCardinalityEstimation(t *testing.T) {
 
 			actualCardinality := pred.cardinality
 
-			if tc.epsilonTolerance > 0 {
-				assert.InEpsilon(t, tc.expectedCardinality, actualCardinality, tc.epsilonTolerance)
+			if tc.deltaTolerance > 0 {
+				assert.InDelta(t, tc.expectedCardinality, actualCardinality, tc.deltaTolerance)
 			} else {
 				assert.Equal(t, int(tc.expectedCardinality), int(actualCardinality), "Expected cardinality doesn't match actual cardinality. If you want to keep the new cardinality, set `writeOutNewCardinality = true` to persist the new cardinality in testdata")
 			}
