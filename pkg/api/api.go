@@ -28,8 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -483,10 +481,6 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)
-}
-
-func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
-	frontendv1pb.RegisterFrontendServer(a.server.GRPC, f)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {

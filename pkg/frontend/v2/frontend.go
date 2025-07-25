@@ -91,6 +91,10 @@ func (cfg *Config) Validate() error {
 	return cfg.GRPCClientConfig.Validate()
 }
 
+func (cfg *Config) IsSchedulerConfigured() bool {
+	return cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+}
+
 type Limits interface {
 	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 	QueryIngestersWithin(user string) time.Duration

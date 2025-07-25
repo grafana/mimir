@@ -86,7 +86,7 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
+func TestConfig_IsSchedulerConfigured(t *testing.T) {
 	tests := []struct {
 		cfg      Config
 		expected bool
@@ -94,9 +94,6 @@ func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
 		{
 			cfg:      Config{},
 			expected: false,
-		}, {
-			cfg:      Config{FrontendAddress: "localhost:9095"},
-			expected: true,
 		}, {
 			cfg:      Config{SchedulerAddress: "localhost:9095"},
 			expected: true,
@@ -111,7 +108,7 @@ func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
 
 	for idx, tc := range tests {
 		t.Run(fmt.Sprintf("Test: %d", idx), func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.cfg.IsFrontendOrSchedulerConfigured())
+			assert.Equal(t, tc.expected, tc.cfg.IsSchedulerConfigured())
 		})
 	}
 }
