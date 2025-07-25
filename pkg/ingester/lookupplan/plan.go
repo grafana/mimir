@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	// TODO verify relative costs here; they will be different for on-disk and in-memory
 	costPerIteratedPosting = 0.01
 )
 
