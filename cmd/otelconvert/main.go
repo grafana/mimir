@@ -13,7 +13,6 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +22,7 @@ import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -122,6 +122,8 @@ func main() {
 	var builder labels.ScratchBuilder
 
 	md := &metricsv1.MetricsData{}
+	md.Reset()
+
 	chunkCount := 0
 
 	for p.Next() {
@@ -220,11 +222,11 @@ func main() {
 			log.Fatalln("both float and histogram values associated with metric:", metricName)
 		} else if len(gauge.Gauge.DataPoints) > 0 {
 			rm.ScopeMetrics[0].Metrics[0].Data = gauge
+			md.ResourceMetrics = append(md.ResourceMetrics, rm)
 		} else if len(histo.ExponentialHistogram.DataPoints) > 0 {
 			rm.ScopeMetrics[0].Metrics[0].Data = histo
+			md.ResourceMetrics = append(md.ResourceMetrics, rm)
 		}
-
-		md.ResourceMetrics = append(md.ResourceMetrics, rm)
 	}
 
 	// Flush any remaining partial chunk to disk.
