@@ -37,7 +37,7 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: test/smoke_test:1-smoke-test
+          image: docker.io/test/smoke_test:1-smoke-test
           imagePullPolicy: IfNotPresent
           args:
             - "-target=continuous-test"

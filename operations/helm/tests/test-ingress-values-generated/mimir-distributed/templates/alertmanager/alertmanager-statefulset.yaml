@@ -82,6 +82,7 @@ spec:
             name: test-ingress-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r350-d2a17f27
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

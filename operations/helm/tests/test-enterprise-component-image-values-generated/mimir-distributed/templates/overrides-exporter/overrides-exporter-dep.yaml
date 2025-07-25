@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: overrides-exporter
-          image: test/overrides_exporter:1-overrides-exporter
+          image: /test/overrides_exporter:1-overrides-exporter
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"

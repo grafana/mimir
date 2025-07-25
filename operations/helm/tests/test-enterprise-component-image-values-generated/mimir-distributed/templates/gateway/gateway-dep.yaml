@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: test/gateway:1-gateway
+          image: /test/gateway:1-gateway
           imagePullPolicy: IfNotPresent
           args:
             - "-target=gateway"

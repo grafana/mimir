@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: admin-api
-          image: test/admin-api:1-admin-api
+          image: /test/admin-api:1-admin-api
           imagePullPolicy: IfNotPresent
           args:
             - "-target=admin-api"

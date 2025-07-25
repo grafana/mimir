@@ -63,7 +63,7 @@ Params:
 {{- else -}}
   {{- $image = mustMerge $image .ctx.Values.image -}}
 {{- end -}}
-{{ $image.repository }}:{{ $image.tag }}
+{{ $image.registry }}/{{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
 {{/*
