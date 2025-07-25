@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package schedulerpb;
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message JobKey {
+    string id = 1;
+    int64 epoch = 2;
+}
+
+message JobSpec {
+    string tenant = 1;
+    repeated bytes blockIds = 2;
+    bool split = 3;
+}
+
+service CompactorScheduler {
+    rpc LeaseJob(LeaseJobRequest) returns (LeaseJobResponse);
+    rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse);
+}
+
+message LeaseJobRequest {
+    string worker_id = 1;
+}
+
+message LeaseJobResponse {
+    JobKey key = 1;
+    JobSpec spec = 2;
+}
+
+enum UpdateType {
+    IN_PROGRESS = 0;
+    COMPLETE = 1;
+    REASSIGN = 2;
+    ABANDON = 3;
+}
+
+message UpdateJobRequest {
+    JobKey key = 1;
+    string tenant = 2;
+    UpdateType update = 3;
+}
+
+message UpdateJobResponse {}
