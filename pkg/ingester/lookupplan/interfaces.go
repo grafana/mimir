@@ -5,24 +5,7 @@ package lookupplan
 
 import (
 	"context"
-
-	"github.com/prometheus/prometheus/model/labels"
 )
-
-// LookupPlan represents the decision of which matchers to apply during
-// index lookup versus during series scanning.
-type LookupPlan interface {
-	// ScanMatchers returns matchers that should be applied during series scanning
-	ScanMatchers() []*labels.Matcher
-	// IndexMatchers returns matchers that should be applied during index lookup
-	IndexMatchers() []*labels.Matcher
-}
-
-// LookupPlanner plans how to execute index lookups by deciding which matchers
-// to apply during index lookup versus after series retrieval.
-type LookupPlanner interface {
-	PlanIndexLookup(ctx context.Context, plan LookupPlan, minT, maxT int64) (LookupPlan, error)
-}
 
 type Statistics interface {
 	TotalSeries() uint64
