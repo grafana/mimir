@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/alertmanager/matchers/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,17 +20,17 @@ import (
 // csvMapper provides generic CSV parsing and writing functionality for test data
 type csvMapper[T any] struct {
 	comma         rune
-	numColumns    int
+	columnNames   []string
 	filePath      string
 	fromCSVRecord func([]string) T
 	toCSVRecord   func(T) []string
 }
 
 // newCSVMapper creates a new CSV mapper for type T
-func newCSVMapper[T any](numColumns int, filePath string, fromCSVRecord func([]string) T, toCSVRecord func(T) []string) *csvMapper[T] {
+func newCSVMapper[T any](columnNames []string, filePath string, fromCSVRecord func([]string) T, toCSVRecord func(T) []string) *csvMapper[T] {
 	return &csvMapper[T]{
 		comma:         ';',
-		numColumns:    numColumns,
+		columnNames:   columnNames,
 		filePath:      filePath,
 		fromCSVRecord: fromCSVRecord,
 		toCSVRecord:   toCSVRecord,
@@ -48,9 +49,12 @@ func (m *csvMapper[T]) ParseTestCases(t *testing.T) []T {
 	records, err := reader.ReadAll()
 	require.NoError(t, err)
 
-	testCases := make([]T, 0, len(records))
-	for _, record := range records {
-		if !assert.Len(t, record, m.numColumns) {
+	assert.Equal(t, m.columnNames, records[0])
+
+	testCases := make([]T, 0, len(records)-1)
+	for i := 1; i < len(records); i++ {
+		record := records[i]
+		if !assert.Len(t, record, len(m.columnNames)) {
 			continue
 		}
 		testCase := m.fromCSVRecord(record)
@@ -65,6 +69,10 @@ func (m *csvMapper[T]) WriteTestCases(t *testing.T, testCases []T) {
 	tmpFile, err := os.CreateTemp("", "")
 	require.NoError(t, err)
 
+	// Write header row
+	_, err = tmpFile.WriteString(strings.Join(m.columnNames, string(m.comma)) + "\n")
+	assert.NoError(t, err)
+
 	for _, tc := range testCases {
 		record := m.toCSVRecord(tc)
 		// we write out our own CSV so that we don't get double quotes
@@ -74,6 +82,12 @@ func (m *csvMapper[T]) WriteTestCases(t *testing.T, testCases []T) {
 	assert.NoError(t, tmpFile.Sync())
 	assert.NoError(t, tmpFile.Close())
 	assert.NoError(t, os.Rename(tmpFile.Name(), m.filePath))
+}
+
+func parseVectorSelector(t *testing.T, m string) []*labels.Matcher {
+	matchers, err := parser.ParseMetricSelector(m)
+	require.NoErrorf(t, err, "Failed to parse metric selector %s", m)
+	return matchers
 }
 
 func parseMatcher(t *testing.T, m string) *labels.Matcher {

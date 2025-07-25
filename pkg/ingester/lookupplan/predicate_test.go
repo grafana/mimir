@@ -23,7 +23,8 @@ func TestFilterCost(t *testing.T) {
 	}
 
 	mapper := newCSVMapper(
-		3, filepath.Join("testdata", "filter_cost_test_cases.csv"),
+		[]string{"matcher", "seriesCount", "expectedCost"},
+		filepath.Join("testdata", "filter_cost_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
 				matcher:      parseMatcher(t, record[0]),
@@ -67,7 +68,8 @@ func TestIndexLookupCost(t *testing.T) {
 	}
 
 	mapper := newCSVMapper(
-		2, filepath.Join("testdata", "index_lookup_cost_test_cases.csv"),
+		[]string{"matcher", "expectedCost"},
+		filepath.Join("testdata", "index_lookup_cost_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
 				matcher:      parseMatcher(t, record[0]),
@@ -111,7 +113,8 @@ func TestCardinalityEstimation(t *testing.T) {
 	}
 
 	mapper := newCSVMapper(
-		3, filepath.Join("testdata", "cardinality_estimation_test_cases.csv"),
+		[]string{"matcher", "expectedCardinality", "epsilonTolerance"},
+		filepath.Join("testdata", "cardinality_estimation_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
 				matcher:             parseMatcher(t, record[0]),

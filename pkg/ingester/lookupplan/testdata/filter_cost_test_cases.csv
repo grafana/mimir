@@ -1,3 +1,4 @@
+matcher;seriesCount;expectedCost
 job="prometheus";100;100.0
 job!="prometheus";100;100.0
 job=~"prometheus";100;100.0
