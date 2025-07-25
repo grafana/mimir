@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package scheduler
 
 import (
 	"container/list"
+	"math/rand"
 	"sync"
 	"time"
 )
 
 // Job is the wrapper type within the JobTracker.
 // K identifies the job. If another job is offered with K the conflict must be decided.
-// V is the actual type
+// V is the contained type
 type Job[K comparable, V any] struct {
 	k K
 	v V
@@ -17,6 +20,7 @@ type Job[K comparable, V any] struct {
 	leaseCreationTime time.Time
 	lastRenewalTime   time.Time
 	numLeases         int
+	epoch             int64 // used to avoid conflict since a job can be reassigned/replaced
 }
 
 func NewJob[K comparable, V any](k K, v V, creationTime time.Time) *Job[K, V] {
@@ -24,6 +28,7 @@ func NewJob[K comparable, V any](k K, v V, creationTime time.Time) *Job[K, V] {
 		k:            k,
 		v:            v,
 		creationTime: creationTime,
+		epoch:        rand.Int63(),
 	}
 }
 
@@ -33,8 +38,9 @@ func (j *Job[K, V]) IsLeased() bool {
 
 func (j *Job[K, V]) MarkLeased() {
 	j.leaseCreationTime = time.Now()
-	j.lastRenewalTime = j.leaseCreationTime 
+	j.lastRenewalTime = j.leaseCreationTime
 	j.numLeases += 1
+	j.epoch += int64(1)
 }
 
 // TODO: Some kind of feedback mechanism so the Spawner can know if a submitted plan job failed or completed
@@ -57,7 +63,7 @@ func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
 // If one is found it is marked as leased and still internally tracked (but is no longer leasable)
-func (jq *JobTracker[K, V]) Lease(canAccept func(v V) bool) (V, bool) {
+func (jq *JobTracker[K, V]) Lease(canAccept func(v V) bool) (K, V, int64, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -71,15 +77,16 @@ func (jq *JobTracker[K, V]) Lease(canAccept func(v V) bool) (V, bool) {
 	if e == nil {
 		// Empty or no acceptable jobs
 		// Never hint for removal if a job is not taken
+		var k K
 		var v V
-		return v, false
+		return k, v, 0, false
 	}
 
 	j := jq.q.Remove(e).(*Job[K, V])
 	j.MarkLeased()
 	jq.elementMap[j.k] = jq.leased.PushBack(j)
 
-	return j.v, jq.isAvailableEmpty()
+	return j.k, j.v, j.epoch, jq.isAvailableEmpty()
 }
 
 // Does not acquire any lock. It is required that any callers hold an appropriate lock.
@@ -87,14 +94,18 @@ func (jq *JobTracker[K, V]) isAvailableEmpty() bool {
 	return jq.q.Front() == nil
 }
 
-func (jq *JobTracker[K, V]) RemoveIf(k K, predicate func(v V) bool) (bool, bool) {
+func (jq *JobTracker[K, V]) Remove(k K, epoch int64) (bool, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
 	e, ok := jq.elementMap[k]
-	if ok && predicate(e.Value.(Job[K, V]).v) {
+	if !ok {
+		return false, false
+	}
+
+	j := e.Value.(*Job[K, V])
+	if epoch == j.epoch {
 		delete(jq.elementMap, k)
-		j := e.Value.(*Job[K, V])
 		if j.IsLeased() {
 			jq.leased.Remove(e)
 			return true, false
@@ -149,7 +160,7 @@ func (jq *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
 	return false
 }
 
-func (jq *JobTracker[K, V]) RenewLease(k K, leaseTime time.Time) bool {
+func (jq *JobTracker[K, V]) RenewLease(k K, epoch int64) bool {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -159,14 +170,14 @@ func (jq *JobTracker[K, V]) RenewLease(k K, leaseTime time.Time) bool {
 	}
 
 	j := e.Value.(*Job[K, V])
-	if j.IsLeased() && j.leaseCreationTime.Equal(leaseTime) {
+	if j.IsLeased() && j.epoch == epoch {
 		j.lastRenewalTime = time.Now()
 		return true
 	}
 	return false
 }
 
-func (jq *JobTracker[K, V]) CancelLease(k K, leaseTime time.Time) (bool, bool) {
+func (jq *JobTracker[K, V]) CancelLease(k K, epoch int64) (bool, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -176,7 +187,7 @@ func (jq *JobTracker[K, V]) CancelLease(k K, leaseTime time.Time) (bool, bool) {
 	}
 
 	j := e.Value.(*Job[K, V])
-	if j.IsLeased() && j.leaseCreationTime == leaseTime {
+	if j.IsLeased() && j.epoch == epoch {
 		wasEmpty := jq.isAvailableEmpty()
 		return true, wasEmpty && jq.endLease(e, j)
 	}

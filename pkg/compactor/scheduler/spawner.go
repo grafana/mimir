@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package scheduler
 
 import (
@@ -49,7 +51,7 @@ func NewSpawner(
 		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
 	}
-	s.Service = services.NewTimerService(cfg.planningCheckInterval, nil, s.iter, nil)
+	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
 	return s
 }
 
@@ -78,7 +80,7 @@ func (s *Spawner) plan() {
 	for tenant, info := range s.planMap {
 		now := time.Now() // declaring inside the loop because locks are used when submitting plans
 		if now.Sub(info.lastPlanSubmitted) > s.planningInterval {
-			job := NewJob("plan", &CompactionJob{}, now)
+			job := NewJob(planningJobID, &CompactionJob{}, now)
 			accepted := s.rotator.OfferJobs(tenant, []*Job[string, *CompactionJob]{job}, func(_, _ *CompactionJob) bool {
 				return false
 			})
@@ -117,8 +119,6 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			delete(s.planMap, tenant)
 		}
 	}
-
-	level.Info(s.logger).Log("msg", "ran tenant discovery", "tenants", len(s.planMap))
 
 	return nil
 }

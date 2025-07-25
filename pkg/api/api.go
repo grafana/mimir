@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	bbschedulerpb "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/compactor"
+	compactorschedulerpb "github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
@@ -527,4 +528,8 @@ func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitServ
 
 func (a *API) RegisterBlockBuilderScheduler(s bbschedulerpb.BlockBuilderSchedulerServer) {
 	bbschedulerpb.RegisterBlockBuilderSchedulerServer(a.server.GRPC, s)
+}
+
+func (a *API) RegisterCompactorScheduler(s compactorschedulerpb.CompactorSchedulerServer) {
+	compactorschedulerpb.RegisterCompactorSchedulerServer(a.server.GRPC, s)
 }
