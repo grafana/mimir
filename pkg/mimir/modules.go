@@ -1258,8 +1258,10 @@ func (t *Mimir) initCompactorScheduler() (serv services.Service, err error) {
 
 	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.Compactor, t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
 	if err != nil {
-		return
+		return nil, err
 	}
+
+	t.API.RegisterCompactorScheduler(t.CompactorScheduler)
 
 	return t.CompactorScheduler, nil
 }
