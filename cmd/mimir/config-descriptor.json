@@ -7495,17 +7495,6 @@
           "fieldType": "boolean"
         },
         {
-          "kind": "field",
-          "name": "downstream_url",
-          "required": false,
-          "desc": "URL of downstream Prometheus.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.downstream-url",
-          "fieldType": "string",
-          "fieldCategory": "advanced"
-        },
-        {
           "kind": "block",
           "name": "client_cluster_validation",
           "required": false,
