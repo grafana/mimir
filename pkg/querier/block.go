@@ -6,8 +6,9 @@
 package querier
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -94,8 +95,8 @@ func (bqss *blockQuerierSeriesSet) Warnings() annotations.Annotations {
 
 // newBlockQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
 func newBlockQuerierSeries(lbls labels.Labels, chunks []storepb.AggrChunk) *blockQuerierSeries {
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].MinTime < chunks[j].MinTime
+	slices.SortFunc(chunks, func(a, b storepb.AggrChunk) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	return &blockQuerierSeries{labels: lbls, chunks: chunks}

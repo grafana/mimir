@@ -6,8 +6,9 @@
 package ruler
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -89,8 +90,8 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 
 	return tokens

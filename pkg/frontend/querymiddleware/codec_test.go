@@ -14,7 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -748,7 +748,9 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 							headers := append(expectedStruct.GetHeaders(), &PrometheusHeader{"Content-Type", []string{"application/x-www-form-urlencoded"}})
 
 							// Decoding headers also sorts them. We sort here to be able to make assertions on the slice of headers.
-							sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+							slices.SortFunc(headers, func(a, b *PrometheusHeader) int {
+								return strings.Compare(a.Name, b.Name)
+							})
 							expectedStruct, err = expectedStruct.WithHeaders(headers)
 							require.NoError(t, err)
 						}

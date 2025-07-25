@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -1809,11 +1809,11 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.blocks = append(s.blocks, b)
 
 	// Always sort blocks by min time, then max time.
-	sort.Slice(s.blocks, func(j, k int) bool {
-		if s.blocks[j].meta.MinTime == s.blocks[k].meta.MinTime {
-			return s.blocks[j].meta.MaxTime < s.blocks[k].meta.MaxTime
+	slices.SortFunc(s.blocks, func(a, b *bucketBlock) int {
+		if a.meta.MinTime == b.meta.MinTime {
+			return cmp.Compare(a.meta.MaxTime, b.meta.MaxTime)
 		}
-		return s.blocks[j].meta.MinTime < s.blocks[k].meta.MinTime
+		return cmp.Compare(a.meta.MinTime, b.meta.MinTime)
 	})
 	return nil
 }

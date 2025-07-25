@@ -10,6 +10,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -19,7 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2788,8 +2788,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var namesHints hintspb.LabelNamesResponseHints
 			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &namesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(namesHints.QueriedBlocks, func(i, j int) bool {
-				return namesHints.QueriedBlocks[i].Id < namesHints.QueriedBlocks[j].Id
+			slices.SortFunc(namesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedNamesHints, namesHints)
 
@@ -2800,8 +2800,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var valuesHints hintspb.LabelValuesResponseHints
 			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &valuesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(valuesHints.QueriedBlocks, func(i, j int) bool {
-				return valuesHints.QueriedBlocks[i].Id < valuesHints.QueriedBlocks[j].Id
+			slices.SortFunc(valuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedValuesHints, valuesHints)
 		})
@@ -3052,8 +3052,8 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
-							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
+						slices.SortFunc(seriesSet[0].Chunks, func(a, b storepb.AggrChunk) int {
+							return cmp.Compare(a.MinTime, b.MinTime)
 						})
 					}
 

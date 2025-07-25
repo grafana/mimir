@@ -7,7 +7,8 @@ package merger
 
 import (
 	"errors"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-openapi/swag"
@@ -64,8 +65,8 @@ func mergeV2Alerts(in v2_models.GettableAlerts) (v2_models.GettableAlerts, error
 	}
 
 	// Mimic Alertmanager which returns alerts ordered by fingerprint (as string).
-	sort.Slice(result, func(i, j int) bool {
-		return *result[i].Fingerprint < *result[j].Fingerprint
+	slices.SortFunc(result, func(a, b *v2_models.GettableAlert) int {
+		return strings.Compare(*a.Fingerprint, *b.Fingerprint)
 	})
 
 	return result, nil

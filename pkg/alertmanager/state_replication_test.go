@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -433,7 +433,9 @@ func TestStateReplication_GetFullState(t *testing.T) {
 			require.NoError(t, err)
 
 			// Key ordering is undefined for the code under test.
-			sort.Slice(result.Parts, func(i, j int) bool { return result.Parts[i].Key < result.Parts[j].Key })
+			slices.SortFunc(result.Parts, func(a, b clusterpb.Part) int {
+				return strings.Compare(a.Key, b.Key)
+			})
 
 			assert.Equal(t, tt.result, result)
 		})

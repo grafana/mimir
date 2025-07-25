@@ -3,10 +3,12 @@
 package querier
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
@@ -208,10 +210,12 @@ func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValu
 }
 
 func sortByValuesCountAndName(labelsWithValues []*ingester_client.LabelValues) {
-	sort.Slice(labelsWithValues, func(i, j int) bool {
-		left := labelsWithValues[i]
-		right := labelsWithValues[j]
-		return len(left.Values) > len(right.Values) || (len(left.Values) == len(right.Values) && left.LabelName < right.LabelName)
+	slices.SortFunc(labelsWithValues, func(left, right *ingester_client.LabelValues) int {
+		leftCount, rightCount := len(left.Values), len(right.Values)
+		if leftCount != rightCount {
+			return rightCount - leftCount // Descending order by count
+		}
+		return strings.Compare(left.LabelName, right.LabelName)
 	})
 }
 
@@ -255,10 +259,11 @@ func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityRespon
 // sortByLabelValuesSeriesCountAndLabelName sorts api.LabelNamesCardinality array in DESC order by SeriesCount and
 // ASC order by LabelName
 func sortByLabelValuesSeriesCountAndLabelName(labelNamesCardinality []api.LabelNamesCardinality) []api.LabelNamesCardinality {
-	sort.Slice(labelNamesCardinality, func(l, r int) bool {
-		left := labelNamesCardinality[l]
-		right := labelNamesCardinality[r]
-		return left.SeriesCount > right.SeriesCount || (left.SeriesCount == right.SeriesCount && left.LabelName < right.LabelName)
+	slices.SortFunc(labelNamesCardinality, func(left, right api.LabelNamesCardinality) int {
+		if left.SeriesCount != right.SeriesCount {
+			return cmp.Compare(right.SeriesCount, left.SeriesCount)
+		}
+		return strings.Compare(left.LabelName, right.LabelName)
 	})
 	return labelNamesCardinality
 }
@@ -266,10 +271,11 @@ func sortByLabelValuesSeriesCountAndLabelName(labelNamesCardinality []api.LabelN
 // sortBySeriesCountAndLabelValue sorts api.LabelValuesCardinality array in DESC order by SeriesCount and
 // ASC order by LabelValue
 func sortBySeriesCountAndLabelValue(labelValuesCardinality []api.LabelValuesCardinality) []api.LabelValuesCardinality {
-	sort.Slice(labelValuesCardinality, func(l, r int) bool {
-		left := labelValuesCardinality[l]
-		right := labelValuesCardinality[r]
-		return left.SeriesCount > right.SeriesCount || (left.SeriesCount == right.SeriesCount && left.LabelValue < right.LabelValue)
+	slices.SortFunc(labelValuesCardinality, func(left, right api.LabelValuesCardinality) int {
+		if left.SeriesCount != right.SeriesCount {
+			return cmp.Compare(right.SeriesCount, left.SeriesCount)
+		}
+		return strings.Compare(left.LabelValue, right.LabelValue)
 	})
 	return labelValuesCardinality
 }

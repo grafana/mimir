@@ -3,10 +3,11 @@
 package querier
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -136,8 +137,8 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return series.NewErrIterator(errors.New("no chunks"))
 	}
 
-	sort.Slice(allChunks, func(i, j int) bool {
-		return allChunks[i].MinTime < allChunks[j].MinTime
+	slices.SortFunc(allChunks, func(a, b storepb.AggrChunk) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)

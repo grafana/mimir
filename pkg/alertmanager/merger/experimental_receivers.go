@@ -4,7 +4,8 @@ package merger
 
 import (
 	"encoding/json"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	alertingmodels "github.com/grafana/alerting/models"
@@ -56,8 +57,8 @@ func mergeReceivers(in []alertingmodels.Receiver) ([]alertingmodels.Receiver, er
 	}
 
 	// Sort receivers by name to give a stable response.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name < result[j].Name
+	slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return result, nil
@@ -101,8 +102,8 @@ func mergeIntegrations(in []alertingmodels.Integration) ([]alertingmodels.Integr
 	}
 
 	// Sort integrations by name to give a stable response.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name < result[j].Name
+	slices.SortFunc(result, func(a, b alertingmodels.Integration) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return result, nil

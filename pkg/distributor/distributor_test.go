@@ -2219,14 +2219,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	return ret
 }
