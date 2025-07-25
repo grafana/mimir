@@ -706,7 +706,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 }
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
-var extraLabels []labels.Label = []labels.Label{
+var extraLabels = []labels.Label{
 	{Name: "kubernetes_io_arch", Value: "amd64"},
 	{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
 	{Name: "kubernetes_io_os", Value: "linux"},
@@ -757,7 +757,8 @@ func BenchmarkOTLPHandler(b *testing.B) {
 				Labels:    make([]prompb.Label, 0, len(extraLabels)),
 			})
 			for _, lbl := range extraLabels {
-				histogramExemplars[len(histogramExemplars)-1].Labels = append(histogramExemplars[len(histogramExemplars)-1].Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+				lastExemplar := &histogramExemplars[len(histogramExemplars)-1]
+				lastExemplar.Labels = append(lastExemplar.Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
 			}
 		}
 	}

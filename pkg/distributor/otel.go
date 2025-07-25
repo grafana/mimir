@@ -629,8 +629,8 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				if i == 0 {
 					for _, tsEx := range ts.Exemplars {
 						ex := datapoint.Exemplars().AppendEmpty()
-						ex.SetDoubleValue(sample.Value)
-						ex.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
 						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
 						for _, label := range tsEx.Labels {
 							ex.FilteredAttributes().PutStr(label.Name, label.Value)
