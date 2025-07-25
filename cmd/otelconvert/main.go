@@ -271,10 +271,11 @@ func lblsToResourceAttributes(builder labels.ScratchBuilder) (string, []*commonv
 	builder.Sort()
 	lbls := builder.Labels()
 
-	res := make([]*commonv1.KeyValue, len(lbls))
+	res := make([]*commonv1.KeyValue, lbls.Len())
 	var name string
 
-	for i, lbl := range lbls {
+	i := 0
+	lbls.Range(func(lbl labels.Label) {
 		res[i] = &commonv1.KeyValue{
 			Key: lbl.Name,
 			Value: &commonv1.AnyValue{
@@ -285,7 +286,9 @@ func lblsToResourceAttributes(builder labels.ScratchBuilder) (string, []*commonv
 		if lbl.Name == "__name__" {
 			name = lbl.Value
 		}
-	}
+
+		i++
+	})
 
 	return name, res
 }
