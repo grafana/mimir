@@ -136,6 +136,7 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 }
 
 func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
+	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool()
 	c.series = append(c.series, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
