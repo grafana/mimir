@@ -330,14 +330,28 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets = append(flagSets, extraFlags...)
 	commonFlags := mergeFlags(flagSets...)
+
+	// The backend instance contains the query-scheduler component which the querier and query-frontend in the read
+	// instance need the address of.
 	backendFlags := mergeFlags(commonFlags, map[string]string{"-ruler.alertmanager-url": "http://localhost:8080/alertmanager"})
+	backendInstance := e2emimir.NewBackendInstance("mimir-backend-1", backendFlags)
+	require.NoError(t, s.StartAndWaitReady(backendInstance))
+
+	readFlags := mergeFlags(commonFlags, map[string]string{
+		"-query-frontend.scheduler-address": backendInstance.NetworkGRPCEndpoint(),
+		"-querier.scheduler-address":        backendInstance.NetworkGRPCEndpoint(),
+	})
+	readInstance := e2emimir.NewReadInstance("mimir-read-1", readFlags)
+	writeInstace := e2emimir.NewWriteInstance("mimir-write-1", commonFlags)
 
 	cluster := readWriteModeCluster{
-		readInstance:    e2emimir.NewReadInstance("mimir-read-1", commonFlags),
-		writeInstance:   e2emimir.NewWriteInstance("mimir-write-1", commonFlags),
-		backendInstance: e2emimir.NewBackendInstance("mimir-backend-1", backendFlags),
+		readInstance:    readInstance,
+		writeInstance:   writeInstace,
+		backendInstance: backendInstance,
 	}
-	require.NoError(t, s.StartAndWaitReady(cluster.readInstance, cluster.writeInstance, cluster.backendInstance))
+
+	// We only wait for the read and write instances since we already started the backend above.
+	require.NoError(t, s.StartAndWaitReady(cluster.readInstance, cluster.writeInstance))
 
 	client, err := e2emimir.NewClient(cluster.writeInstance.HTTPEndpoint(), cluster.readInstance.HTTPEndpoint(), cluster.backendInstance.HTTPEndpoint(), cluster.backendInstance.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
