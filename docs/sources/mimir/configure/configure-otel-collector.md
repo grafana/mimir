@@ -126,6 +126,7 @@ Grafana Cloud automatically promotes the following OTel resource attributes to l
 - `cloud.availability_zone`
 - `cloud.region`
 - `container.name`
+- `deployment.environment`
 - `deployment.environment.name`
 - `k8s.cluster.name`
 - `k8s.container.name`
