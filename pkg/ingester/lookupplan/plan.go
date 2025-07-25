@@ -133,7 +133,7 @@ func (p plan) intersectionSize() uint64 {
 		// For example, if {protocol=~.*} matches all values, it doesn't mean it won't reduce the result set after intersection.
 		//
 		// We also assume independence between the predicates. This is a simplification.
-		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already indexPredicate {statefulset=prometheus}.
+		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
@@ -147,7 +147,7 @@ func (p plan) cardinality() uint64 {
 		// For example, if {protocol=~.*} matches all values, it doesn't mean it won't reduce the result set after intersection.
 		//
 		// We also assume independence between the predicates. This is a simplification.
-		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already indexPredicate {statefulset=prometheus}.
+		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
