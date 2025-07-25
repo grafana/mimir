@@ -7,16 +7,15 @@ import (
 	bytes "bytes"
 	encoding_binary "encoding/binary"
 	fmt "fmt"
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strconv "strconv"
 	strings "strings"
-
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -11616,11 +11615,11 @@ func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 }
 func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string) error {
 	var (
-		err                 error
-		help                string
-		metricType          MetadataRW2_MetricType
+		err error
+		help string
+		metricType MetadataRW2_MetricType
 		normalizeMetricName string
-		unit                string
+		unit string
 	)
 	l := len(dAtA)
 	iNdEx := 0
