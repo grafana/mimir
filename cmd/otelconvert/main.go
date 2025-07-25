@@ -34,11 +34,16 @@ const (
 	mdChunkSizeBytes = 500_000_000
 )
 
+var (
+	writtenBytesCount = 0
+)
+
 type config struct {
 	bucket  bucket.Config
 	userID  string
 	blockID string
 	dest    string
+	count   bool
 }
 
 func main() {
@@ -50,6 +55,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
 	flag.StringVar(&cfg.blockID, "block", "", "The block ID of the block to convert")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
+	flag.BoolVar(&cfg.count, "count", true, "Only count the number of bytes that would've been written to disk")
 
 	// Parse CLI flags.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -66,17 +72,17 @@ func main() {
 		log.Fatalln("no destination specified")
 	}
 
-	// TODO: Check that the destination directory exists and if not, create it.
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
 	logger := gokitlog.NewNopLogger()
 
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	overallBktClient, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
-		log.Fatalln("failed to create bucket:", err)
+		log.Fatalln("failed to create bucket client:", err)
 	}
+
+	bkt := bucket.NewPrefixedBucketClient(overallBktClient, cfg.userID)
 
 	blockID, err := ulid.Parse(cfg.blockID)
 	if err != nil {
@@ -85,6 +91,8 @@ func main() {
 
 	blockDir := os.TempDir()
 	defer func() { _ = os.RemoveAll(blockDir) }()
+
+	fmt.Printf("downloading block %s to %s...\n", cfg.blockID, blockDir)
 
 	err = block.Download(ctx, logger, bkt, blockID, blockDir)
 	if err != nil {
@@ -123,7 +131,7 @@ func main() {
 
 		// Flush a full chunk to disk.
 		if proto.Size(md) > mdChunkSizeBytes {
-			chunkCount, err = writeMetricsDataChunkToFile(md, cfg.dest, chunkCount)
+			chunkCount, err = writeMetricsDataChunkToFile(md, cfg.dest, cfg.count, chunkCount)
 			if err != nil {
 				log.Fatalln("failed to write metrics data to file:", err)
 			}
@@ -221,14 +229,22 @@ func main() {
 
 	// Flush any remaining partial chunk to disk.
 	if proto.Size(md) > 0 {
-		_, err = writeMetricsDataChunkToFile(md, cfg.dest, chunkCount)
+		_, err = writeMetricsDataChunkToFile(md, cfg.dest, cfg.count, chunkCount)
 		if err != nil {
 			log.Fatalln("failed to write metrics data to file:", err)
 		}
 	}
 }
 
-func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, chunkCount int) (int, error) {
+func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int) (int, error) {
+	if countOnly {
+		n := proto.Size(md)
+		writtenBytesCount += n
+		fmt.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
+
+		return chunkCount + 1, nil
+	}
+
 	buf, err := proto.Marshal(md)
 	if err != nil {
 		return chunkCount, fmt.Errorf("marshal protobuf message: %w", err)
@@ -240,11 +256,13 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, chun
 		return chunkCount, fmt.Errorf("open file '%s' for writing: %w", fp, err)
 	}
 
-	_, err = f.Write(buf)
+	n, err := f.Write(buf)
 	if err != nil {
 		return chunkCount, fmt.Errorf("write to file '%s': %w", fp, err)
 	}
 	defer func() { _ = f.Close() }()
+
+	fmt.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
 
 	return chunkCount + 1, nil
 }

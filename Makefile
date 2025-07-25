@@ -808,3 +808,20 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
+
+cmd/otelconvert/otelconvert-linux-amd64: $(GO_FILES) cmd/otelconvert/main.go
+	CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" go build $(GO_FLAGS) -o $@ ./$(@D)
+
+cmd/otelconvert/otelconvert-linux-arm64: $(GO_FILES) cmd/otelconvert/main.go
+	CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" go build $(GO_FLAGS) -o $@ ./$(@D)
+
+.PHONY: build-otelconvert-image-push
+build-otelconvert-image-push: cmd/otelconvert/otelconvert-linux-amd64 cmd/otelconvert/otelconvert-linux-arm64
+	$(SUDO) docker buildx build \
+		--build-arg revision=$(GIT_REVISION) \
+		--build-arg branch=$(GIT_BRANCH) \
+		--build-arg=version=$(IMAGE_TAG) \
+		-o type=registry \
+		--platform linux/amd64,linux/arm64 \
+		-t us-docker.pkg.dev/grafanalabs-dev/docker-log-template-service-dev/otelconvert:$(IMAGE_TAG) \
+		-f cmd/otelconvert/Dockerfile .
