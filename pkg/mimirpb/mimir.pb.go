@@ -7,15 +7,16 @@ import (
 	bytes "bytes"
 	encoding_binary "encoding/binary"
 	fmt "fmt"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strconv "strconv"
 	strings "strings"
+
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -7320,7 +7321,7 @@ func valueToStringMimir(v interface{}) string {
 	return fmt.Sprintf("*%v", pv)
 }
 func (m *WriteRequest) Unmarshal(dAtA []byte) error {
-	var metadata map[string]*MetricMetadata
+	var metadata map[string]*orderAwareMetricMetadata
 	seenFirstSymbol := false
 
 	l := len(dAtA)
@@ -7519,7 +7520,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if metadata == nil {
-				metadata = make(map[string]*MetricMetadata)
+				metadata = make(map[string]*orderAwareMetricMetadata)
 			}
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
 				return err
@@ -7586,9 +7587,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	}
 
 	if m.unmarshalFromRW2 {
-		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
+		m.Metadata = make([]*MetricMetadata, len(metadata))
 		for _, metadata := range metadata {
-			m.Metadata = append(m.Metadata, metadata)
+			m.Metadata[metadata.order] = &metadata.MetricMetadata
 		}
 		m.rw2symbols.releasePages()
 	}
@@ -11155,7 +11156,7 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
 func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 	var metricName string
 	l := len(dAtA)
 	iNdEx := 0
@@ -11613,13 +11614,13 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata, metricName string) error {
+func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string) error {
 	var (
-		err error
-		help string
-		metricType MetadataRW2_MetricType
+		err                 error
+		help                string
+		metricType          MetadataRW2_MetricType
 		normalizeMetricName string
-		unit string
+		unit                string
 	)
 	l := len(dAtA)
 	iNdEx := 0
@@ -11744,11 +11745,14 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		return nil
 	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizeMetricName] = &MetricMetadata{
-			MetricFamilyName: normalizeMetricName,
-			Help:             help,
-			Unit:             unit,
-			Type:             MetricMetadata_MetricType(metricType),
+		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+			MetricMetadata: MetricMetadata{
+				MetricFamilyName: normalizeMetricName,
+				Help:             help,
+				Unit:             unit,
+				Type:             MetricMetadata_MetricType(metricType),
+			},
+			order: len(metadata),
 		}
 	}
 
