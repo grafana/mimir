@@ -1,3 +1,4 @@
+matcher;expectedCost
 non_existent_label=~".+";0.0
 non_existent_label="foo";1.0
 non_existent_label!="foo";1.0

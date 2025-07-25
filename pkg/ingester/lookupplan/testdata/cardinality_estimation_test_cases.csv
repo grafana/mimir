@@ -1,3 +1,4 @@
+matcher;expectedCardinality;epsilonTolerance
 job="nonexistent";0;0.000
 job="";0;0.000
 job=~".*prometheus.*";210;0.100
