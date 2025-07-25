@@ -1812,8 +1812,8 @@ results_cache:
 [use_active_series_decoder: <boolean> | default = false]
 
 # (advanced) Comma-separated list of request header names to allow to pass
-# through.
-# CLI flag: -query-frontend.extra-propagate-headers
+# through to the rest of the query path. This is in addition to a list of required headers that the read path needs.
+# CLI flag: -query-frontend.extra-propagated-headers
 [extra_propagate_headers: <string> | default = ""]
 
 # Format to use when retrieving query results from queriers. Supported values:
