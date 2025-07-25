@@ -37,6 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
 * [CHANGE] Add `store_gateway.grpcMaxQueryResponseSizeBytes` value to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
