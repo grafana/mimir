@@ -132,28 +132,26 @@ func requireHistogramMatch(t testing.TB, expected, actual *histogram.FloatHistog
 	}
 
 	require.Equal(t, expected.Schema, actual.Schema, "histogram schemas match")
-	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Count, expected.Count, "histogram counts match")
-	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Sum, expected.Sum, "histogram sums match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Count, actual.Count, "histogram counts match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.Sum, actual.Sum, "histogram sums match")
 
 	if expected.UsesCustomBuckets() {
-		requireFloatBucketsMatch(t, expected.CustomValues, expected.CustomValues)
+		requireFloatBucketsMatch(t, expected.CustomValues, actual.CustomValues)
 	}
 
-	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroThreshold, expected.ZeroThreshold, "histogram thresholds match")
-	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroCount, expected.ZeroCount, "histogram zero counts match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroThreshold, actual.ZeroThreshold, "histogram thresholds match")
+	requireInEpsilonIfNotZeroOrInfOrNan(t, expected.ZeroCount, actual.ZeroCount, "histogram zero counts match")
 
-	requireSpansMatch(t, expected.NegativeSpans, expected.NegativeSpans)
-	requireFloatBucketsMatch(t, expected.NegativeBuckets, expected.NegativeBuckets)
+	requireSpansMatch(t, expected.NegativeSpans, actual.NegativeSpans)
+	requireFloatBucketsMatch(t, expected.NegativeBuckets, actual.NegativeBuckets)
 
-	requireSpansMatch(t, expected.PositiveSpans, expected.PositiveSpans)
-	requireFloatBucketsMatch(t, expected.PositiveBuckets, expected.PositiveBuckets)
+	requireSpansMatch(t, expected.PositiveSpans, actual.PositiveSpans)
+	requireFloatBucketsMatch(t, expected.PositiveBuckets, actual.PositiveBuckets)
 }
 
 // requireInEpsilonIfNotZeroOrInfOrNan will be a success if expected and actual are both NaN, 0, Inf or InEpsilon.
 func requireInEpsilonIfNotZeroOrInfOrNan(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
-	if math.IsNaN(expected) && math.IsNaN(actual) {
-		// ok
-	} else {
+	if !math.IsNaN(expected) || !math.IsNaN(actual) {
 		requireInEpsilonIfNotZeroOrInf(t, expected, actual, msgAndArgs...)
 	}
 }

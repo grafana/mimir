@@ -15,13 +15,23 @@ func FixUpEmptyLabels(r *promql.Result) error {
 	}
 	switch r.Value.Type() {
 	case parser.ValueTypeMatrix:
-		matrix, error := r.Matrix()
-		if error != nil {
-			return error
+		matrix, err := r.Matrix()
+		if err != nil {
+			return err
 		}
 		for i, sample := range matrix {
 			if sample.Metric == nil {
 				matrix[i].Metric = labels.Labels{}
+			}
+		}
+	case parser.ValueTypeVector:
+		vector, err := r.Vector()
+		if err != nil {
+			return err
+		}
+		for i, sample := range vector {
+			if sample.Metric == nil {
+				vector[i].Metric = labels.Labels{}
 			}
 		}
 	}
