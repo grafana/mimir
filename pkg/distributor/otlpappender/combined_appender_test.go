@@ -34,6 +34,7 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
@@ -60,7 +61,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -70,11 +71,13 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 1000, 52.0,
@@ -107,7 +110,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -117,11 +120,13 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "cheese"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 1000, 52.0,
@@ -164,13 +169,13 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "cheese").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -180,11 +185,13 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 2400, 52.0,
@@ -251,7 +258,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -261,11 +268,13 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
@@ -298,7 +307,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -308,11 +317,13 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps-2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
@@ -345,7 +356,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -355,6 +366,7 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendHistogram(
+					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, test.GenerateTestHistogram(1),
@@ -381,7 +393,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectMetadata: []*mimirpb.MetricMetadata{
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
@@ -391,12 +403,14 @@ func TestCombinedAppender(t *testing.T) {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *CombinedAppender) {
 				ca.AppendSample(
-					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					"spam",
+					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendHistogram(
-					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
+					"spam",
+					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "help!"},
 					3000, 1000, test.GenerateTestHistogram(2),
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
@@ -404,7 +418,7 @@ func TestCombinedAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -433,13 +447,13 @@ func TestCombinedAppender(t *testing.T) {
 				// overwrite the metadata anyway - krajorama.
 				{
 					Type:             mimirpb.COUNTER,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},
 				{
 					Type:             mimirpb.HISTOGRAM,
-					MetricFamilyName: labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham").Get(model.MetricNameLabel),
+					MetricFamilyName: "spam",
 					Help:             "help!",
 					Unit:             "bytes",
 				},

@@ -36,9 +36,9 @@ type CombinedAppender struct {
 	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
 	// multiple times, we keep track of the appended time series.
-	refs map[uint64]labelsIdx
 	// TODO(krajorama): add overflow for handling hash collisions.
 	// Do we really need this? The code will just create a new series.
+	refs map[uint64]labelsIdx
 }
 
 func NewCombinedAppender() *CombinedAppender {
@@ -65,7 +65,7 @@ func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb
 	return c.series, c.metadata
 }
 
-func (c *CombinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
+func (c *CombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
 	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
@@ -76,12 +76,12 @@ func (c *CombinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata
 
 	c.series[idx.idx].TimeSeries.Samples = append(c.series[idx.idx].TimeSeries.Samples, mimirpb.Sample{TimestampMs: t, Value: v})
 	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(appendMeta, ls, meta)
+	c.appendMetadata(appendMeta, metricFamilyName, meta)
 
 	return nil
 }
 
-func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (c *CombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
 	hash, idx, seenSeries, appendMeta := c.processLabelsAndMetadata(ls, meta)
@@ -92,7 +92,7 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metad
 
 	c.series[idx.idx].TimeSeries.Histograms = append(c.series[idx.idx].TimeSeries.Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(appendMeta, ls, meta)
+	c.appendMetadata(appendMeta, metricFamilyName, meta)
 
 	return nil
 }
@@ -162,13 +162,13 @@ func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar
 
 // appendMetadata appends metadata to the time series at the given index.
 // It's split from appendExemplars to be eligible for inlining.
-func (c *CombinedAppender) appendMetadata(appendMeta bool, ls labels.Labels, meta metadata.Metadata) {
+func (c *CombinedAppender) appendMetadata(appendMeta bool, metricFamilyName string, meta metadata.Metadata) {
 	if !appendMeta {
 		return
 	}
 	c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
 		Type:             metricTypeToMimirType(meta.Type),
-		MetricFamilyName: ls.Get(model.MetricNameLabel),
+		MetricFamilyName: metricFamilyName,
 		Help:             meta.Help,
 		Unit:             meta.Unit,
 	})

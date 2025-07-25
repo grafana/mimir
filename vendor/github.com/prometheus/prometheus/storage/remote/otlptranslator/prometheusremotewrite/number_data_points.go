@@ -59,7 +59,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 		ts := convertTimeStamp(pt.Timestamp())
 		ct := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(labels, meta, ts, ct, val, nil); err != nil {
+		if err := c.appender.AppendSample(name, labels, meta, ts, ct, val, nil); err != nil {
 			return err
 		}
 	}
@@ -102,7 +102,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(lbls, meta, ts, ct, val, exemplars); err != nil {
+		if err := c.appender.AppendSample(name, lbls, meta, ts, ct, val, exemplars); err != nil {
 			return err
 		}
 
@@ -113,7 +113,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			c.builder.Set(model.MetricNameLabel, c.builder.Get(model.MetricNameLabel)+createdSuffix)
 			ls := c.builder.Labels()
 			if c.timeSeriesIsNew(ls) {
-				if err := c.appender.AppendSample(ls, meta, ts, 0, float64(ct), nil); err != nil {
+				if err := c.appender.AppendSample(name, ls, meta, ts, 0, float64(ct), nil); err != nil {
 					return err
 				}
 			}
