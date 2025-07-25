@@ -18,8 +18,6 @@ type CostBasedPlanner struct {
 	metrics Metrics
 }
 
-// TODO dimitarvdimitrov add constructor
-
 func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
@@ -47,7 +45,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, 
 
 	lowestCostPlan := allPlans[0]
 	for _, plan := range allPlans {
-		if plan.totalCost < lowestCostPlan.totalCost {
+		if plan.totalCost() < lowestCostPlan.totalCost() {
 			lowestCostPlan = plan
 		}
 	}
@@ -83,7 +81,7 @@ func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.
 		}
 	}
 
-	noopPlan, err := newPlanWithoutEstimation(ctx, matchers, p.stats)
+	noopPlan, err := newScanOnlyPlan(ctx, matchers, p.stats)
 	if err != nil {
 		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
 	}
@@ -97,12 +95,12 @@ func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredic
 		return append(plans, currentPlan)
 	}
 
-	// Generate two plans, one with the current predicate applied and one without.
+	// Generate two plans, one with the current predicate using the index and one using a sequential scan.
 	// This is done by copying the current plan and applying the predicate to the copy.
 	// The copy is then added to the list of plans to be returned.
 	plans = generatePredicateCombinations(plans, currentPlan, decidedPredicates+1)
 
-	p := currentPlan.applyPredicate(decidedPredicates)
+	p := currentPlan.useIndexFor(decidedPredicates)
 	plans = generatePredicateCombinations(plans, p, decidedPredicates+1)
 
 	return plans
