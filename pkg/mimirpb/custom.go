@@ -428,3 +428,12 @@ type MarshalerWithSize interface {
 	// MarshalWithSize returns a wire format byte slice of the given size.
 	MarshalWithSize(size int) ([]byte, error)
 }
+
+// orderAwareMetricMetadata is a tuple (index, metadata) that knows its own position in a metadata slice.
+// It's tied to custom logic that unmarshals RW2 metadata into a map, and allows us to
+// remember the order that metadata arrived in when unmarshalling.
+type orderAwareMetricMetadata struct {
+	MetricMetadata
+	// order is the 0-based index of this metadata object in a wider metadata array.
+	order int
+}
