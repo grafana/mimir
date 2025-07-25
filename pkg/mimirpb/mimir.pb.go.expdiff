@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index c4d0bfb6f..de8364cdb 100644
+index 406e4d2ac..de8364cdb 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -275,9 +275,6 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
@@ -39,7 +39,7 @@ index c4d0bfb6f..de8364cdb 100644
  	return fmt.Sprintf("*%v", pv)
  }
  func (m *WriteRequest) Unmarshal(dAtA []byte) error {
--	var metadata map[string]*MetricMetadata
+-	var metadata map[string]*orderAwareMetricMetadata
 -	seenFirstSymbol := false
 -
  	l := len(dAtA)
@@ -110,7 +110,7 @@ index c4d0bfb6f..de8364cdb 100644
 -			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 -			if metadata == nil {
--				metadata = make(map[string]*MetricMetadata)
+-				metadata = make(map[string]*orderAwareMetricMetadata)
 -			}
 -			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
 +			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
@@ -124,9 +124,9 @@ index c4d0bfb6f..de8364cdb 100644
  	}
 -
 -	if m.unmarshalFromRW2 {
--		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
+-		m.Metadata = make([]*MetricMetadata, len(metadata))
 -		for _, metadata := range metadata {
--			m.Metadata = append(m.Metadata, metadata)
+-			m.Metadata[metadata.order] = &metadata.MetricMetadata
 -		}
 -		m.rw2symbols.releasePages()
 -	}
@@ -155,7 +155,7 @@ index c4d0bfb6f..de8364cdb 100644
  func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 -	return errorInternalRW2
 -}
--func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 -	var metricName string
  	l := len(dAtA)
  	iNdEx := 0
@@ -351,7 +351,7 @@ index c4d0bfb6f..de8364cdb 100644
  func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 -	return errorInternalRW2
 -}
--func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata, metricName string) error {
+-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string) error {
 -	var (
 -		err error
 -		help string
@@ -437,7 +437,7 @@ index c4d0bfb6f..de8364cdb 100644
  		default:
  			iNdEx = preIndex
  			skippy, err := skipMimir(dAtA[iNdEx:])
-@@ -11740,18 +11646,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11740,21 +11646,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
@@ -445,11 +445,14 @@ index c4d0bfb6f..de8364cdb 100644
 -		return nil
 -	}
 -	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
--		metadata[normalizeMetricName] = &MetricMetadata{
--			MetricFamilyName: normalizeMetricName,
--			Help:             help,
--			Unit:             unit,
--			Type:             MetricMetadata_MetricType(metricType),
+-		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+-			MetricMetadata: MetricMetadata{
+-				MetricFamilyName: normalizeMetricName,
+-				Help:             help,
+-				Unit:             unit,
+-				Type:             MetricMetadata_MetricType(metricType),
+-			},
+-			order: len(metadata),
 -		}
 -	}
 -
