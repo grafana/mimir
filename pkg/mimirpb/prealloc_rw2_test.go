@@ -296,14 +296,14 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 
 		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
 
-		expSymbols := []string{"", "It's a cool series.", "megawatts", "__name__", "my_cool_series"}
+		expSymbols := []string{"", "__name__", "my_cool_series", "It's a cool series.", "megawatts"}
 		expTimeseries := []TimeSeriesRW2{
 			{
-				LabelsRefs: []uint32{3, 4},
+				LabelsRefs: []uint32{1, 2},
 				Metadata: MetadataRW2{
 					Type:    METRIC_TYPE_COUNTER,
-					HelpRef: 1,
-					UnitRef: 2,
+					HelpRef: 3,
+					UnitRef: 4,
 				},
 			},
 		}

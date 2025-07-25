@@ -129,6 +129,8 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range m.Timeseries {
 		m.Timeseries[idx].clearUnmarshalData()
 	}
+	m.rw2symbols = rw2PagedSymbols{}
+	m.unmarshalFromRW2 = false
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
