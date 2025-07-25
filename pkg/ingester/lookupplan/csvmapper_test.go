@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/alertmanager/matchers/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,12 +81,6 @@ func (m *csvMapper[T]) WriteTestCases(t *testing.T, testCases []T) {
 	assert.NoError(t, tmpFile.Sync())
 	assert.NoError(t, tmpFile.Close())
 	assert.NoError(t, os.Rename(tmpFile.Name(), m.filePath))
-}
-
-func parseVectorSelector(t *testing.T, m string) []*labels.Matcher {
-	matchers, err := parser.ParseMetricSelector(m)
-	require.NoErrorf(t, err, "Failed to parse metric selector %s", m)
-	return matchers
 }
 
 func parseMatcher(t *testing.T, m string) *labels.Matcher {
