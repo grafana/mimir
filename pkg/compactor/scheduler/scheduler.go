@@ -1,23 +1,29 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package scheduler
 
 import (
 	"context"
 	"flag"
-	"slices"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+const planningJobID string = "plan"
 
 type Config struct {
 	maxLeases             int
@@ -61,13 +67,21 @@ type CompactionJob struct {
 	isSplit bool
 }
 
+func (c *CompactionJob) MarshalBlocks() [][]byte {
+	b := make([][]byte, len(c.blocks))
+	for i := range c.blocks {
+		b[i] = c.blocks[i].Bytes()
+	}
+	return b
+}
+
 type Scheduler struct {
 	services.Service
 
 	compactorCfg compactor.Config
 	cfg          Config
 
-	rotator *Rotator
+	rotator            *Rotator
 	subservicesManager *services.Manager
 
 	logger log.Logger
@@ -77,7 +91,6 @@ func NewCompactorScheduler(
 	compactorCfg compactor.Config,
 	cfg Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
-
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
@@ -134,25 +147,62 @@ func (s *Scheduler) stop(err error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager)
 }
 
-func (s *Scheduler) poll(ctx context.Context) {
-	s.rotator.LeaseJob(ctx, func(_ *CompactionJob) bool {
+func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+	response, ok := s.rotator.LeaseJob(ctx, func(_ *CompactionJob) bool {
 		// TODO: Is this a plan job and can this worker plan for this tenant?
+		// Can use req.WorkerId
+		//
+		// It might be better to have a separate tracker for plan jobs. Otherwise
+		// it might take a long time for a tenant to get planned unless we get lucky
+		// in the rotation.
 		return true
 	})
-	// TODO: build response
+	if ok {
+		return response, nil
+	}
+	return nil, status.Error(codes.NotFound, "no jobs were available to be leased")
 }
 
-func (s *Scheduler) heartbeat(tenant, jobID string, leaseTime time.Time) bool {
-	return s.rotator.RenewJobLease(tenant, jobID, leaseTime)
+func (s *Scheduler) UpdateJob(ctx context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+	switch req.Update {
+	case schedulerpb.IN_PROGRESS:
+		return s.heartbeat(req.Tenant, req.Key)
+	case schedulerpb.COMPLETE:
+		fallthrough
+	case schedulerpb.ABANDON:
+		return s.remove(req.Tenant, req.Key)
+	case schedulerpb.REASSIGN:
+		return s.cancel(req.Tenant, req.Key)
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
+	}
 }
 
-func (s *Scheduler) fail(tenant, jobID string, leaseTime time.Time) bool {
-	return s.rotator.CancelJobLease(tenant, jobID, leaseTime)
+func (s *Scheduler) heartbeat(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
+	if s.rotator.RenewJobLease(tenant, key.Id, key.Epoch) {
+		return ok()
+	}
+	return notFound()
 }
 
-func (s *Scheduler) complete(tenant, jobID string, job *CompactionJob) bool {
-	return s.rotator.RemoveJobIf(tenant, jobID, func(existing *CompactionJob) bool {
-		// TODO: Is this sufficient? Would sorting ever change?
-		return slices.Equal(job.blocks, existing.blocks)
-	})
+func (s *Scheduler) remove(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
+	if s.rotator.RemoveJob(tenant, key.Id, key.Epoch) {
+		return ok()
+	}
+	return notFound()
+}
+
+func (s *Scheduler) cancel(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
+	if s.rotator.CancelJobLease(tenant, key.Id, key.Epoch) {
+		return ok()
+	}
+	return notFound()
+}
+
+func ok() (*schedulerpb.UpdateJobResponse, error) {
+	return &schedulerpb.UpdateJobResponse{}, nil
+}
+
+func notFound() (*schedulerpb.UpdateJobResponse, error) {
+	return nil, status.Error(codes.NotFound, "lease was not found")
 }
