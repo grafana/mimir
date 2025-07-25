@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 // CombinedFrontendConfig combines several configuration options together to preserve backwards compatibility.
@@ -128,12 +129,12 @@ func httpRoundTripper(cfg CombinedFrontendConfig, rt http.RoundTripper, reg prom
 	return rt
 }
 
-func grpcToHTTPRoundTripper(cfg CombinedFrontendConfig, grpcRoundTripper transport.GrpcRoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
+func grpcToHTTPRoundTripper(cfg CombinedFrontendConfig, grpcRoundTripper httpgrpcutil.GrpcRoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
 	if grpcRoundTripper == nil {
 		return nil
 	}
 	if cfg.ClusterValidationConfig.Label != "" {
-		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), transport.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper))
+		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), httpgrpcutil.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper))
 	}
-	return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper)
+	return httpgrpcutil.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper)
 }

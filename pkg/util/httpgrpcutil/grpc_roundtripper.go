@@ -3,17 +3,22 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package transport
+package httpgrpcutil
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/grafana/dskit/httpgrpc"
 )
+
+type Buffer interface {
+	Bytes() []byte
+}
 
 // GrpcRoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
 type GrpcRoundTripper interface {
@@ -24,14 +29,27 @@ func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper) http.RoundTripp
 	return &grpcRoundTripperAdapter{roundTripper: r}
 }
 
+func AdaptHTTPGrpcClientToHTTPRoundTripper(c httpgrpc.HTTPClient) http.RoundTripper {
+	return &httpGrpcClientAdapter{client: c}
+}
+
 // This adapter wraps GrpcRoundTripper and converted it into http.RoundTripper
 type grpcRoundTripperAdapter struct {
 	roundTripper GrpcRoundTripper
 }
 
+// This adapter wraps httpgrp.HTTPClient and converted it into GrpcRoundTripper
+type httpGrpcClientAdapter struct {
+	client httpgrpc.HTTPClient
+}
+
 type buffer struct {
 	buff []byte
 	io.ReadCloser
+}
+
+func newBuffer(b []byte) io.ReadCloser {
+	return &buffer{buff: b, ReadCloser: io.NopCloser(bytes.NewReader(b))}
 }
 
 func (b *buffer) Bytes() []byte {
@@ -56,7 +74,7 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 	if body != nil {
 		respBody = body
 	} else {
-		respBody = &buffer{buff: resp.Body, ReadCloser: io.NopCloser(bytes.NewReader(resp.Body))}
+		respBody = newBuffer(resp.Body)
 	}
 
 	httpResp := &http.Response{
@@ -64,10 +82,43 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 		Body:       respBody,
 		Header:     http.Header{},
 	}
-	for _, h := range resp.Headers {
-		httpResp.Header[h.Key] = h.Values
+	httpgrpc.ToHeader(resp.Headers, httpResp.Header)
+
+	setContentLenght(resp, httpResp)
+
+	return httpResp, nil
+}
+
+func (a *httpGrpcClientAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
+	req, err := httpgrpc.FromHTTPRequest(r)
+	if err != nil {
+		return nil, err
 	}
 
+	// for client requests, use the request Path as GRPC Url, as RequestURI is not set
+	if r.URL == nil || r.URL.Path == "" {
+		return nil, errors.New("Error mapping HTTP to GRPC (missing URL or URL.Path)")
+	}
+	req.Url = r.URL.Path
+
+	resp, err := a.client.Handle(r.Context(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpResp := &http.Response{
+		StatusCode: int(resp.Code),
+		Body:       newBuffer(resp.Body),
+		Header:     http.Header{},
+	}
+	httpgrpc.ToHeader(resp.Headers, httpResp.Header)
+
+	setContentLenght(resp, httpResp)
+
+	return httpResp, nil
+}
+
+func setContentLenght(resp *httpgrpc.HTTPResponse, httpResp *http.Response) {
 	contentLength := -1
 	if len(resp.Body) > 0 {
 		contentLength = len(resp.Body)
@@ -78,6 +129,12 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 		}
 	}
 	httpResp.ContentLength = int64(contentLength)
+}
 
-	return httpResp, nil
+func ReadAll(r io.Reader) ([]byte, error) {
+	if b, ok := r.(Buffer); ok {
+		return b.Bytes(), nil
+	}
+
+	return io.ReadAll(r)
 }
