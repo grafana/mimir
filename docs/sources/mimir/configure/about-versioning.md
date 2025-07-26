@@ -4,7 +4,7 @@ aliases:
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: Versioning
 title: About Grafana Mimir versioning
-weight: 50
+weight: 290
 ---
 
 # About Grafana Mimir versioning
