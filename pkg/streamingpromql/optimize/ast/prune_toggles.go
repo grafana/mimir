@@ -1,33 +1,36 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package astmapper
+package ast
 
 import (
 	"context"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
-func NewQueryPruner(ctx context.Context, logger log.Logger) ASTMapper {
-	pruner := newQueryPruner(ctx, logger)
-	return NewASTExprMapper(pruner)
+// PruneToggles optimizes queries by pruning expressions that are toggled off.
+type PruneToggles struct{}
+
+func (p *PruneToggles) Name() string {
+	return "Toggled off expressions pruning"
 }
 
-type queryPruner struct {
-	ctx    context.Context
-	logger log.Logger
-}
-
-func newQueryPruner(ctx context.Context, logger log.Logger) *queryPruner {
-	return &queryPruner{
-		ctx:    ctx,
-		logger: logger,
+func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	mapper := &pruneToggles{
+		ctx: ctx,
 	}
+	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
+	return ASTExprMapper.Map(expr)
 }
 
-func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := pruner.ctx.Err(); err != nil {
+type pruneToggles struct {
+	ctx context.Context
+}
+
+func (mapper *pruneToggles) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := mapper.ctx.Err(); err != nil {
 		return nil, false, err
 	}
 
@@ -42,7 +45,7 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		return expr, false, nil
 	}
 
-	isConst, isEmpty := pruner.isConst(e.RHS)
+	isConst, isEmpty := mapper.isConst(e.RHS)
 	if !isConst {
 		return expr, false, nil
 	}
@@ -56,11 +59,11 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 	return e.LHS, false, nil
 }
 
-func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
+func (mapper *pruneToggles) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 	var lhs, rhs parser.Expr
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
-		return pruner.isConst(e.Expr)
+		return mapper.isConst(e.Expr)
 	case *parser.BinaryExpr:
 		if e.Op != parser.EQLC || e.ReturnBool {
 			return false, false
@@ -71,10 +74,10 @@ func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 		return false, false
 	}
 
-	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(lhs, rhs); vectorAndNumber {
+	if vectorAndNumber, equals := mapper.isVectorAndNumberEqual(lhs, rhs); vectorAndNumber {
 		return true, !equals
 	}
-	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(rhs, lhs); vectorAndNumber {
+	if vectorAndNumber, equals := mapper.isVectorAndNumberEqual(rhs, lhs); vectorAndNumber {
 		return true, !equals
 	}
 	return false, false
@@ -83,22 +86,22 @@ func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 // isVectorAndNumberEqual returns whether the lhs is a const vector like
 // "vector(5)"" and the right hand size is a number like "2". Also returns
 // if the values are equal.
-func (pruner *queryPruner) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
-	lIsVector, lValue := pruner.isConstVector(lhs)
+func (mapper *pruneToggles) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
+	lIsVector, lValue := mapper.isConstVector(lhs)
 	if !lIsVector {
 		return false, false
 	}
-	rIsConst, rValue := pruner.isNumber(rhs)
+	rIsConst, rValue := mapper.isNumber(rhs)
 	if !rIsConst {
 		return false, false
 	}
 	return true, rValue == lValue
 }
 
-func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value float64) {
+func (mapper *pruneToggles) isConstVector(expr parser.Expr) (isVector bool, value float64) {
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
-		return pruner.isConstVector(e.Expr)
+		return mapper.isConstVector(e.Expr)
 	case *parser.Call:
 		if e.Func.Name != "vector" || len(e.Args) != 1 {
 			return false, 0
@@ -112,10 +115,10 @@ func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value
 	return false, 0
 }
 
-func (pruner *queryPruner) isNumber(expr parser.Expr) (isNumber bool, value float64) {
+func (mapper *pruneToggles) isNumber(expr parser.Expr) (isNumber bool, value float64) {
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
-		return pruner.isNumber(e.Expr)
+		return mapper.isNumber(e.Expr)
 	case *parser.NumberLiteral:
 		return true, e.Val
 	}

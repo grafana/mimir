@@ -1649,6 +1649,16 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
+  # (experimental) Enable pruning query expressions that are toggled off with
+  # constants.
+  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
+  [enable_prune_toggles: <boolean> | default = true]
+
+  # (experimental) Enable copying label matchers where relevant across binary
+  # expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = true]
+
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
@@ -1789,11 +1799,10 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# (experimental) True to enable pruning dead code (eg. expressions that cannot
-# produce any results) and simplifying expressions (eg. expressions that can be
-# evaluated immediately) in queries.
-# CLI flag: -query-frontend.prune-queries
-[prune_queries: <boolean> | default = false]
+# (experimental) True to enable rewriting histogram queries for a more efficient
+# order of execution.
+# CLI flag: -query-frontend.prune-queries-histogram
+[prune_queries_histogram: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
