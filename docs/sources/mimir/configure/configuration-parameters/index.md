@@ -7,7 +7,7 @@ aliases:
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
-weight: 130
+weight: 20
 ---
 
 # Grafana Mimir configuration parameters
