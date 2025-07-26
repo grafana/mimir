@@ -4,7 +4,7 @@ aliases:
 description: Troubleshoot errors by logging IP addresses of reverse proxies.
 menuTitle: IP address logging of a reverse proxy
 title: About Grafana Mimir IP address logging of a reverse proxy
-weight: 30
+weight: 280
 ---
 
 # About Grafana Mimir IP address logging of a reverse proxy

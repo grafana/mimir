@@ -1,7 +1,7 @@
 ---
 title: Configure queries to block
 description: Control what queries are sent to your Mimir installation.
-weight: 100
+weight: 210
 ---
 
 # Configure queries to block

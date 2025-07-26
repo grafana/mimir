@@ -6,7 +6,7 @@ aliases:
 description: Learn how to configure shuffle sharding.
 menuTitle: Shuffle sharding
 title: Configure Grafana Mimir shuffle sharding
-weight: 80
+weight: 140
 ---
 
 # Configure Grafana Mimir shuffle sharding

@@ -4,7 +4,7 @@ aliases:
 description: Learn how to configure Grafana Mimir metrics storage retention.
 menuTitle: Metrics storage retention
 title: Configure Grafana Mimir metrics storage retention
-weight: 70
+weight: 80
 ---
 
 # Configure Grafana Mimir metrics storage retention

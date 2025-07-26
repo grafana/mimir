@@ -4,7 +4,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to enable TSDB block upload
 menuTitle: TSDB block upload
 title: Configure TSDB block upload
-weight: 120
+weight: 90
 ---
 
 # Configure TSDB block upload

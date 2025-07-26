@@ -6,7 +6,7 @@ aliases:
 description: Runtime configuration enables you to change a subset of configurations without restarting Grafana Mimir.
 menuTitle: Runtime configuration
 title: About Grafana Mimir runtime configuration
-weight: 40
+weight: 30
 ---
 
 # About Grafana Mimir runtime configuration

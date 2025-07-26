@@ -4,6 +4,7 @@ aliases:
 description: Learn about reactive limiters.
 menuTitle: Reactive limiters
 title: About Grafana Mimir reactive limiters
+weight: 170
 ---
 
 # About Grafana Mimir reactive limiters

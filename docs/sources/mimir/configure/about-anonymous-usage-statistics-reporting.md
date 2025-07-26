@@ -4,7 +4,7 @@ aliases:
 description: Learn about Grafana Mimir anonymous usage statistics reporting
 menuTitle: Anonymous usage statistics reporting
 title: About Grafana Mimir anonymous usage statistics reporting
-weight: 30
+weight: 60
 ---
 
 # About Grafana Mimir anonymous usage statistics reporting

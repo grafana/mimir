@@ -4,7 +4,7 @@ aliases:
 description: Learn about tenant ID restrictions.
 menuTitle: Tenant IDs
 title: About Grafana Mimir tenant IDs
-weight: 10
+weight: 40
 ---
 
 # About Grafana Mimir tenant IDs

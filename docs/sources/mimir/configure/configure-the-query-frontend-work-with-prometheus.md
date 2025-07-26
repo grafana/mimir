@@ -6,7 +6,7 @@ aliases:
 description: Learn how to configure the query-frontend to work with Prometheus.
 menuTitle: Query-frontend to work with Prometheus
 title: Configure the Grafana Mimir query-frontend to work with Prometheus
-weight: 90
+weight: 230
 ---
 
 # Configure the Grafana Mimir query-frontend to work with Prometheus
