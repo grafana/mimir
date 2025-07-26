@@ -26,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 
@@ -51,12 +52,12 @@ var (
 
 // blockConverter defines the interface for converting blocks to parquet format.
 type blockConverter interface {
-	ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) error
+	ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger, opts []convert.ConvertOption) error
 }
 
 type defaultBlockConverter struct{}
 
-func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) error {
+func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger, opts []convert.ConvertOption) error {
 	tsdbBlock, err := tsdb.OpenBlock(
 		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
 	)
@@ -71,7 +72,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 		meta.MinTime,
 		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
-		convert.WithName(meta.ULID.String()),
+		opts...,
 	)
 	return err
 }
@@ -87,12 +88,15 @@ type Config struct {
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
 	MaxBlockAge        time.Duration `yaml:"max_block_age"`
 
+	SortingLabels   flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration     time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup int                    `yaml:"max_rows_per_group" category:"advanced"`
+
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
 
 // RegisterFlags registers the ParquetConverter flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
@@ -100,6 +104,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
+	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
+	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
+	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 }
 
 type ParquetConverter struct {
@@ -118,12 +125,33 @@ type ParquetConverter struct {
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
 
-	blockConverter blockConverter
-	metrics        parquetConverterMetrics
+	blockConverter       blockConverter
+	baseConverterOptions []convert.ConvertOption
+	metrics              parquetConverterMetrics
 
 	conversionQueue *priorityQueue
 
 	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
+}
+
+func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
+	var baseConverterOptions []convert.ConvertOption
+
+	if len(cfg.SortingLabels) > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithSortBy(cfg.SortingLabels...))
+	} else {
+		baseConverterOptions = append(baseConverterOptions, convert.WithSortBy(labels.MetricName))
+	}
+
+	if cfg.ColDuration > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithColDuration(cfg.ColDuration))
+	}
+
+	if cfg.MaxRowsPerGroup > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
+	}
+
+	return baseConverterOptions
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -141,15 +169,17 @@ func newParquetConverter(
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
+
 	c := &ParquetConverter{
-		Cfg:                 cfg,
-		bucketClientFactory: bucketClientFactory,
-		logger:              log.With(logger, "component", "parquet-converter"),
-		registerer:          registerer,
-		limits:              limits,
-		blockConverter:      blockConverter,
-		metrics:             newParquetConverterMetrics(registerer),
-		conversionQueue:     newPriorityQueue(),
+		Cfg:                  cfg,
+		bucketClientFactory:  bucketClientFactory,
+		logger:               log.With(logger, "component", "parquet-converter"),
+		registerer:           registerer,
+		limits:               limits,
+		blockConverter:       blockConverter,
+		baseConverterOptions: buildBaseConverterOptions(cfg),
+		metrics:              newParquetConverterMetrics(registerer),
+		conversionQueue:      newPriorityQueue(),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -446,7 +476,11 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger)
+	convertOpts := make([]convert.ConvertOption, len(c.baseConverterOptions)+1)
+	copy(convertOpts, c.baseConverterOptions)
+	convertOpts[len(c.baseConverterOptions)] = convert.WithName(meta.ULID.String())
+
+	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
 		return
