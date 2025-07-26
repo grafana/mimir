@@ -88,9 +88,10 @@ type Config struct {
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
 	MaxBlockAge        time.Duration `yaml:"max_block_age"`
 
-	SortingLabels   flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
-	ColDuration     time.Duration          `yaml:"col_duration" category:"advanced"`
-	MaxRowsPerGroup int                    `yaml:"max_rows_per_group" category:"advanced"`
+	SortingLabels      flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration        time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup    int                    `yaml:"max_rows_per_group" category:"advanced"`
+	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -107,6 +108,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
+	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 }
 
 type ParquetConverter struct {
@@ -364,7 +366,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			continue
 		}
 
-		metas, _, err := fetcher.Fetch(ctx)
+		metas, _, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
 		if err != nil {
 			level.Error(ulogger).Log("msg", "error fetching metas", "err", err)
 			continue
@@ -373,6 +375,10 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 		for _, m := range metas {
 			if ctx.Err() != nil {
 				return
+			}
+
+			if m.Compaction.Level < c.Cfg.MinCompactionLevel {
+				continue
 			}
 
 			ok, err := c.ownBlock(m.ULID.String())
