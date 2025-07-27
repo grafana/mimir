@@ -125,8 +125,8 @@ For more information about required disk space, refer to [Compactor disk utiliza
 
 When working with large tenants, there are two compactor-specific settings to consider when planning or adjusting capacity:
 
-`-compactor.split-groups`
-`-compactor.split-and-merge-shards`
+- `-compactor.split-groups`
+- `-compactor.split-and-merge-shards`
 
 For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
