@@ -18841,6 +18841,50 @@
           "fieldType": "duration"
         },
         {
+          "kind": "field",
+          "name": "sorting_labels",
+          "required": false,
+          "desc": "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "parquet-converter.sorting-labels",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "col_duration",
+          "required": false,
+          "desc": "Duration for column chunks in Parquet files.",
+          "fieldValue": null,
+          "fieldDefaultValue": 28800000000000,
+          "fieldFlag": "parquet-converter.col-duration",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_rows_per_group",
+          "required": false,
+          "desc": "Maximum number of rows per row group in Parquet files.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000000,
+          "fieldFlag": "parquet-converter.max-rows-per-group",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "min_compaction_level",
+          "required": false,
+          "desc": "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "parquet-converter.min-compaction-level",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,
