@@ -51,7 +51,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
-	"github.com/grafana/mimir/pkg/mimirtool/client"
+	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 // DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
@@ -186,7 +186,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		},
 		ChunkedReadLimit: c.readSizeLimit,
 		Headers: map[string]string{
-			"User-Agent": client.UserAgent(),
+			"User-Agent": mimirtool_client.UserAgent(),
 		},
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 			prompb.ReadRequest_SAMPLES, // fallback
 		}
 	} else {
-		log.Debugf("Requesting sampled response (SAMPLES)")
+		log.Debugf("Requesting samples response (SAMPLES)")
 		acceptedTypes = []prompb.ReadRequest_ResponseType{
 			prompb.ReadRequest_SAMPLES,
 		}
@@ -318,7 +318,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimirtool")
+	httpReq.Header.Set("User-Agent", mimirtool_client.UserAgent())
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	// Send the request using the client's HTTP client
@@ -420,7 +420,6 @@ func (c *RemoteReadCommand) handleSamplesResponse(httpResp *http.Response, queri
 
 // handleChunkedResponse handles the streamed chunked response format
 func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// Use the chunked reader from the remote package
 	reader := remote.NewChunkedReader(httpResp.Body, c.readSizeLimit, nil)
 
 	processedQueries := make(map[int64]int)
@@ -494,7 +493,6 @@ func (s *multiQueryChunkedSeries) Labels() labels.Labels {
 }
 
 func (s *multiQueryChunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	// Create a new chunked series iterator
 	return newMultiQueryChunkedIterator(s.chunks)
 }
 
