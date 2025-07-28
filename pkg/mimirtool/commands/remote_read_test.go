@@ -544,20 +544,8 @@ func TestRemoteReadCommand_prepare(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock server that returns success
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/x-protobuf")
-				// Return empty response
-				resp := &prompb.ReadResponse{}
-				data, _ := proto.Marshal(resp)
-				compressed := snappy.Encode(nil, data)
-				_, err := w.Write(compressed)
-				require.NoError(t, err)
-			}))
-			defer server.Close()
-
 			cmd := &RemoteReadCommand{
-				address:        server.URL,
+				address:        "invalid.com", // we only test validation
 				remoteReadPath: "/api/v1/read",
 				selectors:      tt.selectors,
 				from:           tt.from,
