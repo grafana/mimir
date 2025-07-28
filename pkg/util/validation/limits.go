@@ -299,6 +299,9 @@ type Limits struct {
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
 	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
 
+	// NameValidationScheme is the validation scheme for metric and label names.
+	NameValidationScheme ValidationSchemeValue `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
+
 	extensions map[string]interface{}
 }
 
@@ -348,6 +351,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series", "Target ingestion delay to apply to tenants with configured max global series to a value lower than -distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than should be applied.")
 	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than", "Target ingestion delay to apply to tenants with a numeric ID whose value is greater than -distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than.")
+
+	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
+	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -557,12 +563,19 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 }
 
 func (l *Limits) validate() error {
+	switch model.ValidationScheme(l.NameValidationScheme) {
+	case model.UTF8Validation, model.LegacyValidation:
+	case model.UnsetValidation:
+		l.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+	default:
+		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
+	}
+
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		// TODO: when we make validation scheme configurable, set
-		// cfg.MetricNameValidationScheme to match that value.
+		cfg.MetricNameValidationScheme = model.ValidationScheme(l.NameValidationScheme)
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -1059,9 +1072,9 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
-	validationScheme := o.ValidationScheme(userID)
+	validationScheme := o.getOverridesForUser(userID).NameValidationScheme
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].MetricNameValidationScheme = model.ValidationScheme(validationScheme)
 	}
 	return relabelConfigs
 }
@@ -1420,9 +1433,8 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 // ValidationScheme returns the validation scheme to use for a particular tenant.
-func (o *Overrides) ValidationScheme(_ string) model.ValidationScheme {
-	// TODO(juliusmh): make this configurable by tenant
-	return model.LegacyValidation
+func (o *Overrides) ValidationScheme(userID string) model.ValidationScheme {
+	return model.ValidationScheme(o.getOverridesForUser(userID).NameValidationScheme)
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
