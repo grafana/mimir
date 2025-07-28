@@ -234,18 +234,21 @@ func (e *Evaluator) Close() {
 type EvaluationObserver interface {
 	// SeriesMetadataEvaluated notifies this observer when series metadata has been evaluated.
 	// Implementations of this method are responsible for returning the series slice to the pool when it is no longer needed.
+	// Implementations of this method may mutate the series slice before returning it to the pool.
 	SeriesMetadataEvaluated(evaluator *Evaluator, series []types.SeriesMetadata) error
 
 	// InstantVectorSeriesDataEvaluated notifies this observer when samples for an instant vector series have been evaluated.
 	// Implementations of this method are responsible for returning seriesData to the pool when it is no longer needed.
+	// Implementations of this method may mutate seriesData before returning it to the pool.
 	InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error
 
 	// RangeVectorStepSamplesEvaluated notifies this observer when samples for a range vector step have been evaluated.
-	// Implementations of this method must not mutate stepData.
+	// Implementations of this method must not mutate stepData, and should copy any data they wish to retain from stepData before returning.
 	RangeVectorStepSamplesEvaluated(evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error
 
 	// ScalarEvaluated notifies this observer when a scalar has been evaluated.
 	// Implementations of this method are responsible for returning data to the pool when it is no longer needed.
+	// Implementations of this method may mutate data before returning it to the pool.
 	ScalarEvaluated(evaluator *Evaluator, data types.ScalarData) error
 
 	// StringEvaluated notifies this observer when a string has been evaluated.
