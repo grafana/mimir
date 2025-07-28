@@ -528,6 +528,9 @@ type multiQueryChunkedIterator struct {
 }
 
 func (it *multiQueryChunkedIterator) Next() chunkenc.ValueType {
+	if it.err != nil {
+		return chunkenc.ValNone
+	}
 	// If we have a current chunk iterator, try to get next value
 	if it.cur != nil {
 		if vt := it.cur.Next(); vt != chunkenc.ValNone {
