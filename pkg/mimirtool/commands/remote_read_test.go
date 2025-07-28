@@ -760,38 +760,131 @@ func TestCombinedSeriesSet(t *testing.T) {
 }
 
 func TestMultiQueryChunkedIterator(t *testing.T) {
-	// Test basic iterator functionality
-	chunks := []prompb.Chunk{
+	tests := []struct {
+		name            string
+		chunks          []prompb.Chunk
+		expectedSamples []prompb.Sample
+	}{
 		{
-			Type: prompb.Chunk_XOR,
-			Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+			name: "single chunk with multiple samples",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+			},
+		},
+		{
+			name: "multiple non-overlapping chunks",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+				},
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{3000, 4000}, []float64{3.0, 4.0}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+				{Timestamp: 3000, Value: 3.0},
+				{Timestamp: 4000, Value: 4.0},
+			},
+		},
+		{
+			name: "overlapping chunks",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000, 3000}, []float64{1.0, 2.0, 3.0}),
+				},
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{2500, 3500}, []float64{2.5, 3.5}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+				{Timestamp: 3000, Value: 3.0},
+				{Timestamp: 2500, Value: 2.5},
+				{Timestamp: 3500, Value: 3.5},
+			},
+		},
+		{
+			name: "chunk with single sample",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000}, []float64{1.0}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+			},
+		},
+		{
+			name: "chunks with gaps",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+				},
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{5000, 6000}, []float64{5.0, 6.0}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+				{Timestamp: 5000, Value: 5.0},
+				{Timestamp: 6000, Value: 6.0},
+			},
+		},
+		{
+			name: "identical chunks",
+			chunks: []prompb.Chunk{
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+				},
+				{
+					Type: prompb.Chunk_XOR,
+					Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
+				},
+			},
+			expectedSamples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+				{Timestamp: 1000, Value: 1.0},
+				{Timestamp: 2000, Value: 2.0},
+			},
 		},
 	}
 
-	iter := newMultiQueryChunkedIterator(chunks)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			iter := newMultiQueryChunkedIterator(tt.chunks)
 
-	// Test iteration
-	vt := iter.Next()
-	assert.NotEqual(t, chunkenc.ValNone, vt)
+			var actualSamples []prompb.Sample
+			for iter.Next() != chunkenc.ValNone {
+				ts, val := iter.At()
+				actualSamples = append(actualSamples, prompb.Sample{
+					Timestamp: ts,
+					Value:     val,
+				})
+			}
 
-	// Test error handling
-	assert.NoError(t, iter.Err())
-
-	// Test sample count assertions
-	iter = newMultiQueryChunkedIterator(chunks)
-	expectedSamples := []struct {
-		ts int64
-		f  float64
-	}{
-		{1000, 1.0},
-		{2000, 2.0},
-	}
-	for iter.Next() != chunkenc.ValNone {
-		actualTS, actualF := iter.At()
-		nextExpectedSample := expectedSamples[0]
-		expectedSamples = expectedSamples[1:]
-		assert.Equal(t, nextExpectedSample.ts, actualTS)
-		assert.Equal(t, nextExpectedSample.f, actualF)
+			assert.NoError(t, iter.Err())
+			assert.Equal(t, tt.expectedSamples, actualSamples)
+		})
 	}
 }
 
