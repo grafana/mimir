@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const INFINITE_LEASES = 0
+
 // Job is the wrapper type within the JobTracker.
 // K identifies the job. If another job is offered with K the conflict must be decided.
 // V is the contained type
@@ -63,14 +65,14 @@ func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
 // If one is found it is marked as leased and still internally tracked (but is no longer leasable)
-func (jq *JobTracker[K, V]) Lease(canAccept func(v V) bool) (K, V, int64, bool) {
+func (jq *JobTracker[K, V]) Lease(canAccept func(k K, v V) bool) (K, V, int64, bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
 	var e *list.Element
 	for e = jq.q.Front(); e != nil; e = e.Next() {
 		j := e.Value.(Job[K, V])
-		if canAccept(j.v) {
+		if canAccept(j.k, j.v) {
 			break
 		}
 	}
@@ -118,6 +120,27 @@ func (jq *JobTracker[K, V]) Remove(k K, epoch int64) (bool, bool) {
 	return false, false
 }
 
+// Does not check for an epoch match
+func (jq *JobTracker[K, V]) RemoveForcefully(k K) (bool, bool) {
+	jq.mtx.Lock()
+	defer jq.mtx.Unlock()
+
+	e, ok := jq.elementMap[k]
+	if !ok {
+		return false, false
+	}
+
+	j := e.Value.(*Job[K, V])
+	delete(jq.elementMap, k)
+	if j.IsLeased() {
+		jq.leased.Remove(e)
+		return true, false
+	} else {
+		jq.q.Remove(e)
+		return true, jq.isAvailableEmpty()
+	}
+}
+
 // ExpireLeases iterates through all the leased jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been leased under the maximum number of times, it is returned to the front of the queue
 // Otherwise a job with an expired lease will be removed from the tracker.
@@ -149,7 +172,7 @@ func (jq *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
 	jq.leased.Remove(e)
 
 	// Can the job be returned to the queue?
-	if jq.maxLeases == 0 || j.numLeases < jq.maxLeases {
+	if jq.maxLeases == INFINITE_LEASES || j.numLeases < jq.maxLeases {
 		j.leaseCreationTime = time.Time{}
 		j.lastRenewalTime = time.Time{}
 		jq.elementMap[j.k] = jq.q.PushFront(j)
