@@ -31,6 +31,7 @@ type Rotator struct {
 
 	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
 
+	planTracker        *JobTracker[string, struct{}]
 	leaseDuration      time.Duration
 	leaseCheckInterval time.Duration
 	maxLeases          int
@@ -41,12 +42,13 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
+func NewRotator(planTracker *JobTracker[string, struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
 	r := &Rotator{
 		tenantStateMap:       make(map[string]*TenantRotationState),
 		rotation:             make([]string, 0, 10), // initial size doesn't really matter
 		mtx:                  &sync.RWMutex{},
 		rotationIndexCounter: &atomic.Int32{},
+		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
 		leaseCheckInterval:   leaseCheckInterval,
 		maxLeases:            maxLeases,
@@ -60,7 +62,7 @@ func (r *Rotator) iter(_ context.Context) error {
 	return nil
 }
 
-func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(*CompactionJob) bool) (*schedulerpb.LeaseJobResponse, bool) {
+func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*schedulerpb.LeaseJobResponse, bool) {
 	r.mtx.RLock()
 
 	length := len(r.rotation)
@@ -89,9 +91,11 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(*CompactionJob) b
 					Epoch: epoch,
 				},
 				Spec: &schedulerpb.JobSpec{
-					Tenant:   tenant,
-					BlockIds: job.MarshalBlocks(),
-					Split:    job.isSplit,
+					Tenant: tenant,
+					Job: &schedulerpb.CompactionJob{
+						BlockIds: job.blocks,
+						Split:    job.isSplit,
+					},
 				},
 			}, true
 		}
@@ -235,6 +239,8 @@ func (r *Rotator) RemoveTenant(tenant string) {
 }
 
 func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
+	r.planTracker.ExpireLeases(leaseDuration)
+
 	r.mtx.RLock()
 	addRotationFor := make([]string, 0, 10) // size is arbitrary
 	for tenant, tenantState := range r.tenantStateMap {
