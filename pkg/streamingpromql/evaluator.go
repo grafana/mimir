@@ -196,20 +196,13 @@ func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarO
 		return err
 	}
 
-	if err := observer.ScalarEvaluated(e, d); err != nil {
-		return err
-	}
-
-	return nil
+	return observer.ScalarEvaluated(e, d)
 }
 
 func (e *Evaluator) evaluateStringOperator(op types.StringOperator, observer EvaluationObserver) error {
 	v := op.GetValue()
-	if err := observer.StringEvaluated(e, v); err != nil {
-		return err
-	}
 
-	return nil
+	return observer.StringEvaluated(e, v)
 }
 
 func (e *Evaluator) Cancel() {
