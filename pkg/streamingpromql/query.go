@@ -44,7 +44,7 @@ type Query struct {
 	annotations    *annotations.Annotations
 	stats          *types.QueryStats
 
-	resultIsVector bool
+	resultIsVector bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
 
 	succeeded bool
 }
