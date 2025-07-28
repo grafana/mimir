@@ -17,7 +17,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 
 ### Documentation
 
