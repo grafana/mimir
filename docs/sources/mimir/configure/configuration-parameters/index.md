@@ -1468,6 +1468,24 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-block-age
   [max_block_age: <duration> | default = 0s]
 
+  # (advanced) Comma-separated list of labels to sort by when converting to
+  # Parquet format. If not the file will be sorted by '__name__'.
+  # CLI flag: -parquet-converter.sorting-labels
+  [sorting_labels: <string> | default = ""]
+
+  # (advanced) Duration for column chunks in Parquet files.
+  # CLI flag: -parquet-converter.col-duration
+  [col_duration: <duration> | default = 8h]
+
+  # (advanced) Maximum number of rows per row group in Parquet files.
+  # CLI flag: -parquet-converter.max-rows-per-group
+  [max_rows_per_group: <int> | default = 1000000]
+
+  # (advanced) Minimum compaction level required for blocks to be converted to
+  # Parquet. Blocks equal or greater than this level will be converted.
+  # CLI flag: -parquet-converter.min-compaction-level
+  [min_compaction_level: <int> | default = 2]
+
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
