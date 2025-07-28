@@ -75,7 +75,7 @@ require (
 	github.com/prometheus/otlptranslator v0.0.0-20250725141939-ab8d56d297e3
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
-	github.com/thanos-io/objstore v0.0.0-20250630122120-3d380bdbe68c
+	github.com/thanos-io/objstore v0.0.0-20250725105400-667c14043dbe
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.19.4
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
