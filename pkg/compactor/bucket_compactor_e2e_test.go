@@ -15,7 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -152,8 +152,8 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		sort.Slice(rem, func(i, j int) bool {
-			return rem[i].Compare(rem[j]) < 0
+		slices.SortFunc(rem, func(a, b ulid.ULID) int {
+			return a.Compare(b)
 		})
 
 		// Only the level 3 block, the last source block in both resolutions should be left.
@@ -585,8 +585,8 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		rem, err := listBlocksMarkedForDeletion(ctx, bkt)
 		require.NoError(t, err)
 
-		sort.Slice(rem, func(i, j int) bool {
-			return rem[i].Compare(rem[j]) < 0
+		slices.SortFunc(rem, func(a, b ulid.ULID) int {
+			return a.Compare(b)
 		})
 
 		assert.Equal(t, ids, rem)

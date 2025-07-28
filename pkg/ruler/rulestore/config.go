@@ -22,7 +22,7 @@ const (
 	BackendLocal = "local"
 )
 
-var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+var supportedCacheBackends = []string{cache.BackendMemcached}
 
 // Config configures a rule store.
 type Config struct {
@@ -43,7 +43,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", BackendLocal, strings.Join(supportedCacheBackends, ", ")))
 	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
-	cfg.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
 }
 
 func (cfg *Config) Validate() error {

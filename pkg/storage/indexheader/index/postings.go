@@ -336,8 +336,8 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 			values = append(values, PostingListOffset{LabelValue: k, Off: r})
 		}
 	}
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].LabelValue < values[j].LabelValue
+	slices.SortFunc(values, func(a, b PostingListOffset) int {
+		return strings.Compare(a.LabelValue, b.LabelValue)
 	})
 	return values, nil
 }

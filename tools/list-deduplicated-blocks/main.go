@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -170,8 +171,8 @@ func printBlocks(metas map[ulid.ULID]*block.Meta) {
 		blocks = append(blocks, b)
 	}
 
-	sort.Slice(blocks, func(i, j int) bool {
-		return blocks[i].MinTime < blocks[j].MinTime
+	slices.SortFunc(blocks, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)

@@ -344,7 +344,7 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
-	# Ensure all errors are report as APIError
+	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
@@ -416,6 +416,11 @@ lint: check-makefiles
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
 	faillint -paths \
 		"sort.{Strings,Ints}=slices.Sort" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Use the faster slices.IsSortedFunc where we can.
+	faillint -paths \
+		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
