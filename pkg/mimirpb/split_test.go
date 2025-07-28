@@ -144,8 +144,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit, and bin-packing - RW2", func(t *testing.T) {
-		// 200 allows the first and second WriteRequests to fit into one request, but not the third.
-		const limit = 200
+		// 220 allows the first and second WriteRequests to fit into one request, but not the third.
+		const limit = 220
 		reqv2 := testReqV2Static(t)
 
 		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit, 0, nil)

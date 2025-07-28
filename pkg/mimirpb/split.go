@@ -106,9 +106,15 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		}
 
 		// Add the current series to next partial request.
-		deltaSize := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
-		nextReqSize += deltaSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
-		nextReqSize += nextReqSymbols.SymbolsSizeProto() - nextReqSymbolsSize
+		// Account for the growth in timeseries size...
+		originalTSSize := req.TimeseriesRW2[i].Size()
+		deltaTSSize := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
+		nextReqSize += originalTSSize + deltaTSSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		// ...and the growth in symbols size.
+		newSymbolsSize := nextReqSymbols.SymbolsSizeProto()
+		nextReqSize += newSymbolsSize - nextReqSymbolsSize
+		nextReqSymbolsSize = newSymbolsSize
+		// Finally, include the timeseries in the request.
 		nextReqTimeseriesLength++
 	}
 
