@@ -143,6 +143,9 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 			}
 		}
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cfg.CacheGetRange("parquet-chunks", chunksCache, isParquetChunksFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		// TODO Note that the parquet labels should go into a different cache than the chunks. We reuse the same cache to avoid changes across the codebase but if we're going with this implementation we should move it.
+		cfg.CacheGetRange("parquet-labels", chunksCache, isParquetLabelsFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {
