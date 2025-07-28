@@ -33,7 +33,7 @@ require (
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.23.0-rc.1
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.65.1-0.20250711183725-0e1982f10d4c
+	github.com/prometheus/common v0.65.1-0.20250728084850-6caa6ccca8f6
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -345,7 +345,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250730103430-0d1d208bb9d7
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250728085455-ec3c6b7b626a
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

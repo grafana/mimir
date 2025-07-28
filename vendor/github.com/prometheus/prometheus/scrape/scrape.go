@@ -157,7 +157,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 	switch cfg.MetricNameValidationScheme {
 	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return nil, errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
+		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	var escapingScheme model.EscapingScheme
 	escapingScheme, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme)
@@ -334,7 +334,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	switch cfg.MetricNameValidationScheme {
 	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
+		return errors.New("scrapePool.reload: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	sp.validationScheme = cfg.MetricNameValidationScheme
 	var escapingScheme model.EscapingScheme

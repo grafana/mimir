@@ -569,8 +569,8 @@ github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkB
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96 h1:kq5zJVW9LyFOB5xCeQPTON2HNjwwEkefhegZXGIhQPk=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250730103430-0d1d208bb9d7 h1:8R9x2OEuPndHuHTRRt/Vy6W+4EUbr+AFAB0zI+0J6ws=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250730103430-0d1d208bb9d7/go.mod h1:Pe/2vVv91zryCeOwLSjIFJFsw4Pvd2VNHbTUGu6kUls=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250728085455-ec3c6b7b626a h1:ULyerkpgf6b2/cqlS4USETQZNEuq3NaddS3OQQERj6U=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250728085455-ec3c6b7b626a/go.mod h1:t7th601qrWJrQQula7fU05QjmR3bG6XGS5AW5QwMoNM=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
@@ -906,8 +906,8 @@ github.com/prometheus/common v0.9.1/go.mod h1:yhUN8i9wzaXS3w1O07YhxHEBxD+W35wd8b
 github.com/prometheus/common v0.10.0/go.mod h1:Tlit/dnDKsSWFlCLTWaA1cyBgKHSMdTB80sz/V91rCo=
 github.com/prometheus/common v0.26.0/go.mod h1:M7rCNAaPfAosfx8veZJCuw84e35h3Cfd9VFqTh1DIvc=
 github.com/prometheus/common v0.29.0/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
-github.com/prometheus/common v0.65.1-0.20250711183725-0e1982f10d4c h1:LfxkKdkGF+3fC5ZiHv5sWtEMH+STn+Edwx78s+W95QU=
-github.com/prometheus/common v0.65.1-0.20250711183725-0e1982f10d4c/go.mod h1:LL3lcZII3UXGO4InbF+BTSsiAAPUBnwFVbp4gBWIMqw=
+github.com/prometheus/common v0.65.1-0.20250728084850-6caa6ccca8f6 h1:MBrOq/Rse8zaxnzMxOL1snhB93Tqewm2ZxXQPzgbBeg=
+github.com/prometheus/common v0.65.1-0.20250728084850-6caa6ccca8f6/go.mod h1:LL3lcZII3UXGO4InbF+BTSsiAAPUBnwFVbp4gBWIMqw=
 github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdDeppTwGX4=
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=

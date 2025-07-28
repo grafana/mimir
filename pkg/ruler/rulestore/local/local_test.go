@@ -71,7 +71,8 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	client, err := NewLocalRulesClient(rulestore.LocalStoreConfig{
-		Directory: dir,
+		Directory:            dir,
+		NameValidationScheme: model.UTF8Validation,
 	}, promRules.FileLoader{})
 	require.NoError(t, err)
 

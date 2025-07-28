@@ -266,7 +266,6 @@ func NewAPI(
 	ctZeroIngestionEnabled bool,
 	validIntervalCTZeroIngestion time.Duration,
 	lookbackDelta time.Duration,
-	enableTypeAndUnitLabels bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -314,10 +313,9 @@ func NewAPI(
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, ctZeroIngestionEnabled, validIntervalCTZeroIngestion, remote.OTLPOptions{
-			ConvertDelta:            otlpDeltaToCumulative,
-			NativeDelta:             otlpNativeDeltaIngestion,
-			LookbackDelta:           lookbackDelta,
-			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+			ConvertDelta:  otlpDeltaToCumulative,
+			NativeDelta:   otlpNativeDeltaIngestion,
+			LookbackDelta: lookbackDelta,
 		})
 	}
 
@@ -789,8 +787,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		name = model.UnescapeName(name, model.ValueEncodingEscaping)
 	}
 
-	label := model.LabelName(name)
-	if !label.IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 

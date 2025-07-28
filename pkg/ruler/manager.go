@@ -313,7 +313,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
-	}, log.With(r.logger, "user", userID)); err != nil {
+	}, r.limits.ValidationScheme(userID), log.With(r.logger, "user", userID)); err != nil {
 		return nil, err
 	}
 

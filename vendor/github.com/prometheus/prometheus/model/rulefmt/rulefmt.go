@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v3"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -97,7 +96,14 @@ type ruleGroups struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node ruleGroups, validationScheme model.ValidationScheme) (errs []error) {
+func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme) (errs []error) {
+	switch nameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	default:
+		errs = append(errs, fmt.Errorf("unhandled nameValidationScheme: %s", nameValidationScheme))
+		return
+	}
+
 	set := map[string]struct{}{}
 
 	for j, g := range g.Groups {
@@ -113,7 +119,7 @@ func (g *RuleGroups) Validate(node ruleGroups, validationScheme model.Validation
 		}
 
 		for k, v := range g.Labels {
-			if !labels.IsValidLabelName(k, validationScheme) || k == model.MetricNameLabel {
+			if !nameValidationScheme.IsValidLabelName(k) || k == model.MetricNameLabel {
 				errs = append(
 					errs, fmt.Errorf("invalid label name: %s", k),
 				)
@@ -129,7 +135,7 @@ func (g *RuleGroups) Validate(node ruleGroups, validationScheme model.Validation
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
-			for _, node := range r.Validate(node.Groups[j].Rules[i], validationScheme) {
+			for _, node := range r.Validate(node.Groups[j].Rules[i], nameValidationScheme) {
 				var ruleName string
 				if r.Alert != "" {
 					ruleName = r.Alert
@@ -199,7 +205,7 @@ type RuleNode struct {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *Rule) Validate(node RuleNode, validationScheme model.ValidationScheme) (nodes []WrappedError) {
+func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationScheme) (nodes []WrappedError) {
 	if r.Record != "" && r.Alert != "" {
 		nodes = append(nodes, WrappedError{
 			err:     errors.New("only one of 'record' and 'alert' must be set"),
@@ -245,7 +251,7 @@ func (r *Rule) Validate(node RuleNode, validationScheme model.ValidationScheme) 
 				node: &node.Record,
 			})
 		}
-		if !labels.IsValidMetricName(r.Record, validationScheme) {
+		if !nameValidationScheme.IsValidMetricName(r.Record) {
 			nodes = append(nodes, WrappedError{
 				err:  fmt.Errorf("invalid recording rule name: %s", r.Record),
 				node: &node.Record,
@@ -262,7 +268,7 @@ func (r *Rule) Validate(node RuleNode, validationScheme model.ValidationScheme) 
 	}
 
 	for k, v := range r.Labels {
-		if !labels.IsValidLabelName(k, validationScheme) || k == model.MetricNameLabel {
+		if !nameValidationScheme.IsValidLabelName(k) || k == model.MetricNameLabel {
 			nodes = append(nodes, WrappedError{
 				err: fmt.Errorf("invalid label name: %s", k),
 			})
@@ -276,7 +282,7 @@ func (r *Rule) Validate(node RuleNode, validationScheme model.ValidationScheme) 
 	}
 
 	for k := range r.Annotations {
-		if !labels.IsValidLabelName(k, validationScheme) {
+		if !nameValidationScheme.IsValidLabelName(k) {
 			nodes = append(nodes, WrappedError{
 				err: fmt.Errorf("invalid annotation name: %s", k),
 			})
@@ -339,38 +345,8 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	return errs
 }
 
-type parseArgs struct {
-	validationScheme    model.ValidationScheme
-	ignoreUnknownFields bool
-}
-
-type ParseOption func(*parseArgs)
-
-// WithValidationScheme returns a ParseOption setting the metric/label name validation scheme.
-func WithValidationScheme(scheme model.ValidationScheme) ParseOption {
-	return func(args *parseArgs) {
-		args.validationScheme = scheme
-	}
-}
-
-// WithIgnoreUnknownFields returns a ParseOption setting whether to ignore unknown fields.
-func WithIgnoreUnknownFields(ignoreUnknownFields bool) ParseOption {
-	return func(args *parseArgs) {
-		args.ignoreUnknownFields = ignoreUnknownFields
-	}
-}
-
 // Parse parses and validates a set of rules.
-// The default metric/label name validation scheme is model.NameValidationScheme.
-func Parse(content []byte, opts ...ParseOption) (*RuleGroups, []error) {
-	args := &parseArgs{
-		//nolint:staticcheck // model.NameValidationScheme is deprecated.
-		validationScheme: model.NameValidationScheme,
-	}
-	for _, opt := range opts {
-		opt(args)
-	}
-
+func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -378,7 +354,7 @@ func Parse(content []byte, opts ...ParseOption) (*RuleGroups, []error) {
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
-	if !args.ignoreUnknownFields {
+	if !ignoreUnknownFields {
 		decoder.KnownFields(true)
 	}
 	err := decoder.Decode(&groups)
@@ -395,16 +371,16 @@ func Parse(content []byte, opts ...ParseOption) (*RuleGroups, []error) {
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node, args.validationScheme)
+	return &groups, groups.Validate(node, nameValidationScheme)
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string, opts ...ParseOption) (*RuleGroups, []error) {
+func ParseFile(file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b, opts...)
+	rgs, errs := Parse(b, ignoreUnknownFields, nameValidationScheme)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

@@ -126,9 +126,6 @@ type IndexReader interface {
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
 
-	// IndexLookupPlanner returns the index lookup planner for this reader.
-	IndexLookupPlanner() index.LookupPlanner
-
 	// Close releases the underlying resources of the reader.
 	Close() error
 }
@@ -348,11 +345,11 @@ type Block struct {
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
-	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{}, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
 }
 
 // OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
-func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (pb *Block, err error) {
+func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (pb *Block, err error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -377,7 +374,7 @@ func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, p
 	if postingsDecoderFactory != nil {
 		decoder = postingsDecoderFactory(meta)
 	}
-	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, planner, cache)
+	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +529,7 @@ func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *s
 		return st, nil
 	}
 
-	return labelValuesWithMatchers(ctx, r, name, hints, matchers...)
+	return labelValuesWithMatchers(ctx, r.ir, name, hints, matchers...)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -540,7 +537,7 @@ func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 		return r.b.LabelNames(ctx)
 	}
 
-	return labelNamesWithMatchers(ctx, r, matchers...)
+	return labelNamesWithMatchers(ctx, r.ir, matchers...)
 }
 
 func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
@@ -603,11 +600,6 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 // The names returned are sorted.
 func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
 	return r.ir.LabelNamesFor(ctx, postings)
-}
-
-// IndexLookupPlanner returns the index lookup planner for this reader.
-func (r blockIndexReader) IndexLookupPlanner() index.LookupPlanner {
-	return r.ir.IndexLookupPlanner()
 }
 
 type blockTombstoneReader struct {

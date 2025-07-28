@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
@@ -928,6 +929,8 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// we do accept stale data for about a polling interval (2 intervals in the worst
 	// case scenario due to the jitter applied).
 	cacheTTL := t.Cfg.Ruler.PollInterval
+	// TODO: Take name validation scheme from global configuration.
+	t.Cfg.RulerStorage.Local.NameValidationScheme = model.UTF8Validation
 	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
 	return
 }

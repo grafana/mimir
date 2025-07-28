@@ -93,7 +93,7 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 }
 
 // NewManager is the manager constructor.
-func NewManager(o *Options, logger *slog.Logger) *Manager {
+func NewManager(o *Options, nameValidationScheme model.ValidationScheme, logger *slog.Logger) *Manager {
 	if o.Do == nil {
 		o.Do = do
 	}
@@ -105,17 +105,11 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 		logger = promslog.NewNopLogger()
 	}
 
-	for i, rc := range o.RelabelConfigs {
-		switch rc.MetricNameValidationScheme {
+	for _, rc := range o.RelabelConfigs {
+		switch rc.NameValidationScheme {
 		case model.LegacyValidation, model.UTF8Validation:
 		default:
-			//nolint:staticcheck // model.NameValidationScheme is deprecated.
-			o.RelabelConfigs[i].MetricNameValidationScheme = model.NameValidationScheme
-			logger.Warn(
-				"notifier.NewManager: using default metric/label name validation scheme",
-				"relabel_config", i,
-				"scheme", o.RelabelConfigs[i].MetricNameValidationScheme,
-			)
+			rc.NameValidationScheme = nameValidationScheme
 		}
 	}
 
@@ -149,11 +143,10 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 	for i, rc := range n.opts.RelabelConfigs {
-		switch rc.MetricNameValidationScheme {
+		switch rc.NameValidationScheme {
 		case model.LegacyValidation, model.UTF8Validation:
 		default:
-			//nolint:staticcheck // model.NameValidationScheme is deprecated.
-			n.opts.RelabelConfigs[i].MetricNameValidationScheme = model.NameValidationScheme
+			n.opts.RelabelConfigs[i].NameValidationScheme = conf.GlobalConfig.MetricNameValidationScheme
 		}
 	}
 

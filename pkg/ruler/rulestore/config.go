@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -64,6 +65,8 @@ func (cfg *Config) IsDefaults() bool {
 
 type LocalStoreConfig struct {
 	Directory string `yaml:"directory"`
+	// NameValidationScheme is the metric/label name validation scheme to use.
+	NameValidationScheme model.ValidationScheme `yaml:"-"`
 }
 
 // RegisterFlagsWithPrefix registers flags with the input prefix.

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 
@@ -29,6 +30,11 @@ type Client struct {
 func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupLoader) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
+	}
+	switch cfg.NameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	default:
+		return nil, errors.New("name validation scheme requires for local rules config")
 	}
 
 	return &Client{
@@ -171,7 +177,7 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
 	filename := filepath.Join(l.cfg.Directory, userID, namespace)
 
-	rulegroups, errs := l.loader.Load(filename, false)
+	rulegroups, errs := l.loader.Load(filename, false, l.cfg.NameValidationScheme)
 	if len(errs) > 0 {
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}

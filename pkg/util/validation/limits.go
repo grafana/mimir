@@ -1061,7 +1061,7 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
 	validationScheme := o.ValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }

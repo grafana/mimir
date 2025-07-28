@@ -42,7 +42,7 @@ type rulerNotifier struct {
 	logger    gklog.Logger
 }
 
-func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
+func newRulerNotifier(o *notifier.Options, nameValidationScheme model.ValidationScheme, l gklog.Logger) (*rulerNotifier, error) {
 	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, erro
 	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	sl := util_log.SlogFromGoKit(l)
 	return &rulerNotifier{
-		notifier:  notifier.NewManager(o, sl),
+		notifier:  notifier.NewManager(o, nameValidationScheme, sl),
 		sdCancel:  sdCancel,
 		sdManager: discovery.NewManager(sdCtx, sl, o.Registerer, sdMetrics),
 		logger:    l,

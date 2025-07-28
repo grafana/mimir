@@ -93,6 +93,7 @@ func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 	if err := opts.UnmarshalFrom(d.r, v); err != nil {
 		return err
 	}
+	//nolint:staticcheck // model.IsValidMetricName is deprecated.
 	if !model.IsValidMetricName(model.LabelValue(v.GetName())) {
 		return fmt.Errorf("invalid metric name %q", v.GetName())
 	}
@@ -107,6 +108,7 @@ func (d *protoDecoder) Decode(v *dto.MetricFamily) error {
 			if !model.LabelValue(l.GetValue()).IsValid() {
 				return fmt.Errorf("invalid label value %q", l.GetValue())
 			}
+			//nolint:staticcheck // model.LabelName.IsValid is deprecated.
 			if !model.LabelName(l.GetName()).IsValid() {
 				return fmt.Errorf("invalid label name %q", l.GetName())
 			}

@@ -1138,12 +1138,6 @@ type Reader struct {
 
 	// Provides a cache mapping series labels hash by series ID.
 	cacheProvider ReaderCacheProvider
-
-	lookupPlanner LookupPlanner
-}
-
-func (r *Reader) IndexLookupPlanner() LookupPlanner {
-	return r.lookupPlanner
 }
 
 type postingOffset struct {
@@ -1174,26 +1168,26 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return newReader(b, io.NopCloser(nil), decoder, nil)
 }
 
 // NewReaderWithCache is like NewReader but allows to pass a cache provider.
 func NewReaderWithCache(b ByteSlice, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, cacheProvider)
+	return newReader(b, io.NopCloser(nil), decoder, cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
-	return NewFileReaderWithOptions(path, decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return NewFileReaderWithOptions(path, decoder, nil)
 }
 
 // NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReaderWithOptions(path string, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, planner, cacheProvider)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, cacheProvider)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1204,14 +1198,13 @@ func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner Look
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	r := &Reader{
 		b:             b,
 		c:             c,
 		postings:      map[string][]postingOffset{},
 		cacheProvider: cacheProvider,
 		st:            labels.NewSymbolTable(),
-		lookupPlanner: planner,
 	}
 
 	// Verify header.
