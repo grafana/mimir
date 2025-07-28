@@ -122,7 +122,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
 			Default(strconv.Itoa(DefaultChunkedReadLimit)).
 			Uint64Var(&c.readSizeLimit)
-		cmd.Flag("use-chunks", "Request chunked streaming response (STREAMED_XOR_CHUNKS) instead of sampled response (SAMPLES).").
+		cmd.Flag("use-chunks", "Request chunked streaming response (STREAMED_XOR_CHUNKS) instead of samples response (SAMPLES).").
 			Default("true").
 			BoolVar(&c.useChunks)
 	}
