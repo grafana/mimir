@@ -21,11 +21,12 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
-// commentLinePrefix is the prefix we use in the query seeding file to indicate a comment
-const commentLinePrefix = "#"
-
-// ignoreAnnotationDirective is the prefix we use in the query seeding to flag that we will not match on query result annotations - trailing space is intentional
-const ignoreAnnotationDirective = "[ignore_annotation] "
+const (
+	// commentLinePrefix is the prefix we use in the query seeding file to indicate a comment
+	commentLinePrefix = "#"
+	// ignoreAnnotationDirective is the prefix we use in the query seeding to flag that we will not match on query result annotations - trailing space is intentional
+	ignoreAnnotationDirective = "[ignore_annotation] "
+)
 
 // A queryEngines holds our Prometheus and Mimir QueryEngines and a Queryable (storage).
 // A queryEngines also holds rules for how we process certain queries.
