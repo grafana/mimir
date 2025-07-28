@@ -117,11 +117,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		e.annotations = nil
 	}
 
-	if err := observer.EvaluationCompleted(e, e.annotations, e.stats); err != nil {
-		return err
-	}
-
-	return nil
+	return observer.EvaluationCompleted(e, e.annotations, e.stats)
 }
 
 func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
