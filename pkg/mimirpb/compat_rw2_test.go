@@ -390,6 +390,58 @@ func TestRW2Unmarshal(t *testing.T) {
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "symbols must start with empty string")
 	})
+
+	t.Run("metadata order is deterministic", func(t *testing.T) {
+		const numRuns = 1000
+
+		for range numRuns {
+			syms := test.NewSymbolTableBuilder(nil)
+			// Create a new WriteRequest with some sample data.
+			writeRequest := makeTestRW2WriteRequest(syms)
+			writeRequest.Timeseries = []rw2.TimeSeries{
+				// Keep the one we already built
+				writeRequest.Timeseries[0],
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("metric_2 help text."),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_3")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("metric_3 help text."),
+					},
+				},
+				// Duplicate, should be filtered out.
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("duplicated metric_2 help text, but different."),
+					},
+				},
+			}
+			writeRequest.Symbols = syms.GetSymbols()
+			data, err := writeRequest.Marshal()
+			require.NoError(t, err)
+
+			// Unmarshal the data back into Mimir's WriteRequest.
+			received := PreallocWriteRequest{}
+			received.UnmarshalFromRW2 = true
+			err = received.Unmarshal(data)
+			require.NoError(t, err)
+
+			require.Len(t, received.Metadata, 3)
+			require.Equal(t, "test_metric_total", received.Metadata[0].MetricFamilyName)
+			require.Equal(t, "metric_2", received.Metadata[1].MetricFamilyName)
+			require.Equal(t, "metric_3", received.Metadata[2].MetricFamilyName)
+
+			require.Equal(t, "metric_2 help text.", received.Metadata[1].Help)
+		}
+	})
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
