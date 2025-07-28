@@ -35,17 +35,17 @@ func StableHash(ls Labels) uint64 {
 				name, pos = decodeString(ls.syms, ls.data, pos)
 				value, pos = decodeString(ls.syms, ls.data, pos)
 				_, _ = h.WriteString(name)
-				_, _ = h.Write(seps)
+				_, _ = h.Write(Seps)
 				_, _ = h.WriteString(value)
-				_, _ = h.Write(seps)
+				_, _ = h.Write(Seps)
 			}
 			return h.Sum64()
 		}
 
 		b = append(b, name...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		b = append(b, value...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		pos = newPos
 	}
 	return xxhash.Sum64(b)

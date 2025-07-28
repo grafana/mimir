@@ -6,8 +6,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	modelLabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -136,10 +137,14 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 }
 
 func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
+	r := make([]mimirpb.LabelAdapter, 0, ls.Len())
+	ls.Range(func(l modelLabels.Label) {
+		r = append(r, mimirpb.LabelAdapter{Name: l.Name, Value: l.Value})
+	})
 	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool()
 	c.series = append(c.series, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
+			Labels:           r,
 			CreatedTimestamp: ct,
 		},
 	})

@@ -105,9 +105,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, sep)
+			b = append(b, Sep)
 			b = append(b, value...)
-			b = append(b, sep)
+			b = append(b, Sep)
 		}
 	}
 
@@ -131,9 +131,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		b = append(b, value...)
-		b = append(b, sep)
+		b = append(b, Sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -308,6 +308,13 @@ func yoloBytes(s string) []byte {
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
 	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+	size := labelsSize(ls)
+	buf := make([]byte, size)
+	marshalLabelsToSizedBuffer(ls, buf)
+	return Labels{data: yoloString(buf)}
+}
+
+func NewFromSorted(ls []Label) Labels {
 	size := labelsSize(ls)
 	buf := make([]byte, size)
 	marshalLabelsToSizedBuffer(ls, buf)

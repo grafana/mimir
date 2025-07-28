@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2025 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,61 +11,69 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+// This file is copied from model/labels.
 
 package labels
 
 import (
-	"bytes"
+	//"bytes"
 	"slices"
 	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+
+	common "github.com/prometheus/prometheus/model/labels"
 )
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []Label
+type Labels []common.Label
 
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
-// Encoding may change over time or between runs of Prometheus.
-func (ls Labels) Bytes(buf []byte) []byte {
-	b := bytes.NewBuffer(buf[:0])
-	b.WriteByte(LabelSep)
-	for i, l := range ls {
-		if i > 0 {
-			b.WriteByte(Sep)
-		}
-		b.WriteString(l.Name)
-		b.WriteByte(Sep)
-		b.WriteString(l.Value)
-	}
-	return b.Bytes()
+// ToModel returns the common Labels type from pre-sorted Labels.
+// The original is no longer valid after this call.
+func (ls Labels) MoveToModel() common.Labels {
+	return common.NewFromSorted(ls)
 }
 
-// MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
-// If on is set to true, it returns the subset of labels that match with the provided label names and its inverse when 'on' is set to false.
-func (ls Labels) MatchLabels(on bool, names ...string) Labels {
-	matchedLabels := Labels{}
+// // Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// // Encoding may change over time or between runs of Prometheus.
+// func (ls Labels) Bytes(buf []byte) []byte {
+// 	b := bytes.NewBuffer(buf[:0])
+// 	b.WriteByte(model.LabelSep)
+// 	for i, l := range ls {
+// 		if i > 0 {
+// 			b.WriteByte(model.Sep)
+// 		}
+// 		b.WriteString(l.Name)
+// 		b.WriteByte(model.Sep)
+// 		b.WriteString(l.Value)
+// 	}
+// 	return b.Bytes()
+// }
 
-	nameSet := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		nameSet[n] = struct{}{}
-	}
+// // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
+// // If on is set to true, it returns the subset of labels that match with the provided label names and its inverse when 'on' is set to false.
+// func (ls Labels) MatchLabels(on bool, names ...string) Labels {
+// 	matchedLabels := Labels{}
 
-	for _, v := range ls {
-		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
-			matchedLabels = append(matchedLabels, v)
-		}
-	}
+// 	nameSet := make(map[string]struct{}, len(names))
+// 	for _, n := range names {
+// 		nameSet[n] = struct{}{}
+// 	}
 
-	return matchedLabels
-}
+// 	for _, v := range ls {
+// 		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
+// 			matchedLabels = append(matchedLabels, v)
+// 		}
+// 	}
+
+// 	return matchedLabels
+// }
 
 // Hash returns a hash value for the label set.
 // Note: the result is not guaranteed to be consistent across different runs of Prometheus.
@@ -79,113 +87,113 @@ func (ls Labels) Hash() uint64 {
 			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
 				_, _ = h.WriteString(v.Name)
-				_, _ = h.Write(Seps)
+				_, _ = h.Write(common.Seps)
 				_, _ = h.WriteString(v.Value)
-				_, _ = h.Write(Seps)
+				_, _ = h.Write(common.Seps)
 			}
 			return h.Sum64()
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, Sep)
+		b = append(b, common.Sep)
 		b = append(b, v.Value...)
-		b = append(b, Sep)
+		b = append(b, common.Sep)
 	}
 	return xxhash.Sum64(b)
 }
 
-// HashForLabels returns a hash value for the labels matching the provided names.
-// 'names' have to be sorted in ascending order.
-func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
-	b = b[:0]
-	i, j := 0, 0
-	for i < len(ls) && j < len(names) {
-		switch {
-		case names[j] < ls[i].Name:
-			j++
-		case ls[i].Name < names[j]:
-			i++
-		default:
-			b = append(b, ls[i].Name...)
-			b = append(b, Sep)
-			b = append(b, ls[i].Value...)
-			b = append(b, Sep)
-			i++
-			j++
-		}
-	}
-	return xxhash.Sum64(b), b
-}
+// // HashForLabels returns a hash value for the labels matching the provided names.
+// // 'names' have to be sorted in ascending order.
+// func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
+// 	b = b[:0]
+// 	i, j := 0, 0
+// 	for i < len(ls) && j < len(names) {
+// 		switch {
+// 		case names[j] < ls[i].Name:
+// 			j++
+// 		case ls[i].Name < names[j]:
+// 			i++
+// 		default:
+// 			b = append(b, ls[i].Name...)
+// 			b = append(b, sep)
+// 			b = append(b, ls[i].Value...)
+// 			b = append(b, sep)
+// 			i++
+// 			j++
+// 		}
+// 	}
+// 	return xxhash.Sum64(b), b
+// }
 
-// HashWithoutLabels returns a hash value for all labels except those matching
-// the provided names.
-// 'names' have to be sorted in ascending order.
-func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
-	b = b[:0]
-	j := 0
-	for i := range ls {
-		for j < len(names) && names[j] < ls[i].Name {
-			j++
-		}
-		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
-			continue
-		}
-		b = append(b, ls[i].Name...)
-		b = append(b, Sep)
-		b = append(b, ls[i].Value...)
-		b = append(b, Sep)
-	}
-	return xxhash.Sum64(b), b
-}
+// // HashWithoutLabels returns a hash value for all labels except those matching
+// // the provided names.
+// // 'names' have to be sorted in ascending order.
+// func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
+// 	b = b[:0]
+// 	j := 0
+// 	for i := range ls {
+// 		for j < len(names) && names[j] < ls[i].Name {
+// 			j++
+// 		}
+// 		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+// 			continue
+// 		}
+// 		b = append(b, ls[i].Name...)
+// 		b = append(b, sep)
+// 		b = append(b, ls[i].Value...)
+// 		b = append(b, sep)
+// 	}
+// 	return xxhash.Sum64(b), b
+// }
 
-// BytesWithLabels is just as Bytes(), but only for labels matching names.
-// 'names' have to be sorted in ascending order.
-func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
-	b := bytes.NewBuffer(buf[:0])
-	b.WriteByte(LabelSep)
-	i, j := 0, 0
-	for i < len(ls) && j < len(names) {
-		switch {
-		case names[j] < ls[i].Name:
-			j++
-		case ls[i].Name < names[j]:
-			i++
-		default:
-			if b.Len() > 1 {
-				b.WriteByte(Sep)
-			}
-			b.WriteString(ls[i].Name)
-			b.WriteByte(Sep)
-			b.WriteString(ls[i].Value)
-			i++
-			j++
-		}
-	}
-	return b.Bytes()
-}
+// // BytesWithLabels is just as Bytes(), but only for labels matching names.
+// // 'names' have to be sorted in ascending order.
+// func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
+// 	b := bytes.NewBuffer(buf[:0])
+// 	b.WriteByte(labelSep)
+// 	i, j := 0, 0
+// 	for i < len(ls) && j < len(names) {
+// 		switch {
+// 		case names[j] < ls[i].Name:
+// 			j++
+// 		case ls[i].Name < names[j]:
+// 			i++
+// 		default:
+// 			if b.Len() > 1 {
+// 				b.WriteByte(sep)
+// 			}
+// 			b.WriteString(ls[i].Name)
+// 			b.WriteByte(sep)
+// 			b.WriteString(ls[i].Value)
+// 			i++
+// 			j++
+// 		}
+// 	}
+// 	return b.Bytes()
+// }
 
-// BytesWithoutLabels is just as Bytes(), but only for labels not matching names.
-// 'names' have to be sorted in ascending order.
-func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
-	b := bytes.NewBuffer(buf[:0])
-	b.WriteByte(LabelSep)
-	j := 0
-	for i := range ls {
-		for j < len(names) && names[j] < ls[i].Name {
-			j++
-		}
-		if j < len(names) && ls[i].Name == names[j] {
-			continue
-		}
-		if b.Len() > 1 {
-			b.WriteByte(Sep)
-		}
-		b.WriteString(ls[i].Name)
-		b.WriteByte(Sep)
-		b.WriteString(ls[i].Value)
-	}
-	return b.Bytes()
-}
+// // BytesWithoutLabels is just as Bytes(), but only for labels not matching names.
+// // 'names' have to be sorted in ascending order.
+// func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
+// 	b := bytes.NewBuffer(buf[:0])
+// 	b.WriteByte(labelSep)
+// 	j := 0
+// 	for i := range ls {
+// 		for j < len(names) && names[j] < ls[i].Name {
+// 			j++
+// 		}
+// 		if j < len(names) && ls[i].Name == names[j] {
+// 			continue
+// 		}
+// 		if b.Len() > 1 {
+// 			b.WriteByte(sep)
+// 		}
+// 		b.WriteString(ls[i].Name)
+// 		b.WriteByte(sep)
+// 		b.WriteString(ls[i].Value)
+// 	}
+// 	return b.Bytes()
+// }
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
@@ -271,16 +279,12 @@ func EmptyLabels() Labels {
 
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
-func New(ls ...Label) Labels {
+func New(ls ...common.Label) Labels {
 	set := make(Labels, 0, len(ls))
 	set = append(set, ls...)
-	slices.SortFunc(set, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(set, func(a, b common.Label) int { return strings.Compare(a.Name, b.Name) })
 
 	return set
-}
-
-func NewFromSorted(ls []Label) Labels {
-	return ls
 }
 
 // FromStrings creates new labels from pairs of strings.
@@ -290,10 +294,10 @@ func FromStrings(ss ...string) Labels {
 	}
 	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		res = append(res, common.Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	slices.SortFunc(res, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(res, func(a, b common.Label) int { return strings.Compare(a.Name, b.Name) })
 	return res
 }
 
@@ -335,14 +339,14 @@ func (ls Labels) IsEmpty() bool {
 }
 
 // Range calls f on each label.
-func (ls Labels) Range(f func(l Label)) {
+func (ls Labels) Range(f func(l common.Label)) {
 	for _, l := range ls {
 		f(l)
 	}
 }
 
 // Validate calls f on each label. If f returns a non-nil error, then it returns that error cancelling the iteration.
-func (ls Labels) Validate(f func(l Label) error) error {
+func (ls Labels) Validate(f func(l common.Label) error) error {
 	for _, l := range ls {
 		if err := f(l); err != nil {
 			return err
@@ -354,7 +358,7 @@ func (ls Labels) Validate(f func(l Label) error) error {
 // DropMetricName returns Labels with the "__name__" removed.
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
-	return ls.DropReserved(func(n string) bool { return n == MetricName })
+	return ls.DropReserved(func(n string) bool { return n == common.MetricName })
 }
 
 // DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
@@ -399,7 +403,17 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 type Builder struct {
 	base Labels
 	del  []string
-	add  []Label
+	add  []common.Label
+}
+
+// NewBuilder returns a new LabelsBuilder.
+func NewBuilder(base Labels) *Builder {
+	b := &Builder{
+		del: make([]string, 0, 5),
+		add: make([]common.Label, 0, 5),
+	}
+	b.Reset(base)
+	return b
 }
 
 // Reset clears all current state for the builder.
@@ -407,11 +421,82 @@ func (b *Builder) Reset(base Labels) {
 	b.base = base
 	b.del = b.del[:0]
 	b.add = b.add[:0]
-	b.base.Range(func(l Label) {
+	b.base.Range(func(l common.Label) {
 		if l.Value == "" {
 			b.del = append(b.del, l.Name)
 		}
 	})
+}
+
+// Del deletes the label of the given name.
+func (b *Builder) Del(ns ...string) *Builder {
+	for _, n := range ns {
+		for i, a := range b.add {
+			if a.Name == n {
+				b.add = append(b.add[:i], b.add[i+1:]...)
+			}
+		}
+		b.del = append(b.del, n)
+	}
+	return b
+}
+
+// Keep removes all labels from the base except those with the given names.
+func (b *Builder) Keep(ns ...string) *Builder {
+	b.base.Range(func(l common.Label) {
+		if slices.Contains(ns, l.Name) {
+			return
+		}
+		b.del = append(b.del, l.Name)
+	})
+	return b
+}
+
+// Set the name/value pair as a label. A value of "" means delete that label.
+func (b *Builder) Set(n, v string) *Builder {
+	if v == "" {
+		// Empty labels are the same as missing labels.
+		return b.Del(n)
+	}
+	for i, a := range b.add {
+		if a.Name == n {
+			b.add[i].Value = v
+			return b
+		}
+	}
+	b.add = append(b.add, common.Label{Name: n, Value: v})
+
+	return b
+}
+
+func (b *Builder) Get(n string) string {
+	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
+	for _, a := range b.add {
+		if a.Name == n {
+			return a.Value
+		}
+	}
+	if slices.Contains(b.del, n) {
+		return ""
+	}
+	return b.base.Get(n)
+}
+
+// Range calls f on each label in the Builder.
+func (b *Builder) Range(f func(l common.Label)) {
+	// Stack-based arrays to avoid heap allocation in most cases.
+	var addStack [128]common.Label
+	var delStack [128]string
+	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
+	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
+	b.base.Range(func(l common.Label) {
+		if !slices.Contains(origDel, l.Name) && !common.Contains(origAdd, l.Name) {
+			f(l)
+		}
+	})
+	for _, a := range origAdd {
+		f(a)
+	}
 }
 
 // Labels returns the labels from the builder.
@@ -427,14 +512,14 @@ func (b *Builder) Labels() Labels {
 	}
 	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
-		if slices.Contains(b.del, l.Name) || Contains(b.add, l.Name) {
+		if slices.Contains(b.del, l.Name) || common.Contains(b.add, l.Name) {
 			continue
 		}
 		res = append(res, l)
 	}
 	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
 		res = append(res, b.add...)
-		slices.SortFunc(res, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+		slices.SortFunc(res, func(a, b common.Label) int { return strings.Compare(a.Name, b.Name) })
 	}
 	return res
 }
@@ -453,7 +538,7 @@ func (t *SymbolTable) Len() int { return 0 }
 
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
-	return ScratchBuilder{add: make([]Label, 0, n)}
+	return ScratchBuilder{add: make([]common.Label, 0, n)}
 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
@@ -477,19 +562,19 @@ func (b *ScratchBuilder) Reset() {
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
 func (b *ScratchBuilder) Add(name, value string) {
-	b.add = append(b.add, Label{Name: name, Value: value})
+	b.add = append(b.add, common.Label{Name: name, Value: value})
 }
 
 // UnsafeAddBytes adds a name/value pair, using []byte instead of string.
 // The '-tags stringlabels' version of this function is unsafe, hence the name.
 // This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
+	b.add = append(b.add, common.Label{Name: string(name), Value: string(value)})
 }
 
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
-	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(b.add, func(a, b common.Label) int { return strings.Compare(a.Name, b.Name) })
 }
 
 // Assign is for when you already have a Labels which you want this ScratchBuilder to return.
@@ -501,7 +586,7 @@ func (b *ScratchBuilder) Assign(ls Labels) {
 // Note: if you want them sorted, call Sort() first.
 func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
-	return append([]Label{}, b.add...)
+	return append([]common.Label{}, b.add...)
 }
 
 // Overwrite the newly-built Labels out to ls.

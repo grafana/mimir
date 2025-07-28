@@ -31,11 +31,11 @@ const (
 	AlertName   = "alertname"
 	BucketLabel = "le"
 
-	labelSep = '\xfe' // Used at beginning of `Bytes` return.
-	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
+	LabelSep = '\xfe' // Used at beginning of `Bytes` return.
+	Sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
 )
 
-var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
+var Seps = []byte{Sep} // Used with Hash, which has no WriteByte method.
 
 // Label is a key/value a pair of strings.
 type Label struct {
@@ -215,7 +215,7 @@ func (b *Builder) Range(f func(l Label)) {
 	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
 	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
 	b.base.Range(func(l Label) {
-		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
+		if !slices.Contains(origDel, l.Name) && !Contains(origAdd, l.Name) {
 			f(l)
 		}
 	})
@@ -224,7 +224,7 @@ func (b *Builder) Range(f func(l Label)) {
 	}
 }
 
-func contains(s []Label, n string) bool {
+func Contains(s []Label, n string) bool {
 	for _, a := range s {
 		if a.Name == n {
 			return true

@@ -146,13 +146,13 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	for i := 0; i < len(ls.data); {
 		if i > 0 {
-			b.WriteByte(sep)
+			b.WriteByte(Sep)
 		}
 		var name, value string
 		name, i = decodeString(ls.syms, ls.data, i)
 		value, i = decodeString(ls.syms, ls.data, i)
 		b.WriteString(name)
-		b.WriteByte(sep)
+		b.WriteByte(Sep)
 		b.WriteString(value)
 	}
 	return b.Bytes()
@@ -193,17 +193,17 @@ func (ls Labels) Hash() uint64 {
 				name, pos = decodeString(ls.syms, ls.data, pos)
 				value, pos = decodeString(ls.syms, ls.data, pos)
 				_, _ = h.WriteString(name)
-				_, _ = h.Write(seps)
+				_, _ = h.Write(Seps)
 				_, _ = h.WriteString(value)
-				_, _ = h.Write(seps)
+				_, _ = h.Write(Seps)
 			}
 			return h.Sum64()
 		}
 
 		b = append(b, name...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		b = append(b, value...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		pos = newPos
 	}
 	return xxhash.Sum64(b)
@@ -226,9 +226,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, sep)
+			b = append(b, Sep)
 			b = append(b, value...)
-			b = append(b, sep)
+			b = append(b, Sep)
 		}
 	}
 
@@ -252,9 +252,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		b = append(b, value...)
-		b = append(b, sep)
+		b = append(b, Sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -275,10 +275,10 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 		}
 		if lName == names[j] {
 			if b.Len() > 1 {
-				b.WriteByte(sep)
+				b.WriteByte(Sep)
 			}
 			b.WriteString(lName)
-			b.WriteByte(sep)
+			b.WriteByte(Sep)
 			b.WriteString(lValue)
 		}
 		pos = newPos
@@ -299,10 +299,10 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 		}
 		if j == len(names) || lName != names[j] {
 			if b.Len() > 1 {
-				b.WriteByte(sep)
+				b.WriteByte(Sep)
 			}
 			b.WriteString(lName)
-			b.WriteByte(sep)
+			b.WriteByte(Sep)
 			b.WriteString(lValue)
 		}
 		pos = newPos
@@ -456,6 +456,15 @@ func EmptyLabels() Labels {
 // Note this function is not efficient; should not be used in performance-critical places.
 func New(ls ...Label) Labels {
 	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+	syms := NewSymbolTable()
+	var stackSpace [16]int
+	size, nums := mapLabelsToNumbers(syms, ls, stackSpace[:])
+	buf := make([]byte, size)
+	marshalNumbersToSizedBuffer(nums, buf)
+	return Labels{syms: syms.nameTable, data: yoloString(buf)}
+}
+
+func NewFromSorted(ls []Label) Labels {
 	syms := NewSymbolTable()
 	var stackSpace [16]int
 	size, nums := mapLabelsToNumbers(syms, ls, stackSpace[:])

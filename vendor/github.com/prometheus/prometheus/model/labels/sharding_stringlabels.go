@@ -36,16 +36,16 @@ func StableHash(ls Labels) uint64 {
 		}
 		if h != nil {
 			_, _ = h.WriteString(v.Name)
-			_, _ = h.Write(seps)
+			_, _ = h.Write(Seps)
 			_, _ = h.WriteString(v.Value)
-			_, _ = h.Write(seps)
+			_, _ = h.Write(Seps)
 			continue
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, sep)
+		b = append(b, Sep)
 		b = append(b, v.Value...)
-		b = append(b, sep)
+		b = append(b, Sep)
 	}
 	if h != nil {
 		return h.Sum64()
