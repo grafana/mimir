@@ -1073,7 +1073,7 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
-	validationScheme := o.ValidationScheme(userID)
+	validationScheme := o.NameValidationScheme(userID)
 	for i := range relabelConfigs {
 		relabelConfigs[i].MetricNameValidationScheme = validationScheme
 	}
@@ -1433,8 +1433,8 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
 }
 
-// ValidationScheme returns the validation scheme to use for a particular tenant.
-func (o *Overrides) ValidationScheme(userID string) model.ValidationScheme {
+// NameValidationScheme returns the name validation scheme to use for a particular tenant.
+func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
 	return model.ValidationScheme(o.getOverridesForUser(userID).NameValidationScheme)
 }
 
