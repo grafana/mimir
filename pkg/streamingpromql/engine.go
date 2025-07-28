@@ -188,19 +188,17 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 	}
 
 	if plan.TimeRange.IsInstant {
-		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 for instant queries.
+		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 in this case.
 	}
 
-	q := &Query{
+	return &Query{
 		evaluator:                evaluator,
 		engine:                   e,
 		statement:                statement,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		originalExpression:       plan.OriginalExpression,
 		topLevelQueryTimeRange:   plan.TimeRange,
-	}
-
-	return q, nil
+	}, nil
 }
 
 type QueryLimitsProvider interface {
