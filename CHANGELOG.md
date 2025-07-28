@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 2.17.0-rc.1
+
 ### Grafana Mimir
 
 * [FEATURE] Distributor: Add experimental `-distributor.otel-native-delta-ingestion` option to allow primitive delta metrics ingestion via the OTLP endpoint. #11631
@@ -24,9 +26,9 @@
 
 ### Mixin
 
-* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 * [CHANGE] Remove support for the experimental read-write deployment mode. #11975
 * [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
+* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 
 ### Jsonnet
 
