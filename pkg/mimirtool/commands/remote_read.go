@@ -52,7 +52,34 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/util"
 )
+
+// selectorFlag implements kingpin.Value for parsing metric selectors into label matchers
+type selectorFlag struct {
+	selectors *[][]*labels.Matcher
+}
+
+func (s *selectorFlag) Set(value string) error {
+	matchers, err := parser.ParseMetricSelector(value)
+	if err != nil {
+		return fmt.Errorf("error parsing selector '%s': %w", value, err)
+	}
+	*s.selectors = append(*s.selectors, matchers)
+	return nil
+}
+
+func (s *selectorFlag) String() string {
+	var result []string
+	for _, selectorMatchers := range *s.selectors {
+		var matcherStrs []string
+		for _, matcher := range selectorMatchers {
+			matcherStrs = append(matcherStrs, matcher.String())
+		}
+		result = append(result, "{"+strings.Join(matcherStrs, ",")+"}")
+	}
+	return strings.Join(result, ",")
+}
 
 // DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
 // 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
@@ -69,7 +96,7 @@ type RemoteReadCommand struct {
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selectors     []string
+	selectors     [][]*labels.Matcher
 	from          string
 	to            string
 	readSizeLimit uint64
@@ -109,9 +136,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default("30s").
 			DurationVar(&c.readTimeout)
 
-		cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used. Can be specified multiple times to send multiple queries in a single remote read request.`).
-			Default("up").
-			StringsVar(&c.selectors)
+		flag := cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used. Can be specified multiple times to send multiple queries in a single remote read request.`)
+		flag.SetValue(&selectorFlag{selectors: &c.selectors})
+		flag.Default("up")
 
 		cmd.Flag("from", "Start of the time window to select metrics (inclusive).").
 			Default(now.Add(-time.Hour).Format(time.RFC3339)).
@@ -225,14 +252,6 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
-	// Validate matchers
-	for _, selector := range c.selectors {
-		_, err := parser.ParseMetricSelector(selector)
-		if err != nil {
-			return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing selector '%s': %w", selector, err)
-		}
-	}
-
 	readClient, err := c.readClient()
 	if err != nil {
 		return nil, time.Time{}, time.Time{}, err
@@ -240,14 +259,10 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 
 	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
 		log.Infof("Querying time from=%s to=%s with %d selectors", queryFrom.Format(time.RFC3339), queryTo.Format(time.RFC3339), len(c.selectors))
-		// Parse all selectors
+		// Use already parsed selectors
 		var pbQueries []*prompb.Query
-		for i, selector := range c.selectors {
-			log.Debugf("Selector %d: %s", i+1, selector)
-			matchers, err := parser.ParseMetricSelector(selector)
-			if err != nil {
-				return nil, fmt.Errorf("error parsing selector '%s': %w", selector, err)
-			}
+		for i, matchers := range c.selectors {
+			log.Debugf("Selector %d: %v", i+1, matchers)
 
 			pbQuery, err := remote.ToQuery(
 				int64(model.TimeFromUnixNano(queryFrom.UnixNano())),
@@ -256,7 +271,7 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 				nil,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("error creating query for selector '%s': %w", selector, err)
+				return nil, fmt.Errorf("error creating query for selector %s: %w", util.MatchersStringer(matchers), err)
 			}
 			pbQueries = append(pbQueries, pbQuery)
 		}
@@ -331,7 +346,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	if httpResp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(httpResp.Body)
 		errStr := strings.TrimSpace(string(body))
-		return nil, fmt.Errorf("remote server returned http status %s: %s", httpResp.Status, errStr)
+		return nil, fmt.Errorf("remote server returned HTTP status %s: %s", httpResp.Status, errStr)
 	}
 
 	contentType := httpResp.Header.Get("Content-Type")
