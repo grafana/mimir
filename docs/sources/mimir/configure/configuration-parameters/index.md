@@ -4254,6 +4254,11 @@ ruler_alertmanager_client_config:
 # partitions.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
+
+# (experimental) Validation scheme to use for metric and label names. Supported
+# values: legacy, utf8.
+# CLI flag: -validation.name-validation-scheme
+[name_validation_scheme: <int> | default = legacy]
 ```
 
 ### ingest_storage
