@@ -11,7 +11,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
@@ -22,8 +21,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
-
-const planningJobID string = "plan"
 
 type Config struct {
 	maxLeases             int
@@ -37,7 +34,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.maxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried from the same plan before it is removed. 0 for no limit.")
 	f.DurationVar(&cfg.leaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
-	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 2*time.Minute, "How often the scheduler will check for expired leases to make the work items available again.")
+	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 3*time.Minute, "How often the scheduler will check for expired leases to make the work items available again.")
 	f.DurationVar(&cfg.planningCheckInterval, "compactor-scheduler.planning-check-interval", time.Minute, "How often the scheduler will check all tenants to see if a planning job needs to be submitted.")
 	f.DurationVar(&cfg.planningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "How often the plan jobs will be created by the scheduler.")
 	cfg.userDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
@@ -63,16 +60,8 @@ func (cfg *Config) Validate() error {
 }
 
 type CompactionJob struct {
-	blocks  []ulid.ULID // empty indicates a planning job
+	blocks  [][]byte // empty indicates a planning job
 	isSplit bool
-}
-
-func (c *CompactionJob) MarshalBlocks() [][]byte {
-	b := make([][]byte, len(c.blocks))
-	for i := range c.blocks {
-		b[i] = c.blocks[i].Bytes()
-	}
-	return b
 }
 
 type Scheduler struct {
@@ -82,6 +71,7 @@ type Scheduler struct {
 	cfg          Config
 
 	rotator            *Rotator
+	planTracker        *JobTracker[string, struct{}]
 	subservicesManager *services.Manager
 
 	logger log.Logger
@@ -94,10 +84,13 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
+	planTracker := NewJobTracker[string, struct{}](INFINITE_LEASES)
+
 	scheduler := &Scheduler{
 		compactorCfg: compactorCfg,
 		cfg:          cfg,
-		rotator:      NewRotator(cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
+		rotator:      NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
+		planTracker:  planTracker,
 		logger:       logger,
 	}
 
@@ -111,6 +104,7 @@ func NewCompactorScheduler(
 		cfg,
 		util.NewAllowList(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants),
 		scheduler.rotator,
+		scheduler.planTracker,
 		bkt,
 		logger,
 	)
@@ -121,7 +115,7 @@ func NewCompactorScheduler(
 	}
 	scheduler.subservicesManager = subservicesManager
 
-	svc := services.NewBasicService(scheduler.start, scheduler.run, scheduler.stop)
+	svc := services.NewBasicService(scheduler.start, nil, scheduler.stop)
 	scheduler.Service = svc
 
 	return scheduler, nil
@@ -138,64 +132,102 @@ func (s *Scheduler) start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Scheduler) run(ctx context.Context) error {
-	// TODO: Implement server handling
-	return nil
-}
-
 func (s *Scheduler) stop(err error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager)
 }
 
 func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
-	response, ok := s.rotator.LeaseJob(ctx, func(_ *CompactionJob) bool {
-		// TODO: Is this a plan job and can this worker plan for this tenant?
-		// Can use req.WorkerId
-		//
-		// It might be better to have a separate tracker for plan jobs. Otherwise
-		// it might take a long time for a tenant to get planned unless we get lucky
-		// in the rotation.
+	// Plan jobs are checked first
+	tenant, _, epoch, ok := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
+		// TODO: Using req.WorkerId, can this worker plan for this tenant?
+		// Calculating this under a write lock is likely undesirable, the list of known tenants is in the planSpawner too
 		return true
 	})
+	if ok {
+		return &schedulerpb.LeaseJobResponse{
+			Key: &schedulerpb.JobKey{
+				Id:    tenant,
+				Epoch: epoch,
+			},
+			Spec: &schedulerpb.JobSpec{},
+		}, nil
+	}
+
+	// There were no available plan jobs, check for compaction jobs
+	response, ok := s.rotator.LeaseJob(ctx, func(_ string, _ *CompactionJob) bool {
+		return true
+	})
+
 	if ok {
 		return response, nil
 	}
 	return nil, status.Error(codes.NotFound, "no jobs were available to be leased")
 }
 
-func (s *Scheduler) UpdateJob(ctx context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+func (s *Scheduler) PlannedJobs(ctx context.Context, req *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
+		now := time.Now()
+		jobs := make([]*Job[string, *CompactionJob], 0, len(req.Jobs))
+		for _, job := range req.Jobs {
+			jobs = append(jobs, NewJob(
+				job.Id,
+				&CompactionJob{
+					blocks:  job.Job.BlockIds,
+					isSplit: job.Job.Split,
+				},
+				now,
+			))
+		}
+		s.rotator.OfferJobs(req.Key.Id, jobs, func(_ *CompactionJob, _ *CompactionJob) bool {
+			return true
+		})
+	}
+	return nil, status.Error(codes.NotFound, "plan job was not found")
+}
+
+func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
 	switch req.Update {
 	case schedulerpb.IN_PROGRESS:
-		return s.heartbeat(req.Tenant, req.Key)
+		if s.planTracker.RenewLease(req.Key.Id, req.Key.Epoch) {
+			return ok()
+		}
 	case schedulerpb.COMPLETE:
 		fallthrough
 	case schedulerpb.ABANDON:
-		return s.remove(req.Tenant, req.Key)
+		if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
+			return ok()
+		}
 	case schedulerpb.REASSIGN:
-		return s.cancel(req.Tenant, req.Key)
+		if canceled, _ := s.planTracker.CancelLease(req.Key.Id, req.Key.Epoch); canceled {
+			return ok()
+		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
 	}
-}
 
-func (s *Scheduler) heartbeat(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
-	if s.rotator.RenewJobLease(tenant, key.Id, key.Epoch) {
-		return ok()
-	}
 	return notFound()
 }
 
-func (s *Scheduler) remove(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
-	if s.rotator.RemoveJob(tenant, key.Id, key.Epoch) {
-		return ok()
+func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+	switch req.Update {
+	case schedulerpb.IN_PROGRESS:
+		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			return ok()
+		}
+	case schedulerpb.COMPLETE:
+		fallthrough
+	case schedulerpb.ABANDON:
+		if s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			return ok()
+		}
+	case schedulerpb.REASSIGN:
+		if s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			return ok()
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
 	}
-	return notFound()
-}
 
-func (s *Scheduler) cancel(tenant string, key *schedulerpb.JobKey) (*schedulerpb.UpdateJobResponse, error) {
-	if s.rotator.CancelJobLease(tenant, key.Id, key.Epoch) {
-		return ok()
-	}
 	return notFound()
 }
 
