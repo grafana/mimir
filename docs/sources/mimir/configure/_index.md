@@ -14,15 +14,16 @@ weight: 30
 
 Tune the Grafana Mimir configuration to suit your environment. This guide organizes configuration topics by common use cases and user journey to help you find the right information quickly.
 
-## Getting Started with Configuration
+## Get started with your configuration
 
 Before diving into specific configurations, understand the fundamentals:
 
 - **[About Grafana Mimir configurations](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-configurations/)** - Learn configuration basics, best practices, and operational considerations
 - **[Configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/)** - Complete reference of all available configuration parameters
 - **[Runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/)** - Dynamic configuration changes without restarts
+- **[Versioning](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-versioning/)** - Understand Mimir's compatibility guarantees and feature lifecycle
 
-## Multi-tenancy and Security
+## Multi-tenancy and security
 
 Set up secure, multi-tenant environments:
 
@@ -30,7 +31,7 @@ Set up secure, multi-tenant environments:
 - **[High-availability deduplication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/)** - Handle HA Prometheus server pairs and deduplication
 - **[Anonymous usage statistics](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-anonymous-usage-statistics-reporting/)** - Control telemetry and usage reporting
 
-## Storage and Data Management
+## Storage and data management
 
 Configure how Mimir stores and manages your metrics data:
 
@@ -39,7 +40,7 @@ Configure how Mimir stores and manages your metrics data:
 - **[TSDB block upload](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-tsdb-block-upload/)** - Import historical data from Prometheus or other sources
 - **[Out-of-order samples ingestion](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-out-of-order-samples-ingestion/)** - Handle late-arriving or backfilled data
 
-## Ingestion and Data Sources
+## Ingestion and data sources
 
 Configure how data flows into Mimir:
 
@@ -47,9 +48,9 @@ Configure how data flows into Mimir:
 - **[OpenTelemetry Collector](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-otel-collector/)** - Set up OTLP or Prometheus remote write from OTel
 - **[Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/)** - Use Kafka for ingest storage (experimental)
 
-## Performance and Scaling
+## Performance and scaling
 
-### Sharding and Distribution
+### Sharding and distribution
 
 Configure how Mimir distributes workload across instances:
 
@@ -57,7 +58,7 @@ Configure how Mimir distributes workload across instances:
 - **[Spread-minimizing tokens](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-spread-minimizing-tokens/)** - Migrate ingesters for optimal token distribution
 - **[Hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/)** - Configure consistent hashing and key-value stores
 
-### Resource Management and Limiting
+### Resource management and limiting
 
 Control resource utilization and protect against overload:
 
@@ -66,7 +67,7 @@ Control resource utilization and protect against overload:
 - **[Resource utilization limiting](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-resource-utilization-based-ingester-read-path-limiting/)** - CPU and memory-based read path limiting
 - **[Custom active series trackers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-custom-trackers/)** - Monitor active series by custom label patterns
 
-## Query Management
+## Query management
 
 Control and optimize query behavior:
 
@@ -74,7 +75,7 @@ Control and optimize query behavior:
 - **[Experimental PromQL functions](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-experimental-promql-functions/)** - Enable new PromQL features selectively
 - **[Query-frontend with Prometheus](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-the-query-frontend-work-with-prometheus/)** - Use Mimir's query-frontend with existing Prometheus
 
-## High Availability and Clustering
+## High availability and clustering
 
 Configure Mimir for production resilience:
 
@@ -82,19 +83,9 @@ Configure Mimir for production resilience:
 - **[Mirror requests to a second cluster](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/mirror-requests-to-a-second-cluster/)** - Set up request mirroring for testing
 - **[DNS service discovery](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-dns-service-discovery/)** - Configure service discovery for clustering
 
-## Observability and Troubleshooting
+## Observability and troubleshooting
 
 Monitor and debug your Mimir deployment:
 
 - **[Tracing](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-tracing/)** - Set up distributed tracing with OpenTelemetry or Jaeger
 - **[IP address logging](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-ip-address-logging/)** - Log client IPs when behind reverse proxies
-
-## Advanced Topics
-
-- **[Versioning](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-versioning/)** - Understand Mimir's compatibility guarantees and feature lifecycle
-
----
-
-## All Configuration Topics
-
-For a complete alphabetical list of all configuration topics, see the topics listed in the sidebar navigation.
