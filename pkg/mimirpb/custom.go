@@ -228,7 +228,7 @@ func (m *WriteRequest) TimeseriesSize() int {
 	return n
 }
 
-// TimeseriesSize is like Size() but returns only the marshalled size of TimeseriesRW2 field.
+// TimeseriesRW2Size is like Size() but returns only the marshalled size of TimeseriesRW2 field.
 func (m *WriteRequest) TimeseriesRW2Size() int {
 	var n, l int
 
@@ -240,12 +240,8 @@ func (m *WriteRequest) TimeseriesRW2Size() int {
 	return n
 }
 
-// TimeseriesSize is like Size() but returns only the marshalled size of SymbolsRW2 field.
+// SymbolsRW2Size is like Size() but returns only the marshalled size of SymbolsRW2 field.
 func (m *WriteRequest) SymbolsRW2Size() int {
-	if len(m.SymbolsRW2) == 0 {
-		return 0
-	}
-
 	var n, l int
 	for _, s := range m.SymbolsRW2 {
 		l = len(s)

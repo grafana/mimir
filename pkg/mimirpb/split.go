@@ -3,7 +3,7 @@
 package mimirpb
 
 // SplitWriteRequestByMaxMarshalSize splits the WriteRequest into multiple ones, where each partial WriteRequest marshalled size
-// is at most maxSize. The input reqSize must be the value returned by WriteRequest.Size(); it's passed because the called
+// is at most maxSize. The input reqSize must be the value returned by WriteRequest.Size(); it's passed because the caller
 // may have already computed it.
 //
 // This function guarantees that a single Timeseries or Metadata entry is never split across multiple requests.
@@ -38,7 +38,7 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 }
 
 // SplitWriteRequestByMaxMarshalSizeRW2 splits RW2 write-requests into multiple ones, where each partial WriteRequest marshalled size
-// is at most maxSize. The input reqSize must be the value returned by WriteRequest.Size(); it's passed because the called
+// is at most maxSize. The input reqSize must be the value returned by WriteRequest.Size(); it's passed because the caller
 // may have already computed it.
 //
 // This function guarantees that a single Timeseries or Metadata entry is never split across multiple requests.
@@ -83,7 +83,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	nextReqSymbolsSize := 0
 
 	for i := 0; i < len(req.TimeseriesRW2); i++ {
-		// Both are upper bounds. In particular symbolsSize does have knowledge of whether symbols can be re-used.
+		// Both are upper bounds. In particular symbolsSize does not have knowledge of whether symbols can be re-used.
 		// The actual growth will be less than or equal to these values.
 		seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&req.TimeseriesRW2[i], req.SymbolsRW2, offset)
 
@@ -278,9 +278,12 @@ func maxRW2SeriesSizeAfterResymbolization(ts *TimeSeriesRW2, symbols []string, s
 
 func resolvedSymbolSize(ref uint32, symbols []string, offset uint32) int {
 	if ref == 0 {
+		// 0 is always the empty string, but due to the RW2 spec it's always encoded in the symbols table.
+		// Therefore, we know its size ahead of time.
 		return 1 + sovMimir(uint64(0))
 	}
 	if ref > 0 && ref < offset {
+		// References under the offset are not stored on the request, but rather in the common symbols table.
 		return 0
 	}
 	l := len(symbols[ref-offset])
