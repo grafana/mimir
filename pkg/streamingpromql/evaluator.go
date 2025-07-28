@@ -127,8 +127,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 	return nil
 }
 
-func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, observer EvaluationObserver) error {
-	series, err := o.SeriesMetadata(ctx)
+func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
+	series, err := op.SeriesMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, o types.I
 	}
 
 	for seriesIdx := range seriesCount {
-		d, err := o.NextSeries(ctx)
+		d, err := op.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, types.EOS) {
 				return fmt.Errorf("expected %v series, but only received %v", seriesCount, seriesIdx)
@@ -157,8 +157,8 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, o types.I
 	return nil
 }
 
-func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, observer EvaluationObserver) error {
-	series, err := o.SeriesMetadata(ctx)
+func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, observer EvaluationObserver) error {
+	series, err := op.SeriesMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, o types.Ran
 	}
 
 	for seriesIdx := range seriesCount {
-		err := o.NextSeries(ctx)
+		err := op.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, types.EOS) {
 				return fmt.Errorf("expected %v series, but only received %v", seriesCount, seriesIdx)
@@ -180,7 +180,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, o types.Ran
 		}
 
 		// FIXME: add support for evaluating at multiple steps once we support returning this over the wire from queriers to query-frontends
-		step, err := o.NextStepSamples()
+		step, err := op.NextStepSamples()
 		if err != nil {
 			return err
 		}
@@ -193,8 +193,8 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, o types.Ran
 	return nil
 }
 
-func (e *Evaluator) evaluateScalarOperator(ctx context.Context, o types.ScalarOperator, observer EvaluationObserver) error {
-	d, err := o.GetValues(ctx)
+func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarOperator, observer EvaluationObserver) error {
+	d, err := op.GetValues(ctx)
 	if err != nil {
 		return err
 	}
@@ -206,8 +206,8 @@ func (e *Evaluator) evaluateScalarOperator(ctx context.Context, o types.ScalarOp
 	return nil
 }
 
-func (e *Evaluator) evaluateStringOperator(o types.StringOperator, observer EvaluationObserver) error {
-	v := o.GetValue()
+func (e *Evaluator) evaluateStringOperator(op types.StringOperator, observer EvaluationObserver) error {
+	v := op.GetValue()
 	if err := observer.StringEvaluated(e, v); err != nil {
 		return err
 	}

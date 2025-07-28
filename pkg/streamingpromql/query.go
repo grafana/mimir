@@ -125,11 +125,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return result
 }
 
+// SeriesMetadataEvaluated implements the EvaluationObserver interface.
 func (q *Query) SeriesMetadataEvaluated(evaluator *Evaluator, series []types.SeriesMetadata) error {
 	q.seriesMetadata = series
 	return nil
 }
 
+// InstantVectorSeriesDataEvaluated implements the EvaluationObserver interface.
 func (q *Query) InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
 		// Nothing to do.
@@ -196,6 +198,7 @@ func (q *Query) appendSeriesToMatrix(series types.SeriesMetadata, seriesData typ
 	})
 }
 
+// RangeVectorStepSamplesEvaluated implements the EvaluationObserver interface.
 func (q *Query) RangeVectorStepSamplesEvaluated(evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	if stepIndex != 0 {
 		// Top-level range vector expressions should only ever have one step (ie. be an instant query).
@@ -233,6 +236,7 @@ func (q *Query) RangeVectorStepSamplesEvaluated(evaluator *Evaluator, seriesInde
 	return nil
 }
 
+// ScalarEvaluated implements the EvaluationObserver interface.
 func (q *Query) ScalarEvaluated(evaluator *Evaluator, data types.ScalarData) error {
 	if q.topLevelQueryTimeRange.IsInstant {
 		defer types.FPointSlicePool.Put(&data.Samples, q.memoryConsumptionTracker)
@@ -254,6 +258,7 @@ func (q *Query) ScalarEvaluated(evaluator *Evaluator, data types.ScalarData) err
 	return nil
 }
 
+// StringEvaluated implements the EvaluationObserver interface.
 func (q *Query) StringEvaluated(evaluator *Evaluator, data string) error {
 	q.string = &promql.String{
 		T: q.topLevelQueryTimeRange.StartT,
@@ -263,6 +268,7 @@ func (q *Query) StringEvaluated(evaluator *Evaluator, data string) error {
 	return nil
 }
 
+// EvaluationCompleted implements the EvaluationObserver interface.
 func (q *Query) EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
 	q.annotations = annotations
 	q.stats = stats

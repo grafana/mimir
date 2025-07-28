@@ -7,6 +7,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+// Materializer is responsible for converting query plan nodes to operators.
+// This type is not thread safe.
 type Materializer struct {
 	operatorFactories map[planning.Node]planning.OperatorFactory
 	operatorParams    *planning.OperatorParameters
