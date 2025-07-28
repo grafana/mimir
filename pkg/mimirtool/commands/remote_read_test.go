@@ -773,6 +773,23 @@ func TestMultiQueryChunkedIterator(t *testing.T) {
 
 	// Test error handling
 	assert.NoError(t, iter.Err())
+
+	// Test sample count assertions
+	iter = newMultiQueryChunkedIterator(chunks)
+	expectedSamples := []struct {
+		ts int64
+		f  float64
+	}{
+		{1000, 1.0},
+		{2000, 2.0},
+	}
+	for iter.Next() != chunkenc.ValNone {
+		actualTS, actualF := iter.At()
+		nextExpectedSample := expectedSamples[0]
+		expectedSamples = expectedSamples[1:]
+		assert.Equal(t, nextExpectedSample.ts, actualTS)
+		assert.Equal(t, nextExpectedSample.f, actualF)
+	}
 }
 
 // createMockXORChunk creates a simple XOR encoded chunk for testing
