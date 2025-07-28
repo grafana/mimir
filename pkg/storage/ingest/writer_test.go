@@ -1104,6 +1104,12 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 							Exemplars: []mimirpb.Exemplar{},
 						},
 					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{},
+			}, {
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries: []mimirpb.PreallocTimeseries{
 					{
 						TimeSeries: &mimirpb.TimeSeries{
 							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
@@ -1111,12 +1117,6 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 							Exemplars: []mimirpb.Exemplar{},
 						},
 					},
-				},
-				Metadata: []*mimirpb.MetricMetadata{},
-			}, {
-				Source:              mimirpb.RULE,
-				SkipLabelValidation: true,
-				Timeseries: []mimirpb.PreallocTimeseries{
 					{
 						TimeSeries: &mimirpb.TimeSeries{
 							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
