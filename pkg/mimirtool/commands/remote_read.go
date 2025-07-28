@@ -593,9 +593,6 @@ func (it *multiQueryChunkedIterator) Seek(t int64) chunkenc.ValueType {
 		return it.cur.Seek(it.cur.AtT())
 	}
 
-	// Reset to beginning and iterate until we find t
-	it.chunkIdx = 0
-	it.cur = nil
 	for {
 		vt := it.Next()
 		if vt == chunkenc.ValNone {
