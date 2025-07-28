@@ -657,7 +657,7 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 			responseBody: func() []byte { return []byte("server error") },
 			queriesCount: 1,
 			expectError:  true,
-			errorMsg:     "remote server returned HTTP status",
+			errorMsg:     "remote server returned HTTP status 500",
 		},
 	}
 
