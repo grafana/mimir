@@ -2095,6 +2095,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
   -overrides-exporter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
+  -parquet-converter.col-duration duration
+    	Duration for column chunks in Parquet files. (default 8h0m0s)
   -parquet-converter.conversion-interval duration
     	The frequency at which the conversion runs. (default 1m0s)
   -parquet-converter.data-dir string
@@ -2107,6 +2109,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
+  -parquet-converter.max-rows-per-group int
+    	Maximum number of rows per row group in Parquet files. (default 1000000)
+  -parquet-converter.min-compaction-level int
+    	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration
@@ -2179,6 +2185,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the Parquet-converter ring keeps changing after this period of time, the Parquet-converter starts anyway. (default 5m0s)
   -parquet-converter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. Set to 0 to disable.
+  -parquet-converter.sorting-labels comma-separated-list-of-strings
+    	Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
