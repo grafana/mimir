@@ -11,8 +11,10 @@
     // How many zones ingesters should be deployed to.
     ingest_storage_ingester_zones: 3,
 
-    // The version of the Kafka record wire format.
+    // The version of the Kafka record wire format. Versions 0 and 1 are stable, version 2 is experimental.
     ingest_storage_kafka_producer_record_version: 1,
+    // Opt-in to allowing experimental record formats that may not be stable between builds.
+    ingest_storage_allow_experimental_record_formats: false,
 
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
@@ -211,6 +213,7 @@
       // Explicitly use null so that the CLI flag will not be set at all (instead of getting set to an empty string).
       null,
 
-  assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= 1
-         : 'the Kafka record version must be in the range [0, 1]',
+  local max_producer_record_version = if $._config.ingest_storage_allow_experimental_record_formats then 2 else 1,
+  assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= max_producer_record_version
+         : 'the Kafka record version must be in the range [0, %s]' % max_producer_record_version,
 }
