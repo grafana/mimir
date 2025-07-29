@@ -853,22 +853,18 @@ func createOTLPJSONRequest(tb testing.TB, metricRequest pmetricotlp.ExportReques
 func createOTLPRequest(tb testing.TB, body []byte, compression, contentType string) *http.Request {
 	tb.Helper()
 
+	var b bytes.Buffer
+	var compressor io.WriteCloser
 	switch compression {
 	case "gzip":
-		var b bytes.Buffer
-		gz := gzip.NewWriter(&b)
-		_, err := gz.Write(body)
-		require.NoError(tb, err)
-		require.NoError(tb, gz.Close())
-
-		body = b.Bytes()
+		compressor = gzip.NewWriter(&b)
 	case "lz4":
-		var b bytes.Buffer
-		lz4Writer := lz4.NewWriter(&b)
-		_, err := lz4Writer.Write(body)
+		compressor = lz4.NewWriter(&b)
+	}
+	if compressor != nil {
+		_, err := compressor.Write(body)
 		require.NoError(tb, err)
-		require.NoError(tb, lz4Writer.Close())
-
+		require.NoError(tb, compressor.Close())
 		body = b.Bytes()
 	}
 
