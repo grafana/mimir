@@ -108,6 +108,10 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	return m.stepData, nil
 }
 
+func (m *RangeVectorSelector) NextStepSamplesPartitioned(start, end int64) (*types.RangeVectorStepData, error) {
+	panic("not implemented")
+}
+
 func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {

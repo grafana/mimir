@@ -73,6 +73,10 @@ type RangeVectorOperator interface {
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	NextStepSamples() (*RangeVectorStepData, error)
+
+	// TODO: would it be better to have a single request for all the missing pieces?
+	// TODO: not sure this is the exact function we want
+	NextStepSamplesPartitioned(start, end int64) (*RangeVectorStepData, error)
 }
 
 // ScalarOperator represents all operators that produce scalars.

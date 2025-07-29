@@ -166,9 +166,41 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		pieces = make([]IntermediateResult, m.Inner.Range()/intermediateCacheBlockLength)
 	}
 
+	// TODO: iterate through cached series
+	for _, result := range m.intermediateResults {
+		// each result has multiple series
+		// and results for each series
+		// the question is how to iterate through all these series
+		// feels like nextseries isn't the correct place, because this goes one series at a time (don't want to search through all cached blocks to find the matching one)
+	}
+
 	for {
 		// FIXME when using cached pieces we only want the head and tail here; when building pieces we want multiple blocks.
+		// For instant query there's only one iteration of this for loop
 		step, err := m.Inner.NextStepSamples()
+
+		// We already have the cached results loaded in m.intermediateResults (from SeriesMetadata call)
+		// TODO: add to pieces
+		if m.usingIntermediate { // TODO: only fetch head and tail
+			// m.Inner.NextStepSamplesPartitioned()
+		} else if m.buildingIntermediate { // TODO: fetch head and tail and possibly multiple blocks
+			// calculate timeranges, check in cached blocks if they're there
+			//queryTime := m.timeRange.StartT // endT is missing for instant query
+			//rangeMilliseconds := m.Inner.Range().Milliseconds()
+
+			//start := queryTime - rangeMilliseconds
+			//end := queryTime
+
+			// Get start/end for blocks
+			//blockLengthMs := intermediateCacheBlockLength.Milliseconds()
+			//alignedStart := (start / blockLengthMs) * blockLengthMs
+			//alignedEnd := ((end + blockLengthMs - 1) / blockLengthMs) * blockLengthMs
+
+			// iterate through pieces by time
+			// if cached, then get cached result
+			// otherwise recompute
+
+		}
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {

@@ -141,6 +141,10 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	return s.stepData, nil
 }
 
+func (s *Subquery) NextStepSamplesPartitioned(start, end int64) (*types.RangeVectorStepData, error) {
+	panic("not implemented")
+}
+
 // samplesProcessedInSubqueryPerParentStep returns the number of samples processed by subquery
 // within the parent query step range.
 func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVectorStepData) int64 {
