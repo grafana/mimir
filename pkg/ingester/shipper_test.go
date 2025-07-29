@@ -6,13 +6,14 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -259,9 +260,9 @@ func TestIterBlockMetas(t *testing.T) {
 	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
-	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
-	}), true)
+	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
+	}))
 }
 
 func TestShipperAddsSegmentFiles(t *testing.T) {

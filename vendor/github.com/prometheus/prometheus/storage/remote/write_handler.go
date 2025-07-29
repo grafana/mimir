@@ -533,6 +533,8 @@ type OTLPOptions struct {
 	// LookbackDelta is the query lookback delta.
 	// Used to calculate the target_info sample timestamp interval.
 	LookbackDelta time.Duration
+	// Add type and unit labels to the metrics.
+	EnableTypeAndUnitLabels bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -551,6 +553,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		config:                       configFunc,
 		allowDeltaTemporality:        opts.NativeDelta,
 		lookbackDelta:                opts.LookbackDelta,
+		enableTypeAndUnitLabels:      opts.EnableTypeAndUnitLabels,
 		enableCTZeroIngestion:        enableCTZeroIngestion,
 		validIntervalCTZeroIngestion: validIntervalCTZeroIngestion,
 	}
@@ -587,9 +590,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
-	lookbackDelta         time.Duration
+	config                  func() config.Config
+	allowDeltaTemporality   bool
+	lookbackDelta           time.Duration
+	enableTypeAndUnitLabels bool
 
 	// Mimir specifics.
 	enableCTZeroIngestion        bool
@@ -600,15 +604,17 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	otlpCfg := rw.config().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
+
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
-		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
+		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
+		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		LookbackDelta:                     rw.lookbackDelta,
+		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
 
 		// Mimir specifics.
 		EnableCreatedTimestampZeroIngestion:        rw.enableCTZeroIngestion,

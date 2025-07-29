@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/util/promtest"
 )
 
 func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {
@@ -88,6 +89,9 @@ func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {
 		"cortex_bucket_index_load_failures_total",
 		"cortex_bucket_index_loaded",
 	))
+
+	assert.NoError(t, promtest.HasNativeHistogram(reg, "cortex_bucket_index_load_duration_seconds"))
+	assert.NoError(t, promtest.HasSampleCount(reg, "cortex_bucket_index_load_duration_seconds", 1))
 }
 
 func TestLoader_GetIndex_ShouldCacheError(t *testing.T) {

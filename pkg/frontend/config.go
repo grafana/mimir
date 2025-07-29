@@ -34,8 +34,6 @@ type CombinedFrontendConfig struct {
 
 	QueryMiddleware querymiddleware.Config `yaml:",inline"`
 
-	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
-
 	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
@@ -49,7 +47,6 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.QueryMiddleware.RegisterFlags(f)
 	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 
-	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
 	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.PrometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 }
@@ -80,11 +77,6 @@ func InitFrontend(
 	codec querymiddleware.Codec,
 ) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
 	switch {
-	case cfg.DownstreamURL != "":
-		// If the user has specified a downstream Prometheus, then we should use that.
-		rt, err := NewDownstreamRoundTripper(cfg.DownstreamURL)
-		return httpRoundTripper(cfg, rt, reg, log), nil, nil, err
-
 	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		// Query-scheduler is enabled when its address is configured or ring-based service discovery is configured.
 		if cfg.FrontendV2.Addr == "" {
@@ -116,16 +108,6 @@ func InitFrontend(
 func invalidClusterValidationReporter(cfg CombinedFrontendConfig, reg prometheus.Registerer, logger log.Logger) middleware.InvalidClusterValidationReporter {
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "querier", util.HTTPProtocol)
 	return util.NewInvalidClusterValidationReporter(cfg.ClusterValidationConfig.Label, invalidClusterValidation, logger)
-}
-
-func httpRoundTripper(cfg CombinedFrontendConfig, rt http.RoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
-	if rt == nil {
-		return nil
-	}
-	if cfg.ClusterValidationConfig.Label != "" {
-		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), rt)
-	}
-	return rt
 }
 
 func grpcToHTTPRoundTripper(cfg CombinedFrontendConfig, grpcRoundTripper transport.GrpcRoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {

@@ -163,6 +163,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
+	exp.MetricNameValidationScheme = model.UTF8Validation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))

@@ -14,7 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -371,8 +371,8 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 	}
 	res = append(res, File{RelPath: metaFile.Name()})
 
-	sort.Slice(res, func(i, j int) bool {
-		return strings.Compare(res[i].RelPath, res[j].RelPath) < 0
+	slices.SortFunc(res, func(a, b File) int {
+		return strings.Compare(a.RelPath, b.RelPath)
 	})
 	return res, err
 }

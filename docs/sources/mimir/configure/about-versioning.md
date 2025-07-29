@@ -249,12 +249,6 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-burst-size`
-- Memcached client
-  - Customise write and read buffer size
-    - `-<prefix>.memcached.write-buffer-size-bytes`
-    - `-<prefix>.memcached.read-buffer-size-bytes`
-  - Alternate DNS service discovery backend
-    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -294,6 +288,5 @@ The following features or configuration parameters are currently deprecated and 
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- Support for Redis-based caching
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
