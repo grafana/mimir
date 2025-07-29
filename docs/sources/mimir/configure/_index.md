@@ -14,7 +14,8 @@ weight: 30
 
 Tune your Grafana Mimir configuration to suit your specific environment. 
 
-Reinsert note.
+{{< admonition type="note" >}}
+You can use Grafana Cloud to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. [Create a free account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir-latest-configure), which includes free forever access to 10k metrics, 50GB logs, 50GB traces, 500VUh k6 testing & more.{{< /admonition >}}
 
 ## Get started with your configuration
 
