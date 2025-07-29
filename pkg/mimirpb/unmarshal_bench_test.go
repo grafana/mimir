@@ -152,5 +152,5 @@ func generateLabels(prefix string, seriesNumber, numCommonLabels, numUniqueLabel
 		labels[idx].Name = prefix + "unique_label_" + strconv.Itoa(uid)
 		labels[idx].Value = prefix + "unique_value_" + strconv.Itoa(uid)
 	}
-	return FromLabelsToLabelAdapters(promlabels.Labels(labels))
+	return FromLabelsToLabelAdapters(promlabels.New(labels...))
 }
