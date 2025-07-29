@@ -287,6 +287,7 @@ func NewQuerierHandler(
 		true,
 		0,
 		querierCfg.EngineConfig.LookbackDelta,
+		false,
 	)
 
 	api.InstallCodec(protobufCodec{})
