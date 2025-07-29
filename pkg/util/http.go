@@ -17,12 +17,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
@@ -144,6 +146,7 @@ const (
 	RawSnappy
 	Gzip
 	Lz4
+	Zstd
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
@@ -191,6 +194,8 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
+var zstdReaderPool sync.Pool
+
 func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
@@ -221,6 +226,24 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		reader = gzReader
 	case Lz4:
 		reader = lz4.NewReader(reader)
+	case Zstd:
+		recycledZstdReader := zstdReaderPool.Get()
+		var zstdReader *zstd.Decoder
+		var err error
+		if recycledZstdReader == nil {
+			zstdReader, err = zstd.NewReader(reader, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
+		} else {
+			zstdReader = recycledZstdReader.(*zstd.Decoder)
+			err = zstdReader.Reset(reader)
+		}
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			zstdReader.Reset(nil)
+			zstdReaderPool.Put(zstdReader)
+		}()
+		reader = zstdReader
 	default:
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}

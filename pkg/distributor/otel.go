@@ -192,6 +192,8 @@ func newOTLPParser(
 			compression = util.Gzip
 		case "lz4":
 			compression = util.Lz4
+		case "zstd":
+			compression = util.Zstd
 		case "":
 			compression = util.NoCompression
 		default:
