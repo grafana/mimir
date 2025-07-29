@@ -14,6 +14,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	slices "slices"
 	strconv "strconv"
 	strings "strings"
 )
@@ -5916,7 +5917,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
 		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
 		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
-		/*var j21 int
+		var j21 int
 		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
@@ -5929,22 +5930,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			j21++
 		}
-		slices.Reverse(dAtA[i:start])*/
-		var num uint32
-		var offset, size, j21 int
-		for j := len(m.LabelsRefs)-1; j >= 0; j-- {
-			num = m.LabelsRefs[j]
-			size = (math_bits.Len64(uint64(num)|1) + 6) / 7  // inlined sovMimir
-			offset = i - size
-			for num >= 1<<7 {
-				dAtA[offset] = uint8(num&0x7f | 0x80)
-				num >>= 7
-				offset++
-			}
-			dAtA[offset] = uint8(num)
-			i -= size
-			j21 += size
-		}
+		slices.Reverse(dAtA[i:start])
 		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j21))
 		i--
@@ -5989,7 +5975,7 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
 		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
 		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
-		/*var j23 int
+		var j23 int
 		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
@@ -6002,22 +5988,7 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			j23++
 		}
-		slices.Reverse(dAtA[i:start])*/
-		var num uint32
-		var offset, size, j23 int
-		for j := len(m.LabelsRefs)-1; j >= 0; j-- {
-			num = m.LabelsRefs[j]
-			size = (math_bits.Len64(uint64(num)|1) + 6) / 7  // inlined sovMimir
-			offset = i - size
-			for num >= 1<<7 {
-				dAtA[offset] = uint8(num&0x7f | 0x80)
-				num >>= 7
-				offset++
-			}
-			dAtA[offset] = uint8(num)
-			i -= size
-			j23 += size
-		}
+		slices.Reverse(dAtA[i:start])
 		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j23))
 		i--
