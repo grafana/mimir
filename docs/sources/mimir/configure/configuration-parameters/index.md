@@ -1811,6 +1811,12 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (advanced) Comma-separated list of request header names to allow to pass
+# through to the rest of the query path. This is in addition to a list of
+# required headers that the read path needs.
+# CLI flag: -query-frontend.extra-propagated-headers
+[extra_propagated_headers: <string> | default = ""]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -1819,10 +1825,6 @@ results_cache:
 # Cache statistics of processed samples on results cache.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
-
-# (advanced) URL of downstream Prometheus.
-# CLI flag: -query-frontend.downstream-url
-[downstream_url: <string> | default = ""]
 
 client_cluster_validation:
   # (experimental) Optionally define the cluster validation label.

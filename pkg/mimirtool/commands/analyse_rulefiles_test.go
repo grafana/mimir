@@ -10,7 +10,7 @@ import (
 )
 
 func TestAnalyzeRuleFiles(t *testing.T) {
-	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"})
+	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation)
 	require.NoError(t, err)
 	require.Equal(t, 28, len(mir.MetricsUsed))
 	expectedMetrics := model.LabelValues{

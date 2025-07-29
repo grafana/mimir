@@ -59,7 +59,8 @@ type Settings struct {
 	// LookbackDelta is the PromQL engine lookback delta.
 	LookbackDelta time.Duration
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
-	PromoteScopeMetadata bool
+	PromoteScopeMetadata    bool
+	EnableTypeAndUnitLabels bool
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
@@ -187,13 +188,13 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					continue
 				}
 
-				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
+				metadata := mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: promName,
+					MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
-				})
+				}
+				c.metadata = append(c.metadata, metadata)
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -204,7 +205,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, metadata, scope); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -216,7 +217,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, scope, logger); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, metadata, scope, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -230,7 +231,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, resource, settings, promName, temporality, scope,
+							ctx, dataPoints, resource, settings, metadata, temporality, scope,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -240,7 +241,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope, logger); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -258,7 +259,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						dataPoints,
 						resource,
 						settings,
-						promName,
+						metadata,
 						temporality,
 						scope,
 					)
@@ -275,7 +276,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope, logger); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
