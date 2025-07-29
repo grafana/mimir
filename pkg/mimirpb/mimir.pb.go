@@ -5915,8 +5915,8 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.LabelsRefs) > 0 {
 		// Modified code.
 		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
-		// The generator normally allocates a new buffer for the varint slice, moves foward, and copies it into dAtA.
-		// We optimize it by instead encoding the value in-place, but backward, and then reversing the bits at the end.
+		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
+		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j21 int
 		start := i
 		for _, num := range m.LabelsRefs {
@@ -5973,8 +5973,8 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.LabelsRefs) > 0 {
 		// Modified code.
 		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
-		// The generator normally allocates a new buffer for the varint slice, moves foward, and copies it into dAtA.
-		// We optimize it by instead encoding the value in-place, but backward, and then reversing the bits at the end.
+		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
+		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j23 int
 		start := i
 		for _, num := range m.LabelsRefs {
