@@ -2546,7 +2546,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
-	// If no fallback configration is set, it returns a valid empty configuration.
+	// If no fallback configuration is set, it returns a valid empty configuration.
 	fallbackConfig, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
