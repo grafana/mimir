@@ -14,6 +14,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	slices "slices"
 	strconv "strconv"
 	strings "strings"
 )
@@ -5912,19 +5913,25 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.LabelsRefs) > 0 {
-		dAtA22 := make([]byte, len(m.LabelsRefs)*10)
+		// Modified code.
+		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
+		// The generator normally allocates a new buffer for the varint slice, moves foward, and copies it into dAtA.
+		// We optimize it by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j21 int
+		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
-				dAtA22[j21] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA[i-1] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
+				i--
 				j21++
 			}
-			dAtA22[j21] = uint8(num)
+			dAtA[i-1] = uint8(num)
+			i--
 			j21++
 		}
-		i -= j21
-		copy(dAtA[i:], dAtA22[:j21])
+		slices.Reverse(dAtA[i:start])
+		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j21))
 		i--
 		dAtA[i] = 0xa
@@ -5964,19 +5971,25 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x11
 	}
 	if len(m.LabelsRefs) > 0 {
-		dAtA24 := make([]byte, len(m.LabelsRefs)*10)
+		// Modified code.
+		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
+		// The generator normally allocates a new buffer for the varint slice, moves foward, and copies it into dAtA.
+		// We optimize it by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j23 int
+		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
-				dAtA24[j23] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA[i-1] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
+				i--
 				j23++
 			}
-			dAtA24[j23] = uint8(num)
+			dAtA[i-1] = uint8(num)
+			i--
 			j23++
 		}
-		i -= j23
-		copy(dAtA[i:], dAtA24[:j23])
+		slices.Reverse(dAtA[i:start])
+		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j23))
 		i--
 		dAtA[i] = 0xa
