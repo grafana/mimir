@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
@@ -30,7 +29,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -212,15 +210,8 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 		b.blockBuilderMetrics.consumeJobDuration.WithLabelValues(success).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	sp, ctx := spanlogger.New(ctx, b.logger, tracer, "BlockBuilder.consumeJob")
-	defer sp.Finish()
-
-	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
-
-	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
-	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
-
-	return b.consumePartitionSection(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
+	time.Sleep(util.DurationWithJitter(19*time.Minute, 0.15))
+	return spec.EndOffset, nil
 }
 
 // consumePartitionSection is for the use of scheduler-based architecture.
