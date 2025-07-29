@@ -265,14 +265,8 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
-# Git worktree support: In worktrees, .git is a file pointing to split metadata.
-# We mount both the worktree-specific directory and the common git directory
-# so git commands work properly inside the container.
-WORKTREE_GITDIR := $(shell if [ -f .git ]; then cat .git | sed 's/^gitdir: //'; fi)
-COMMON_GITDIR := $(shell if [ -f .git ] && [ -f "$(shell cat .git | sed 's/^gitdir: //')/commondir" ]; then cd "$(shell cat .git | sed 's/^gitdir: //')" && cd "$$(cat commondir)" && pwd; fi)
-GITVOLUMES := $(if $(WORKTREE_GITDIR), \
-	$(if $(wildcard $(WORKTREE_GITDIR)),-v $(WORKTREE_GITDIR):$(WORKTREE_GITDIR):$(CONTAINER_MOUNT_OPTIONS)) \
-	$(if $(wildcard $(COMMON_GITDIR)),-v $(COMMON_GITDIR):$(COMMON_GITDIR):$(CONTAINER_MOUNT_OPTIONS)))
+# Git worktree support: Generate volume mounts for worktree git metadata
+GITVOLUMES := $(shell ./tools/git-worktree-volumes.sh 2>/dev/null | sed 's/$$/:$(CONTAINER_MOUNT_OPTIONS)/' || true)
 
 GOVOLUMES=	-v mimir-go-cache:/go/cache \
 			-v mimir-go-pkg:/go/pkg \
