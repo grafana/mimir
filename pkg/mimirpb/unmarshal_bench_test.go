@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/labels"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	rw2util "github.com/grafana/mimir/pkg/util/test"
@@ -141,7 +141,7 @@ func BenchmarkUnMarshal(b *testing.B) {
 }
 
 func generateLabels(prefix string, seriesNumber, numCommonLabels, numUniqueLabels int) []LabelAdapter {
-	labels := make([]labels.Label, numCommonLabels+numUniqueLabels)
+	labels := make([]promlabels.Label, numCommonLabels+numUniqueLabels)
 	for i := 0; i < numCommonLabels; i++ {
 		labels[i].Name = prefix + "common_label_" + strconv.Itoa(i)
 		labels[i].Value = prefix + "common_value_" + strconv.Itoa(i)
@@ -152,5 +152,5 @@ func generateLabels(prefix string, seriesNumber, numCommonLabels, numUniqueLabel
 		labels[idx].Name = prefix + "unique_label_" + strconv.Itoa(uid)
 		labels[idx].Value = prefix + "unique_value_" + strconv.Itoa(uid)
 	}
-	return FromLabelsToLabelAdapters(labels)
+	return FromLabelsToLabelAdapters(promlabels.Labels(labels))
 }
