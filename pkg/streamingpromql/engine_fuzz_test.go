@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -28,22 +27,22 @@ const (
 	ignoreAnnotationDirective = "[ignore_annotation] "
 )
 
-// A queryEngines holds our Prometheus and Mimir QueryEngines and a Queryable (storage).
-// A queryEngines also holds rules for how we process certain queries.
-type queryEngines struct {
+// A fuzzTestEnvironment holds our Prometheus and MQE QueryEngines and a Queryable (storage).
+// A fuzzTestEnvironment also holds rules for how we process certain queries.
+type fuzzTestEnvironment struct {
 	prometheus        promql.QueryEngine
-	mimir             promql.QueryEngine
+	mqe               promql.QueryEngine
 	queryable         storage.Queryable
 	ignoreAnnotations map[string]bool
 }
 
-// A seedFuzzFunc add a PromQL query string to the Fuzz corpus (ie t.Add(...))
+// A seedFuzzFunc add a PromQL query string to the fuzz corpus (ie t.Add(...))
 // This is abstracted to allow for the implementation to determine the actual time ranges and step size used in Fuzz corpus seeding
 type seedFuzzFunc func(f *testing.F, query string)
 
 // seedQueryCorpus loads PromQL queries from a given file path and adds them to the Fuzz test corpus via the seedFuzzFunc().
 // seedQueryCorpus also processes [ignore_annotation] directives in the given file and stores the ignore annotation rules in the given queryEngines.
-func seedQueryCorpus(f *testing.F, queryFile string, seedFuzzFunc seedFuzzFunc, testEngines *queryEngines) {
+func seedQueryCorpus(f *testing.F, queryFile string, seedFuzzFunc seedFuzzFunc, testEnvironment *fuzzTestEnvironment) {
 	file, err := os.Open(queryFile)
 	require.NoError(f, err)
 	defer file.Close()
@@ -68,7 +67,7 @@ func seedQueryCorpus(f *testing.F, queryFile string, seedFuzzFunc seedFuzzFunc, 
 		require.NoError(f, err)
 	}
 
-	testEngines.ignoreAnnotations = ignoreAnnotations
+	testEnvironment.ignoreAnnotations = ignoreAnnotations
 }
 
 // buildStorage constructs a new Queryable (TestStorage) which is seeded from the given file path.
@@ -82,94 +81,90 @@ func buildStorage(f *testing.F, dataFile string) storage.Queryable {
 	return testStorage
 }
 
-// buildQueryEngines constructs a new queryEngines - which encapsulates a Mimir and Prometheus query engine and a Queryable (TestStorage).
+// buildFuzzTestEnvironment constructs a new fuzzTestEnvironment - which encapsulates a MQE and Prometheus query engine and a Queryable (TestStorage).
 // datafile is a file path used to seed the TestStorage.
 // queryFile is a file path used to seed the queries Fuzz corpus.
 // seedFuzzFunc is a function which actually performs the Fuzz seeding for each query string.
-func buildQueryEngines(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *queryEngines {
+func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *fuzzTestEnvironment {
 	opts := NewTestEngineOpts()
 
-	mimir, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(f, err)
 
-	engines := queryEngines{
+	environment := &fuzzTestEnvironment{
 		prometheus: promql.NewEngine(opts.CommonOpts),
-		mimir:      mimir,
+		mqe:        mqe,
 		queryable:  buildStorage(f, dataFile),
 	}
 
-	seedQueryCorpus(f, queryFile, seedFuzzFunc, &engines)
-	return &engines
+	seedQueryCorpus(f, queryFile, seedFuzzFunc, environment)
+	return environment
 }
 
 // fixUpAndAssertPostingErrors addresses an engine mismatch in a postings error message.
-// For the relevant Prometheus error, this function will manually assert for the expected Mimir error string and modify the Mimir error so it will pass a later RequireEqualResults() test.
-func fixUpAndAssertPostingErrors(t *testing.T, prom, mimir *promql.Result) {
-	if mimir != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
-		assert.Equal(t, "unexpected all postings", mimir.Err.Error())
-		mimir.Err = prom.Err
+// For the relevant Prometheus error, this function will manually assert for the expected MQE error string and modify the MQE error so it will pass a later RequireEqualResults() test.
+func fixUpAndAssertPostingErrors(t *testing.T, prom, mqe *promql.Result) {
+	if mqe != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
+		require.Equal(t, "unexpected all postings", mqe.Err.Error())
+		mqe.Err = prom.Err
 	}
 }
 
 // testInstantQueries executes the given query against both engines and asserts that the results match
-func testInstantQueries(t *testing.T, startT time.Time, query string, engines *queryEngines) {
+func testInstantQueries(t *testing.T, startT time.Time, query string, testEnvironment *fuzzTestEnvironment) {
 
-	prometheusQuery, prometheusError := engines.prometheus.NewInstantQuery(context.Background(), engines.queryable, nil, query, startT)
-	mimirQuery, mimirError := engines.mimir.NewInstantQuery(context.Background(), engines.queryable, nil, query, startT)
+	prometheusQuery, prometheusError := testEnvironment.prometheus.NewInstantQuery(context.Background(), testEnvironment.queryable, nil, query, startT)
+	mqeQuery, mqeError := testEnvironment.mqe.NewInstantQuery(context.Background(), testEnvironment.queryable, nil, query, startT)
 
-	// if the Prometheus engine can not prepare the query then we expect the Mimir engine to also fail
+	// if the Prometheus engine can not prepare the query then we expect the MQE to also fail
 	if prometheusError != nil {
-		require.NotNil(t, mimirError)
+		require.NotNilf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
 		return
 	}
 
 	require.NotNil(t, prometheusQuery)
-	require.NotNil(t, mimirQuery)
+	require.NotNil(t, mqeQuery)
 
-	executeQueriesAndCompareResults(t, *engines, mimirQuery, prometheusQuery, query)
+	executeQueriesAndCompareResults(t, *testEnvironment, mqeQuery, prometheusQuery, query)
 }
 
 // testRangeQueries executes the given query against both engines and asserts that the results match
-func testRangeQueries(t *testing.T, startT time.Time, endT time.Time, step time.Duration, query string, engines *queryEngines) {
-	prometheusQuery, prometheusError := engines.prometheus.NewRangeQuery(context.Background(), engines.queryable, nil, query, startT, endT, step)
-	mimirQuery, mimirError := engines.mimir.NewRangeQuery(context.Background(), engines.queryable, nil, query, startT, endT, step)
+func testRangeQueries(t *testing.T, startT time.Time, endT time.Time, step time.Duration, query string, testEnvironment *fuzzTestEnvironment) {
+	prometheusQuery, prometheusError := testEnvironment.prometheus.NewRangeQuery(context.Background(), testEnvironment.queryable, nil, query, startT, endT, step)
+	mqeQuery, mqeError := testEnvironment.mqe.NewRangeQuery(context.Background(), testEnvironment.queryable, nil, query, startT, endT, step)
 
 	// Note - prometheus validates time ranges and steps in http api handler, so it will not return an error at query preparation time
 	// Note - max resolution size (end-start/step) is validated in codec.go so we don't validate that here either
 	if prometheusError != nil || startT.After(endT) {
-		require.NotNil(t, mimirError)
+		require.NotNilf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
 		return
 	}
 
 	require.NotNil(t, prometheusQuery)
-	require.NotNil(t, mimirQuery)
+	require.NotNil(t, mqeQuery)
 
-	executeQueriesAndCompareResults(t, *engines, mimirQuery, prometheusQuery, query)
+	executeQueriesAndCompareResults(t, *testEnvironment, mqeQuery, prometheusQuery, query)
 }
 
 // doComparisonQuery invokes the given prepared queries against the given engines and validate that the results (inc series, errors, annotations) match.
 // engines also contains rules for how to compare the results (specifically rules about which queries we ignore annotation string mis-matches).
-func executeQueriesAndCompareResults(t *testing.T, engines queryEngines, mimirQuery promql.Query, prometheusQuery promql.Query, query string) {
+func executeQueriesAndCompareResults(t *testing.T, testEnvironment fuzzTestEnvironment, mqeQuery promql.Query, prometheusQuery promql.Query, query string) {
 	// Execute our queries
 	defer prometheusQuery.Close()
 	prom := prometheusQuery.Exec(context.Background())
 
-	defer mimirQuery.Close()
-	mimir := mimirQuery.Exec(context.Background())
+	defer mqeQuery.Close()
+	mqe := mqeQuery.Exec(context.Background())
 
-	// Replace series Metric which are nil with an empty Labels{}
-	err := FixUpEmptyLabels(prom)
-	require.NoError(t, err)
-
-	// Special case for posting errors which are formatted differently in Prometheus and Mimir
-	fixUpAndAssertPostingErrors(t, prom, mimir)
+	// Special case for posting errors which are formatted differently in Prometheus and MQE
+	fixUpAndAssertPostingErrors(t, prom, mqe)
 
 	// Assert that the results match exactly. Note that annotations comparison will be ignored if the query is in the given ignore map
-	testutils.RequireEqualResults(t, query, prom, mimir, engines.ignoreAnnotations[query])
+	testutils.RequireEqualResults(t, query, prom, mqe, testEnvironment.ignoreAnnotations[query])
 }
 
-// FuzzQuery is a test function which invokes a set of queries against the Prometheus and Mimir query engines and validates that their responses are identical.
-// FuzzQuery will run like a normal unit test when used with go test, and can be used for Fuzz testing with go test -fuzz=FuzzQuery
+// FuzzQuery is a test function which invokes a set of queries against the Prometheus and MQE query engines and validates that their responses are identical.
+// FuzzQuery will run like a normal unit test when used with go test, and can be used for fuzz testing with go test -fuzz=FuzzQuery
 // These tests can be extended in 3 ways;
 // * Add more sample data to the seed-data.test file
 // * Add more sample queries to the seed-queries.test file
@@ -224,8 +219,9 @@ func FuzzQuery(f *testing.F) {
 		}
 	}
 
-	engines := buildQueryEngines(f, "testdata/fuzz/data/seed-data.test", "testdata/fuzz/data/seed-queries.test", seedFuzzFunc)
+	engines := buildFuzzTestEnvironment(f, "testdata/fuzz/data/seed-data.test", "testdata/fuzz/data/seed-queries.test", seedFuzzFunc)
 
+	// Note - the Go Fuzz interface only allows for simple types to passed into a Fuzz test. We can not pass in Time or Duration variables here
 	f.Fuzz(func(t *testing.T, query string, startEpoch int64, endEpoch int64, durationMilliSecs int64) {
 
 		startT := time.UnixMilli(startEpoch)

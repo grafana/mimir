@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //go:build !stringlabels
 
-package streamingpromql
+package testutils
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+// FixUpEmptyLabels will replace any sample.Metric which is nil with an empty labels.Labels instance
+// Note that this functionality only runs when not in a stringlabels build
 func FixUpEmptyLabels(r *promql.Result) error {
 	if r == nil || r.Value == nil {
 		return nil

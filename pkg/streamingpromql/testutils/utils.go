@@ -21,16 +21,11 @@ import (
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
 
-	if expected == nil && actual == nil {
-		return
-	} else if expected == nil {
-		require.Fail(t, `expected nil but got type: %v`, actual)
-		return
-	} else if actual == nil {
-		require.Fail(t, "expected a value but got nil")
+	if expected == nil {
+		require.Nil(t, actual, "expected nil result")
 		return
 	}
-
+	
 	require.Equal(t, expected.Err, actual.Err)
 
 	if expected.Err != nil {
@@ -38,6 +33,15 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 		require.Nil(t, actual.Value)
 		return
 	}
+
+	// Replace series Metric which are nil with an empty Labels{}
+	// Note - depends on build stringlabels setting as to whether this is relevant
+	// Useful when comparing prometheus and mimir engine results
+	err := FixUpEmptyLabels(expected)
+	require.NoError(t, err)
+
+	err = FixUpEmptyLabels(actual)
+	require.NoError(t, err)
 
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
