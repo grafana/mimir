@@ -55,9 +55,9 @@ Configure how data is ingested into Mimir.
 
 Manage sharding, distribution, resource management, and limits.
 
-- **[Shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/)** - Isolate tenants and reduce blast radius of outages
-- **[Spread-minimizing tokens](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-spread-minimizing-tokens/)** - Migrate ingesters for optimal token distribution
-- **[Hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/)** - Configure consistent hashing and key-value stores
+- [Shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/)- Leverage sharding to horizontally scale clusters beyond the capacity of a single node.
+- [Spread-minimizing tokens](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-spread-minimizing-tokens/)- Migrate ingesters for optimal token distribution.
+- [Hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/)- Configure consistent hashing and key-value stores.
 - **[Reactive limiters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-reactive-limiters/)** - Automatic concurrency limiting based on overload detection
 - **[Ingester circuit breakers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-ingester-circuit-breakers/)** - Protect ingesters from slow requests
 - **[Resource utilization limiting](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-resource-utilization-based-ingester-read-path-limiting/)** - CPU and memory-based read path limiting
