@@ -12,7 +12,9 @@ weight: 30
 
 # Configure Grafana Mimir
 
-Tune your Grafana Mimir configuration to suit your specific environment. The following topics overview the key facets of configuring Grafana Mimir.
+Tune your Grafana Mimir configuration to suit your specific environment. 
+
+Reinsert note.
 
 ## Get started with your configuration
 
