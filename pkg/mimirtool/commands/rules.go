@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
@@ -475,7 +476,8 @@ func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -544,7 +546,8 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "diff operation unsuccessful, invalid arguments")
 	}
 
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -612,7 +615,8 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, invalid arguments")
 	}
 
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -720,7 +724,8 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -758,7 +763,8 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -792,7 +798,8 @@ func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}

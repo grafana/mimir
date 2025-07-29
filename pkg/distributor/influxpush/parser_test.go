@@ -6,7 +6,8 @@ import (
 	"bytes"
 	"context"
 	"net/http/httptest"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -205,8 +206,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 
 			if len(timeSeries) > 1 {
 				// sort the returned timeSeries results in guarantee expected order for comparison
-				sort.Slice(timeSeries, func(i, j int) bool {
-					return timeSeries[i].String() < timeSeries[j].String()
+				slices.SortFunc(timeSeries, func(a, b mimirpb.PreallocTimeseries) int {
+					return strings.Compare(a.String(), b.String())
 				})
 			}
 

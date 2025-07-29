@@ -155,7 +155,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		require.Equal(t, http.StatusMethodNotAllowed, res.Code)
 	})
 
-	t.Run("should return Conflict when forced compaction is in progress", func(t *testing.T) {
+	t.Run("should return Conflict when any compaction is in progress", func(t *testing.T) {
 		t.Parallel()
 
 		ingester, r := setup(true)
@@ -170,7 +170,9 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 			return inst.ReadOnly
 		})
 
-		ingester.forcedCompactionInProgress.Store(true)
+		// Simulate a compation in progress.
+		ingester.numCompactionsInProgress.Inc()
+		defer ingester.numCompactionsInProgress.Dec()
 
 		// Try to switch back to read-write while compaction is in progress
 		res = httptest.NewRecorder()
