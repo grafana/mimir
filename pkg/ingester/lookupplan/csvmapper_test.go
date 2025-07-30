@@ -16,7 +16,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// csvMapper provides generic CSV parsing and writing functionality for test data
+// csvMapper provides generic CSV parsing and writing functionality for test data.
+//
+// Expected data can be read from filePath for tests, and test results can be written
+// back to filePath. Any unit tests are expected to handle assertions on results against
+// data from the CSV themselves.
+//
+// The CSV format includes:
+// - Header row with column names (automatically written on WriteTestCases and skipped during ParseTestCases)
+// - Data rows with values corresponding to each column
+// - Semicolon (;) as the delimiter
+//
+// Usage example:
+//
+//	type testCase struct {
+//		input    string
+//		expected float64
+//	}
+//
+//	mapper := newCSVMapper(
+//		[]string{"input", "expected"},
+//		"testdata/example.csv",
+//		func(record []string) testCase {
+//			return testCase{input: record[0], expected: parseFloat(t, record[1])}
+//		},
+//		func(tc testCase) []string {
+//			return []string{tc.input, fmt.Sprintf("%.2f", tc.expected)}
+//		},
+//	)
+//
+//	testCases := mapper.ParseTestCases(t)
+//	for _, tc := range testCases {
+//		result := myFunction(tc.input)
+//		assert.Equal(t, tc.expected, result)
+//	}
+//
+//	// Optionally update CSV with new expected values:
+//	const writeNewResults = true
+//
+//	if writeNewResults {
+//	    t.Cleanup(func() { mapper.WriteTestCases(t, testCases) })
+//	}
 type csvMapper[T any] struct {
 	comma         rune
 	columnNames   []string
