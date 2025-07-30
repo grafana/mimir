@@ -86,7 +86,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit - RW2", func(t *testing.T) {
-		// 150 is small enough to force each WriteRequest into its own sub-request
+		// 150 is small enough to force each timeseries into its own sub-request
 		const limit = 150
 		reqv2 := testReqV2Static(t)
 
@@ -475,7 +475,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 				}
 
 				// Split the request.
-				partialReqs := SplitWriteRequestByMaxMarshalSize(req, req.Size(), maxSize)
+				partialReqs := SplitWriteRequestByMaxMarshalSize(unmarshalledReq, unmarshalledReq.Size(), maxSize)
 
 				// Marshal each split request.
 				for _, partialReq := range partialReqs {
@@ -506,7 +506,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 				}
 
 				// Split the request.
-				partialReqs := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize, 0, nil)
+				partialReqs := SplitWriteRequestByMaxMarshalSizeRW2(unmarshalledReq, unmarshalledReq.Size(), maxSize, 0, nil)
 
 				// Marshal each split request.
 				for _, partialReq := range partialReqs {
