@@ -134,7 +134,7 @@ Additionally, as a best practice, set the number of split-groups to be the same 
 
 Alternatively, if you're using query sharding on the query frontend, use the next power of 2 to avoid extra load on the read path. For example, use 16 shards for a tenant with 100 million series.
 
-For more information about how these settings work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
+For more information about how these settings work, refer to [Compaction algorithm](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/#compaction-algorithm).
 
 ## Caching
 
