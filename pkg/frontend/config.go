@@ -111,16 +111,6 @@ func invalidClusterValidationReporter(cfg CombinedFrontendConfig, reg prometheus
 	return util.NewInvalidClusterValidationReporter(cfg.ClusterValidationConfig.Label, invalidClusterValidation, logger)
 }
 
-func httpRoundTripper(cfg CombinedFrontendConfig, rt http.RoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
-	if rt == nil {
-		return nil
-	}
-	if cfg.ClusterValidationConfig.Label != "" {
-		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), rt)
-	}
-	return rt
-}
-
 func grpcToHTTPRoundTripper(cfg CombinedFrontendConfig, grpcRoundTripper httpgrpcutil.GrpcRoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
 	if grpcRoundTripper == nil {
 		return nil
