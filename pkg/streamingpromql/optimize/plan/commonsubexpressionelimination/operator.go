@@ -25,7 +25,7 @@ type DuplicationBuffer struct {
 	seriesMetadata      []types.SeriesMetadata
 
 	nextSeriesIndex []int // One entry per consumer.
-	buffer          *SeriesDataRingBuffer
+	buffer          *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
 	// multiple DuplicationConsumers will call DuplicationBuffer.Prepare(), so this ensures idempotency.
 	prepared bool
@@ -35,7 +35,7 @@ func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTr
 	return &DuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		buffer:                   &SeriesDataRingBuffer{},
+		buffer:                   &SeriesDataRingBuffer[types.InstantVectorSeriesData]{},
 	}
 }
 
