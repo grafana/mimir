@@ -22,7 +22,7 @@ func TestFilterCost(t *testing.T) {
 		expectedCost float64
 	}
 
-	mapper := newCSVMapper(
+	data := newCSVTestData(
 		[]string{"matcher", "seriesCount", "expectedCost"},
 		filepath.Join("testdata", "filter_cost_test_cases.csv"),
 		func(record []string) testCase {
@@ -37,11 +37,11 @@ func TestFilterCost(t *testing.T) {
 		},
 	)
 
-	testCases := mapper.ParseTestCases(t)
+	testCases := data.ParseTestCases(t)
 
 	const writeOutNewResults = false
 	if writeOutNewResults {
-		t.Cleanup(func() { mapper.WriteTestCases(t, testCases) })
+		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
 
 	for _, tc := range testCases {
@@ -67,7 +67,7 @@ func TestIndexLookupCost(t *testing.T) {
 		actualCost   float64
 	}
 
-	mapper := newCSVMapper(
+	data := newCSVTestData(
 		[]string{"matcher", "expectedCost"},
 		filepath.Join("testdata", "index_lookup_cost_test_cases.csv"),
 		func(record []string) testCase {
@@ -81,11 +81,11 @@ func TestIndexLookupCost(t *testing.T) {
 		},
 	)
 
-	testCases := mapper.ParseTestCases(t)
+	testCases := data.ParseTestCases(t)
 
 	const writeOutNewCost = false
 	if writeOutNewCost {
-		t.Cleanup(func() { mapper.WriteTestCases(t, testCases) })
+		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
 
 	for tcIdx, tc := range testCases {
@@ -112,7 +112,7 @@ func TestCardinalityEstimation(t *testing.T) {
 		actualCardinality   uint64
 	}
 
-	mapper := newCSVMapper(
+	data := newCSVTestData(
 		[]string{"matcher", "expectedCardinality", "deltaTolerance"},
 		filepath.Join("testdata", "cardinality_estimation_test_cases.csv"),
 		func(record []string) testCase {
@@ -127,11 +127,11 @@ func TestCardinalityEstimation(t *testing.T) {
 		},
 	)
 
-	testCases := mapper.ParseTestCases(t)
+	testCases := data.ParseTestCases(t)
 
 	const writeOutNewCardinality = false
 	if writeOutNewCardinality {
-		t.Cleanup(func() { mapper.WriteTestCases(t, testCases) })
+		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
 
 	for tcIdx, tc := range testCases {
