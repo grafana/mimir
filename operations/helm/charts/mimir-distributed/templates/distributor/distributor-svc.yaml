@@ -16,6 +16,9 @@ spec:
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.distributor.service.internalTrafficPolicy }}
   {{- end }}
+  {{- if .Values.distributor.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.distributor.service.trafficDistribution }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
