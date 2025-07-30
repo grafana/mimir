@@ -269,6 +269,30 @@ func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
 	return v.buffer.pointAt(i)
 }
 
+// Clone returns a clone of this view and its underlying ring buffer.
+func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer, error) {
+	if v.size == 0 {
+		return &FPointRingBufferView{}, nil, nil
+	}
+
+	points, err := v.CopyPoints()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buffer := NewFPointRingBuffer(v.buffer.memoryConsumptionTracker)
+	if err := buffer.Use(points); err != nil {
+		return nil, nil, err
+	}
+
+	view := &FPointRingBufferView{
+		buffer: buffer,
+		size:   v.size,
+	}
+
+	return view, buffer, nil
+}
+
 // These hooks exist so we can override them during unit tests.
 var getFPointSliceForRingBuffer = FPointSlicePool.Get
 var putFPointSliceForRingBuffer = FPointSlicePool.Put

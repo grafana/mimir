@@ -5,6 +5,7 @@ package types
 import (
 	"fmt"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -253,14 +254,19 @@ func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 		return nil, err
 	}
 
-	combine := func(p []promql.HPoint) {
-		for i := range p {
-			combined = append(combined,
-				promql.HPoint{
-					T: p[i].T,
-					H: p[i].H.Copy(),
-				},
-			)
+	combined = combined[:len(head)+len(tail)]
+	i := 0
+
+	combine := func(points []promql.HPoint) {
+		for pointIdx := range points {
+			combined[i].T = points[pointIdx].T
+
+			if combined[i].H == nil {
+				combined[i].H = &histogram.FloatHistogram{}
+			}
+
+			points[pointIdx].H.CopyTo(combined[i].H)
+			i++
 		}
 	}
 
@@ -331,6 +337,30 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 	}
 
 	return v.buffer.pointAt(i)
+}
+
+// Clone returns a clone of this view and its underlying ring buffer.
+func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
+	if v.size == 0 {
+		return &HPointRingBufferView{}, nil, nil
+	}
+
+	points, err := v.CopyPoints()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buffer := NewHPointRingBuffer(v.buffer.memoryConsumptionTracker)
+	if err := buffer.Use(points); err != nil {
+		return nil, nil, err
+	}
+
+	view := &HPointRingBufferView{
+		buffer: buffer,
+		size:   v.size,
+	}
+
+	return view, buffer, nil
 }
 
 // These hooks exist so we can override them during unit tests.
