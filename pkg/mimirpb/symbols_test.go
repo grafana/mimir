@@ -135,6 +135,20 @@ func TestSymbolsTable(t *testing.T) {
 		s.Symbolize("ghi")
 		require.Equal(t, 50, s.CapLowerBound())
 	})
+
+	t.Run("symbols size proto", func(t *testing.T) {
+		s := NewFastSymbolsTable(0)
+
+		wr := &WriteRequest{}
+		require.Equal(t, wr.SymbolsRW2Size(), s.SymbolsSizeProto())
+
+		s.Symbolize("abc")
+		s.Symbolize("def")
+		s.Symbolize("test some other longer one")
+
+		wr = &WriteRequest{SymbolsRW2: []string{"abc", "def", "test some other longer one"}}
+		require.Equal(t, wr.SymbolsRW2Size(), s.SymbolsSizeProto())
+	})
 }
 
 func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapter, string) {
