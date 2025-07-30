@@ -509,7 +509,7 @@ func TestOptimizationPass(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(reg))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg))
 
 			var timeRange types.QueryTimeRange
 

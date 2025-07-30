@@ -32,13 +32,16 @@ import (
 // RangeVectorDuplicationConsumer is created for each consumer of the common subexpression.
 
 type OptimizationPass struct {
+	enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool
+
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
 	selectorsInspected         prometheus.Counter
 }
 
-func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
+func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer) *OptimizationPass {
 	return &OptimizationPass{
+		enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries: enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries,
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
@@ -211,7 +214,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	pathsEliminated := len(group) - 1
 
 	// We only want to deduplicate instant vectors, or range vectors in an instant query.
-	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
+	if resultType == parser.ValueTypeVector || (e.enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries && resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
