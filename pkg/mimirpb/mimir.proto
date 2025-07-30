@@ -40,6 +40,8 @@ message WriteRequest {
 
   // Skip label count validation.
   bool skip_label_count_validation = 1001;
+
+  int my_cool_new_field = 1002;
 }
 
 message WriteResponse {}
