@@ -72,7 +72,7 @@ The default values for `-querier.query-store-after`, `-querier.query-ingesters-w
 
 Configure Grafana Mimir so large tenants are parallelized by the compactor:
 
-1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active time series. For more information about configuring the compactor's split and merge shards, refer to [compactor](../../../references/architecture/components/compactor/).
+1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million time series. For more information about configuring the compactor's split and merge shards, refer to [compactor](../../../references/architecture/components/compactor/).
 
 #### How to estimate `-querier.query-store-after`
 
@@ -130,11 +130,11 @@ When working with large tenants, there are two compactor-specific settings to co
 
 For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
-As a best practice, use 1 shard per every 8 million active series in a tenant.
-
-For example, for a tenant with 100 million active series, use approximately 12 shards. Use an even number for the shard count.
+As a best practice, use one shard per every 8 million series in a tenant, rounded to the nearest even number. For example, for a tenant with 100 million series, use approximately 12 shards.
 
 Additionally, as a best practice, set the number of split-groups to be the same as the shard count.
+
+Alternatively, if you're using query sharding on the query frontend, use the next power of 2 to avoid extra load on the read path. For example, use 16 shards for a tenant with 100 million series.
 
 ## Caching
 
