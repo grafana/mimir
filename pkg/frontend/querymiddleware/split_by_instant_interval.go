@@ -124,7 +124,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	mapperStats := astmapper.NewInstantSplitterStats()
 	mapperCtx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
-	mapper := astmapper.NewInstantQuerySplitter(mapperCtx, splitInterval, s.logger, mapperStats)
+	mapper := astmapper.NewInstantQuerySplitter(splitInterval, s.logger, mapperStats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	instantSplitQuery, err := mapper.Map(expr)
+	instantSplitQuery, err := mapper.Map(mapperCtx, expr)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(spanLog).Log("msg", "timeout while splitting query by instant interval, please fill in a bug report with this query, falling back to try executing without splitting", "err", err)

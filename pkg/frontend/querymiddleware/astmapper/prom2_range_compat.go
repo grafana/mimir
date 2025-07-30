@@ -13,17 +13,15 @@ import (
 // with identical ranges and steps (which used to returns results in Prometheus 2 since
 // range selectors were left closed right closed) to be compatible with Prometheus 3
 // range selectors which are left open right closed.
-func NewProm2RangeCompat(ctx context.Context) ASTMapper {
-	compat := &prom2RangeCompat{ctx: ctx}
+func NewProm2RangeCompat() ASTMapper {
+	compat := &prom2RangeCompat{}
 	return NewASTExprMapper(compat)
 }
 
-type prom2RangeCompat struct {
-	ctx context.Context
-}
+type prom2RangeCompat struct{}
 
-func (c prom2RangeCompat) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := c.ctx.Err(); err != nil {
+func (c prom2RangeCompat) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
 

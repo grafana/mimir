@@ -81,8 +81,8 @@ func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, query string) (pa
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	mapper := astmapper.NewProm2RangeCompat(ctx)
-	rewritten, err := mapper.Map(expr)
+	mapper := astmapper.NewProm2RangeCompat()
+	rewritten, err := mapper.Map(ctx, expr)
 	if err != nil {
 		return nil, err
 	}

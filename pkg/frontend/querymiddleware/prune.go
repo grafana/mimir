@@ -63,8 +63,8 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 	}
 	origQueryString := expr.String()
 
-	mapper := astmapper.NewQueryPruner(ctx, p.logger)
-	prunedQuery, err := mapper.Map(expr)
+	mapper := astmapper.NewQueryPruner(p.logger)
+	prunedQuery, err := mapper.Map(ctx, expr)
 	if err != nil {
 		return "", false, err
 	}
