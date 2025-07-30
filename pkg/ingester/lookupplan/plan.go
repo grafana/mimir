@@ -72,6 +72,8 @@ func (p plan) useIndexFor(predicateIdx int) plan {
 }
 
 // useScanFor returns a copy of this plan where predicate predicateIdx is used during sequential scanning.
+//
+//nolint:unused
 func (p plan) useScanFor(predicateIdx int) plan {
 	p.indexPredicate = slices.Clone(p.indexPredicate)
 	p.indexPredicate[predicateIdx] = false
