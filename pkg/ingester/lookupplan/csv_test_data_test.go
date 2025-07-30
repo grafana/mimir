@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/alertmanager/matchers/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -157,32 +158,7 @@ func parseUint(t *testing.T, str string) uint64 {
 }
 
 func parseVectorSelector(t *testing.T, str string) []*labels.Matcher {
-	if str == "{}" {
-		return nil
-	}
-
-	// Remove outer braces
-	if !strings.HasPrefix(str, "{") || !strings.HasSuffix(str, "}") {
-		t.Fatalf("Invalid vector selector format: %s", str)
-	}
-	inner := str[1 : len(str)-1]
-
-	if inner == "" {
-		return nil
-	}
-
-	// Split by comma, but be careful with quoted values
-	var matchers []*labels.Matcher
-	parts := strings.Split(inner, ",")
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		matcher := parseMatcher(t, part)
-		matchers = append(matchers, matcher)
-	}
-
+	matchers, err := parser.ParseMetricSelector(str)
+	require.NoError(t, err)
 	return matchers
 }
