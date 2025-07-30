@@ -33,7 +33,7 @@ import (
 )
 
 func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata mimirpb.MetricMetadata, scope scope,
+	resource pcommon.Resource, settings Settings, name string, scope scope,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -48,9 +48,8 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 			settings,
 			nil,
 			true,
-			metadata,
 			model.MetricNameLabel,
-			metadata.MetricFamilyName,
+			name,
 		)
 		sample := &mimirpb.Sample{
 			// convert ns to ms
@@ -65,7 +64,6 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-
 		c.addSample(sample, labels)
 	}
 
@@ -73,7 +71,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, metadata mimirpb.MetricMetadata, scope scope, logger *slog.Logger,
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -90,9 +88,8 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			settings,
 			nil,
 			true,
-			metadata,
 			model.MetricNameLabel,
-			metadata.MetricFamilyName,
+			name,
 		)
 		sample := &mimirpb.Sample{
 			// convert ns to ms
@@ -107,12 +104,10 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-
 		isMonotonic := metric.Sum().IsMonotonic()
 		if isMonotonic {
 			c.handleStartTime(startTimestampMs, timestamp, lbls, settings, "sum", sample.Value, logger)
 		}
-
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
 			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
@@ -132,7 +127,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			copy(createdLabels, lbls)
 			for i, l := range createdLabels {
 				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = metadata.MetricFamilyName + createdSuffix
+					createdLabels[i].Value = name + createdSuffix
 					break
 				}
 			}

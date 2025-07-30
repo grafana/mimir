@@ -26,7 +26,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -120,7 +119,7 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, metadata prompb.MetricMetadata, extras ...string,
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
 ) []prompb.Label {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
@@ -143,9 +142,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 	if haveInstanceID {
 		maxLabelCount++
-	}
-	if settings.EnableTypeAndUnitLabels {
-		maxLabelCount += 2
 	}
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
@@ -189,16 +185,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		l["otel_scope_name"] = scope.name
 		l["otel_scope_version"] = scope.version
 		l["otel_scope_schema_url"] = scope.schemaURL
-	}
-
-	if settings.EnableTypeAndUnitLabels {
-		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
-		if metadata.Type != prompb.MetricMetadata_UNKNOWN {
-			l["__type__"] = strings.ToLower(metadata.Type.String())
-		}
-		if metadata.Unit != "" {
-			l["__unit__"] = unitNamer.Build(metadata.Unit)
-		}
 	}
 
 	// Map service.name + service.namespace to job.
@@ -270,7 +256,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, logger *slog.Logger,
+	resource pcommon.Resource, settings Settings, baseName string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -281,13 +267,13 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampNs := pt.StartTimestamp()
 		startTimestampMs := convertTimeStamp(startTimestampNs)
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
 			// treat sum as a sample in an individual TimeSeries
-			sumlabels := createLabels(metadata.MetricFamilyName+sumStr, baseLabels)
+			sumlabels := createLabels(baseName+sumStr, baseLabels)
 			sum := &prompb.Sample{
 				Value:     pt.Sum(),
 				Timestamp: timestamp,
@@ -309,7 +295,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		countlabels := createLabels(metadata.MetricFamilyName+countStr, baseLabels)
+		countlabels := createLabels(baseName+countStr, baseLabels)
 		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings, "histogram_count", count.Value, logger)
 		c.addSample(count, countlabels)
 
@@ -334,7 +320,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				bucket.Value = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			labels := createLabels(metadata.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
+			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
 			c.handleStartTime(startTimestampMs, timestamp, labels, settings, "histogram_bucket", bucket.Value, logger)
 			ts := c.addSample(bucket, labels)
 
@@ -349,7 +335,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		} else {
 			infBucket.Value = float64(pt.Count())
 		}
-		infLabels := createLabels(metadata.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
 		c.handleStartTime(startTimestampMs, timestamp, infLabels, settings, "histogram_inf_bucket", infBucket.Value, logger)
 		ts := c.addSample(infBucket, infLabels)
 
@@ -359,10 +345,10 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		if settings.ExportCreatedMetric && startTimestampNs != 0 {
-			labels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
+			labels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
 		}
-		logger.Debug("addHistogramDataPoints", "labels", labelsStringer(createLabels(metadata.MetricFamilyName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
+		logger.Debug("addHistogramDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
 	}
 
 	return nil
@@ -486,7 +472,7 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 }
 
 func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, metadata prompb.MetricMetadata, scope scope, logger *slog.Logger,
+	settings Settings, baseName string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -496,7 +482,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &prompb.Sample{
@@ -507,7 +493,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
 		// sum and count of the summary should append suffix to baseName
-		sumlabels := createLabels(metadata.MetricFamilyName+sumStr, baseLabels)
+		sumlabels := createLabels(baseName+sumStr, baseLabels)
 		c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings, "summary_sum", sum.Value, logger)
 		c.addSample(sum, sumlabels)
 
@@ -519,7 +505,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		if pt.Flags().NoRecordedValue() {
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
-		countlabels := createLabels(metadata.MetricFamilyName+countStr, baseLabels)
+		countlabels := createLabels(baseName+countStr, baseLabels)
 		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings, "summary_count", count.Value, logger)
 		c.addSample(count, countlabels)
 
@@ -534,17 +520,17 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 				quantile.Value = math.Float64frombits(value.StaleNaN)
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-			qtlabels := createLabels(metadata.MetricFamilyName, baseLabels, quantileStr, percentileStr)
+			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
 			c.handleStartTime(startTimestampMs, timestamp, qtlabels, settings, "summary_quantile", quantile.Value, logger)
 			c.addSample(quantile, qtlabels)
 		}
 
 		if settings.ExportCreatedMetric && startTimestampMs != 0 {
-			createdLabels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
+			createdLabels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
 
-		logger.Debug("addSummaryDataPoints", "labels", labelsStringer(createLabels(metadata.MetricFamilyName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
+		logger.Debug("addSummaryDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
 	}
 
 	return nil
@@ -565,20 +551,6 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 	}
 
 	labels = append(labels, prompb.Label{Name: model.MetricNameLabel, Value: name})
-	return labels
-}
-
-// addTypeAndUnitLabels appends type and unit labels to the given labels slice.
-func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata, settings Settings) []prompb.Label {
-	unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
-
-	labels = slices.DeleteFunc(labels, func(l prompb.Label) bool {
-		return l.Name == "__type__" || l.Name == "__unit__"
-	})
-
-	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
-
 	return labels
 }
 
@@ -708,7 +680,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, name)
+	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
