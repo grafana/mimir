@@ -64,7 +64,7 @@ func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) type
 }
 
 func (d *Duplicate) ResultType() (parser.ValueType, error) {
-	return parser.ValueTypeVector, nil
+	return d.Inner.ResultType()
 }
 
 func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

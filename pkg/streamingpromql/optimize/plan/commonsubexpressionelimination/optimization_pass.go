@@ -199,7 +199,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
-	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpression, timeRange := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
@@ -209,15 +209,17 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	var skipLongerExpressions bool
 	pathsEliminated := len(group) - 1
 
-	// We only want to deduplicate instant vectors.
-	if resultType == parser.ValueTypeVector {
+	// We only want to deduplicate instant vectors, or range vectors in an instant query.
+	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
-		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
-		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
+		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
+		// query.
+		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
+		// subquery.
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
-		// Duplicated range vector selector, but the function that encloses each instance isn't the same (or isn't the same on all paths).
+		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
 	}
 
