@@ -922,7 +922,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 			writeBytes(nil)
 			return
 		}
-		// #nosec G103
+		// #nosec G103 -- nosemgrep: use-of-unsafe-block
 		// avoid allocation when converting string to byte slice
 		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
 	}
