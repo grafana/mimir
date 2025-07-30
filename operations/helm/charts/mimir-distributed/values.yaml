@@ -1100,6 +1100,7 @@ ingester:
     #
     # storageClass: "-"
 
+  livenessProbe: {}
   readinessProbe:
     httpGet:
       path: /ready
