@@ -4,8 +4,6 @@ package parquet
 
 import (
 	"context"
-	"sort"
-	"sync"
 
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus-community/parquet-common/schema"
@@ -40,14 +38,17 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	}, nil
 }
 
-func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (prom_storage.ChunkSeriesSet, error) {
+func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (prom_storage.ChunkSeriesSet, error) {
 	errGroup, ctx := errgroup.WithContext(ctx)
 	errGroup.SetLimit(b.concurrency)
 
-	results := make([]prom_storage.ChunkSeries, 0, 1024)
-	rMtx := sync.Mutex{}
+	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
+	results := make([]search.ChunkSeriesSetCloser, rowGroupCount)
+	//for i := range results {
+	//	results[i] = make([]prom_storage.ChunkSeries, 0, 1024/rowGroupCount)
+	//}
 
-	for rgi := range b.shard.LabelsFile().RowGroups() {
+	for rgi := range rowGroupCount {
 		errGroup.Go(func() error {
 			cs, err := search.MatchersToConstraint(matchers...)
 			if err != nil {
@@ -66,14 +67,12 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 				return nil
 			}
 
-			series, err := b.m.Materialize(ctx, nil, rgi, mint, maxt, skipChunks, rr)
+			seriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
 			if err != nil {
 				return err
 			}
-			rMtx.Lock()
-			results = append(results, series...)
-			rMtx.Unlock()
-			return nil
+			results[rgi] = seriesSetIter
+			return seriesSetIter.Err()
 		})
 	}
 
@@ -81,10 +80,12 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 		return nil, err
 	}
 
-	if sorted {
-		sort.Sort(byLabels(results))
+	resultsConverted := make([]prom_storage.ChunkSeriesSet, 0, rowGroupCount)
+	for _, res := range results {
+		resultsConverted = append(resultsConverted, res)
 	}
-	return convert.NewChunksSeriesSet(results), nil
+	seriesSetConverted := convert.NewMergeChunkSeriesSet(resultsConverted, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
+	return seriesSetConverted, nil
 }
 
 func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []*labels.Matcher) ([]string, error) {
