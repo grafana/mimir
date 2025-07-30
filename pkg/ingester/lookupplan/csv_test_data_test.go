@@ -155,3 +155,34 @@ func parseUint(t *testing.T, str string) uint64 {
 	require.NoErrorf(t, err, "Failed to parse uint: %s", str)
 	return u
 }
+
+func parseVectorSelector(t *testing.T, str string) []*labels.Matcher {
+	if str == "{}" {
+		return nil
+	}
+
+	// Remove outer braces
+	if !strings.HasPrefix(str, "{") || !strings.HasSuffix(str, "}") {
+		t.Fatalf("Invalid vector selector format: %s", str)
+	}
+	inner := str[1 : len(str)-1]
+
+	if inner == "" {
+		return nil
+	}
+
+	// Split by comma, but be careful with quoted values
+	var matchers []*labels.Matcher
+	parts := strings.Split(inner, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		matcher := parseMatcher(t, part)
+		matchers = append(matchers, matcher)
+	}
+
+	return matchers
+}

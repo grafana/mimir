@@ -29,7 +29,7 @@ func TestPlanCosts(t *testing.T) {
 		totalCost        float64
 	}
 
-	mapper := newCSVMapper(
+	data := newCSVTestData(
 		[]string{"indexMatchers", "scanMatchers", "cardinality", "indexCost", "intersectionCost", "filterCost", "totalCost"},
 		filepath.Join("testdata", "plan_cost_test_cases.csv"),
 		func(record []string) testCase {
@@ -56,11 +56,11 @@ func TestPlanCosts(t *testing.T) {
 		},
 	)
 
-	testCases := mapper.ParseTestCases(t)
+	testCases := data.ParseTestCases(t)
 
-	const writeOutNewCost = true
+	const writeOutNewCost = false
 	if writeOutNewCost {
-		t.Cleanup(func() { mapper.WriteTestCases(t, testCases) })
+		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
 
 	for tcIdx, tc := range testCases {
