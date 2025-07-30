@@ -12,10 +12,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// DuplicationBuffer buffers the results of an inner operator that is used by multiple consuming operators.
+// InstantVectorDuplicationBuffer buffers the results of an inner operator that is used by multiple consuming operators.
 //
-// DuplicationBuffer is not thread-safe.
-type DuplicationBuffer struct {
+// InstantVectorDuplicationBuffer is not thread-safe.
+type InstantVectorDuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -27,30 +27,30 @@ type DuplicationBuffer struct {
 	nextSeriesIndex []int // One entry per consumer.
 	buffer          *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
-	// multiple DuplicationConsumers will call DuplicationBuffer.Prepare(), so this ensures idempotency.
+	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
 	prepared bool
 }
 
-func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DuplicationBuffer {
-	return &DuplicationBuffer{
+func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
+	return &InstantVectorDuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		buffer:                   &SeriesDataRingBuffer[types.InstantVectorSeriesData]{},
 	}
 }
 
-func (b *DuplicationBuffer) AddConsumer() *DuplicationConsumer {
+func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplicationConsumer {
 	consumerIndex := b.consumerCount
 	b.consumerCount++
 	b.nextSeriesIndex = append(b.nextSeriesIndex, 0)
 
-	return &DuplicationConsumer{
+	return &InstantVectorDuplicationConsumer{
 		Buffer:        b,
 		consumerIndex: consumerIndex,
 	}
 }
 
-func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
@@ -80,7 +80,7 @@ func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
 }
 
-func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
+func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
 	nextSeriesIndex := b.nextSeriesIndex[consumerIndex]
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
 	b.nextSeriesIndex[consumerIndex]++
@@ -111,7 +111,7 @@ func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (
 	return d.Clone(b.MemoryConsumptionTracker)
 }
 
-func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
+func (b *InstantVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
 	thisConsumerPosition := b.nextSeriesIndex[consumerIndex]
 
 	for otherConsumerIndex, otherConsumerPosition := range b.nextSeriesIndex {
@@ -132,7 +132,7 @@ func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int
 	return true
 }
 
-func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
+func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 	if b.nextSeriesIndex[consumerIndex] == -1 {
 		// We've already closed this consumer, nothing more to do.
 		return
@@ -175,7 +175,7 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 	b.nextSeriesIndex[consumerIndex] = -1
 }
 
-func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	if b.prepared {
 		return nil
 	}
@@ -186,7 +186,7 @@ func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PreparePa
 	return nil
 }
 
-func (b *DuplicationBuffer) close() {
+func (b *InstantVectorDuplicationBuffer) close() {
 	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
 
 	for b.buffer.Size() > 0 {
@@ -198,30 +198,30 @@ func (b *DuplicationBuffer) close() {
 	b.Inner.Close()
 }
 
-type DuplicationConsumer struct {
-	Buffer *DuplicationBuffer
+type InstantVectorDuplicationConsumer struct {
+	Buffer *InstantVectorDuplicationBuffer
 
 	consumerIndex int
 }
 
-var _ types.InstantVectorOperator = &DuplicationConsumer{}
+var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *DuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	return d.Buffer.SeriesMetadata(ctx)
 }
 
-func (d *DuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (d *InstantVectorDuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	return d.Buffer.NextSeries(ctx, d.consumerIndex)
 }
 
-func (d *DuplicationConsumer) ExpressionPosition() posrange.PositionRange {
+func (d *InstantVectorDuplicationConsumer) ExpressionPosition() posrange.PositionRange {
 	return d.Buffer.Inner.ExpressionPosition()
 }
 
-func (d *DuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (d *InstantVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
 }
 
-func (d *DuplicationConsumer) Close() {
+func (d *InstantVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d.consumerIndex)
 }

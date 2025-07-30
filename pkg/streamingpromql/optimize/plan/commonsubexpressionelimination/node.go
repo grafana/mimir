@@ -78,12 +78,12 @@ func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTime
 	}
 
 	return &DuplicationConsumerOperatorFactory{
-		Buffer: NewDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+		Buffer: NewInstantVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
 	}, nil
 }
 
 type DuplicationConsumerOperatorFactory struct {
-	Buffer *DuplicationBuffer
+	Buffer *InstantVectorDuplicationBuffer
 }
 
 func (d *DuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {

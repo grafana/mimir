@@ -20,12 +20,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestOperator_Buffering(t *testing.T) {
+func TestInstantVectorOperator_Buffering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner, expectedData := createTestOperator(t, 6, memoryConsumptionTracker)
+	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -112,12 +112,12 @@ func TestOperator_Buffering(t *testing.T) {
 	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestOperator_ClosedWithBufferedData(t *testing.T) {
+func TestInstantVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner, expectedData := createTestOperator(t, 3, memoryConsumptionTracker)
+	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
-	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -171,7 +171,7 @@ func TestOperator_ClosedWithBufferedData(t *testing.T) {
 	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestOperator_Cloning(t *testing.T) {
+func TestInstantVectorOperator_Cloning(t *testing.T) {
 	series := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
 			{T: 0, F: 0},
@@ -191,7 +191,7 @@ func TestOperator_Cloning(t *testing.T) {
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -219,7 +219,7 @@ func TestOperator_Cloning(t *testing.T) {
 	require.NotSame(t, d1.Histograms[1].H, d2.Histograms[1].H, "consumers should not share second histogram")
 }
 
-func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
+func createTestInstantVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
 	series := make([]labels.Labels, 0, seriesCount)
 	operatorData := make([]types.InstantVectorSeriesData, 0, seriesCount)
 	expectedData := make([]types.InstantVectorSeriesData, 0, seriesCount)
@@ -254,7 +254,7 @@ func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker 
 	}, expectedData
 }
 
-func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
+func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
@@ -263,7 +263,7 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
 	require.NoError(t, err)
 
-	buffer := NewDuplicationBuffer(&failingOperator{series: series}, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -281,7 +281,7 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
+func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
@@ -292,7 +292,7 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
 	require.NoError(t, err)
 
-	buffer := NewDuplicationBuffer(&failingOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -318,18 +318,18 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-type failingOperator struct {
+type failingInstantVectorOperator struct {
 	series                 []types.SeriesMetadata
 	returnErrorAtSeriesIdx int
 
 	seriesRead int
 }
 
-func (o *failingOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 
-func (o *failingOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
+func (o *failingInstantVectorOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	if o.seriesRead >= o.returnErrorAtSeriesIdx {
 		return types.InstantVectorSeriesData{}, errors.New("something went wrong reading data")
 	}
@@ -338,15 +338,15 @@ func (o *failingOperator) NextSeries(_ context.Context) (types.InstantVectorSeri
 	return types.InstantVectorSeriesData{}, nil
 }
 
-func (o *failingOperator) ExpressionPosition() posrange.PositionRange {
+func (o *failingInstantVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (o *failingOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+func (o *failingInstantVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
 }
 
-func (o *failingOperator) Close() {
+func (o *failingInstantVectorOperator) Close() {
 	// Nothing to do.
 }

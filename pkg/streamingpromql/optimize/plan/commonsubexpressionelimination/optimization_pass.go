@@ -27,8 +27,9 @@ import (
 // OptimizationPass is an optimization pass that identifies common subexpressions and injects Duplicate nodes
 // into the query plan where needed.
 //
-// When the query plan is materialized, a DuplicationBuffer is created to buffer the results of the common subexpression,
-// and a DuplicationConsumer is created for each consumer of the common subexpression.
+// When the query plan is materialized, a InstantVectorDuplicationBuffer or RangeVectorDuplicationBuffer is created to
+// buffer the results of the common subexpression, and a InstantVectorDuplicationConsumer or
+// RangeVectorDuplicationConsumer is created for each consumer of the common subexpression.
 
 type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
