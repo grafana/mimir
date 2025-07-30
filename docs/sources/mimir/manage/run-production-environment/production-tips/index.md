@@ -123,18 +123,18 @@ For more information about required disk space, refer to [Compactor disk utiliza
 
 ### Manage capacity for large tenants
 
-When working with large tenants, there are two compactor-specific settings to consider when planning or adjusting capacity:
+While working with large tenants, there are two compactor-specific settings to consider for planning or adjusting capacity:
 
 - `-compactor.split-groups`
 - `-compactor.split-and-merge-shards`
-
-For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 As a best practice, use one shard per every 8 million series in a tenant, rounded to the nearest even number. For example, for a tenant with 100 million series, use approximately 12 shards.
 
 Additionally, as a best practice, set the number of split-groups to be the same as the shard count.
 
 Alternatively, if you're using query sharding on the query frontend, use the next power of 2 to avoid extra load on the read path. For example, use 16 shards for a tenant with 100 million series.
+
+For more information about how these settings work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 ## Caching
 
