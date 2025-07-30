@@ -18,7 +18,7 @@ Before a piece of work is finished:
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
-- If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
+- If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation. This regenerates the CLI help text, configuration parameter documentation, and config descriptors.
 
 ## Grafana Mimir Helm chart
 
