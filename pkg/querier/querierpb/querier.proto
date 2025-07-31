@@ -58,12 +58,8 @@ message EvaluateQueryResponseScalarValue {
 
 message EvaluateQueryResponseInstantVectorSeriesData {
   int64 nodeIndex = 1;
-  repeated InstantVectorSeriesData data = 2 [(gogoproto.nullable) = false];
-}
-
-message InstantVectorSeriesData {
-  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
-  repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.Sample floats = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponseRangeVectorStepData {
