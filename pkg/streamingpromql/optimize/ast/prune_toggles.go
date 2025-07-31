@@ -10,7 +10,9 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
-// PruneToggles optimizes queries by pruning expressions that are toggled off.
+// PruneToggles optimizes queries by pruning expressions that are toggled off, only
+// targeting a very specific query pattern that is commonly used to toggle between
+// classic and native histograms in our dashboards.
 type PruneToggles struct{}
 
 func (p *PruneToggles) Name() string {

@@ -10,20 +10,20 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
-// ReorderHistogramAgg optimizes queries by reordering histogram functions and aggregations
+// ReorderHistogramAggregation optimizes queries by reordering histogram functions and aggregations
 // for more efficient execution.
-type ReorderHistogramAgg struct{}
+type ReorderHistogramAggregation struct{}
 
-func (r *ReorderHistogramAgg) Name() string {
+func (r *ReorderHistogramAggregation) Name() string {
 	return "Histogram aggregation reordering"
 }
 
-func (r *ReorderHistogramAgg) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	ASTExprMapper := NewMapperReorderHistogramAgg(ctx)
+func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	ASTExprMapper := NewMapperReorderHistogramAggregation(ctx)
 	return ASTExprMapper.Map(expr)
 }
 
-func NewMapperReorderHistogramAgg(ctx context.Context) astmapper.ASTMapper {
+func NewMapperReorderHistogramAggregation(ctx context.Context) astmapper.ASTMapper {
 	mapper := &reorderHistogramAgg{
 		ctx: ctx,
 	}

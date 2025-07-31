@@ -44,6 +44,10 @@ func (mapper *propagateMatchers) MapExpr(expr parser.Expr) (mapped parser.Expr, 
 	return e, boolResult, nil
 }
 
+// vectorSelectorWrapper is a struct to hold additional information about vector selectors,
+// mainly the set of matchers that are allowed to propagate inwards and outwards, and whether
+// that set is a whitelist or blacklist, which are used only for aggregate expressions and the
+// expressions that contain them.
 type vectorSelectorWrapper struct {
 	vs        *parser.VectorSelector
 	labelsSet map[string]struct{}
@@ -84,6 +88,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	return vss, matchers, true
 }
 
+// extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
+// info, see vectorSelectorWrapper), along with the label matchers associated with them, and a boolean
+// indicating whether any vector selectors were found.
 func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
 	vs, ok := expr.(*parser.VectorSelector)
 	if ok {

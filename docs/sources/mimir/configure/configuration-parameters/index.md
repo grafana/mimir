@@ -1801,8 +1801,8 @@ results_cache:
 
 # (experimental) True to enable rewriting histogram queries for a more efficient
 # order of execution.
-# CLI flag: -query-frontend.prune-queries-histogram
-[prune_queries_histogram: <boolean> | default = false]
+# CLI flag: -query-frontend.rewrite-histogram-queries
+[rewrite_histogram_queries: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,

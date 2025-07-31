@@ -7443,12 +7443,12 @@
         },
         {
           "kind": "field",
-          "name": "prune_queries_histogram",
+          "name": "rewrite_histogram_queries",
           "required": false,
           "desc": "True to enable rewriting histogram queries for a more efficient order of execution.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.prune-queries-histogram",
+          "fieldFlag": "query-frontend.rewrite-histogram-queries",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

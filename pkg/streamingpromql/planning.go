@@ -54,7 +54,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-	// planner.RegisterASTOptimizationPass(&ast.ReorderHistogramAgg{}) // This is applied in query pruning middleware for now as we need to run it before query sharding, but we leave most of the code here as we plan to move it here later.
+	// planner.RegisterASTOptimizationPass(&ast.ReorderHistogramAggregation{}) // This is applied in query pruning middleware for now as we need to run it before query sharding, but we leave most of the code here as we plan to move it here later.
 	if opts.EnablePropagateMatchers {
 		planner.RegisterASTOptimizationPass(&ast.PropagateMatchers{})
 	}

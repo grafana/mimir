@@ -573,12 +573,12 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
-	cfg.PruneQueriesHistogram = true
+	cfg.RewriteQueriesHistogram = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
-	require.NotZero(t, cfg.PruneQueriesHistogram)
+	require.NotZero(t, cfg.RewriteQueriesHistogram)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
@@ -619,7 +619,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
-				"pruneMiddleware",                       // No query pruning support.
+				"rewriteMiddleware",                     // No query rewriting support.
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 				"durationsMiddleware",                   // No duration expressions support.
 				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
