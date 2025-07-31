@@ -55,7 +55,7 @@ type vectorSelectorWrapper struct {
 }
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
-	if e.Op == parser.LOR || e.Op == parser.LUNLESS {
+	if e.Op == parser.LOR {
 		return nil, nil, false
 	}
 
@@ -75,10 +75,16 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 
 	matchingLabelsSet := makeStringSet(e.VectorMatching.MatchingLabels)
-	newMatchersL := mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
-	for _, vsL := range vssL {
-		vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.whitelist)
+	var newMatchersL []*labels.Matcher
+	if e.Op == parser.LUNLESS {
+		// For LUNLESS, we do not propagate matchers from the right-hand side to the left-hand side.
+		newMatchersL = make([]*labels.Matcher, 0)
+	} else {
+		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
+		for _, vsL := range vssL {
+			vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.whitelist)
+		}
 	}
 	for _, vsR := range vssR {
 		vsR.vs.LabelMatchers = combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.whitelist)
