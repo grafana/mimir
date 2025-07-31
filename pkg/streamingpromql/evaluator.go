@@ -109,7 +109,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		}
 
 	case types.StringOperator:
-		if err := e.evaluateStringOperator(root, observer); err != nil {
+		if err := e.evaluateStringOperator(ctx, root, observer); err != nil {
 			return err
 		}
 
@@ -122,7 +122,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		e.annotations = nil
 	}
 
-	return observer.EvaluationCompleted(e, e.annotations, e.stats)
+	return observer.EvaluationCompleted(ctx, e, e.annotations, e.stats)
 }
 
 func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
@@ -133,7 +133,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(e, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, series); err != nil {
 		return err
 	}
 
@@ -147,7 +147,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 			return err
 		}
 
-		if err := observer.InstantVectorSeriesDataEvaluated(e, seriesIdx, d); err != nil {
+		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, seriesIdx, d); err != nil {
 			return err
 		}
 	}
@@ -163,7 +163,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(e, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, series); err != nil {
 		return err
 	}
 
@@ -187,7 +187,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 				return err
 			}
 
-			if err := observer.RangeVectorStepSamplesEvaluated(e, seriesIdx, stepIdx, step); err != nil {
+			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, seriesIdx, stepIdx, step); err != nil {
 				return err
 			}
 
@@ -204,13 +204,13 @@ func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarO
 		return err
 	}
 
-	return observer.ScalarEvaluated(e, d)
+	return observer.ScalarEvaluated(ctx, e, d)
 }
 
-func (e *Evaluator) evaluateStringOperator(op types.StringOperator, observer EvaluationObserver) error {
+func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringOperator, observer EvaluationObserver) error {
 	v := op.GetValue()
 
-	return observer.StringEvaluated(e, v)
+	return observer.StringEvaluated(ctx, e, v)
 }
 
 func (e *Evaluator) Cancel() {
@@ -233,25 +233,25 @@ type EvaluationObserver interface {
 	// SeriesMetadataEvaluated notifies this observer when series metadata has been evaluated.
 	// Implementations of this method are responsible for returning the series slice to the pool when it is no longer needed.
 	// Implementations of this method may mutate the series slice before returning it to the pool.
-	SeriesMetadataEvaluated(evaluator *Evaluator, series []types.SeriesMetadata) error
+	SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error
 
 	// InstantVectorSeriesDataEvaluated notifies this observer when samples for an instant vector series have been evaluated.
 	// Implementations of this method are responsible for returning seriesData to the pool when it is no longer needed.
 	// Implementations of this method may mutate seriesData before returning it to the pool.
-	InstantVectorSeriesDataEvaluated(evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error
+	InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error
 
 	// RangeVectorStepSamplesEvaluated notifies this observer when samples for a range vector step have been evaluated.
 	// Implementations of this method must not mutate stepData, and should copy any data they wish to retain from stepData before returning.
-	RangeVectorStepSamplesEvaluated(evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error
+	RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error
 
 	// ScalarEvaluated notifies this observer when a scalar has been evaluated.
 	// Implementations of this method are responsible for returning data to the pool when it is no longer needed.
 	// Implementations of this method may mutate data before returning it to the pool.
-	ScalarEvaluated(evaluator *Evaluator, data types.ScalarData) error
+	ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error
 
 	// StringEvaluated notifies this observer when a string has been evaluated.
-	StringEvaluated(evaluator *Evaluator, data string) error
+	StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
-	EvaluationCompleted(evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error
+	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error
 }
