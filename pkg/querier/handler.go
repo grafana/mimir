@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 
 package querier
 
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -13,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -107,9 +112,36 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp queryR
 	defer e.Close()
 
 	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
-		// TODO: translate error like https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682
-		resp.WriteError(mimirpb.QUERY_ERROR_TYPE_INTERNAL, err.Error())
+		resp.WriteError(errorTypeForError(err), err.Error())
 	}
+}
+
+func errorTypeForError(err error) mimirpb.QueryErrorType {
+	// This method mirrors the behaviour of Prometheus' returnAPIError (https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682).
+	if errors.Is(err, context.Canceled) {
+		return mimirpb.QUERY_ERROR_TYPE_CANCELED
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
+	}
+
+	var queryCanceledErr promql.ErrQueryCanceled
+	if errors.As(err, &queryCanceledErr) {
+		return mimirpb.QUERY_ERROR_TYPE_CANCELED
+	}
+
+	var queryTimeoutErr promql.ErrQueryTimeout
+	if errors.As(err, &queryTimeoutErr) {
+		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
+	}
+
+	var storageError promql.ErrStorage
+	if errors.As(err, &storageError) {
+		return mimirpb.QUERY_ERROR_TYPE_INTERNAL
+	}
+
+	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
 }
 
 type queryResponseWriter interface {
