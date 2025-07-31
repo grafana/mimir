@@ -1532,13 +1532,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			require.NotEmpty(t, span.Events, "There should be events in the span.")
 
 			logEvents := filter(span.Events, func(e tracesdk.Event) bool {
-				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "query stats"))
+				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
 			})
 			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
 			logEvent := logEvents[0]
 			expectedFields := []attribute.KeyValue{
 				attribute.String("level", "info"),
-				attribute.String("msg", "query stats"),
+				attribute.String("msg", "evaluation stats"),
 				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
 				attribute.String("expr", testCase.expr),
 				attribute.String("queryType", queryType),
