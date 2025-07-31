@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -549,8 +549,8 @@ route:
 		result := []alertingmodels.Receiver{}
 		err = json.Unmarshal(rr.Body.Bytes(), &result)
 		assert.NoError(t, err)
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].Name < result[j].Name
+		slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+			return strings.Compare(a.Name, b.Name)
 		})
 		return result
 	}

@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -13,7 +14,6 @@ import (
 	"hash/fnv"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -369,15 +369,14 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		return extents, nil
 	}
 
-	sort.Slice(extents, func(i, j int) bool {
-		if extents[i].Start == extents[j].Start {
+	slices.SortFunc(extents, func(a, b Extent) int {
+		if a.Start == b.Start {
 			// as an optimization, for two extents starts at the same time, we
-			// put bigger extent at the front of the slice, which helps
+			// put the bigger extent at the front of the slice, which helps
 			// to reduce the amount of merge we have to do later.
-			return extents[i].End > extents[j].End
+			return cmp.Compare(b.End, a.End)
 		}
-
-		return extents[i].Start < extents[j].Start
+		return cmp.Compare(a.Start, b.Start)
 	})
 
 	// Merge any extents - potentially overlapping

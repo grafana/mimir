@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -301,7 +302,17 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	// Merge the responses.
-	sort.Sort(byFirstTime(promResponses))
+	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
+		aTime := int64(-1)
+		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
+			aTime = a.Data.Result[0].Samples[0].TimestampMs
+		}
+		bTime := int64(-1)
+		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
+			bTime = b.Data.Result[0].Samples[0].TimestampMs
+		}
+		return cmp.Compare(aTime, bTime)
+	})
 
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
@@ -396,7 +407,9 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 	for h, hv := range httpH {
 		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
 	}
-	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+	slices.SortFunc(headers, func(a, b *PrometheusHeader) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return headers
 }
 

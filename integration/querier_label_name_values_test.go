@@ -6,7 +6,8 @@ package integration
 import (
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -381,8 +382,8 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			}
 
 			// Make sure the resultant label names are sorted
-			sort.Slice(lbValuesCardinalityResp.Labels, func(l, r int) bool {
-				return lbValuesCardinalityResp.Labels[l].LabelName < lbValuesCardinalityResp.Labels[r].LabelName
+			slices.SortFunc(lbValuesCardinalityResp.Labels, func(l, r api.LabelNamesCardinality) int {
+				return strings.Compare(l.LabelName, r.LabelName)
 			})
 			require.Equal(t, tc.expectedResult, *lbValuesCardinalityResp)
 		})

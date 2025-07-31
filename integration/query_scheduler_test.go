@@ -4,7 +4,8 @@
 package integration
 
 import (
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,7 +83,9 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 
 	// Compute which is the expected in-use query-scheduler.
 	schedulers := []*e2emimir.MimirService{queryScheduler1, queryScheduler2}
-	sort.Slice(schedulers, func(i, j int) bool { return schedulers[i].NetworkGRPCEndpoint() < schedulers[j].NetworkGRPCEndpoint() })
+	slices.SortFunc(schedulers, func(a, b *e2emimir.MimirService) int {
+		return strings.Compare(a.NetworkGRPCEndpoint(), b.NetworkGRPCEndpoint())
+	})
 	inUseScheduler := schedulers[0]
 	notInUseScheduler := schedulers[1]
 
