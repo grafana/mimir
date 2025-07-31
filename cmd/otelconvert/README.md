@@ -9,6 +9,13 @@ To build and push an image:
 make build-otelconvert-image-push
 ```
 
+## Prep
+
+To list existing blocks:
+```shell
+go run tools/listblocks/main.go -backend=gcs -gcs.bucket-name=dev-us-central-0-mimir-dev-11-blocks -user=9960
+```
+
 ## Run
 
 To download a block:
