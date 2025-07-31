@@ -501,6 +501,11 @@ parquet_converter:
   # CLI flag: -parquet-converter.compression-enabled
   [compression_enabled: <boolean> | default = true]
 
+  # (advanced) Maximum number of blocks that can be queued for conversion at
+  # once. This helps distribute work evenly across replicas.
+  # CLI flag: -parquet-converter.max-queue-size
+  [max_queue_size: <int> | default = 5]
+
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
