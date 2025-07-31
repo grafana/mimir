@@ -20,16 +20,16 @@ const (
 
 var (
 	writtenBytesCount = 0
+	verbose           = false
 )
 
 type config struct {
-	bucket  bucket.Config
-	action  string
-	userID  string
-	blockID string
-	orig    string
-	dest    string
-	count   bool
+	bucket bucket.Config
+	action string
+	userID string
+	block  string
+	dest   string
+	count  bool
 }
 
 func main() {
@@ -40,9 +40,10 @@ func main() {
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.action, "action", "", "The action to take (options: 'download', 'convert')")
 	flag.StringVar(&cfg.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
-	flag.StringVar(&cfg.blockID, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
+	flag.StringVar(&cfg.block, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 
 	// Parse CLI flags.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -60,8 +61,8 @@ func main() {
 			log.Fatalln("config failed validation:", err)
 		}
 
-		log.Printf("downloading block %s to %s...\n", cfg.blockID, cfg.dest)
-		if err := downloadBlock(ctx, cfg.bucket, cfg.userID, cfg.blockID, cfg.dest, logger); err != nil {
+		log.Printf("downloading block %s to %s...\n", cfg.block, cfg.dest)
+		if err := downloadBlock(ctx, cfg.bucket, cfg.userID, cfg.block, cfg.dest, logger); err != nil {
 			log.Fatalln("failed to download block:", err)
 		}
 	case "convert":
@@ -69,8 +70,8 @@ func main() {
 			log.Fatalln("config failed validation:", err)
 		}
 
-		log.Printf("converting block at %s to %s...\n", cfg.blockID, cfg.dest)
-		if err := convertBlock(ctx, cfg.orig, cfg.dest, cfg.count, logger); err != nil {
+		log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
+		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	default:

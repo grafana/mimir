@@ -15,7 +15,7 @@ func validateDownloadConfig(cfg config) error {
 	if cfg.userID == "" {
 		return fmt.Errorf("missing --user")
 	}
-	if cfg.blockID == "" {
+	if cfg.block == "" {
 		return fmt.Errorf("missing --block")
 	}
 	if cfg.dest == "" {

@@ -24,8 +24,8 @@ import (
 )
 
 func validateConvertConfig(cfg config) error {
-	if cfg.orig == "" {
-		return fmt.Errorf("missing --orig")
+	if cfg.block == "" {
+		return fmt.Errorf("missing --block")
 	}
 	if cfg.dest == "" && !cfg.count {
 		return fmt.Errorf("must use either --dest or --count")
@@ -37,18 +37,18 @@ func validateConvertConfig(cfg config) error {
 func convertBlock(ctx context.Context, orig, dest string, count bool, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
 	if err != nil {
-		log.Fatalln("failed to open block:", err)
+		return fmt.Errorf("open block: %w", err)
 	}
 
 	cr, err := b.Chunks()
 	if err != nil {
-		log.Fatalln("failed to get chunks reader:", err)
+		return fmt.Errorf("get chunks reader: %w", err)
 	}
 	defer func() { _ = cr.Close() }()
 
 	ir, err := b.Index()
 	if err != nil {
-		log.Fatalln("failed to get index reader:", err)
+		return fmt.Errorf("get index reader: %w", err)
 	}
 	defer func() { _ = ir.Close() }()
 
@@ -64,14 +64,14 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 
 	for p.Next() {
 		if err = p.Err(); err != nil {
-			log.Fatalln("failed to iterate postings:", err)
+			return fmt.Errorf("iterate postings: %w", err)
 		}
 
 		// Flush a full chunk to disk.
 		if proto.Size(md) > mdChunkSizeBytes {
 			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
 			if err != nil {
-				log.Fatalln("failed to write metrics data to file:", err)
+				return fmt.Errorf("write metrics data to file: %w", err)
 			}
 
 			md.Reset()
@@ -80,7 +80,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 		chkMetas := []chunks.Meta(nil)
 		err = ir.Series(p.At(), &builder, &chkMetas)
 		if err != nil {
-			log.Fatalln("failed to populate series chunk metas:", err)
+			return fmt.Errorf("populate series chunk metas: %w", err)
 		}
 
 		metricName, resourceAttrs := lblsToResourceAttributes(builder)
@@ -93,11 +93,11 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 		for _, chkMeta := range chkMetas {
 			chk, itr, err := cr.ChunkOrIterable(chkMeta)
 			if err != nil {
-				log.Fatalln("failed to access chunk:", err)
+				return fmt.Errorf("access chunk: %w", err)
 			}
 
 			if itr != nil {
-				log.Fatalln("unexpected chunk iterator")
+				return fmt.Errorf("unexpected chunk iterator")
 			}
 
 			chkItr := chk.Iterator(nil)
@@ -134,7 +134,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 						Negative:      translateToOTELFloatHistogramBuckets(fh.NegativeSpans, fh.NegativeBucketIterator()),
 					})
 				default:
-					log.Fatalln("unexpected value type:", valType)
+					return fmt.Errorf("unexpected value type: %s", valType)
 				}
 			}
 		}
@@ -155,7 +155,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 		}
 
 		if len(gauge.Gauge.DataPoints) > 0 && len(histo.ExponentialHistogram.DataPoints) > 0 {
-			log.Fatalln("both float and histogram values associated with metric:", metricName)
+			return fmt.Errorf("both float and histogram values associated with metric: %s", metricName)
 		} else if len(gauge.Gauge.DataPoints) > 0 {
 			rm.ScopeMetrics[0].Metrics[0].Data = gauge
 			md.ResourceMetrics = append(md.ResourceMetrics, rm)
@@ -163,13 +163,17 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 			rm.ScopeMetrics[0].Metrics[0].Data = histo
 			md.ResourceMetrics = append(md.ResourceMetrics, rm)
 		}
+
+		if verbose {
+			log.Printf("current size: %d\n", proto.Size(md))
+		}
 	}
 
 	// Flush any remaining partial chunk to disk.
 	if proto.Size(md) > 0 {
 		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
 		if err != nil {
-			log.Fatalln("failed to write metrics data to file:", err)
+			return fmt.Errorf("write metrics data to file: %w", err)
 		}
 	}
 
@@ -180,7 +184,7 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 	if countOnly {
 		n := proto.Size(md)
 		writtenBytesCount += n
-		fmt.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
+		log.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
 
 		return chunkCount + 1, nil
 	}
@@ -202,7 +206,7 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 	}
 	defer func() { _ = f.Close() }()
 
-	fmt.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
+	log.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
 
 	return chunkCount + 1, nil
 }
@@ -210,6 +214,10 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 func lblsToResourceAttributes(builder labels.ScratchBuilder) (string, []*commonv1.KeyValue) {
 	builder.Sort()
 	lbls := builder.Labels()
+
+	if verbose {
+		log.Printf("processing series %s...\n", lbls.String())
+	}
 
 	res := make([]*commonv1.KeyValue, lbls.Len())
 	var name string
