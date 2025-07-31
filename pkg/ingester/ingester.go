@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
@@ -2727,6 +2728,17 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
+// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
+// When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
+// which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
+// When disabled, it uses NoopPlanner which performs no optimization.
+func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return &index.ScanEmptyMatchersLookupPlanner{}
+	}
+	return lookupplan.NoopPlanner{}
+}
+
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
@@ -2863,6 +2875,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
+		IndexLookupPlanner:                    i.getIndexLookupPlanner(),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
