@@ -1655,7 +1655,7 @@ mimir_query_engine:
   [enable_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable common subexpression elimination for range vector
-  # expressions when evaluating instant queries. Has no effect if common
+  # expressions when evaluating instant queries. This has no effect if common
   # subexpression elimination is disabled.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
   [enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries: <boolean> | default = true]

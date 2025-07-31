@@ -2058,7 +2058,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
-    	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. Has no effect if common subexpression elimination is disabled. (default true)
+    	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
     	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests
