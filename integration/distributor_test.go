@@ -1307,7 +1307,6 @@ func testDistributorNameValidation(
 	rwVersion string,
 	validationScheme model.ValidationScheme,
 ) {
-
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
 	queryStep := 5 * time.Minute
@@ -1321,20 +1320,18 @@ func testDistributorNameValidation(
 	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
-	baseFlags := map[string]string{
-		"-distributor.ingestion-tenant-shard-size":           "0",
-		"-ingester.ring.heartbeat-period":                    "1s",
-		"-validation.name-validation-scheme":                 validationScheme.String(),
-		"-timeseries-unmarshal-caching-optimization-enabled": "false",
-	}
-
-	flags := mergeFlags(
+	baseFlags := mergeFlags(
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
-		baseFlags,
+		map[string]string{
+			"-distributor.ingestion-tenant-shard-size":           "0",
+			"-ingester.ring.heartbeat-period":                    "1s",
+			"-validation.name-validation-scheme":                 validationScheme.String(),
+			"-timeseries-unmarshal-caching-optimization-enabled": "false",
+		},
 	)
 
-	queryFrontendFlags := mergeFlags(flags, map[string]string{
+	queryFrontendFlags := mergeFlags(baseFlags, map[string]string{
 		"-query-frontend.cache-results":                      "true",
 		"-query-frontend.results-cache.backend":              "memcached",
 		"-query-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
@@ -1347,14 +1344,19 @@ func testDistributorNameValidation(
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), queryFrontendFlags)
 	require.NoError(t, s.Start(queryFrontend))
 
-	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+	querierFlags := mergeFlags(
+		baseFlags,
+		map[string]string{
+			"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
+		},
+	)
 
-	distributorFlags := mergeFlags(flags, map[string]string{
+	distributorFlags := mergeFlags(baseFlags, map[string]string{
 		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
 		"-ingester.max-global-exemplars-per-user": "3",
 	})
 
-	ingesterFlags := mergeFlags(flags, map[string]string{
+	ingesterFlags := mergeFlags(baseFlags, map[string]string{
 		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
 		"-ingester.max-global-exemplars-per-user": "100",
 	})
@@ -1362,7 +1364,7 @@ func testDistributorNameValidation(
 	// Start Mimir components.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), querierFlags)
 
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 	require.NoError(t, s.WaitReady(queryFrontend))
