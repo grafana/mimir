@@ -2730,7 +2730,7 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 
 // getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
 // When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
-// which collects statistics and can defer some vector selector matchers to sequential scans.
+// which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
 // When disabled, it uses NoopPlanner which performs no optimization.
 func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
