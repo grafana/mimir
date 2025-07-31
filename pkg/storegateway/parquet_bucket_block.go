@@ -36,7 +36,7 @@ type parquetBucketShardReader struct {
 	chunksFileReaders int
 }
 
-func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
+func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
 	r.readersMu.Lock()
 	defer r.readersMu.Unlock()
 	r.labelsFileReaders++
@@ -44,7 +44,7 @@ func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
 	return r.block.shardReaderCloser.LabelsFile()
 }
 
-func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
+func (r *parquetBucketShardReader) ChunksFile() storage.ParquetFileView {
 	r.readersMu.Lock()
 	defer r.readersMu.Unlock()
 	r.chunksFileReaders++
@@ -77,7 +77,8 @@ type parquetBucketBlock struct {
 	meta              *block.Meta
 	blockLabels       labels.Labels
 	shardReaderCloser ParquetShardReaderCloser
-	localDir          string
+
+	localDir string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
