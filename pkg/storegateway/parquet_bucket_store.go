@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -969,6 +970,19 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 		if s.blockSet.contains(id) {
 			continue
 		}
+
+		markPath := path.Join(id.String(), parquetconverter.ParquetConversionMarkFileName)
+		exists, err := s.bkt.Exists(ctx, markPath)
+		if err != nil {
+			level.Debug(s.logger).Log("msg", "failed to check parquet conversion mark existence, skipping block", "block", id, "err", err)
+			continue
+		}
+
+		if !exists {
+			level.Debug(s.logger).Log("msg", "parquet conversion mark not found, block not converted, skipping", "block", id)
+			continue
+		}
+
 		select {
 		case <-ctx.Done():
 		case blockc <- meta:
