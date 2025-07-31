@@ -282,10 +282,10 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 
 	// Ensure responses that are too big are not retried.
-	if len(response.Body) >= sp.maxMessageSize {
-		level.Error(logger).Log("msg", "response larger than max message size", "size", len(response.Body), "maxMessageSize", sp.maxMessageSize)
+	if msgSize := response.Size(); msgSize >= sp.maxMessageSize {
+		level.Error(logger).Log("msg", "response larger than max message size", "size", msgSize, "max_message_size", sp.maxMessageSize)
 
-		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", len(response.Body), sp.maxMessageSize)
+		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", msgSize, sp.maxMessageSize)
 		response = &httpgrpc.HTTPResponse{
 			Code: http.StatusRequestEntityTooLarge,
 			Body: []byte(errMsg),
