@@ -21,21 +21,22 @@ type RangeVectorDuplicationBuffer struct {
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	consumerCount int
-
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	lastNextSeriesCallIndex     int
-	currentSeriesIndex          []int  // One entry per consumer. -1 means the consumer hasn't advanced to the first series yet, -2 means the consumer is closed.
-	hasReadCurrentSeriesSamples []bool // One entry per consumer.
-	buffer                      *SeriesDataRingBuffer[bufferedRangeVectorStepData]
+	lastNextSeriesCallIndex int
+	consumers               []*rangeVectorConsumerState
+	buffer                  *SeriesDataRingBuffer[bufferedRangeVectorStepData]
 
 	// Multiple RangeVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
 	prepared bool
 }
 
-const consumerClosed int = -2
+type rangeVectorConsumerState struct {
+	currentSeriesIndex          int // -1 means the consumer hasn't advanced to the first series yet.
+	hasReadCurrentSeriesSamples bool
+	closed                      bool
+}
 
 func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorDuplicationBuffer {
 	return &RangeVectorDuplicationBuffer{
@@ -47,10 +48,10 @@ func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryCons
 }
 
 func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationConsumer {
-	consumerIndex := b.consumerCount
-	b.consumerCount++
-	b.currentSeriesIndex = append(b.currentSeriesIndex, -1)
-	b.hasReadCurrentSeriesSamples = append(b.hasReadCurrentSeriesSamples, true)
+	consumerIndex := len(b.consumers)
+	b.consumers = append(b.consumers, &rangeVectorConsumerState{
+		currentSeriesIndex: -1,
+	})
 
 	return &RangeVectorDuplicationConsumer{
 		Buffer:        b,
@@ -70,7 +71,7 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]ty
 
 	b.seriesMetadataCount++
 
-	if b.seriesMetadataCount == b.consumerCount {
+	if b.seriesMetadataCount == len(b.consumers) {
 		// We can safely return the original series metadata, as we're not going to return this to another consumer.
 		metadata := b.seriesMetadata
 		b.seriesMetadata = nil
@@ -89,16 +90,16 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]ty
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) error {
-	currentSeriesIndex := b.currentSeriesIndex[consumerIndex]
-	if currentSeriesIndex == consumerClosed {
+	consumer := b.consumers[consumerIndex]
+	if consumer.closed {
 		return fmt.Errorf("consumer %d is already closed, can't advance to next series", consumerIndex)
 	}
 
-	b.currentSeriesIndex[consumerIndex]++
-	b.hasReadCurrentSeriesSamples[consumerIndex] = false
+	consumer.currentSeriesIndex++
+	consumer.hasReadCurrentSeriesSamples = false
 	b.releaseUnneededBufferedData()
 
-	if b.lastNextSeriesCallIndex < b.currentSeriesIndex[consumerIndex] {
+	if b.lastNextSeriesCallIndex < consumer.currentSeriesIndex {
 		// If this consumer is the leading one, then call NextSeries on the inner operator now.
 		b.lastNextSeriesCallIndex++
 		if err := b.Inner.NextSeries(ctx); err != nil {
@@ -125,12 +126,14 @@ func (b *RangeVectorDuplicationBuffer) releaseUnneededBufferedData() {
 func (b *RangeVectorDuplicationBuffer) earliestNeededSeriesIndex() int {
 	idx := math.MaxInt
 
-	for consumerIndex, currentSeriesIndex := range b.currentSeriesIndex {
-		if currentSeriesIndex == consumerClosed {
+	for _, consumer := range b.consumers {
+		if consumer.closed {
 			continue
 		}
 
-		if b.hasReadCurrentSeriesSamples[consumerIndex] {
+		currentSeriesIndex := consumer.currentSeriesIndex
+
+		if consumer.hasReadCurrentSeriesSamples {
 			currentSeriesIndex++
 		}
 
@@ -141,18 +144,18 @@ func (b *RangeVectorDuplicationBuffer) earliestNeededSeriesIndex() int {
 }
 
 func (b *RangeVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
-	thisConsumerPosition := b.currentSeriesIndex[consumerIndex]
+	thisConsumerPosition := b.consumers[consumerIndex].currentSeriesIndex
 
-	for otherConsumerIndex, otherConsumerPosition := range b.currentSeriesIndex {
+	for otherConsumerIndex, otherConsumer := range b.consumers {
 		if otherConsumerIndex == consumerIndex {
 			continue
 		}
 
-		if otherConsumerPosition == consumerClosed {
+		if otherConsumer.closed {
 			continue
 		}
 
-		if otherConsumerPosition <= thisConsumerPosition {
+		if otherConsumer.currentSeriesIndex <= thisConsumerPosition {
 			return false
 		}
 	}
@@ -161,17 +164,18 @@ func (b *RangeVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consum
 }
 
 func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*types.RangeVectorStepData, error) {
-	if b.hasReadCurrentSeriesSamples[consumerIndex] {
+	consumer := b.consumers[consumerIndex]
+
+	if consumer.hasReadCurrentSeriesSamples {
 		return nil, types.EOS
 	}
 
-	currentSeriesIndex := b.currentSeriesIndex[consumerIndex]
-	b.hasReadCurrentSeriesSamples[consumerIndex] = true
+	consumer.hasReadCurrentSeriesSamples = true
 
-	if b.buffer.IsPresent(currentSeriesIndex) {
+	if b.buffer.IsPresent(consumer.currentSeriesIndex) {
 		// We can't remove the step data from the buffer now if this is the last consumer for this series -
 		// we'll do this in the next call to NextSeries so that we can return the cloned sample ring buffers to their pools.
-		return b.buffer.Get(currentSeriesIndex).stepData, nil
+		return b.buffer.Get(consumer.currentSeriesIndex).stepData, nil
 	}
 
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
@@ -191,18 +195,19 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*type
 		return nil, err
 	}
 
-	b.buffer.Append(clonedData, currentSeriesIndex)
+	b.buffer.Append(clonedData, consumer.currentSeriesIndex)
 
 	return clonedData.stepData, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
-	if b.currentSeriesIndex[consumerIndex] == consumerClosed {
+	consumer := b.consumers[consumerIndex]
+	if consumer.closed {
 		// We've already closed this consumer, nothing more to do.
 		return
 	}
 
-	b.currentSeriesIndex[consumerIndex] = consumerClosed
+	consumer.closed = true
 
 	if b.allConsumersClosed() {
 		b.close()
@@ -225,8 +230,8 @@ func (b *RangeVectorDuplicationBuffer) close() {
 }
 
 func (b *RangeVectorDuplicationBuffer) allConsumersClosed() bool {
-	for _, currentIndex := range b.currentSeriesIndex {
-		if currentIndex != consumerClosed {
+	for _, consumer := range b.consumers {
+		if !consumer.closed {
 			return false
 		}
 	}
