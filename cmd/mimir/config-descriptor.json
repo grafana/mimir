@@ -22781,6 +22781,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "compression_enabled",
+          "required": false,
+          "desc": "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "parquet-converter.compression-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,
