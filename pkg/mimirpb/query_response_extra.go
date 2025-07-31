@@ -13,25 +13,25 @@ const QueryResponseMimeType = QueryResponseMimeTypeType + "/" + QueryResponseMim
 const QueryResponseMimeTypeType = "application"
 const QueryResponseMimeTypeSubType = "vnd.mimir.queryresponse+protobuf"
 
-func (s QueryResponse_Status) ToPrometheusString() (string, error) {
+func (s QueryStatus) ToPrometheusString() (string, error) {
 	switch s {
-	case QueryResponse_SUCCESS:
+	case QUERY_STATUS_SUCCESS:
 		return "success", nil
-	case QueryResponse_ERROR:
+	case QUERY_STATUS_ERROR:
 		return "error", nil
 	default:
 		return "", fmt.Errorf("unknown QueryErrorType value: %v (%v)", int32(s), s.String())
 	}
 }
 
-func StatusFromPrometheusString(s string) (QueryResponse_Status, error) {
+func StatusFromPrometheusString(s string) (QueryStatus, error) {
 	switch s {
 	case "success":
-		return QueryResponse_SUCCESS, nil
+		return QUERY_STATUS_SUCCESS, nil
 	case "error":
-		return QueryResponse_ERROR, nil
+		return QUERY_STATUS_ERROR, nil
 	default:
-		return QueryResponse_ERROR, fmt.Errorf("unknown Prometheus status value: '%v'", s)
+		return QUERY_STATUS_ERROR, fmt.Errorf("unknown Prometheus status value: '%v'", s)
 	}
 }
 

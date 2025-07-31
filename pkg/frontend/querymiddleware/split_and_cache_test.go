@@ -1698,7 +1698,7 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 
 func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
 	return &mimirpb.QueryResponse{
-		Status: mimirpb.QueryResponse_SUCCESS,
+		Status: mimirpb.QUERY_STATUS_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{
 			Matrix: &mimirpb.MatrixData{
 				Series: []mimirpb.MatrixSeries{

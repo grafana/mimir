@@ -64,7 +64,7 @@ var protobufCodecScenarios = map[string]struct {
 			Error:     "something went wrong",
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status:    mimirpb.QueryResponse_ERROR,
+			Status:    mimirpb.QUERY_STATUS_ERROR,
 			ErrorType: mimirpb.QUERY_ERROR_TYPE_UNAVAILABLE,
 			Error:     "something went wrong",
 		},
@@ -81,7 +81,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_String_{
 				String_: &mimirpb.StringData{
 					TimestampMs: 1234,
@@ -102,7 +102,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
 				Scalar: &mimirpb.ScalarData{
 					TimestampMs: 1234,
@@ -120,7 +120,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{},
 			},
@@ -141,7 +141,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
@@ -170,7 +170,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
@@ -199,7 +199,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
@@ -233,7 +233,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
@@ -284,7 +284,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
@@ -379,7 +379,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
@@ -453,7 +453,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{},
 			},
@@ -472,7 +472,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -498,7 +498,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -524,7 +524,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -556,7 +556,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -591,7 +591,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -637,7 +637,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -706,7 +706,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
@@ -808,7 +808,7 @@ var protobufCodecScenarios = map[string]struct {
 			},
 		},
 		expectedPayload: mimirpb.QueryResponse{
-			Status: mimirpb.QueryResponse_SUCCESS,
+			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{

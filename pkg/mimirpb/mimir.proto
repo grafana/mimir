@@ -250,6 +250,12 @@ message SampleHistogramPair {
   SampleHistogram histogram = 1;
 }
 
+// These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryStatus {
+  QUERY_STATUS_ERROR = 0;
+  QUERY_STATUS_SUCCESS = 1;
+}
+
 // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
 enum QueryErrorType {
   QUERY_ERROR_TYPE_NONE = 0;
@@ -264,14 +270,7 @@ enum QueryErrorType {
 }
 
 message QueryResponse {
-  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum Status {
-    option (gogoproto.goproto_enum_prefix) = true;
-    ERROR = 0;
-    SUCCESS = 1;
-  }
-
-  Status status = 1;
+  QueryStatus status = 1;
   QueryErrorType error_type = 2;
   string error = 3;
 
