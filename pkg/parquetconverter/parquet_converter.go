@@ -95,6 +95,7 @@ type Config struct {
 	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
+	MaxQueueSize       int  `yaml:"max_queue_size" category:"advanced"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -113,6 +114,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
+	f.IntVar(&cfg.MaxQueueSize, "parquet-converter.max-queue-size", 5, "Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas.")
 }
 
 type ParquetConverter struct {
@@ -343,6 +345,10 @@ func (c *ParquetConverter) runBlockProcessing(ctx context.Context) {
 
 // discoverAndEnqueueBlocks discovers blocks and adds them to the priority queue
 func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
+	if c.conversionQueue.Size() >= c.Cfg.MaxQueueSize {
+		return
+	}
+
 	users, err := c.discoverUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "error scanning users", "err", err)
