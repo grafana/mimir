@@ -193,7 +193,7 @@ type evaluationObserver struct {
 	originalExpression string
 }
 
-func (o *evaluationObserver) SeriesMetadataEvaluated(evaluator *streamingpromql.Evaluator, series []types.SeriesMetadata) error {
+func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, series []types.SeriesMetadata) error {
 	defer types.SeriesMetadataSlicePool.Put(&series, evaluator.MemoryConsumptionTracker)
 
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
@@ -214,7 +214,7 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(evaluator *streamingpromql.
 	})
 }
 
-func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(evaluator *streamingpromql.Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
 	defer types.PutInstantVectorSeriesData(seriesData, evaluator.MemoryConsumptionTracker)
 
 	// TODO: batch up series to return, rather than sending each series one at a time?
@@ -230,7 +230,7 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(evaluator *streami
 	})
 }
 
-func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	// We do not need to return anything to the pool here: the ring buffers in stepData are reused for subsequent steps, or returned to the pool elsewhere if not needed.
 
 	// TODO: batch up series / steps to return, rather than sending each step one at a time?
@@ -291,7 +291,7 @@ func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, 
 	return combined, true, nil
 }
 
-func (o *evaluationObserver) ScalarEvaluated(evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
+func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
 	defer types.FPointSlicePool.Put(&data.Samples, evaluator.MemoryConsumptionTracker)
 
 	return o.w.Write(querierpb.EvaluateQueryResponse{
@@ -304,7 +304,7 @@ func (o *evaluationObserver) ScalarEvaluated(evaluator *streamingpromql.Evaluato
 	})
 }
 
-func (o *evaluationObserver) StringEvaluated(evaluator *streamingpromql.Evaluator, data string) error {
+func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data string) error {
 	return o.w.Write(querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_StringValue{
 			StringValue: &querierpb.EvaluateQueryResponseStringValue{
@@ -315,7 +315,7 @@ func (o *evaluationObserver) StringEvaluated(evaluator *streamingpromql.Evaluato
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
 	var annos querierpb.Annotations
 
 	if annotations != nil {
