@@ -79,7 +79,11 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.WriteHeader(http.StatusAccepted)
-		writer := &httpQueryResponseWriter{w: w, logger: d.logger}
+		stream := &httpResultStream{w: w}
+		writer := &queryResponseWriter{
+			stream: stream,
+			logger: d.logger,
+		}
 		d.evaluateQuery(r.Context(), body, writer)
 	default:
 		http.Error(w, "unknown request type", http.StatusUnsupportedMediaType)
@@ -89,7 +93,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
 	switch req.TypeUrl {
 	case evaluateQueryRequestType:
-		writer := &grpcQueryResponseWriter{
+		writer := &queryResponseWriter{
 			stream: stream,
 			logger: d.logger,
 		}
@@ -112,7 +116,7 @@ func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream
 	}
 }
 
-func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp queryResponseWriter) {
+func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
 	req := &querierpb.EvaluateQueryRequest{}
 	if err := proto.Unmarshal(body, req); err != nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))
@@ -173,18 +177,11 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
 }
 
-// TODO: reduce some of the duplication in the implementations below
-type queryResponseWriter interface {
-	WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string)
-	Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error
+type httpResultStream struct {
+	w http.ResponseWriter
 }
 
-type httpQueryResponseWriter struct {
-	w      http.ResponseWriter
-	logger log.Logger
-}
-
-func (w *httpQueryResponseWriter) write(m *frontendv2pb.QueryResultStreamRequest) error {
+func (w *httpResultStream) Write(ctx context.Context, m *frontendv2pb.QueryResultStreamRequest) error {
 	b, err := m.Marshal()
 	if err != nil {
 		return err
@@ -201,35 +198,12 @@ func (w *httpQueryResponseWriter) write(m *frontendv2pb.QueryResultStreamRequest
 	return nil
 }
 
-func (w *httpQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
-	return w.write(&frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &m,
-		},
-	})
-}
-
-func (w *httpQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	err := w.write(&frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
-				Type:    typ,
-				Message: msg,
-			},
-		},
-	})
-
-	if err != nil {
-		level.Debug(w.logger).Log("msg", "could not write error", "err", err)
-	}
-}
-
-type grpcQueryResponseWriter struct {
+type queryResponseWriter struct {
 	stream frontendv2pb.QueryResultStream
 	logger log.Logger
 }
 
-func (w *grpcQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
+func (w *queryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
 	return w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &m,
@@ -237,7 +211,7 @@ func (w *grpcQueryResponseWriter) Write(ctx context.Context, m querierpb.Evaluat
 	})
 }
 
-func (w *grpcQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
+func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
 	err := w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
@@ -253,7 +227,7 @@ func (w *grpcQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.Qu
 }
 
 type evaluationObserver struct {
-	w         queryResponseWriter
+	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
 
 	originalExpression string
