@@ -24,13 +24,12 @@ message EvaluationNode {
 
 message EvaluateQueryResponse {
   oneof message {
-    Error error = 1;
-    EvaluateQueryResponseSeriesMetadata seriesMetadata = 2;
-    EvaluateQueryResponseStringValue stringValue = 3;
-    EvaluateQueryResponseScalarValue scalarValue = 4;
-    EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 5;
-    EvaluateQueryResponseRangeVectorStepData rangeVectorStepData = 6;
-    EvaluateQueryResponseEvaluationCompleted evaluationCompleted = 7;
+    EvaluateQueryResponseSeriesMetadata seriesMetadata = 1;
+    EvaluateQueryResponseStringValue stringValue = 2;
+    EvaluateQueryResponseScalarValue scalarValue = 3;
+    EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 4;
+    EvaluateQueryResponseRangeVectorStepData rangeVectorStepData = 5;
+    EvaluateQueryResponseEvaluationCompleted evaluationCompleted = 6;
   }
 }
 

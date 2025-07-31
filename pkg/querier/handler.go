@@ -173,6 +173,7 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
 }
 
+// TODO: reduce some of the duplication in the implementations below
 type queryResponseWriter interface {
 	WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string)
 	Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error
@@ -183,7 +184,7 @@ type httpQueryResponseWriter struct {
 	logger log.Logger
 }
 
-func (w *httpQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
+func (w *httpQueryResponseWriter) write(m *frontendv2pb.QueryResultStreamRequest) error {
 	b, err := m.Marshal()
 	if err != nil {
 		return err
@@ -200,9 +201,17 @@ func (w *httpQueryResponseWriter) Write(ctx context.Context, m querierpb.Evaluat
 	return nil
 }
 
+func (w *httpQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
+	return w.write(&frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &m,
+		},
+	})
+}
+
 func (w *httpQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	err := w.Write(ctx, querierpb.EvaluateQueryResponse{
-		Message: &querierpb.EvaluateQueryResponse_Error{
+	err := w.write(&frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
 				Type:    typ,
 				Message: msg,
@@ -229,8 +238,8 @@ func (w *grpcQueryResponseWriter) Write(ctx context.Context, m querierpb.Evaluat
 }
 
 func (w *grpcQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	err := w.Write(ctx, querierpb.EvaluateQueryResponse{
-		Message: &querierpb.EvaluateQueryResponse_Error{
+	err := w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
 				Type:    typ,
 				Message: msg,
