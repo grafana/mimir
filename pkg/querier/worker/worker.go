@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/servicediscovery"
@@ -23,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
@@ -83,6 +85,10 @@ type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
 
+type GRPCRequestHandler interface {
+	HandleGRPC(context.Context, *types.Any, frontendv2pb.QueryResultStream)
+}
+
 // Single processor handles all streaming operations to query-frontend or query-scheduler to fetch queries
 // and process them.
 type processor interface {
@@ -122,7 +128,7 @@ type querierWorker struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewQuerierWorker(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	if cfg.QuerierID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -149,7 +155,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
 		workerClient = "query-scheduler-worker"
-		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
+		processor, servs = newSchedulerProcessor(cfg, httpHandler, grpcHandler, log, reg)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
@@ -160,7 +166,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 		grpcCfg = cfg.QueryFrontendGRPCClientConfig
 		workerClient = "query-frontend-worker"
-		processor = newFrontendProcessor(cfg, handler, log)
+		processor = newFrontendProcessor(cfg, httpHandler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")

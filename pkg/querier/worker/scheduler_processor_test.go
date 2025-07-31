@@ -341,7 +341,7 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 		QueryFrontendGRPCClientConfig:  conf,
 		QuerySchedulerGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 5 * 1024}, // schedulerProcessor should ignore this.
 		MaxConcurrentRequests:          5,
-	}, nil, nil, nil)
+	}, nil, nil, nil, nil)
 
 	assert.Equal(t, 1*1024*1024, sp.maxMessageSize)
 	assert.Equal(t, conf, sp.grpcConfig)
@@ -729,7 +729,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 
 	requestHandler := &requestHandlerMock{}
 
-	sp, _ := newSchedulerProcessor(Config{QuerierID: "test-querier-id"}, requestHandler, log.NewNopLogger(), nil)
+	sp, _ := newSchedulerProcessor(Config{QuerierID: "test-querier-id"}, requestHandler, nil, log.NewNopLogger(), nil)
 	sp.schedulerClientFactory = func(_ *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 		return schedulerClient
 	}

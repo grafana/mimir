@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
@@ -55,10 +56,11 @@ var tracer = otel.Tracer("querier/worker")
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
-func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
+func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
-		handler:          handler,
+		httpHandler:      httpHandler,
+		grpcHandler:      grpcHandler,
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
@@ -105,7 +107,8 @@ type frontendResponseStreamer func(
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
-	handler          RequestHandler
+	httpHandler      RequestHandler
+	grpcHandler      GRPCRequestHandler
 	streamResponse   frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
@@ -241,7 +244,19 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
-			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.GetHttpRequest(), time.Duration(request.QueueTimeNanos))
+			switch payload := request.Payload.(type) {
+			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
+			case *schedulerpb.SchedulerToQuerier_Request:
+				sp.runGrpcRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.Request)
+			default:
+				response := &httpgrpc.HTTPResponse{
+					Code: http.StatusBadRequest,
+					Body: []byte(fmt.Sprintf("unknown request payload type %T", request.Payload)),
+				}
+
+				sp.sendHttpResponseToQueryFrontend(ctx, logger, request.QueryID, request.FrontendAddress, nil, response, false)
+			}
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
@@ -262,14 +277,14 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 	}
 }
 
-func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
+func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
 	var stats *querier_stats.SafeStats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
 		stats.AddQueueTime(queueTime)
 	}
 
-	response, err := sp.handler.Handle(ctx, request)
+	response, err := sp.httpHandler.Handle(ctx, request)
 	if err != nil {
 		var ok bool
 		response, ok = httpgrpc.HTTPResponseFromError(err)
@@ -291,6 +306,18 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			Body: []byte(errMsg),
 		}
 	}
+
+	var hasStreamHeader bool
+	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
+	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats = stats.Copy()
+	sp.sendHttpResponseToQueryFrontend(ctx, logger, queryID, frontendAddress, stats, response, shouldStream)
+}
+
+func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, response *httpgrpc.HTTPResponse, shouldStream bool) {
 	var c client.PoolClient
 
 	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
@@ -301,14 +328,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
-	var hasStreamHeader bool
-	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
-	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
-
-	// Protect against not-yet-exited querier handler goroutines that could
-	// still be incrementing stats when sent for marshaling below.
-	stats = stats.Copy()
-
+	var err error
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
@@ -408,6 +428,32 @@ sendBody:
 	// Ignore error here because there's nothing we can do about it.
 	_, _ = sc.CloseAndRecv()
 
+	return nil
+}
+
+func (sp *schedulerProcessor) runGrpcRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
+	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
+
+	writer := &grpcStreamWriter{
+		queryID:         queryID,
+		frontendAddress: frontendAddress,
+	}
+
+	sp.grpcHandler.HandleGRPC(ctx, request, writer)
+}
+
+type grpcStreamWriter struct {
+	queryID         uint64
+	frontendAddress string
+}
+
+func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+	msg.QueryID = g.queryID
+
+	// If first request: create client, send message with retries
+	// If subsequent request: send message with existing client (or fail if first attempt failed)
+
+	// TODO
 	return nil
 }
 
