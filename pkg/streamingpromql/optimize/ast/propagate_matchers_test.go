@@ -62,6 +62,8 @@ func TestPropagateMatchers(t *testing.T) {
 		`up unless down{foo="bar"}`:                                                `up unless down{foo="bar"}`,
 		`up{foo="bar"} unless down{baz="fob"}`:                                     `up{foo="bar"} unless down{foo="bar", baz="fob"}`,
 		`{__name__=~"left_side.*"} == ignoring(env) right_side`:                    `{__name__=~"left_side.*"} == ignoring(env) right_side`,
+		`abs(up{foo="bar"}) + sin(down) - left{baz="fob"}`:                         `abs(up{foo="bar", baz="fob"}) + sin(down{foo="bar", baz="fob"}) - left{foo="bar", baz="fob"}`,
+		`up{foo="bar"} / round(down{baz="fob"}, 1)`:                                `up{foo="bar", baz="fob"} / round(down{foo="bar", baz="fob"}, 1)`,
 
 		// Aggregations
 		`sum(up) / sum(down)`:                                                                                 `sum(up) / sum(down)`,
@@ -89,6 +91,7 @@ func TestPropagateMatchers(t *testing.T) {
 		`up * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`:                                   `up * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`,
 		`up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`:                        `up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob", soo="sar"})`,
 		`topk by (env) (5, foo{env="prod"}) / bottomk by (region) (5, bar{region="eu"})`:                      `topk by (env) (5, foo{env="prod"}) / bottomk by (region) (5, bar{region="eu"})`,
+		`sum by (env) (abs(foo{env="prod"})) / sum by (env) (sin(bar))`:                                       `sum by (env) (abs(foo{env="prod"})) / sum by (env) (sin(bar{env="prod"}))`,
 	}
 
 	optimizer := &PropagateMatchers{}

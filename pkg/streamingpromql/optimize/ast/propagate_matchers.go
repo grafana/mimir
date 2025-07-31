@@ -133,7 +133,34 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 		return mapper.propagateMatchersInBinaryExpr(be)
 	}
 
+	fn, ok := expr.(*parser.Call)
+	if ok {
+		if i := getIndexForEligibleFunction(fn.Func.Name); i >= 0 {
+			return mapper.extractVectorSelectors(fn.Args[i])
+		}
+		return nil, nil, false
+	}
+
 	return nil, nil, false
+}
+
+// TODO: Consider more functions, and add tests for these.
+func getIndexForEligibleFunction(funcName string) int {
+	// If the function is eligible for matcher propagation, return the index of the argument
+	// that contains the vector selector. Otherwise, return -1.
+	switch funcName {
+	// Mathematical
+	case "abs", "sgn", "sqrt", "exp", "deriv", "ln", "log2", "log10", "ceil", "floor", "round", "clamp", "clamp_min", "clamp_max":
+		return 0
+	// Trigonometric
+	case "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "sin", "sinh", "tan", "tanh", "deg", "rad":
+		return 0
+	// Comparisons
+	case "rate", "delta", "increase", "idelta", "irate":
+		return 0
+	default:
+		return -1
+	}
 }
 
 func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet map[string]struct{}, whitelist bool) []*labels.Matcher {
