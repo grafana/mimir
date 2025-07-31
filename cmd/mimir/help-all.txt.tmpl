@@ -2035,6 +2035,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -parquet-converter.col-duration duration
     	Duration for column chunks in Parquet files. (default 8h0m0s)
+  -parquet-converter.compression-enabled
+    	Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed. (default true)
   -parquet-converter.conversion-interval duration
     	The frequency at which the conversion runs. (default 1m0s)
   -parquet-converter.data-dir string
