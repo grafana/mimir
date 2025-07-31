@@ -1204,7 +1204,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus-community/parquet-common v0.0.0-20250721073207-425388915bfa
+# github.com/prometheus-community/parquet-common v0.0.0-20250731155552-5a358cf0c8c6
 ## explicit; go 1.23.4
 github.com/prometheus-community/parquet-common/convert
 github.com/prometheus-community/parquet-common/queryable
