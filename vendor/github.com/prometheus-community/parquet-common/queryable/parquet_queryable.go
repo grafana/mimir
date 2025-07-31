@@ -357,7 +357,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
-			cs, err := search.MatchersToConstraint(matchers...)
+			cs, err := search.MatchersToConstraints(matchers...)
 			if err != nil {
 				return err
 			}
@@ -411,7 +411,7 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
-			cs, err := search.MatchersToConstraint(matchers...)
+			cs, err := search.MatchersToConstraints(matchers...)
 			if err != nil {
 				return err
 			}
@@ -451,7 +451,7 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
-			cs, err := search.MatchersToConstraint(matchers...)
+			cs, err := search.MatchersToConstraints(matchers...)
 			if err != nil {
 				return err
 			}
