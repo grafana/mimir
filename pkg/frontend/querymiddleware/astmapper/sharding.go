@@ -112,10 +112,6 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 // a new expr which is expected to provide the same output when executed but splitting
 // the execution into multiple shards.
 func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		if summer.currentShard != nil {

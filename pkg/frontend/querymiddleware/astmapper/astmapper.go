@@ -93,6 +93,11 @@ type ASTExprMapper struct {
 
 // Map implements ASTMapper from a ExprMapper
 func (em ASTExprMapper) Map(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	// Check for context cancellation before mapping expressions.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	expr, finished, err := em.MapExpr(ctx, expr)
 	if err != nil {
 		return nil, err

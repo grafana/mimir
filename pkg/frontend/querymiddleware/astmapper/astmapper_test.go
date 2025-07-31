@@ -7,6 +7,7 @@ package astmapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -145,4 +146,36 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 
 	_, err = mapper.Map(ctx, expr)
 	require.NoError(t, err)
+}
+
+func TestASTMapperContextCancellation(t *testing.T) {
+	// Create a simple ExprMapper that doesn't have context cancellation check
+	testMapper := &testExprMapper{}
+	astMapper := NewASTExprMapper(testMapper)
+
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Attempt to map with cancelled context
+	expr, err := parser.ParseExpr("test{label=\"value\"}")
+	require.NoError(t, err)
+
+	// The Map function should detect the cancellation and return the error
+	_, err = astMapper.Map(ctx, expr)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled))
+
+	// Verify the ExprMapper wasn't called
+	require.Equal(t, 0, testMapper.called)
+}
+
+// testExprMapper is a simple ExprMapper that counts calls to MapExpr
+type testExprMapper struct {
+	called int
+}
+
+func (m *testExprMapper) MapExpr(_ context.Context, expr parser.Expr) (parser.Expr, bool, error) {
+	m.called++
+	return expr, false, nil
 }

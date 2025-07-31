@@ -21,10 +21,6 @@ func NewProm2RangeCompat() ASTMapper {
 type prom2RangeCompat struct{}
 
 func (c prom2RangeCompat) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
 	e, ok := expr.(*parser.SubqueryExpr)
 	if !ok {
 		return expr, false, nil

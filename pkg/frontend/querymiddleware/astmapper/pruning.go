@@ -25,10 +25,6 @@ func newQueryPruner(logger log.Logger) *queryPruner {
 }
 
 func (pruner *queryPruner) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
 	e, ok := expr.(*parser.BinaryExpr)
 	if !ok {
 		return expr, false, nil

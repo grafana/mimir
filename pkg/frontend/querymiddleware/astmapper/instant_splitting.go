@@ -75,10 +75,6 @@ func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *I
 
 // MapExpr returns expr mapped as embedded queries
 func (i *instantSplitter) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {
