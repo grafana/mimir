@@ -190,13 +190,9 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(evaluator *streami
 	return o.w.Write(querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-				NodeIndex: o.nodeIndex,
-				Data: []querierpb.InstantVectorSeriesData{
-					{
-						Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
-						Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
-					},
-				},
+				NodeIndex:  o.nodeIndex,
+				Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
+				Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
 			},
 		},
 	})
