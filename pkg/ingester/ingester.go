@@ -2864,7 +2864,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                    lookupplan.NoopPlanner{},
+		// TODO: Use i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled flag once index lookup planning is implemented
+		IndexLookupPlanner: lookupplan.NoopPlanner{},
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

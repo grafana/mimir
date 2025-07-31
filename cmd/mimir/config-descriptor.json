@@ -10510,6 +10510,17 @@
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_enabled",
+              "required": false,
+              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

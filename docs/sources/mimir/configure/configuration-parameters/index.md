@@ -4950,6 +4950,12 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Controls the collection of statistics and whether to defer
+  # some vector selector matchers to sequential scans. This leads to better
+  # performance.
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
+  [index_lookup_planning_enabled: <boolean> | default = false]
 ```
 
 ### compactor
