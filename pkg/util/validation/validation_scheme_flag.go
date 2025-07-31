@@ -38,7 +38,14 @@ func (s *ValidationSchemeValue) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (s ValidationSchemeValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.String())
+	switch model.ValidationScheme(s) {
+	case model.UTF8Validation, model.LegacyValidation:
+		return json.Marshal(s.String())
+	case model.UnsetValidation:
+		return json.Marshal("")
+	default:
+		return nil, fmt.Errorf("unrecognized name validation scheme: %s", s)
+	}
 }
 
 func (s *ValidationSchemeValue) UnmarshalJSON(bytes []byte) error {
