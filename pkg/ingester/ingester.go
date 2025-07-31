@@ -2728,6 +2728,17 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
+// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
+// When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
+// which collects statistics and can defer some vector selector matchers to sequential scans.
+// When disabled, it uses NoopPlanner which performs no optimization.
+func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return &index.ScanEmptyMatchersLookupPlanner{}
+	}
+	return lookupplan.NoopPlanner{}
+}
+
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
@@ -2864,8 +2875,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
-		// TODO: Use i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled flag once index lookup planning is implemented
-		IndexLookupPlanner: lookupplan.NoopPlanner{},
+		IndexLookupPlanner:                    i.getIndexLookupPlanner(),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
