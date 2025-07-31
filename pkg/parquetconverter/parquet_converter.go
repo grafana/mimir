@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/convert"
+	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -93,6 +94,8 @@ type Config struct {
 	MaxRowsPerGroup    int                    `yaml:"max_rows_per_group" category:"advanced"`
 	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
 
+	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
+
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
 
@@ -109,6 +112,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
+	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
 }
 
 type ParquetConverter struct {
@@ -152,6 +156,8 @@ func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
 	if cfg.MaxRowsPerGroup > 0 {
 		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
 	}
+
+	baseConverterOptions = append(baseConverterOptions, convert.WithCompression(schema.WithCompressionEnabled(cfg.CompressionEnabled)))
 
 	return baseConverterOptions
 }
