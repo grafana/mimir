@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestValidationSchemeFlag_UnmarshalYAML(t *testing.T) {
+func TestValidationSchemeValue_UnmarshalYAML(t *testing.T) {
 	testCases := []struct {
 		name    string
 		input   string
@@ -104,7 +104,7 @@ func TestValidationSchemeValue_UnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestValidationSchemeFlag_Set(t *testing.T) {
+func TestValidationSchemeValue_Set(t *testing.T) {
 	testCases := []struct {
 		name    string
 		input   string

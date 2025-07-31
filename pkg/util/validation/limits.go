@@ -571,11 +571,12 @@ func (l *Limits) validate() error {
 		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
 	}
 
+	validationScheme := model.ValidationScheme(l.NameValidationScheme)
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		cfg.MetricNameValidationScheme = model.ValidationScheme(l.NameValidationScheme)
+		cfg.MetricNameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -1072,9 +1073,9 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
-	validationScheme := o.getOverridesForUser(userID).NameValidationScheme
+	validationScheme := o.ValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = model.ValidationScheme(validationScheme)
+		relabelConfigs[i].MetricNameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }
