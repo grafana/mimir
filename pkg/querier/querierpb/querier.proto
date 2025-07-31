@@ -29,7 +29,7 @@ message EvaluateQueryResponse {
     EvaluateQueryResponseStringValue stringValue = 3;
     EvaluateQueryResponseScalarValue scalarValue = 4;
     EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 5;
-    EvaluateQueryResponseRangeVectorSeriesData rangeVectorData = 6;
+    EvaluateQueryResponseRangeVectorStepData rangeVectorStepData = 6;
     EvaluateQueryResponseEvaluationCompleted evaluationCompleted = 7;
   }
 }
@@ -66,9 +66,17 @@ message InstantVectorSeriesData {
   repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
 }
 
-message EvaluateQueryResponseRangeVectorSeriesData {
+message EvaluateQueryResponseRangeVectorStepData {
   int64 nodeIndex = 1;
-  // TODO: series data - should we support multiple steps?
+  int64 seriesIndex = 2;
+
+  // These timestamps have the same meaning as the corresponding fields on RangeVectorStepData.
+  int64 step_t = 3;
+  int64 range_start = 4;
+  int64 range_end = 5;
+
+  repeated cortexpb.Sample floats = 6 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 7 [(gogoproto.nullable) = false];
 }
 
 message Error {

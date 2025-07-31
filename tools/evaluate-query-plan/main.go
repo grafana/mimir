@@ -24,12 +24,18 @@ import (
 )
 
 type app struct {
-	rootUrl  string
-	expr     string
-	from     flagext.Time
-	to       flagext.Time
-	step     time.Duration
-	tenantID string
+	rootUrl      string
+	expr         string
+	tenantID     string
+	instantQuery bool
+
+	// Instant query:
+	at flagext.Time
+
+	// Range query:
+	from flagext.Time
+	to   flagext.Time
+	step time.Duration
 
 	planner *streamingpromql.QueryPlanner
 	logger  log.Logger
@@ -50,9 +56,10 @@ func main() {
 func (a *app) ParseFlags() error {
 	flag.StringVar(&a.rootUrl, "root-url", "http://localhost:8005", "root URL of querier")
 	flag.StringVar(&a.expr, "expr", "", "expression to evaluate")
-	flag.Var(&a.from, "from", "start of query time range")
-	flag.Var(&a.to, "to", "end of query time range")
-	flag.DurationVar(&a.step, "step", time.Minute, "query time step")
+	flag.Var(&a.at, "at", "instant query time")
+	flag.Var(&a.from, "from", "start of range query time range")
+	flag.Var(&a.to, "to", "end of range query time range")
+	flag.DurationVar(&a.step, "step", time.Minute, "range query time step")
 	flag.StringVar(&a.tenantID, "tenant-id", "anonymous", "tenant ID")
 	flag.Parse()
 
@@ -60,20 +67,24 @@ func (a *app) ParseFlags() error {
 		return errors.New("expression is required")
 	}
 
-	if time.Time(a.from).IsZero() {
-		return errors.New("from time is required")
-	}
+	if time.Time(a.at).IsZero() {
+		if time.Time(a.from).IsZero() || time.Time(a.to).IsZero() {
+			return errors.New("either range query time range or instant query time is required")
+		}
 
-	if time.Time(a.to).IsZero() {
-		return errors.New("to time is required")
-	}
+		if time.Time(a.from).After(time.Time(a.to)) {
+			return fmt.Errorf("from time (%v) must be before to time (%v)", time.Time(a.from).Format(time.RFC3339Nano), time.Time(a.to).Format(time.RFC3339Nano))
+		}
 
-	if time.Time(a.from).After(time.Time(a.to)) {
-		return fmt.Errorf("from time (%v) must be before to time (%v)", time.Time(a.from).Format(time.RFC3339Nano), time.Time(a.to).Format(time.RFC3339Nano))
-	}
+		if a.step <= 0 {
+			return errors.New("step must be greater than zero")
+		}
+	} else {
+		a.instantQuery = true
 
-	if a.step <= 0 {
-		return errors.New("step must be greater than zero")
+		if !time.Time(a.from).IsZero() || !time.Time(a.to).IsZero() {
+			return errors.New("either range query time range or instant query time is required, but not both")
+		}
 	}
 
 	return nil
@@ -85,7 +96,7 @@ func (a *app) Run() error {
 	}
 
 	ctx := context.Background()
-	plan, err := a.planner.NewQueryPlan(ctx, a.expr, types.NewRangeQueryTimeRange(time.Time(a.from), time.Time(a.to), a.step), streamingpromql.NoopPlanningObserver{})
+	plan, err := a.planner.NewQueryPlan(ctx, a.expr, a.getQueryTimeRange(), streamingpromql.NoopPlanningObserver{})
 	if err != nil {
 		return fmt.Errorf("could not create plan: %w", err)
 	}
@@ -144,6 +155,14 @@ func (a *app) Run() error {
 		fmt.Println(proto.MarshalTextString(msg))
 		fmt.Println("----")
 	}
+}
+
+func (a *app) getQueryTimeRange() types.QueryTimeRange {
+	if a.instantQuery {
+		return types.NewInstantQueryTimeRange(time.Time(a.at))
+	}
+
+	return types.NewRangeQueryTimeRange(time.Time(a.from), time.Time(a.to), a.step)
 }
 
 type streamingResponseDecoder struct {
