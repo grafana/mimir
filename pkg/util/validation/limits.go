@@ -353,7 +353,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than", "Target ingestion delay to apply to tenants with a numeric ID whose value is greater than -distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than.")
 
 	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
-	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
+	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")

@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -1292,31 +1294,36 @@ func assertStats(t *testing.T, expectedStats promRemote.WriteResponseStats, res 
 
 func TestDistributor_NameValidation(t *testing.T) {
 	for _, scheme := range []model.ValidationScheme{model.LegacyValidation, model.UTF8Validation} {
-		t.Run(scheme.String(), func(t *testing.T) {
-			testDistributorNameValidation(t, scheme)
-		})
+		for _, rwVersion := range []string{"rw1", "rw2"} {
+			t.Run(path.Join(scheme.String(), rwVersion), func(t *testing.T) {
+				testDistributorNameValidation(t, rwVersion, scheme)
+			})
+		}
 	}
 }
 
-func testDistributorNameValidation(t *testing.T, validationScheme model.ValidationScheme) {
+func testDistributorNameValidation(
+	t *testing.T,
+	rwVersion string,
+	validationScheme model.ValidationScheme,
+) {
+
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 5 * time.Minute
+
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte("")))
-
+	memcached := e2ecache.NewMemcached()
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, blocksBucketName)
-	require.NoError(t, s.StartAndWaitReady(consul, minio))
+	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
 	baseFlags := map[string]string{
 		"-distributor.ingestion-tenant-shard-size":           "0",
 		"-ingester.ring.heartbeat-period":                    "1s",
-		"-distributor.ha-tracker.enable":                     "true",
-		"-distributor.ha-tracker.enable-for-all-users":       "true",
-		"-distributor.ha-tracker.store":                      "consul",
-		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
-		"-distributor.ha-tracker.prefix":                     "prom_ha/",
 		"-validation.name-validation-scheme":                 validationScheme.String(),
 		"-timeseries-unmarshal-caching-optimization-enabled": "false",
 	}
@@ -1327,15 +1334,26 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 		baseFlags,
 	)
 
-	// We want only the distributor to be reloading runtime config.
+	queryFrontendFlags := mergeFlags(flags, map[string]string{
+		"-query-frontend.cache-results":                      "true",
+		"-query-frontend.results-cache.backend":              "memcached",
+		"-query-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                strconv.FormatBool(false),
+		"-query-frontend.query-sharding-total-shards":        "32",
+		"-query-frontend.query-sharding-max-sharded-queries": "128",
+	})
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), queryFrontendFlags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
 	distributorFlags := mergeFlags(flags, map[string]string{
-		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
-		"-runtime-config.reload-period": "100ms",
 		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
 		"-ingester.max-global-exemplars-per-user": "3",
 	})
 
-	// Ingester will not reload runtime config.
 	ingesterFlags := mergeFlags(flags, map[string]string{
 		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
 		"-ingester.max-global-exemplars-per-user": "100",
@@ -1345,7 +1363,9 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
@@ -1357,15 +1377,14 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
-
-	now := time.Now().Truncate(time.Millisecond).UnixMilli()
 
 	testCases := []struct {
 		name       string
 		rw1request *prompb.WriteRequest
 		rw2request *promRW2.Request
+		queries    map[string]model.Matrix
 		wantStatus map[model.ValidationScheme]int
 	}{
 		{
@@ -1377,7 +1396,7 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 							{Name: "__name__", Value: "legacy_metricC"},
 							{Name: "label_name", Value: "test"},
 						},
-						Samples: []prompb.Sample{{Timestamp: now, Value: 100}},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 					},
 				},
 			},
@@ -1385,13 +1404,22 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				Timeseries: []promRW2.TimeSeries{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
-						Samples:    []promRW2.Sample{{Timestamp: now, Value: 100}},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 					},
 				},
 				Symbols: []string{
-					"", "__name__", "legacy_metricC_total",
+					"", "__name__", "legacy_metricC",
 					"label_name", "test",
 				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC": {{
+					Metric: model.Metric{
+						"__name__":   "legacy_metricC",
+						"label_name": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
 			},
 			wantStatus: map[model.ValidationScheme]int{
 				model.LegacyValidation: http.StatusOK,
@@ -1404,12 +1432,12 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				Timeseries: []prompb.TimeSeries{
 					{
 						Labels:  []prompb.Label{{Name: "__name__", Value: "utf_metric😀C"}},
-						Samples: []prompb.Sample{{Timestamp: now, Value: 100}},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 					},
 				},
 				Metadata: []prompb.MetricMetadata{
 					{
-						MetricFamilyName: "utf_metric😀C_total",
+						MetricFamilyName: "utf_metric😀C",
 						Help:             "some helpC",
 						Unit:             "someunitC",
 						Type:             prompb.MetricMetadata_COUNTER,
@@ -1420,7 +1448,7 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				Timeseries: []promRW2.TimeSeries{
 					{
 						LabelsRefs: []uint32{1, 2},
-						Samples:    []promRW2.Sample{{Timestamp: now, Value: 100}},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 						Metadata: promRW2.Metadata{
 							Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
 							HelpRef: 3,
@@ -1430,10 +1458,18 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				},
 				Symbols: []string{
 					"",
-					"__name__", "utf_metric😀C_total",
+					"__name__", "utf_metric😀C",
 					"some helpC",
 					"someunitC",
 				},
+			},
+			queries: map[string]model.Matrix{
+				`{"utf_metric😀C"}`: {{
+					Metric: model.Metric{
+						"__name__": "utf_metric😀C",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
 			},
 			wantStatus: map[model.ValidationScheme]int{
 				model.LegacyValidation: http.StatusBadRequest,
@@ -1446,10 +1482,10 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				Timeseries: []prompb.TimeSeries{
 					{
 						Labels: []prompb.Label{
-							{Name: "__name__", Value: "legacy_metricC"},
+							{Name: "__name__", Value: "legacy_metricC_total_2"},
 							{Name: "utf8_label😀", Value: "test"},
 						},
-						Samples: []prompb.Sample{{Timestamp: now, Value: 100}},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 					},
 				},
 			},
@@ -1457,13 +1493,22 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 				Timeseries: []promRW2.TimeSeries{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
-						Samples:    []promRW2.Sample{{Timestamp: now, Value: 100}},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
 					},
 				},
 				Symbols: []string{
-					"", "__name__", "legacy_metricC_total",
+					"", "__name__", "legacy_metricC_total_2",
 					"utf8_label😀", "test",
 				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC_total_2": {{
+					Metric: model.Metric{
+						"__name__":    "legacy_metricC_total_2",
+						"utf8_label😀": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
 			},
 			wantStatus: map[model.ValidationScheme]int{
 				model.LegacyValidation: http.StatusBadRequest,
@@ -1473,16 +1518,25 @@ func testDistributorNameValidation(t *testing.T, validationScheme model.Validati
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Run("rw1", func(t *testing.T) {
-				res, err := client.PushRW1(tc.rw1request)
+			var writeRes *http.Response
+			if rwVersion == "rw1" {
+				writeRes, err = client.PushRW1(tc.rw1request)
+			} else if rwVersion == "rw2" {
+				writeRes, err = client.PushRW2(tc.rw2request)
+			} else {
+				t.Fatalf("unsupported rw version: %s", rwVersion)
+			}
+			require.NoError(t, err)
+			require.Equal(t, writeRes.StatusCode, tc.wantStatus[validationScheme])
+			if writeRes.StatusCode != http.StatusOK {
+				// No point in running queries if we didn't write anything.
+				return
+			}
+			for q, res := range tc.queries {
+				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
-				require.Equal(t, res.StatusCode, tc.wantStatus[validationScheme])
-			})
-			t.Run("rw2", func(t *testing.T) {
-				res, err := client.PushRW2(tc.rw2request)
-				require.NoError(t, err)
-				require.Equal(t, res.StatusCode, tc.wantStatus[validationScheme])
-			})
+				require.Equal(t, res.String(), result.String())
+			}
 		})
 	}
 }
