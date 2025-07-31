@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -392,9 +393,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				md,
@@ -467,8 +467,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter()
-		mimirTS, dropped, err := otelMetricsToTimeseries(
+		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
 			md,
@@ -660,7 +660,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						Sum:           30,
 						Schema:        -53,
 						ZeroThreshold: 0,
-						ZeroCount:     nil,
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						PositiveSpans: []mimirpb.BucketSpan{
 							{
 								Length: 3,
@@ -678,8 +678,8 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				tc.input,
@@ -703,33 +703,152 @@ func TestOTelDeltaIngestion(t *testing.T) {
 	}
 }
 
+// Write a test that check that when conversionOptions.enableCTZeroIngestion is true,
+// the otel start time is turned into the created timestamp of the resulting time series.
+func TestOTelCTZeroIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name         string
+		enableCTZero bool
+		input        pmetric.Metrics
+		expected     mimirpb.TimeSeries
+	}{
+		{
+			name:         "enable CT zero ingestion",
+			enableCTZero: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+				context.Background(),
+				converter,
+				tc.input,
+				conversionOptions{
+					addSuffixes:             true,
+					enableCTZeroIngestion:   tc.enableCTZero,
+					convertHistogramsToNHCB: true,
+				},
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			require.Len(t, mimirTS, 1)
+			require.Equal(t, 0, dropped)
+			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
+		})
+	}
+}
+
+// Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
+var extraLabels = []labels.Label{
+	{Name: "kubernetes_io_arch", Value: "amd64"},
+	{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
+	{Name: "kubernetes_io_os", Value: "linux"},
+	{Name: "container_name", Value: "some-name"},
+	{Name: "failure_domain_kubernetes_io_region", Value: "somewhere-1"},
+	{Name: "failure_domain_kubernetes_io_zone", Value: "somewhere-1b"},
+	{Name: "id", Value: "/kubepods/burstable/pod6e91c467-e4c5-11e7-ace3-0a97ed59c75e/a3c8498918bd6866349fed5a6f8c643b77c91836427fb6327913276ebc6bde28"},
+	{Name: "image", Value: "registry/organisation/name@sha256:dca3d877a80008b45d71d7edc4fd2e44c0c8c8e7102ba5cbabec63a374d1d506"},
+	{Name: "instance", Value: "ip-111-11-1-11.ec2.internal"},
+	{Name: "job", Value: "kubernetes-cadvisor"},
+	{Name: "kubernetes_io_hostname", Value: "ip-111-11-1-11"},
+	{Name: "monitor", Value: "prod"},
+	{Name: "name", Value: "k8s_some-name_some-other-name-5j8s8_kube-system_6e91c467-e4c5-11e7-ace3-0a97ed59c75e_0"},
+	{Name: "namespace", Value: "kube-system"},
+	{Name: "pod_name", Value: "some-other-name-5j8s8"},
+}
+
 func BenchmarkOTLPHandler(b *testing.B) {
+	const numSeries = 2000
+	const numSamplesPerSeries = 1
 	var samples []prompb.Sample
-	for i := 0; i < 1000; i++ {
+	var histograms []prompb.Histogram
+	var exemplars []prompb.Exemplar
+	var histogramExemplars []prompb.Exemplar
+	for i := 0; i < numSamplesPerSeries; i++ {
 		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
 		samples = append(samples, prompb.Sample{
 			Value:     1,
 			Timestamp: ts.UnixNano(),
 		})
+		histograms = append(histograms, prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)))
 	}
-	sampleSeries := []prompb.TimeSeries{
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "foo"},
-			},
-			Samples: samples,
-			Histograms: []prompb.Histogram{
-				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
-			},
-		},
+	{
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC)
+		ex := prompb.Exemplar{
+			Value:     1,
+			Timestamp: ts.UnixNano(),
+			Labels:    make([]prompb.Label, 0, len(extraLabels)),
+		}
+		for _, lbl := range extraLabels {
+			ex.Labels = append(ex.Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+		}
+		exemplars = append(exemplars, ex)
+		for i := 0; i < 10; i++ {
+			histogramExemplars = append(histogramExemplars, prompb.Exemplar{
+				Value:     float64(i),
+				Timestamp: ts.UnixNano(),
+				Labels:    make([]prompb.Label, 0, len(extraLabels)),
+			})
+			for _, lbl := range extraLabels {
+				lastExemplar := &histogramExemplars[len(histogramExemplars)-1]
+				lastExemplar.Labels = append(lastExemplar.Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+			}
+		}
 	}
-	// Sample metadata needs to correspond to every series in the sampleSeries
-	sampleMetadata := []mimirpb.MetricMetadata{
-		{
-			Help: "metric_help",
-			Unit: "metric_unit",
-		},
+
+	sampleSeries := make([]prompb.TimeSeries, 0, numSeries)
+	sampleMetadata := make([]mimirpb.MetricMetadata, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		// Create a series with a unique name and some extra labels.
+		lbls := make([]prompb.Label, 0, 1+len(extraLabels))
+		lbls = append(lbls, prompb.Label{Name: "__name__", Value: "foo" + strconv.Itoa(i)})
+		for _, lbl := range extraLabels {
+			lbls = append(lbls, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+		}
+		if i%10 == 0 {
+			// Add 10% exponential histograms.
+			sampleSeries = append(sampleSeries, prompb.TimeSeries{
+				Labels:     lbls,
+				Histograms: histograms,
+				Exemplars:  histogramExemplars,
+			})
+		} else {
+			sampleSeries = append(sampleSeries, prompb.TimeSeries{
+				Labels:    lbls,
+				Samples:   samples,
+				Exemplars: exemplars,
+			})
+		}
+		sampleMetadata = append(sampleMetadata, mimirpb.MetricMetadata{
+			Help: "metric_help_" + strconv.Itoa(i),
+			Unit: "metric_unit_" + strconv.Itoa(i),
+		})
 	}
+
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
 
 	pushFunc := func(_ context.Context, pushReq *Request) error {
@@ -741,7 +860,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")

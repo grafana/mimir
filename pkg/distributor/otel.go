@@ -27,9 +27,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -37,7 +37,7 @@ import (
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/distributor/otlp"
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -89,7 +89,8 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter()
+		appender := otlpappender.NewCombinedAppender()
+		otlpConverter := newOTLPMimirConverter(appender)
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)
 
@@ -286,7 +287,7 @@ func newOTLPParser(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(
+		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
 			otlpConverter,
 			otlpReq.Metrics(),
@@ -302,6 +303,7 @@ func newOTLPParser(
 			},
 			spanLogger,
 		)
+
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -331,7 +333,7 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		req.Metadata = metadata
 
 		return nil
 	}
@@ -442,65 +444,6 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
-	switch otelMetric.Type() {
-	case pmetric.MetricTypeGauge:
-		return mimirpb.GAUGE
-	case pmetric.MetricTypeSum:
-		metricType := mimirpb.GAUGE
-		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.COUNTER
-		}
-		return metricType
-	case pmetric.MetricTypeHistogram:
-		return mimirpb.HISTOGRAM
-	case pmetric.MetricTypeSummary:
-		return mimirpb.SUMMARY
-	case pmetric.MetricTypeExponentialHistogram:
-		return mimirpb.HISTOGRAM
-	}
-	return mimirpb.UNKNOWN
-}
-
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
-	resourceMetricsSlice := md.ResourceMetrics()
-
-	metadataLength := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
-
-	namer := otlptranslator.MetricNamer{
-		Namespace:          "",
-		WithMetricSuffixes: addSuffixes,
-		UTF8Allowed:        false,
-	}
-
-	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				metric := scopeMetrics.Metrics().At(k)
-				entry := mimirpb.MetricMetadata{
-					Type: otelMetricTypeToMimirMetricType(metric),
-					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
-				}
-				metadata = append(metadata, &entry)
-			}
-		}
-	}
-
-	return metadata
-}
-
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
@@ -512,51 +455,56 @@ type conversionOptions struct {
 	allowDeltaTemporality             bool
 }
 
-func otelMetricsToTimeseries(
+func otelMetricsToSeriesAndMetadata(
 	ctx context.Context,
 	converter *otlpMimirConverter,
 	md pmetric.Metrics,
 	opts conversionOptions,
 	logger log.Logger,
-) ([]mimirpb.PreallocTimeseries, int, error) {
-	settings := otlp.Settings{
-		AddMetricSuffixes:                   opts.addSuffixes,
-		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:                opts.promoteScopeMetadata,
-		AllowDeltaTemporality:               opts.allowDeltaTemporality,
+) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
+	settings := otlptranslator.Settings{
+		AddMetricSuffixes:                 opts.addSuffixes,
+		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:              opts.promoteScopeMetadata,
+		AllowDeltaTemporality:             opts.allowDeltaTemporality,
 	}
-	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
+	converter.appender.WithOptions(otlpappender.CombinedAppenderOptions{
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+	})
+	timeseries, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
-	if len(mimirTS) == 0 && dropped > 0 {
-		return nil, dropped, converter.Err()
+	if timeseries == nil && dropped > 0 {
+		return nil, nil, dropped, converter.Err()
 	}
-	return mimirTS, dropped, nil
+	return timeseries, metadata, dropped, nil
 }
 
 type otlpMimirConverter struct {
-	converter *otlp.MimirConverter
+	appender  *otlpappender.CombinedAppender
+	converter *otlptranslator.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
 }
 
-func newOTLPMimirConverter() *otlpMimirConverter {
+func newOTLPMimirConverter(appender *otlpappender.CombinedAppender) *otlpMimirConverter {
 	return &otlpMimirConverter{
-		converter: otlp.NewMimirConverter(),
+		appender:  appender,
+		converter: otlptranslator.NewPrometheusConverter(appender),
 	}
 }
 
-func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metrics, settings otlp.Settings, logger log.Logger) []mimirpb.PreallocTimeseries {
+func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings otlptranslator.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
 	if c.err != nil {
-		return nil
+		return nil, nil
 	}
 
-	_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
-	return c.converter.TimeSeries()
+	_, c.err = c.converter.FromMetrics(ctx, md, settings)
+
+	timeseries, metadata := c.appender.GetResult()
+	return timeseries, metadata
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {
@@ -578,6 +526,8 @@ func (c *otlpMimirConverter) Err() error {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
+// If you provide exemplars they will be placed on the first float or
+// histogram sample.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -607,11 +557,22 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetDescription(metadata[i].GetHelp())
 				metric.SetUnit(metadata[i].GetUnit())
 			}
-			for _, sample := range ts.Samples {
+			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetDoubleValue(sample.Value)
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 
@@ -624,7 +585,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetUnit(metadata[i].GetUnit())
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-			for _, histogram := range ts.Histograms {
+			for i, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)
@@ -641,6 +602,17 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				datapoint.SetSum(histogram.GetSum())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(histogram.Sum / 10.0) // Doesn't really matter, just a placeholder
+						ex.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 	}
