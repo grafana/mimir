@@ -3,6 +3,8 @@ inputMatchers;expectedIndexMatchers;expectedScanMatchers
 {__name__="http_requests_total"};{__name__="http_requests_total"};{}
 {method="GET"};{method="GET"};{}
 {instance="web-us-east-1-aa-001"};{instance="web-us-east-1-aa-001"};{}
+{pod="test-runner-opqrstuvwx-11111"};{pod="test-runner-opqrstuvwx-11111"};{}
+{__name__="go_memstats_alloc_bytes",pod="test-runner-opqrstuvwx-11111"};{pod="test-runner-opqrstuvwx-11111"};{__name__="go_memstats_alloc_bytes"}
 {pod=~"prometheus-.*"};{pod=~"prometheus-.*"};{}
 {container="nginx"};{container="nginx"};{}
 {namespace="monitoring"};{namespace="monitoring"};{}
