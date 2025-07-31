@@ -14,6 +14,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	slices "slices"
 	strconv "strconv"
 	strings "strings"
 )
@@ -5912,19 +5913,25 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.LabelsRefs) > 0 {
-		dAtA22 := make([]byte, len(m.LabelsRefs)*10)
+		// Modified code.
+		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
+		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
+		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j21 int
+		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
-				dAtA22[j21] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA[i-1] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
+				i--
 				j21++
 			}
-			dAtA22[j21] = uint8(num)
+			dAtA[i-1] = uint8(num)
+			i--
 			j21++
 		}
-		i -= j21
-		copy(dAtA[i:], dAtA22[:j21])
+		slices.Reverse(dAtA[i:start])
+		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j21))
 		i--
 		dAtA[i] = 0xa
@@ -5964,19 +5971,25 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x11
 	}
 	if len(m.LabelsRefs) > 0 {
-		dAtA24 := make([]byte, len(m.LabelsRefs)*10)
+		// Modified code.
+		// Normally we move backward through the message, but varint encoding requires moving forward, due to the bit math/continuation bits.
+		// The generator normally allocates a new buffer for the varint slice, moves foward through it, and copies it into dAtA at the end.
+		// We avoid the buffer allocation by instead encoding the value in-place, but backward, and then reversing the bits at the end.
 		var j23 int
+		start := i
 		for _, num := range m.LabelsRefs {
 			for num >= 1<<7 {
-				dAtA24[j23] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA[i-1] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
+				i--
 				j23++
 			}
-			dAtA24[j23] = uint8(num)
+			dAtA[i-1] = uint8(num)
+			i--
 			j23++
 		}
-		i -= j23
-		copy(dAtA[i:], dAtA24[:j23])
+		slices.Reverse(dAtA[i:start])
+		// End modified code.
 		i = encodeVarintMimir(dAtA, i, uint64(j23))
 		i--
 		dAtA[i] = 0xa
@@ -7320,7 +7333,7 @@ func valueToStringMimir(v interface{}) string {
 	return fmt.Sprintf("*%v", pv)
 }
 func (m *WriteRequest) Unmarshal(dAtA []byte) error {
-	var metadata map[string]*MetricMetadata
+	var metadata map[string]*orderAwareMetricMetadata
 	seenFirstSymbol := false
 
 	l := len(dAtA)
@@ -7519,7 +7532,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if metadata == nil {
-				metadata = make(map[string]*MetricMetadata)
+				metadata = make(map[string]*orderAwareMetricMetadata)
 			}
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
 				return err
@@ -7586,9 +7599,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	}
 
 	if m.unmarshalFromRW2 {
-		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
+		m.Metadata = make([]*MetricMetadata, len(metadata))
 		for _, metadata := range metadata {
-			m.Metadata = append(m.Metadata, metadata)
+			m.Metadata[metadata.order] = &metadata.MetricMetadata
 		}
 		m.rw2symbols.releasePages()
 	}
@@ -11155,7 +11168,7 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
 func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 	var metricName string
 	l := len(dAtA)
 	iNdEx := 0
@@ -11613,7 +11626,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata, metricName string) error {
+func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string) error {
 	var (
 		err error
 		help string
@@ -11744,11 +11757,14 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		return nil
 	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizeMetricName] = &MetricMetadata{
-			MetricFamilyName: normalizeMetricName,
-			Help:             help,
-			Unit:             unit,
-			Type:             MetricMetadata_MetricType(metricType),
+		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+			MetricMetadata: MetricMetadata{
+				MetricFamilyName: normalizeMetricName,
+				Help:             help,
+				Unit:             unit,
+				Type:             MetricMetadata_MetricType(metricType),
+			},
+			order: len(metadata),
 		}
 	}
 

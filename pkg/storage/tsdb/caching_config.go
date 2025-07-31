@@ -28,7 +28,7 @@ import (
 // subrangeSize is the size of each subrange that bucket objects are split into for better caching
 const subrangeSize int64 = 16000
 
-var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+var supportedCacheBackends = []string{cache.BackendMemcached}
 
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
@@ -43,7 +43,6 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
-	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
@@ -75,7 +74,6 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
-	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	f.DurationVar(&cfg.TenantsListTTL, prefix+"tenants-list-ttl", 15*time.Minute, "How long to cache list of tenants in the bucket.")
 	f.DurationVar(&cfg.TenantBlocksListTTL, prefix+"tenant-blocks-list-ttl", 5*time.Minute, "How long to cache list of blocks for each tenant.")

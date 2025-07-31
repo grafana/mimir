@@ -4,6 +4,33 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Build: Include updated Mozilla CA bundle from Debian Testing. #12247
+* [CHANGE] Query-frontend: Add support for UTF-8 label and metric names in `/api/v1/cardinality/{label_values|label_values|active_series}` endpoints. #11848.
+* [CHANGE] Querier: Add support for UTF-8 label and metric names in `label_join`, `label_replace` and `count_values` PromQL functions. #11848.
+* [CHANGE] Remove support for Redis as a cache backend. #12163
+* [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
+* [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
+* [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` option to specify the validation scheme for metric and label names. #12215
+* [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail when experimental ingest storage is enabled. #12090
+* [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
+* [ENHANCEMENT] Query-frontend: Allow users to set the `query-frontend.extra-propagated-headers` flag to specify the extra headers allowed to pass through to the rest of the query path. #12174
+* [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
+* [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #12128
+* [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
+
+### Jsonnet
+
+* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
+* [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
+
+### Documentation
+
+* [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+
+## 2.17.0-rc.1
+
+### Grafana Mimir
+
 * [FEATURE] Distributor: Add experimental `-distributor.otel-native-delta-ingestion` option to allow primitive delta metrics ingestion via the OTLP endpoint. #11631
 * [FEATURE] MQE: Add support for experimental `sort_by_label` and `sort_by_label_desc` PromQL functions. #11930
 * [FEATURE] Ingester/Block-builder: Handle the created timestamp field for remote-write requests. #11977
@@ -20,17 +47,18 @@
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054
 * [BUGFIX] Distributor: Fix a possible panic in the OTLP push path while handling a gRPC status error. #12072
 * [BUGFIX] Query-frontend: Evaluate experimental duration expressions before sharding, splitting, and caching. Otherwise, the result is not correct. #12038
+* [BUGFIX] Tracing: Skip tracing configuration when no tracing environment variables were provided. #12074
+* [BUGFIX] Block-builder-scheduler: Fix bugs in handling of partitions with no commit. #12130
 
 ### Mixin
 
-* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 * [CHANGE] Remove support for the experimental read-write deployment mode. #11975
 * [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
+* [FEATURE] Add an alert if the block-builder-scheduler detects that it has skipped data. #12118
 
 ### Jsonnet
 
 * [CHANGE] Removed support for the experimental read-write deployment mode. #11974
-* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [ENHANCEMENT] Add assertion to ensure ingester ScaledObject has minimum and maximum replicas set to a value greater than 0. #11979
 * [ENHANCEMENT] Add `ingest_storage_migration_ignore_ingest_storage_errors` and `ingest_storage_migration_ingest_storage_max_wait_time` configs to control error handling of the partition ingesters during ingest storage migrations. #12105
 * [ENHANCEMENT] Add block-builder job processing duration timings and offset-skipped errors to the Block-builder dashboard. #12118

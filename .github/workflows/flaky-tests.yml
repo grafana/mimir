@@ -54,6 +54,6 @@ jobs:
           time-range: "7d"
           top-k: "3"
           skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.skip-posting-issues || 'false' }}
-          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream" # This is supposed to block upstream mimir-prometheus updates, so it's also expected to fail.
+          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream,TestConfigDescriptorIsUpToDate" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail. TestConfigDescriptorIsUpToDate is flaky.
         env:
           GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}
