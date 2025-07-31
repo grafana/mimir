@@ -18882,6 +18882,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "max_queue_size",
+          "required": false,
+          "desc": "Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5,
+          "fieldFlag": "parquet-converter.max-queue-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,
