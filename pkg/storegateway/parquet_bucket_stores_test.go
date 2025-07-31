@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,6 +23,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -173,6 +175,12 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 			[]convert.Convertible{tsdbBlock},
 			convert.WithName(blockId),
 		)
+		require.NoError(t, err)
+
+		blockULID, err := ulid.Parse(blockId)
+		require.NoError(t, err)
+		instrumentedBkt := objstore.WithNoopInstr(bkt)
+		err = parquetconverter.WriteConversionMark(context.Background(), blockULID, instrumentedBkt)
 		require.NoError(t, err)
 	}
 
