@@ -160,7 +160,7 @@ func (r *lazyReaderLoader) controlLoop() {
 				continue
 			}
 
-			// Do not unloadIfIdleSince if not idle.
+			// Do not UnloadIfIdleSince if not idle.
 			if ts := unloadPromise.idleSinceNanos; ts > 0 && r.usedAt.Load() > ts {
 				unloadPromise.response <- errNotIdle
 				continue
@@ -353,7 +353,7 @@ func (r *LazyReaderBucketLabelsAndChunks) BlockID() ulid.ULID {
 	return r.blockID
 }
 
-func (r *LazyReaderBucketLabelsAndChunks) LabelsFile() *storage.ParquetFile {
+func (r *LazyReaderBucketLabelsAndChunks) LabelsFile() storage.ParquetFileView {
 	loaded := r.readerLoader.getOrLoadReader(r.ctx)
 	if loaded.err != nil {
 		// TODO: the current interface does not allow to return an error
@@ -363,7 +363,7 @@ func (r *LazyReaderBucketLabelsAndChunks) LabelsFile() *storage.ParquetFile {
 	return loaded.reader.LabelsFile()
 }
 
-func (r *LazyReaderBucketLabelsAndChunks) ChunksFile() *storage.ParquetFile {
+func (r *LazyReaderBucketLabelsAndChunks) ChunksFile() storage.ParquetFileView {
 	loaded := r.readerLoader.getOrLoadReader(r.ctx)
 	if loaded.err != nil {
 		// TODO: the current interface does not allow to return an error
@@ -589,7 +589,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) BlockID() ulid.ULID {
 	return r.blockID
 }
 
-func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
+func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() storage.ParquetFileView {
 	loaded := r.readerLoader.getOrLoadReader(r.ctx)
 	if loaded.err != nil {
 		// TODO: the current interface does not allow to return an error
@@ -599,7 +599,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
 	return loaded.reader.LabelsFile()
 }
 
-func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() *storage.ParquetFile {
+func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() storage.ParquetFileView {
 	loaded := r.readerLoader.getOrLoadReader(r.ctx)
 	if loaded.err != nil {
 		// TODO: the current interface does not allow to return an error

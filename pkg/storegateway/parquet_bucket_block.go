@@ -36,19 +36,11 @@ type parquetBucketShardReader struct {
 	chunksFileReaders int
 }
 
-func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
-	r.readersMu.Lock()
-	defer r.readersMu.Unlock()
-	r.labelsFileReaders++
-	r.block.pendingReaders.Add(1)
+func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
 	return r.block.shardReaderCloser.LabelsFile()
 }
 
-func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
-	r.readersMu.Lock()
-	defer r.readersMu.Unlock()
-	r.chunksFileReaders++
-	r.block.pendingReaders.Add(1)
+func (r *parquetBucketShardReader) ChunksFile() storage.ParquetFileView {
 	return r.block.shardReaderCloser.ChunksFile()
 }
 
@@ -57,18 +49,8 @@ func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
 }
 
 func (r *parquetBucketShardReader) Close() error {
-	r.readersMu.Lock()
-	defer r.readersMu.Unlock()
-	errs := multierror.New()
-
-	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
-	if totalReaders := r.labelsFileReaders + r.chunksFileReaders; totalReaders > 0 {
-		for i := 0; i < totalReaders; i++ {
-			r.block.pendingReaders.Done()
-		}
-	}
-
-	return errs.Err()
+	r.block.pendingReaders.Done()
+	return nil
 }
 
 // parquetBucketBlock wraps access to the block's storage.ParquetShard interface
@@ -77,7 +59,8 @@ type parquetBucketBlock struct {
 	meta              *block.Meta
 	blockLabels       labels.Labels
 	shardReaderCloser ParquetShardReaderCloser
-	localDir          string
+
+	localDir string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
@@ -102,6 +85,7 @@ func newParquetBucketBlock(
 }
 
 func (b *parquetBucketBlock) ShardReader() ParquetShardReaderCloser {
+	b.pendingReaders.Add(1)
 	return &parquetBucketShardReader{block: b}
 }
 
