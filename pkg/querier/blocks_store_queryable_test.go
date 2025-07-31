@@ -3643,15 +3643,15 @@ func TestShouldRetry(t *testing.T) {
 			expected: true,
 		},
 		"should retry stop query on store-gateway instance limit": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}).Err(),
 			expected: true,
 		},
 		"should retry on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}).Err(),
 			expected: true,
 		},
 		"should retry on any other mimirpb error": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TOO_BUSY}).Err(),
 			expected: true,
 		},
 		"should retry on any unknown error detail": {
@@ -3664,7 +3664,7 @@ func TestShouldRetry(t *testing.T) {
 		},
 		"should retry on multiple error details": {
 			err: func() error {
-				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
