@@ -182,15 +182,18 @@ func TestValidateLabels(t *testing.T) {
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			wantErr: alwaysErr(LabelValueTooLongError{
-				Label: mimirpb.LabelAdapter{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
-				Limit: 25,
-				Series: []mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "badLabelValue"},
-					{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
-					{Name: "team", Value: "biz"},
-				},
-			}),
+			wantErr: alwaysErr(fmt.Errorf(
+				labelValueTooLongMsgFormat,
+				"much_shorter_name",
+				"test_value_please_ignore_no_really_nothing_to_see_here",
+				mimirpb.FromLabelAdaptersToString(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "badLabelValue"},
+						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+						{Name: "team", Value: "biz"},
+					},
+				),
+			)),
 		},
 		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop", "team": "plof"},
