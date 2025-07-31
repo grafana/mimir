@@ -154,3 +154,24 @@ func (p plan) cardinality() uint64 {
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
+
+func (p plan) appendLogKVs(keyVals []any, fieldPrefix string) []any {
+	indexMatchers := p.IndexMatchers()
+	scanMatchers := p.ScanMatchers()
+
+	keyVals = append(keyVals,
+		fmt.Sprintf("%s_total_cost", fieldPrefix), p.totalCost(),
+		fmt.Sprintf("%s_index_lookup_cost", fieldPrefix), p.indexLookupCost(),
+		fmt.Sprintf("%s_filter_cost", fieldPrefix), p.filterCost(),
+		fmt.Sprintf("%s_intersection_cost", fieldPrefix), p.intersectionCost(),
+		fmt.Sprintf("%s_cardinality", fieldPrefix), p.cardinality(),
+	)
+
+	for i, m := range indexMatchers {
+		keyVals = append(keyVals, fmt.Sprintf("%s_index_%d", fieldPrefix, i), m.String())
+	}
+	for i, m := range scanMatchers {
+		keyVals = append(keyVals, fmt.Sprintf("%s_scan_%d", fieldPrefix, i), m.String())
+	}
+	return keyVals
+}
