@@ -24,6 +24,7 @@ func newProm2RangeCompatMiddleware(limits Limits, logger log.Logger, reg prometh
 		Name: "cortex_frontend_prom2_range_compat_rewritten_total",
 		Help: "The number of times a query was rewritten for Prometheus 2/3 range selector compatibility",
 	}, []string{"user"})
+	mapper := astmapper.NewProm2RangeCompat()
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &prom2RangeCompatHandler{
@@ -31,6 +32,7 @@ func newProm2RangeCompatMiddleware(limits Limits, logger log.Logger, reg prometh
 			limits:    limits,
 			logger:    logger,
 			rewritten: rewritten,
+			mapper:    mapper,
 		}
 	})
 }
@@ -40,6 +42,7 @@ type prom2RangeCompatHandler struct {
 	limits    Limits
 	logger    log.Logger
 	rewritten *prometheus.CounterVec
+	mapper    astmapper.ASTMapper
 }
 
 func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
@@ -81,8 +84,7 @@ func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, query string) (pa
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	mapper := astmapper.NewProm2RangeCompat()
-	rewritten, err := mapper.Map(ctx, expr)
+	rewritten, err := c.mapper.Map(ctx, expr)
 	if err != nil {
 		return nil, err
 	}

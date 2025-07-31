@@ -17,15 +17,18 @@ import (
 type pruneMiddleware struct {
 	next   MetricsQueryHandler
 	logger log.Logger
+	mapper astmapper.ASTMapper
 }
 
 // newPruneMiddleware creates a middleware that optimises queries by rewriting them to prune away
 // unnecessary computations.
 func newPruneMiddleware(logger log.Logger) MetricsQueryMiddleware {
+	mapper := astmapper.NewQueryPruner(logger)
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &pruneMiddleware{
 			next:   next,
 			logger: logger,
+			mapper: mapper,
 		}
 	})
 }
@@ -63,8 +66,7 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 	}
 	origQueryString := expr.String()
 
-	mapper := astmapper.NewQueryPruner(p.logger)
-	prunedQuery, err := mapper.Map(ctx, expr)
+	prunedQuery, err := p.mapper.Map(ctx, expr)
 	if err != nil {
 		return "", false, err
 	}

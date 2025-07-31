@@ -10,18 +10,14 @@ import (
 )
 
 func NewQueryPruner(logger log.Logger) ASTMapper {
-	pruner := newQueryPruner(logger)
+	pruner := &queryPruner{
+		logger: logger,
+	}
 	return NewASTExprMapper(pruner)
 }
 
 type queryPruner struct {
 	logger log.Logger
-}
-
-func newQueryPruner(logger log.Logger) *queryPruner {
-	return &queryPruner{
-		logger: logger,
-	}
 }
 
 func (pruner *queryPruner) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
