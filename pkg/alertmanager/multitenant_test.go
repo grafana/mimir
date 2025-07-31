@@ -1520,6 +1520,7 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 
 	// The Alertmanagers should be turned off after the next sync.
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
 }
 
