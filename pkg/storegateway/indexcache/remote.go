@@ -35,7 +35,7 @@ var (
 	}}
 )
 
-// RemoteIndexCache is a memcached or redis based index cache.
+// RemoteIndexCache is a memcached based index cache.
 type RemoteIndexCache struct {
 	logger log.Logger
 	remote cache.Cache

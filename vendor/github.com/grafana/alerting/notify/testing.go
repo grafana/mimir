@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/alerting/http"
 	"github.com/prometheus/alertmanager/types"
 
 	"github.com/grafana/alerting/receivers/alertmanager"
@@ -124,9 +125,10 @@ func GetDecryptedValueFnForTesting(_ context.Context, sjd map[string][]byte, key
 
 var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 	"prometheus-alertmanager": {
-		NotifierType: "prometheus-alertmanager",
-		Config:       alertmanager.FullValidConfigForTesting,
-		Secrets:      alertmanager.FullValidSecretsForTesting,
+		NotifierType:                "prometheus-alertmanager",
+		Config:                      alertmanager.FullValidConfigForTesting,
+		Secrets:                     alertmanager.FullValidSecretsForTesting,
+		commonHTTPConfigUnsupported: true,
 	},
 	"dingding": {NotifierType: "dingding",
 		Config: dinding.FullValidConfigForTesting,
@@ -135,7 +137,8 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 		Config: discord.FullValidConfigForTesting,
 	},
 	"email": {NotifierType: "email",
-		Config: email.FullValidConfigForTesting,
+		Config:                      email.FullValidConfigForTesting,
+		commonHTTPConfigUnsupported: true,
 	},
 	"googlechat": {NotifierType: "googlechat",
 		Config:  googlechat.FullValidConfigForTesting,
@@ -154,8 +157,9 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 		Secrets: line.FullValidSecretsForTesting,
 	},
 	"mqtt": {NotifierType: "mqtt",
-		Config:  mqtt.FullValidConfigForTesting,
-		Secrets: mqtt.FullValidSecretsForTesting,
+		Config:                      mqtt.FullValidConfigForTesting,
+		Secrets:                     mqtt.FullValidSecretsForTesting,
+		commonHTTPConfigUnsupported: true,
 	},
 	"oncall": {NotifierType: "oncall",
 		Config:  oncall.FullValidConfigForTesting,
@@ -178,11 +182,13 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 		Secrets: sensugo.FullValidSecretsForTesting,
 	},
 	"slack": {NotifierType: "slack",
-		Config:  slack.FullValidConfigForTesting,
-		Secrets: slack.FullValidSecretsForTesting,
+		Config:                      slack.FullValidConfigForTesting,
+		Secrets:                     slack.FullValidSecretsForTesting,
+		commonHTTPConfigUnsupported: true,
 	},
 	"sns": {NotifierType: "sns",
-		Config: sns.FullValidConfigForTesting,
+		Config:                      sns.FullValidConfigForTesting,
+		commonHTTPConfigUnsupported: true,
 	},
 	"teams": {NotifierType: "teams",
 		Config: teams.FullValidConfigForTesting,
@@ -213,10 +219,47 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 	},
 }
 
+var FullValidHTTPConfigForTesting = fmt.Sprintf(`{
+	"http_config": {
+		"oauth2": {
+			"client_id": "test-client-id",
+			"client_secret": "test-client-secret",
+			"token_url": "https://localhost/auth/token",
+			"scopes": ["scope1", "scope2"],
+			"endpoint_params": {
+				"param1": "value1",
+				"param2": "value2"
+			},
+			"tls_config": {
+				"insecureSkipVerify": false,
+				"clientCertificate": %[1]q,
+				"clientKey": %[2]q,
+				"caCertificate": %[3]q
+			},
+			"proxy_config": {
+				"proxy_url": "http://localproxy:8080",
+				"no_proxy": "localhost",
+				"proxy_from_environment": false,
+				"proxy_connect_header": {
+					"X-Proxy-Header": "proxy-value"
+				}
+			}
+		}
+    }
+}`, http.TestCertPem, http.TestKeyPem, http.TestCACert)
+
+var FullValidHTTPConfigSecretsForTesting = fmt.Sprintf(`{
+	"http_config.oauth2.client_secret": "test-override-oauth2-secret",
+	"http_config.oauth2.tls_config.clientCertificate": %[1]q,
+	"http_config.oauth2.tls_config.clientKey": %[2]q,
+	"http_config.oauth2.tls_config.caCertificate": %[3]q
+}`, http.TestCertPem, http.TestKeyPem, http.TestCACert)
+
 type NotifierConfigTest struct {
-	NotifierType string
-	Config       string
-	Secrets      string
+	NotifierType                string
+	Config                      string
+	Secrets                     string
+	commonHTTPConfigUnsupported bool
 }
 
 func (n NotifierConfigTest) GetRawNotifierConfig(name string) *GrafanaIntegrationConfig {
@@ -230,12 +273,41 @@ func (n NotifierConfigTest) GetRawNotifierConfig(name string) *GrafanaIntegratio
 			secrets[key] = base64.StdEncoding.EncodeToString([]byte(value))
 		}
 	}
+
+	config := []byte(n.Config)
+	if !n.commonHTTPConfigUnsupported {
+		var err error
+		config, err = MergeSettings([]byte(n.Config), []byte(FullValidHTTPConfigForTesting))
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	return &GrafanaIntegrationConfig{
 		UID:                   fmt.Sprintf("%s-uid", name),
 		Name:                  name,
 		Type:                  n.NotifierType,
 		DisableResolveMessage: true,
-		Settings:              json.RawMessage(n.Config),
+		Settings:              json.RawMessage(config),
 		SecureSettings:        secrets,
 	}
+}
+
+func MergeSettings(a []byte, b []byte) ([]byte, error) {
+	var origSettings map[string]any
+	err := json.Unmarshal(a, &origSettings)
+	if err != nil {
+		return nil, err
+	}
+	var newSettings map[string]any
+	err = json.Unmarshal(b, &newSettings)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range newSettings {
+		origSettings[key] = value
+	}
+
+	return json.Marshal(origSettings)
 }

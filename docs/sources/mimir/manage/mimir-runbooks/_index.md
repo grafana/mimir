@@ -1757,55 +1757,23 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
-### MimirBlockBuilderNoCycleProcessing
-
-This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
-
-How it **works**:
-
-- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
-- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
-
-How to **investigate**:
-
-- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
-
-Data recovery / temporary mitigation:
-
-While the block builder is still getting mature, ingester is likely still uploading blocks to a backup bucket (if you name your bucket as `*-blocks`, the backup bucket could be `*-ingester-blocks`).
-
-If the block builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following.
-
-If there is a backup `*-ingester-blocks` bucket
-
-1. Firstly, reconfigure ingesters to upload blocks to the main `*-blocks` bucket.
-2. Use `copyblocks` tool from Mimir to copy over the blocks from the backup bucket `*-ingester-blocks` to the main `*-blocks` bucket for the duration block builder did not produce blocks. It is advised to have the start time for copying blocks to be few hours prior (maybe 4hrs) to when the issue started.
-3. Fix the issue in block builder. Let it catch up with the backlog. Once it catches up, you can switch back ingesters to the backup bucket.
-
-If there is no backup bucket that ingester is uploading to
-
-- Increase the retention of the Kafka topic to buy some time.
-- Spin up a new set of block builder with an older version with a **new kafka topic name**, so that it does not conflict with the existing block builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
-- If the `block-builder.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block builders start back far enough to cover the missing data.
-- If there is any corrupt data in the partition that is hard failing the block builder, then this solution will not work. Keep increasing the kafka topic retention until the issue is resolved and block builder has caught up.
-
 ### MimirBlockBuilderLagging
 
-This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+This alert fires when the block-builder reports a large number of unprocessed records in Kafka partitions.
 
 How it **works**:
 
-- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
-- The block-builder must consume and process these records into TSDB blocks.
-- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
-- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+- The block-builder-scheduler watches the Kafka topic backlog. The lag is calculated per-partition as the difference between the partition's end and its last committed offset.
+- The block-builder-scheduler chops the backlog into jobs, and distributes the jobs between the block-builder instances.
+- A block-builder must consume and process the records in a job into TSDB blocks.
+- When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
+
+If the block-builder reports high values in the lag, this could indicate that the block-builder cannot fully process and commit Kafka record.
 
 How to **investigate**:
 
-- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Check if the per-partition lag has been growing over the past hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
-
-Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 ### MimirBlockBuilderCompactAndUploadFailed
 
@@ -1820,6 +1788,49 @@ How to **investigate**:
 - Explore the block-builder logs to check what errors are there.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+#### MimirBlockBuilderHasNotShippedBlocks
+
+Similar to [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks) but for block-builder.
+
+This alert fires when the block-builder stops shipping any blocks for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks.
+- It then sends the TSDB blocks to the object storage.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition jobs. These log records include the details about the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+Data recovery / temporary mitigation:
+
+If the block-builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following:
+
+- Increase the retention of the Kafka topic to buy some time.
+- Spin up a new set of block-builders and block-builder-scheduler with an older version and a **new kafka consumer group**. The latter is so it didn't conflict with the existing block-builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
+- If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
+- Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
+
+#### MimirBlockBuilderDataSkipped
+
+This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
+
+How it **works**:
+
+- Block-builder-scheduler is in charge of both planning "jobs" for block-builders to consume, as well as advancing the per-partition commit when one of these jobs is completed. Each job has a start offset, which is inclusive, and an end offset, which is exclusive.
+- Block-builder-scheduler also verifies that neither planning nor committing jobs ever produce a gap. This alert fires when the scheduler detects one of these gaps.
+- Note that this problem only happens if there's a bug in the planning logic.
+
+How to **investigate**:
+
+- Look at the block-builder-scheduler logs around the affected time. There's a log line that mentions "gap detected in offset advancement" with relevant data.
+- Using this data, continue to look at block-builder-scheduler logs to find the jobs either planned or committed around this time, and see if you can determine how the gap occurred.
+
+Data recovery / temporary mitigation:
+
+You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
 ### MimirServerInvalidClusterValidationLabelRequests
 
@@ -1893,7 +1904,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-series` option. To configure the limit per-tenant, use the `max_label_value_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1903,7 +1914,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 
 This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceeds the configured limit.
 An info series is a series where the metric name ends in `_info`.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-info-series` option.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1912,7 +1923,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-native-histogram-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
-The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
+The limit protects the system from using too much memory. To configure the limit for all tenants, use the `-validation.max-native-histogram-buckets` option. To configure the limit per-tenant, use the `max_native_histogram_buckets` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
@@ -2087,7 +2098,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2096,7 +2107,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2209,7 +2220,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
@@ -2218,7 +2229,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.

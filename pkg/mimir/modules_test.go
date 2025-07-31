@@ -337,12 +337,6 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.OverridesExporter.Ring.Common.KVStore.Etcd.TLS.Reader)
 
-	// Check Redis Clients
-	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader)
-
 	// Check GRPC Clients
 	require.NotNil(t, mimir.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader)

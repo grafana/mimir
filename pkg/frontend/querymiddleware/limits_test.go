@@ -672,11 +672,11 @@ func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
 	return m.byTenant[userID].prom2RangeCompat
 }
 
-func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
+func (m multiTenantMockLimits) BlockedQueries(userID string) []validation.BlockedQuery {
 	return m.byTenant[userID].blockedQueries
 }
 
-func (m multiTenantMockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+func (m multiTenantMockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 	return m.byTenant[userID].limitedQueries
 }
 
@@ -700,12 +700,16 @@ func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) strin
 	return m.byTenant[userID].ingestStorageReadConsistency
 }
 
-func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.BlockedRequest {
+func (m multiTenantMockLimits) BlockedRequests(userID string) []validation.BlockedRequest {
 	return m.byTenant[userID].blockedRequests
 }
 
 func (m multiTenantMockLimits) SubquerySpinOffEnabled(userID string) bool {
 	return m.byTenant[userID].subquerySpinOffEnabled
+}
+
+func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
+	return m.byTenant[userID].labelsQueryOptimizerEnabled
 }
 
 type mockLimits struct {
@@ -732,13 +736,14 @@ type mockLimits struct {
 	resultsCacheForUnalignedQueryEnabled bool
 	enabledPromQLExperimentalFunctions   []string
 	prom2RangeCompat                     bool
-	blockedQueries                       []*validation.BlockedQuery
-	limitedQueries                       []*validation.LimitedQuery
-	blockedRequests                      []*validation.BlockedRequest
+	blockedQueries                       []validation.BlockedQuery
+	limitedQueries                       []validation.LimitedQuery
+	blockedRequests                      []validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
 	subquerySpinOffEnabled               bool
+	labelsQueryOptimizerEnabled          bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -811,11 +816,11 @@ func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
 }
 
-func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
+func (m mockLimits) BlockedQueries(string) []validation.BlockedQuery {
 	return m.blockedQueries
 }
 
-func (m mockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+func (m mockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 	return m.limitedQueries
 }
 
@@ -855,12 +860,16 @@ func (m mockLimits) IngestStorageReadConsistency(string) string {
 	return m.ingestStorageReadConsistency
 }
 
-func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
+func (m mockLimits) BlockedRequests(string) []validation.BlockedRequest {
 	return m.blockedRequests
 }
 
 func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 	return m.subquerySpinOffEnabled
+}
+
+func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
+	return m.labelsQueryOptimizerEnabled
 }
 
 type mockHandler struct {
@@ -892,7 +901,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -936,7 +945,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -977,7 +986,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -1034,7 +1043,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 		}, nil
 	})
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),

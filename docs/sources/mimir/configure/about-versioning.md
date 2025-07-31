@@ -48,7 +48,7 @@ The following features are currently experimental:
 
 - Cost attribution
   - Configure labels for cost attribution
-    - `-validation.cost-attribution-labels`
+    - `-validation.cost-attribution-labels-structured`
   - Configure cost attribution limits, such as cardinality:
     - `-validation.max-cost-attribution-cardinality`
   - Configure cooldown periods and eviction intervals for cost attribution
@@ -225,6 +225,7 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
+  - Labels query optimizer (`-query-frontend.labels-query-optimizer-enabled`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -248,12 +249,6 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-burst-size`
-- Memcached client
-  - Customise write and read buffer size
-    - `-<prefix>.memcached.write-buffer-size-bytes`
-    - `-<prefix>.memcached.read-buffer-size-bytes`
-  - Alternate DNS service discovery backend
-    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -293,6 +288,5 @@ The following features or configuration parameters are currently deprecated and 
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- Support for Redis-based caching
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.

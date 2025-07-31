@@ -232,3 +232,15 @@ func GrafanaToUpstreamConfig(cfg *PostableApiAlertingConfig) config.Config {
 		TimeIntervals:     cfg.Config.TimeIntervals,
 	}
 }
+
+func TemplatesMapToPostableAPITemplates(templates map[string]string, kind TemplateKind) []PostableApiTemplate {
+	res := make([]PostableApiTemplate, 0, len(templates))
+	for k, v := range templates {
+		res = append(res, PostableApiTemplate{
+			Name:    k,
+			Kind:    kind,
+			Content: v,
+		})
+	}
+	return res
+}

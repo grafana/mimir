@@ -200,13 +200,16 @@ func TestRW2Unmarshal(t *testing.T) {
 		// Unmarshal the data back into Mimir's WriteRequest.
 		received := PreallocWriteRequest{}
 		received.UnmarshalFromRW2 = true
-		received.RW2SymbolOffset = 257
+		// If the offset is so high that references become invalid, reject the request.
+		received.RW2SymbolOffset = 258
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "invalid")
 
 		// Unmarshal the data back into Mimir's WriteRequest.
 		received = PreallocWriteRequest{}
 		received.UnmarshalFromRW2 = true
+		// If the offset is so low that references point to the common symbols range, with no common symbols defined,
+		// fail the request.
 		received.RW2SymbolOffset = 255
 		err = received.Unmarshal(data)
 
@@ -214,7 +217,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("offset and shared symbols produces expected write request", func(t *testing.T) {
-		commonSymbols := []string{"__name__", "job"}
+		commonSymbols := []string{"", "__name__", "job"}
 		syms := test.NewSymbolTableBuilderWithCommon(nil, uint32(len(commonSymbols)), commonSymbols)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
@@ -278,10 +281,10 @@ func TestRW2Unmarshal(t *testing.T) {
 					},
 				},
 				unmarshalFromRW2: true,
-				rw2symbols:       rw2PagedSymbols{offset: 2, commonSymbols: commonSymbols},
+				rw2symbols:       rw2PagedSymbols{offset: 3, commonSymbols: commonSymbols},
 			},
 			UnmarshalFromRW2: true,
-			RW2SymbolOffset:  2,
+			RW2SymbolOffset:  3,
 			RW2CommonSymbols: commonSymbols,
 		}
 
@@ -306,6 +309,45 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.ErrorContains(t, err, "invalid")
 	})
 
+	t.Run("zero refs translate to empty string despite offset", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		writeRequest := &rw2.Request{
+			Timeseries: []rw2.TimeSeries{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+					Samples: []rw2.Sample{
+						{
+							Value:     123.456,
+							Timestamp: 1234567890,
+						},
+					},
+					Exemplars: []rw2.Exemplar{
+						{
+							Value:      123.456,
+							Timestamp:  1234567890,
+							LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
+						},
+					},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						// UnitRef: left default!
+					},
+				},
+			},
+		}
+		writeRequest.Symbols = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		received.RW2SymbolOffset = 256
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+		require.Equal(t, "", received.Metadata[0].Unit)
+	})
+
 	t.Run("common symbol out of bounds", func(t *testing.T) {
 		commonSyms := []string{"__name__"}
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
@@ -322,6 +364,83 @@ func TestRW2Unmarshal(t *testing.T) {
 		received.RW2CommonSymbols = commonSyms
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "invalid")
+	})
+
+	t.Run("messages where the first symbol is not empty string are rejected", func(t *testing.T) {
+		writeRequest := &rw2.Request{
+			Symbols: []string{"__name__", "test_metric_total", "job", "my_job"},
+			Timeseries: []rw2.TimeSeries{
+				{
+					LabelsRefs: []uint32{0, 1, 2, 3},
+					Samples: []rw2.Sample{
+						{
+							Value:     123.456,
+							Timestamp: 1234567890,
+						},
+					},
+				},
+			},
+		}
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.ErrorContains(t, err, "symbols must start with empty string")
+	})
+
+	t.Run("metadata order is deterministic", func(t *testing.T) {
+		const numRuns = 1000
+
+		for range numRuns {
+			syms := test.NewSymbolTableBuilder(nil)
+			// Create a new WriteRequest with some sample data.
+			writeRequest := makeTestRW2WriteRequest(syms)
+			writeRequest.Timeseries = []rw2.TimeSeries{
+				// Keep the one we already built
+				writeRequest.Timeseries[0],
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("metric_2 help text."),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_3")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("metric_3 help text."),
+					},
+				},
+				// Duplicate, should be filtered out.
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("duplicated metric_2 help text, but different."),
+					},
+				},
+			}
+			writeRequest.Symbols = syms.GetSymbols()
+			data, err := writeRequest.Marshal()
+			require.NoError(t, err)
+
+			// Unmarshal the data back into Mimir's WriteRequest.
+			received := PreallocWriteRequest{}
+			received.UnmarshalFromRW2 = true
+			err = received.Unmarshal(data)
+			require.NoError(t, err)
+
+			require.Len(t, received.Metadata, 3)
+			require.Equal(t, "test_metric_total", received.Metadata[0].MetricFamilyName)
+			require.Equal(t, "metric_2", received.Metadata[1].MetricFamilyName)
+			require.Equal(t, "metric_3", received.Metadata[2].MetricFamilyName)
+
+			require.Equal(t, "metric_2 help text.", received.Metadata[1].Help)
+		}
 	})
 }
 
@@ -352,5 +471,6 @@ func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
 		},
 	}
 	req.Symbols = syms.GetSymbols()
+
 	return req
 }

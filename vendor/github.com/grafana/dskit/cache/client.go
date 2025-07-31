@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Common functionality shared between the Memcached and Redis Cache implementations
-
 const (
 	opAdd            = "add"
 	opSet            = "set"
@@ -40,7 +38,6 @@ const (
 
 	labelCacheName           = "name"
 	labelCacheBackend        = "backend"
-	backendValueRedis        = "redis"
 	backendValueMemcached    = "memcached"
 	cacheMetricNamePrefix    = "cache_"
 	getMultiMetricNamePrefix = "getmulti_"

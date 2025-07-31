@@ -20,10 +20,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
@@ -66,7 +68,6 @@ const (
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
-	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -206,11 +207,12 @@ type Limits struct {
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
 	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
-	BlockedRequests                        []*BlockedRequest      `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of http requests to block." category:"experimental"`
+	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
+	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -219,10 +221,11 @@ type Limits struct {
 	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
-	// Cost attribution and limit.
-	CostAttributionLabels         flagext.StringSliceCSV `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
-	MaxCostAttributionCardinality int                    `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown       model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Cost attribution.
+	CostAttributionLabels           flagext.StringSliceCSV       `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
+	CostAttributionLabelsStructured []costattributionmodel.Label `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	MaxCostAttributionCardinality   int                          `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	CostAttributionCooldown         model.Duration               `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -360,9 +363,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
+
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
@@ -447,6 +450,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
+	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", false, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -527,7 +531,12 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	return l.validate()
+	if err = l.validate(); err != nil {
+		return err
+	}
+
+	l.canonicalizeQueries()
+	return nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -552,6 +561,8 @@ func (l *Limits) validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
+		// TODO: when we make validation scheme configurable, set
+		// cfg.MetricNameValidationScheme to match that value.
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -574,6 +585,23 @@ func (l *Limits) validate() error {
 	}
 
 	return nil
+}
+
+func (l *Limits) canonicalizeQueries() {
+	for i, q := range l.BlockedQueries {
+		if q.Regex {
+			continue
+		}
+		expr, err := parser.ParseExpr(q.Pattern)
+		if err != nil {
+			continue
+		}
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.BlockedQueries[i].Pattern = newPattern
+	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
@@ -793,16 +821,16 @@ func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
 }
 
 // BlockedQueries returns the blocked queries.
-func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
+func (o *Overrides) BlockedQueries(userID string) []BlockedQuery {
 	return o.getOverridesForUser(userID).BlockedQueries
 }
 
-func (o *Overrides) LimitedQueries(userID string) []*LimitedQuery {
+func (o *Overrides) LimitedQueries(userID string) []LimitedQuery {
 	return o.getOverridesForUser(userID).LimitedQueries
 }
 
 // BlockedRequests returns the blocked http requests.
-func (o *Overrides) BlockedRequests(userID string) []*BlockedRequest {
+func (o *Overrides) BlockedRequests(userID string) []BlockedRequest {
 	return o.getOverridesForUser(userID).BlockedRequests
 }
 
@@ -938,6 +966,10 @@ func (o *Overrides) CostAttributionLabels(userID string) []string {
 	return o.getOverridesForUser(userID).CostAttributionLabels
 }
 
+func (o *Overrides) CostAttributionLabelsStructured(userID string) []costattributionmodel.Label {
+	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
+}
+
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
@@ -1026,7 +1058,12 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
-	return o.getOverridesForUser(userID).MetricRelabelConfigs
+	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
+	validationScheme := o.ValidationScheme(userID)
+	for i := range relabelConfigs {
+		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+	}
+	return relabelConfigs
 }
 
 func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
@@ -1375,6 +1412,17 @@ func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 
 func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
+}
+
+// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
+}
+
+// ValidationScheme returns the validation scheme to use for a particular tenant.
+func (o *Overrides) ValidationScheme(_ string) model.ValidationScheme {
+	// TODO(juliusmh): make this configurable by tenant
+	return model.LegacyValidation
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that

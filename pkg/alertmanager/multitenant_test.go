@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +29,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"github.com/grafana/alerting/definition"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
@@ -290,16 +294,19 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg := alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+
+	user2Cfg := alertspb.AlertConfigDesc{
 		User:      "user2",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
@@ -310,9 +317,9 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 2)
 
-	currentConfig, cfgExists := am.cfgs["user1"]
+	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigOne, currentConfig.RawConfig)
+	require.Equal(t, newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -350,11 +357,14 @@ templates:
 	user3Dir := dirs["user3"]
 	require.NotZero(t, user3Dir)
 	require.True(t, dirExists(t, user3Dir))
-	finalUser3Cfg, ok := am.cfgs["user3"]
+	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Len(t, finalUser3Cfg.Templates, 2)
-	require.Equal(t, "first.tpl", finalUser3Cfg.Templates[0].Filename)
-	require.Equal(t, "second.tpl", finalUser3Cfg.Templates[1].Filename)
+	require.Equal(t, newMimirAmConfigFromDesc(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	user3Am, ok := am.alertmanagers["user3"]
+	require.True(t, ok)
+	require.Len(t, user3Am.templates, 2)
+	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
+	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -364,41 +374,50 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
-	// Ensure the config is updated
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg = alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigTwo,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	// Ensure the config is updated
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
-	require.Empty(t, currentConfig.Templates)
+	expectedFp := newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User:      "user1",
-		RawConfig: simpleConfigTwo,
+	user1Cfg = alertspb.AlertConfigDesc{
+		User: "user1",
+		RawConfig: simpleConfigTwo + `
+templates:
+- 'some-template.tmpl'
+`,
 		Templates: []*alertspb.TemplateDesc{
 			{
 				Filename: "some-template.tmpl",
 				Body:     simpleTemplateOne,
 			},
 		},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Len(t, currentConfig.Templates, 1)
-	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Filename)
-	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
+	expectedFp = newMimirAmConfigFromDesc(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
+	user1Am, ok := am.alertmanagers["user1"]
+	require.True(t, ok)
+	require.Len(t, user1Am.templates, 1)
+	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
+	require.Contains(t, user1Am.templates[0].Template, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
 	testSmtpFrom := "test@grafana.com"
@@ -406,6 +425,8 @@ templates:
 		FromAddress:   testSmtpFrom,
 		StaticHeaders: map[string]string{"Header1": "Value1"},
 	}
+	externalUrl, err := url.Parse("test.grafana.com")
+	require.NoError(t, err)
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -413,10 +434,19 @@ templates:
 		CreatedAtTimestamp: time.Now().Unix(),
 		Default:            false,
 		Promoted:           true,
-		ExternalUrl:        "test.grafana.com",
+		ExternalUrl:        externalUrl.String(),
 		SmtpConfig:         smtpConfig,
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
+	url, err := url.Parse("http://localhost/alertmanager")
+	require.NoError(t, err)
+	emptyMimirAmConfig := amConfig{
+		User:            "user4",
+		TmplExternalURL: url,
+		Templates:       []definition.PostableApiTemplate{},
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
 	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 
@@ -427,8 +457,8 @@ templates:
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
 	amCfg, err := createUsableGrafanaConfig(am.logger, userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
-	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	grafanaAlertConfigDesc := amCfg
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -450,7 +480,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+	require.Equal(t, emptyMimirAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is used when it's promoted again.
 	userGrafanaCfg.Promoted = true
@@ -458,13 +488,20 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	// Add a Mimir fallback config for the same user.
 	defaultConfig := alertspb.AlertConfigDesc{
 		User:      "user4",
 		RawConfig: am.fallbackConfig,
 	}
+	expectedDefaultAmConfig := amConfig{
+		User:            defaultConfig.User,
+		RawConfig:       defaultConfig.RawConfig,
+		Templates:       []definition.PostableApiTemplate{},
+		TmplExternalURL: url,
+	}
+
 	require.NoError(t, store.SetAlertConfig(ctx, defaultConfig))
 
 	// The Grafana config + Mimir global config section should be used.
@@ -480,12 +517,27 @@ templates:
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
-	expCfg := alertspb.AlertConfigDesc{
-		User:      "user4",
-		RawConfig: string(rawCfg),
-		Templates: []*alertspb.TemplateDesc{},
+	expCfg := amConfig{
+		User:               "user4",
+		RawConfig:          string(rawCfg),
+		UsingGrafanaConfig: true,
+		TmplExternalURL:    externalUrl,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
+			AuthPassword: "",
+			AuthUser:     "",
+			CertFile:     "",
+			ContentTypes: []string{
+				"text/html",
+			},
+			EhloIdentity:  "localhost",
+			ExternalURL:   "test.grafana.com",
+			FromName:      "Grafana",
+			FromAddress:   smtpConfig.FromAddress,
+			StaticHeaders: smtpConfig.StaticHeaders,
+			SentBy:        "Mimir vunknown",
+		},
 	}
-	require.Equal(t, expCfg, am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's marked as default.
 	userGrafanaCfg.Default = true
@@ -493,7 +545,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -502,15 +554,14 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	currentConfig, cfgExists = am.cfgs["user3"]
+	_, cfgExists = am.cfgs["user3"]
 	require.False(t, cfgExists)
-	require.Equal(t, "", currentConfig.RawConfig)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.False(t, cfgExists)
@@ -534,9 +585,10 @@ templates:
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user3"]
+	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	require.Equal(t, user3Cfg.RawConfig, currentConfig.RawConfig)
+	expectedFp = newMimirAmConfigFromDesc(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.True(t, cfgExists)
@@ -2494,7 +2546,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
-	// If no fallback configration is set, it returns a valid empty configuration.
+	// If no fallback configuration is set, it returns a valid empty configuration.
 	fallbackConfig, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
@@ -2541,6 +2593,8 @@ func TestComputeConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
 	grafanaExternalURL := "https://grafana.com"
+	grafanaExternalURLParsed, err := url.Parse("https://grafana.com")
+	require.NoError(t, err)
 
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 	require.NoError(t, err)
@@ -2565,16 +2619,14 @@ func TestComputeConfig(t *testing.T) {
 		SentBy:        "Mimir vunknown", // no 'version' flag passed in tests.
 	}
 
-	mimirExternalURL := am.cfg.ExternalURL.String()
+	mimirExternalURL, err := url.Parse(am.cfg.ExternalURL.String())
+	require.NoError(t, err)
 	tests := []struct {
-		name        string
-		cfg         alertspb.AlertConfigDescs
-		expStartAM  bool
-		expErr      string
-		expCfg      alertspb.AlertConfigDesc
-		expEmailCfg alertingReceivers.EmailSenderConfig
-		expURL      string
-		expHeaders  map[string]string
+		name       string
+		cfg        alertspb.AlertConfigDescs
+		expStartAM bool
+		expErr     string
+		expCfg     amConfig
 	}{
 		{
 			name: "no grafana configuration, custom mimir config",
@@ -2585,9 +2637,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2598,9 +2652,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2610,8 +2666,10 @@ func TestComputeConfig(t *testing.T) {
 					User: testTenant,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: testTenant,
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2623,9 +2681,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2637,9 +2697,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2650,8 +2712,10 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequests,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2663,9 +2727,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2676,9 +2742,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2688,8 +2756,10 @@ func TestComputeConfig(t *testing.T) {
 					User: tenantReceivingRequestsExpired,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequestsExpired,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2706,9 +2776,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2724,9 +2796,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2741,8 +2815,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: testTenant,
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2759,9 +2835,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2778,9 +2856,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2796,8 +2876,10 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequests,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2814,9 +2896,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2832,9 +2916,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2849,8 +2935,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequestsExpired,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2868,9 +2956,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2887,9 +2977,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2905,8 +2997,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: testTenant,
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2924,9 +3018,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2944,9 +3040,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2963,8 +3061,10 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequests,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -2982,9 +3082,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3001,9 +3103,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3019,8 +3123,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequestsExpired,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3039,9 +3145,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3059,9 +3167,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      testTenant,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3078,8 +3188,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: testTenant,
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3098,9 +3210,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3119,9 +3233,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3139,8 +3255,10 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequests,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3159,9 +3277,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3179,9 +3299,11 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: am.fallbackConfig,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3198,8 +3320,10 @@ func TestComputeConfig(t *testing.T) {
 					ExternalUrl: grafanaExternalURL,
 				},
 			},
-			expCfg: alertspb.AlertConfigDesc{
-				User: tenantReceivingRequestsExpired,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3218,14 +3342,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               "user-grafana",
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config",
@@ -3242,14 +3365,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               "user-grafana",
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, default mimir config, receiving requests",
@@ -3267,14 +3389,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config, receiving requests",
@@ -3291,14 +3412,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, default mimir config, idle Alertmanager",
@@ -3316,14 +3436,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config, idle Alertmanager",
@@ -3340,14 +3459,13 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequestsExpired,
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: baseEmailCfg,
-			expURL:      grafanaExternalURL,
-			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration with custom SMTP configs, empty mimir config, idle Alertmanager",
@@ -3374,26 +3492,26 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
+			expCfg: amConfig{
 				User:      tenantReceivingRequestsExpired,
 				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+				EmailConfig: alertingReceivers.EmailSenderConfig{
+					AuthPassword:   "test-password",
+					AuthUser:       "test-user",
+					ContentTypes:   []string{"text/html"},
+					EhloIdentity:   "test-identity",
+					ExternalURL:    grafanaExternalURL,
+					FromName:       "Test From Name",
+					FromAddress:    "test@test.com",
+					Host:           "http://test.com",
+					SkipVerify:     true,
+					StartTLSPolicy: "test-policy",
+					StaticHeaders:  nil,
+					SentBy:         "Mimir vunknown",
+				},
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expEmailCfg: alertingReceivers.EmailSenderConfig{
-				AuthPassword:   "test-password",
-				AuthUser:       "test-user",
-				ContentTypes:   []string{"text/html"},
-				EhloIdentity:   "test-identity",
-				ExternalURL:    grafanaExternalURL,
-				FromName:       "Test From Name",
-				FromAddress:    "test@test.com",
-				Host:           "http://test.com",
-				SkipVerify:     true,
-				StartTLSPolicy: "test-policy",
-				StaticHeaders:  nil,
-				SentBy:         "Mimir vunknown",
-			},
-			expURL: grafanaExternalURL,
 		},
 		{
 			// TODO: change once merging configs is implemented.
@@ -3412,9 +3530,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            "user-grafana",
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3434,9 +3554,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 		{
@@ -3456,9 +3578,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      tenantReceivingRequests,
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
 		},
 	}
@@ -3471,16 +3595,15 @@ func TestComputeConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.expEmailCfg, cfg.emailConfig)
+			// require.Equal(t, test.expEmailCfg, cfg.EmailConfig)
 
 			require.True(t, startAM)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
-			if test.expURL == "" {
-				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
-			} else {
-				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			}
+			require.Equal(t, test.expCfg, cfg)
+			// if test.expURL == "" {
+			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
+			// } else {
+			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
+			// }
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
@@ -3492,218 +3615,171 @@ func TestComputeConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, test.expStartAM, startAM)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
-			if test.expURL == "" {
-				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
-			} else {
-				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			}
+			require.Equal(t, test.expCfg, cfg)
+			// require.Equal(t, test.expHeaders, cfg.EmailConfig.StaticHeaders)
+			// if test.expURL == "" {
+			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
+			// } else {
+			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
+			// }
 		})
 	}
 }
 
-func Test_configChanged(t *testing.T) {
-	type tc struct {
-		name    string
-		left    alertspb.AlertConfigDesc
-		right   alertspb.AlertConfigDesc
-		changed bool
-	}
+func Test_amConfigFingerprint(t *testing.T) {
+	const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
+	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
+		// Helper function to get field count of a struct
+		getFieldCount := func(v interface{}) int {
+			t := reflect.TypeOf(v)
+			if t.Kind() == reflect.Ptr {
+				t = t.Elem()
+			}
+			return t.NumField()
+		}
 
-	cases := []tc{
-		{
-			name: "matching",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
+		// Calculate total fields across all structs
+		totalFields := 0
+		totalFields += getFieldCount(definition.PostableApiTemplate{})
+		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
+		totalFields += getFieldCount(amConfig{})
+
+		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
+	})
+
+	url, err := url.Parse("http://localhost")
+	require.NoError(t, err)
+
+	fullConfig := amConfig{
+		User:      "user-grafana",
+		RawConfig: simpleConfigOne,
+		Templates: []definition.PostableApiTemplate{
+			{
+				Name:    "test",
+				Content: "test",
+				Kind:    definition.MimirTemplateKind,
 			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
+			{
+				Name:    "test2",
+				Content: "test2",
+				Kind:    definition.GrafanaTemplateKind,
 			},
-			changed: false,
+			{
+				Name:    "test3",
+				Content: "test3",
+				Kind:    definition.GrafanaTemplateKind,
+			},
 		},
-		{
-			name: "user changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user2",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "config changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigTwo,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template body changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template name changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template added",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template removed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
+		TmplExternalURL: url,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
+			AuthPassword:   "custom-password",
+			AuthUser:       "custom-user",
+			ContentTypes:   []string{"text/html", "text/plain"},
+			EhloIdentity:   "custom-identity",
+			ExternalURL:    "http://custom-url",
+			FromAddress:    "custom@address.com",
+			FromName:       "Custom From Name",
+			Host:           "custom-host",
+			SentBy:         "Mimir vunknown",
+			SkipVerify:     true,
+			StartTLSPolicy: "custom-policy",
+			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
 		},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			r := configChanged(c.left, c.right)
-			assert.Equal(t, c.changed, r)
+	jsonCfg, err := json.Marshal(fullConfig)
+	require.NoError(t, err)
+
+	t.Run("fingerprint should be stable", func(t *testing.T) {
+		expected := fullConfig.fingerprint()
+
+		// do it many times to make sure order of elements in the map does not affect fingerprint
+		for i := 0; i < 100; i++ {
+			cfg2 := amConfig{}
+			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
+				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
+			})
+			// copy map to shuffle elements
+			cp := map[string]string{}
+			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
+			cfg2.EmailConfig.StaticHeaders = cp
+
+			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
+				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
+			})
+
+			require.Equal(t, expected, cfg2.fingerprint())
+		}
+	})
+
+	t.Run("fingerprint should change", func(t *testing.T) {
+		cfg := amConfig{}
+		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
+		notChecked := expectedTotalFields
+		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
+			t := val.Type()
+			for i := 0; i < t.NumField(); i++ {
+				field := val.Field(i)
+				// Skip unexported fields (cannot be set via reflection)
+				if !field.CanSet() {
+					continue
+				}
+				switch field.Kind() {
+				case reflect.String:
+					field.SetString(uuid.NewString())
+				case reflect.Bool:
+					field.SetBool(!field.Bool())
+				default:
+					continue
+				}
+				callback(t.Field(i).Name)
+				notChecked--
+			}
+		}
+
+		lastFingerprint := cfg.fingerprint()
+		assertField := func(prefix string) func(fieldName string) {
+			return func(fieldName string) {
+				newFP := cfg.fingerprint()
+				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
+				lastFingerprint = newFP
+			}
+		}
+
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
+			Name:    "test3",
+			Content: "test3",
+			Kind:    definition.GrafanaTemplateKind,
 		})
-	}
+		assertField("")("Templates")
+		notChecked--
+
+		cfg.TmplExternalURL = nil
+		assertField("")("TmplExternalURL")
+		cfg.TmplExternalURL, err = url.Parse("http://new-url")
+		require.NoError(t, err)
+		assertField("")("TmplExternalURL")
+		notChecked--
+
+		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
+		assertField("EmailConfig.")("ContentTypes")
+		notChecked--
+
+		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
+		assertField("EmailConfig.")("StaticHeaders")
+		notChecked--
+
+		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
+		assertField("")("EmailConfig")
+		notChecked--
+
+		require.Equal(t, 0, notChecked)
+	})
 }
 
 func TestSyncStates(t *testing.T) {
@@ -3791,31 +3867,25 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should be a no-op",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User: user,
-				},
+				User: user,
 			},
 			expNoNewAlertmanager: true,
 		},
 		{
 			name: "no grafana state should be a no-op",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User: user,
-				},
-				usingGrafanaConfig: true,
+				User:               user,
+				UsingGrafanaConfig: true,
 			},
 			expNoNewAlertmanager: true,
 		},
 		{
 			name: "invalid alertmanager configuration should cause an error",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: "invalid",
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          "invalid",
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"notifications": grafanaNflog},
 			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
@@ -3823,12 +3893,10 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "invalid part key",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"invalid": []byte("invalid")},
 			expErr: "unknown part key \"invalid\"",
@@ -3836,24 +3904,20 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts: map[string][]byte{"notifications": grafanaNflog},
 		},
 		{
 			name: "starting with existing mimir state should merge states",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			mimirState: &testMimirState,
 			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
@@ -3960,11 +4024,9 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should toggle the promoted flag off",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            user,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: true,
 			expPromoted:     false,
@@ -3972,11 +4034,9 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should be a no-op if the alertmanager is not promoted",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            user,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: false,
 			expPromoted:     false,
@@ -3984,12 +4044,10 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "attempting to promote an already promoted alertmanager should not change the flag",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			initialPromoted: true,
 			expPromoted:     true,
@@ -4011,11 +4069,9 @@ func TestSyncStates(t *testing.T) {
 			require.NoError(t, store.SetFullGrafanaState(ctx, test.cfg.User, alertspb.FullStateDesc{}))
 
 			require.NoError(t, am.setConfig(amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      test.cfg.User,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            test.cfg.User,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			}))
 			require.NotNil(t, am.alertmanagers[test.cfg.User])
 			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)

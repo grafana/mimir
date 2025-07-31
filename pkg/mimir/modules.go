@@ -223,13 +223,6 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Ruler.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Etcd.TLS.Reader = t.Vault
 
-	// Update Configs - Redis Clients
-	// lint:sorted
-	t.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader = t.Vault
-
 	// Update Configs - GRPC Clients
 	// lint:sorted
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
@@ -759,7 +752,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
+	t.QueryFrontendCodec = querymiddleware.NewCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
 	return nil, nil
 }
 
@@ -951,11 +944,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
-		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Registerer, util_log.Logger)
+		queryFrontendClient, queryFrontendURL, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Cfg.API.PrometheusHTTPPrefix, t.Registerer, util_log.Logger)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDMiddleware)
+		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, ruler.WithOrgIDMiddleware)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,

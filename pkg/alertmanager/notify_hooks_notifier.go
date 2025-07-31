@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var (
@@ -40,13 +42,17 @@ type notifyHooksNotifier struct {
 	user     string
 	logger   log.Logger
 	client   *http.Client
-
-	hookTotal  prometheus.Counter
-	hookNoop   prometheus.Counter
-	hookFailed prometheus.Counter
+	metrics  *notifyHooksMetrics
 }
 
-func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger, reg prometheus.Registerer) (*notifyHooksNotifier, error) {
+type notifyHooksMetrics struct {
+	hookTotal    prometheus.Counter
+	hookNoop     prometheus.Counter
+	hookFailed   *prometheus.CounterVec
+	hookDuration prometheus.Histogram
+}
+
+func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger, metrics *notifyHooksMetrics) (*notifyHooksNotifier, error) {
 	clientCfg := commoncfg.DefaultHTTPClientConfig
 
 	// Inject user as X-Scope-OrgID into requests to hooks.
@@ -69,7 +75,12 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 		user:     userID,
 		logger:   logger,
 		client:   client,
+		metrics:  metrics,
+	}, nil
+}
 
+func newNotifyHooksMetrics(reg prometheus.Registerer) *notifyHooksMetrics {
+	return &notifyHooksMetrics{
 		hookTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "alertmanager_notify_hook_total",
 			Help: "Number of times a pre-notify hook was invoked.",
@@ -78,11 +89,16 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 			Name: "alertmanager_notify_hook_noop_total",
 			Help: "Number of times a pre-notify hook was invoked successfully but did nothing.",
 		}),
-		hookFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		hookFailed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "alertmanager_notify_hook_failed_total",
 			Help: "Number of times a pre-notify was attempted but failed.",
+		}, []string{"status_code"}),
+		hookDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "alertmanager_notify_hook_duration_seconds",
+			Help:    "Time spent invoking pre-notify hooks.",
+			Buckets: prometheus.DefBuckets,
 		}),
-	}, nil
+	}
 }
 
 func (n *notifyHooksNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
@@ -115,16 +131,26 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 	timeout := n.limits.AlertmanagerNotifyHookTimeout(n.user)
 
 	start := time.Now()
-	newAlerts, err := n.invoke(ctx, l, url, timeout, alerts)
-	l = log.With(l, "duration", time.Since(start))
+	newAlerts, code, err := n.invoke(ctx, l, url, timeout, alerts)
 
-	n.hookTotal.Inc()
+	duration := time.Since(start)
+	n.metrics.hookDuration.Observe(float64(duration))
+	l = log.With(l, "duration", duration)
+
+	n.metrics.hookTotal.Inc()
 	if err != nil {
 		if errors.Is(err, ErrNoContent) {
-			n.hookNoop.Inc()
+			n.metrics.hookNoop.Inc()
 			level.Debug(l).Log("msg", "Notify hooks applied but returned no content")
 		} else {
-			n.hookFailed.Inc()
+			status := "error"
+			if errors.Is(err, context.DeadlineExceeded) {
+				status = "timeout"
+			}
+			if code > 0 {
+				status = fmt.Sprint(code)
+			}
+			n.metrics.hookFailed.WithLabelValues(status).Inc()
 			level.Error(l).Log("msg", "Notify hooks failed", "err", err)
 		}
 		return alerts
@@ -161,12 +187,15 @@ func (n *notifyHooksNotifier) getData(ctx context.Context, l log.Logger, alerts 
 	}
 }
 
-func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url string, timeout time.Duration, alerts []*types.Alert) ([]*types.Alert, error) {
+func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url string, timeout time.Duration, alerts []*types.Alert) ([]*types.Alert, int, error) {
+	logger, ctx := spanlogger.New(ctx, l, tracer, "NotifyHooksNotifier.Invoke")
+	defer logger.Finish()
+
 	dat := n.getData(ctx, l, alerts)
 
 	var reqBuf bytes.Buffer
 	if err := json.NewEncoder(&reqBuf).Encode(dat); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if timeout > 0 {
@@ -183,30 +212,30 @@ func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url stri
 		if ctx.Err() != nil {
 			err = fmt.Errorf("%w: %w", err, context.Cause(ctx))
 		}
-		return nil, notify.RedactURL(err)
+		return nil, 0, notify.RedactURL(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
 		errBuf, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected response code=%d body=\"%q\"", resp.StatusCode, string(errBuf))
+		return nil, resp.StatusCode, fmt.Errorf("unexpected response code=%d body=\"%q\"", resp.StatusCode, string(errBuf))
 	}
 
 	if resp.StatusCode == http.StatusNoContent {
 		// If the response indicates there's content, then ignore the response.
-		return nil, ErrNoContent
+		return nil, 0, ErrNoContent
 	}
 
 	respBuf, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	var result hookData
 	err = json.Unmarshal(respBuf, &result)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return result.Alerts, nil
+	return result.Alerts, 0, nil
 }

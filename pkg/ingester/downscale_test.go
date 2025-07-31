@@ -171,8 +171,8 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		})
 
 		// Simulate a compation in progress.
-		cleanup := ingester.prepareCompaction()
-		defer cleanup()
+		ingester.numCompactionsInProgress.Inc()
+		defer ingester.numCompactionsInProgress.Dec()
 
 		// Try to switch back to read-write while compaction is in progress
 		res = httptest.NewRecorder()

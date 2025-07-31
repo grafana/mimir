@@ -241,13 +241,13 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests check-protobuf-format
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
+LATEST_BUILD_IMAGE_TAG ?= pr12036-d9b5f13dc5
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -265,14 +265,18 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
+# Git worktree support: Generate volume mounts for worktree git metadata
+GITVOLUMES := $(shell ./tools/git-worktree-volumes.sh 2>/dev/null | sed 's/$$/:$(CONTAINER_MOUNT_OPTIONS)/' || true)
+
 GOVOLUMES=	-v mimir-go-cache:/go/cache \
 			-v mimir-go-pkg:/go/pkg \
-			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
+			$(GITVOLUMES)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests generate-otlp: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-otlp: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -344,7 +348,7 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
-	# Ensure all errors are report as APIError
+	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
@@ -416,6 +420,11 @@ lint: check-makefiles
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
 	faillint -paths \
 		"sort.{Strings,Ints}=slices.Sort" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Use the faster slices.IsSortedFunc where we can.
+	faillint -paths \
+		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
@@ -508,6 +517,14 @@ format-promql-tests:
 
 check-promql-tests: format-promql-tests
 	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
+
+.PHONY: format-protobuf
+format-protobuf:
+	buf format --write $(addprefix --path=,$(PROTO_DEFS))
+
+.PHONY: check-protobuf-format
+check-protobuf-format:
+	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@

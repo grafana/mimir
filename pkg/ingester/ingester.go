@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -339,7 +340,7 @@ type Ingester struct {
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
 
-	// Tracks if a forced compaction is in progress
+	// Tracks the number of compactions in progress.
 	numCompactionsInProgress atomic.Uint32
 
 	// For storing metadata ingested.
@@ -1544,6 +1545,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+
 		for _, s := range ts.Samples {
 			var err error
 
@@ -1554,6 +1557,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			} else if s.TimestampMs < minTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
 				continue
+			}
+
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				}
+				if err == nil {
+					stats.succeededSamplesCount++
+				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -1603,6 +1622,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
 				} else {
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
+				}
+
+				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					if ref != 0 {
+						_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					}
+					if err == nil {
+						stats.succeededSamplesCount++
+					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					}
+					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
 
 				// If the cached reference exists, we try to use it.
@@ -3207,7 +3242,11 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	firstInterval, standardInterval := i.compactionServiceInterval()
+	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
+
+	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
+	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
+	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
 	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
@@ -3218,9 +3257,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
-			// Prepare compaction before the periodic head compaction is triggered.
-			cleanup := i.prepareCompaction()
-			defer cleanup()
+			// Count the number of compactions in progress to keep the downscale handler from
+			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+			i.numCompactionsInProgress.Inc()
+			defer i.numCompactionsInProgress.Dec()
 
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
@@ -3228,9 +3268,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
-			// Check if the desired interval has changed. We only compare the standard interval
-			// before the first interval may be random due to jittering.
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(); standardInterval != newStandardInterval {
+			// If the ingester state is no longer "Starting", we switch to a different interval.
+			// We only compare the standard interval because the first interval may be random due to jittering.
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
@@ -3257,48 +3297,105 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
-// The returned standardInterval is guaranteed to have no jittering applied.
+// The returned standardInterval is guaranteed to have no jittering or staggering per zone applied.
 // The returned intervals may change over time, depending on the ingester service state.
-func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval time.Duration) {
+func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (firstInterval, standardInterval time.Duration) {
+	startingInterval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting
+	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+
+	// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
+	// if ingest storage is enabled.
 	if i.State() == services.Starting {
-		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
-		// if ingest storage is enabled.
-		standardInterval = min(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
-	} else {
-		standardInterval = i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+		standardInterval = min(startingInterval, interval)
+
+		if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+			firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
+		} else {
+			firstInterval = standardInterval
+		}
+
+		return firstInterval, standardInterval
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
-		firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
-	} else {
-		firstInterval = standardInterval
+	zoneAwareInterval := i.timeToNextZoneAwareCompaction(now, zones)
+
+	// If we don't have jittering enabled, we return the standard interval as-is.
+	if !i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+		return zoneAwareInterval, interval
 	}
 
-	return
+	// With jittering enabled, we want to apply a positive jitter to the staggered interval.
+	// We estimate that roughly 50% of the interval window is a good enough heuristic than when the 50% jitter is applied,
+	// we get enough variability to not get overlap between zones and ingesters.
+	var jitter time.Duration
+	if len(zones) > 0 {
+		jitter = time.Duration(rand.Int63n((interval.Nanoseconds() / int64(len(zones))) / 2))
+	}
+
+	return zoneAwareInterval + jitter, interval
 }
 
-// prepareCompaction is incrementing the atomic counter of the number of compactions in progress.
-// It also exposes a metric tracking the number of compactions in progress.
-// It returns a callback that should be called when the compaction is finished, e.g. in defer statement.
-// This callback is decrementing the atomic counter of the number of compactions in progress.
-func (i *Ingester) prepareCompaction() func() {
-	// Increment the number of compactions in progress.
-	// This is used to ensure that the ingester will never leave the read-only state.
-	// (See [Ingester.PrepareInstanceRingDownscaleHandler])
-	i.numCompactionsInProgress.Inc()
+// timeToNextZoneAwareCompaction calculates when the next compaction should occur,
+// staggering compactions across zones to distribute load over time.
+//
+// With zone awareness enabled, each zone gets a unique offset within the compaction interval.
+// Example with 15min interval and 2 zones:
+// - Zone 'a' compacts at 0:00, 0:15, 0:30, 0:45
+// - Zone 'b' compacts at 0:07, 0:22, 0:37, 0:52
+func (i *Ingester) timeToNextZoneAwareCompaction(now time.Time, zones []string) time.Duration {
+	// To make the computed offset deterministic, zones must be sorted.
+	slices.Sort(zones)
 
-	// Expose a metric tracking whether there's a TSDB head compaction in progress.
-	// This metric can be used in alerts and when troubleshooting.
-	i.metrics.numCompactionsInProgress.Inc()
+	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
 
-	return func() {
-		i.numCompactionsInProgress.Dec()
-		i.metrics.numCompactionsInProgress.Dec()
+	// If we don't have zone awareness enabled, we return the configured head compaction interval as-is,
+	// because we don't need to adjust it based on the number of zones.
+	if !i.cfg.IngesterRing.ZoneAwarenessEnabled || i.cfg.IngesterRing.InstanceZone == "" {
+		return interval
 	}
+
+	// No more than 1 zone, we don't need to adjust the interval.
+	if len(zones) <= 1 {
+		return interval
+	}
+
+	// Find the index of the current zone in the zones list to determine its offset
+	current := i.cfg.IngesterRing.InstanceZone
+	zoneIndex := slices.Index(zones, current)
+
+	// Zone not found in the list - this shouldn't happen but handle gracefully
+	if zoneIndex == -1 {
+		level.Warn(i.logger).Log("msg", "could not compute when the next zone-aware TSDB head compaction should occur, current zone not found in zones list, using default interval", "current_zone", current, "available_zones", strings.Join(zones, ","))
+		return interval
+	}
+
+	// Calculate this zone's offset and the next compaction interval.
+	offsetStep := interval / time.Duration(len(zones))
+	zoneOffset := time.Duration(zoneIndex) * offsetStep
+	result := timeUntilCompaction(now, interval, zoneOffset)
+
+	level.Debug(i.logger).Log("msg", "computed timing for the next TSDB head zone-aware compaction",
+		"zone", current,
+		"zone_index", zoneIndex,
+		"total_zones", len(zones),
+		"configured_interval", interval,
+		"zone_offset", zoneOffset,
+		"next_compaction_in", result)
+
+	return result
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+		}()
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3362,7 +3459,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	})
 }
 
-// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the elegible tenants in order to reduce the in-memory series.
+// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the eligible tenants to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
 	// Skip if disabled.
 	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
@@ -3626,9 +3723,10 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Prepare compaction before the force compaction is triggered.
-		cleanup := i.prepareCompaction()
-		defer cleanup()
+		// Count the number of compactions in progress to keep the downscale handler from
+		// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+		i.numCompactionsInProgress.Inc()
+		defer i.numCompactionsInProgress.Dec()
 
 		compactionCallbackCh := make(chan struct{})
 
@@ -4294,4 +4392,25 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 	}
 
 	return manager, nil
+}
+
+// timeUntilCompaction calculates the precise time until the next compaction for a specific zone
+// based on the current time, the configured compaction interval, and the computed zone's offset.
+//
+// This creates a predictable, clock-aligned schedule where each zone compacts at fixed times
+// (e.g., zone 'a' at :00, :15, :30, :45 and zone 'b' at :07, :22, :37, :52 for a 15-minute interval).
+//
+// Returns the interval until the next scheduled compaction for the zone as a time.Duration.
+func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Duration) time.Duration {
+	// Calculate how much time has elapsed since the start of the current hour.
+	elapsed := now.Sub(now.Truncate(time.Hour))
+
+	// Calculate how long elapsed since the last time compaction should have run for this zone.
+	// compactionInterval is guaranteed to be more than 0 and less than 15m.
+	timeSinceLastCompaction := (elapsed - zoneOffset) % compactionInterval
+	if timeSinceLastCompaction < 0 {
+		timeSinceLastCompaction += compactionInterval
+	}
+
+	return compactionInterval - timeSinceLastCompaction
 }

@@ -1,8 +1,5 @@
 std.manifestYamlDoc({
   _config:: {
-    // Cache backend to use for results, chunks, index, and metadata caches. Options are 'memcached' or 'redis'.
-    cache_backend: 'memcached',
-
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
@@ -58,7 +55,7 @@ std.manifestYamlDoc({
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
     self.consul +
-    (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
+    self.memcached +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
     {},
@@ -248,7 +245,6 @@ std.manifestYamlDoc({
         (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
         (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
         (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
-        std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),
       ]),
     ],
     environment: formatEnv(options.env),
@@ -305,7 +301,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.28-alpine',
+      image: 'memcached:1.6.34-alpine',
       ports: [
         '11211:11211',
       ],
@@ -314,27 +310,14 @@ std.manifestYamlDoc({
 
   memcached_exporter:: {
     'memcached-exporter': {
-      image: 'prom/memcached-exporter:v0.15.0',
+      image: 'prom/memcached-exporter:v0.15.3',
       command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
-    },
-  },
-
-  redis:: {
-    redis: {
-      image: 'redis:7.0.7',
-      command: [
-        'redis-server',
-        '--maxmemory 64mb',
-        '--maxmemory-policy allkeys-lru',
-        "--save ''",
-        '--appendonly no',
-      ],
     },
   },
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -351,7 +334,7 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
@@ -367,7 +350,7 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -23,6 +24,9 @@ var (
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
 	// Note: V2 is not yet stabilized.
 	V2CommonSymbols = []string{
+		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
+		// This ensures that empty/missing refs still map to empty string.
+		"",
 		// Prometheus/Mimir symbols
 		"__name__",
 		"__aggregation__",
@@ -73,6 +77,8 @@ func ValidateRecordVersion(version int) error {
 		return nil
 	case 1:
 		return nil
+	case 2:
+		return nil
 	default:
 		return fmt.Errorf("unknown record version %d", version)
 	}
@@ -102,6 +108,8 @@ func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
 		return versionZeroRecordSerializer{}
 	case 1:
 		return versionOneRecordSerializer{}
+	case 2:
+		return versionTwoRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -134,6 +142,33 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 		r.Headers = append(r.Headers, RecordVersionHeader(1))
 	}
 	return records, nil
+}
+
+type versionTwoRecordSerializer struct{}
+
+func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
+	defer mimirpb.ReuseRW2(reqv2)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
+	}
+
+	// TODO: V1 contains logic that splits large records up across multiple records if they exceed maxSize.
+	// TODO: V2 needs to do this as well, for parity.
+	data := make([]byte, reqv2.Size())
+	n, err := reqv2.MarshalToSizedBuffer(data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to serialise write request")
+	}
+	data = data[:n]
+
+	rec := &kgo.Record{
+		Key:       []byte(tenantID),
+		Value:     data,
+		Partition: partitionID,
+		Headers:   []kgo.RecordHeader{RecordVersionHeader(2)},
+	}
+	return []*kgo.Record{rec}, nil
 }
 
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {

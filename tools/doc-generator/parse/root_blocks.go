@@ -162,11 +162,6 @@ var (
 			Desc:       "The memcached block configures the Memcached-based caching backend.",
 		},
 		{
-			Name:       "redis",
-			StructType: reflect.TypeOf(cache.RedisClientConfig{}),
-			Desc:       "The redis block configures the Redis-based caching backend.",
-		},
-		{
 			Name:       "s3_storage_backend",
 			StructType: reflect.TypeOf(s3.Config{}),
 			Desc:       "The s3_backend block configures the connection to Amazon S3 object storage backend.",

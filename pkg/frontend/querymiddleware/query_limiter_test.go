@@ -37,20 +37,20 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 		},
 		{
 			name: "non-empty limit should block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: query, AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
 		{
 			name: "short max frequency should not block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: query, AllowedFrequency: time.Second},
 			}},
 		},
 		{
 			name: "non-matching pattern should not block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: "increase(metric_counter[5m])", AllowedFrequency: time.Minute},
 			}},
 		},
@@ -70,7 +70,7 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					c := cache.NewInstrumentedMockCache()
-					keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+					keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 					reg := prometheus.NewPedanticRegistry()
 					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 						Name: "cortex_query_frontend_rejected_queries_total",
@@ -121,7 +121,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 		{
 			name: "limit matching for one tenant but not other should block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test2": {limitedQueries: []*validation.LimitedQuery{
+				"test2": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query: query, AllowedFrequency: time.Minute,
 					}},
@@ -132,7 +132,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 		{
 			name: "limit does not exist for queried tenants should not block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test3": {limitedQueries: []*validation.LimitedQuery{
+				"test3": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query: query, AllowedFrequency: time.Minute,
 					}},
@@ -142,12 +142,12 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 		{
 			name: "tenants with different limit frequencies (one long) should block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test1": {limitedQueries: []*validation.LimitedQuery{
+				"test1": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query: query, AllowedFrequency: time.Second,
 					}},
 				},
-				"test2": {limitedQueries: []*validation.LimitedQuery{
+				"test2": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query: query, AllowedFrequency: time.Minute,
 					}},
@@ -171,7 +171,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					c := cache.NewInstrumentedMockCache()
-					keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+					keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 					reg := prometheus.NewPedanticRegistry()
 					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 						Name: "cortex_query_frontend_rejected_queries_total",
@@ -224,20 +224,20 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 		},
 		{
 			name: "matching query should block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: queryString, AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
 		{
 			name: "non-matching query should not block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: `{__name__="sample_counter",pod=~"app-.*"}`, AllowedFrequency: time.Minute},
 			}},
 		},
 		{
 			name: "short max frequency should not block",
-			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
+			limits: mockLimits{limitedQueries: []validation.LimitedQuery{
 				{Query: queryString, AllowedFrequency: time.Second},
 			}},
 		},
@@ -246,7 +246,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := cache.NewInstrumentedMockCache()
-			keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
 			require.NoError(t, err)
 			reg := prometheus.NewPedanticRegistry()
@@ -300,7 +300,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 		{
 			name: "limit matching for one tenant but not other should block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test2": {limitedQueries: []*validation.LimitedQuery{
+				"test2": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query:            queryString,
 						AllowedFrequency: time.Minute,
@@ -312,7 +312,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 		{
 			name: "limit does not exist for queried tenants should not block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test3": {limitedQueries: []*validation.LimitedQuery{
+				"test3": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query:            queryString,
 						AllowedFrequency: time.Minute,
@@ -323,13 +323,13 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 		{
 			name: "tenants with different limit frequencies (one long) should block",
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
-				"test1": {limitedQueries: []*validation.LimitedQuery{
+				"test1": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query:            queryString,
 						AllowedFrequency: time.Second,
 					}},
 				},
-				"test2": {limitedQueries: []*validation.LimitedQuery{
+				"test2": {limitedQueries: []validation.LimitedQuery{
 					{
 						Query:            queryString,
 						AllowedFrequency: time.Minute,
@@ -343,7 +343,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := cache.NewInstrumentedMockCache()
-			keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
 			require.NoError(t, err)
 			reg := prometheus.NewPedanticRegistry()
