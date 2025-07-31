@@ -34,7 +34,7 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
-func convertBlock(ctx context.Context, orig, dest string, count bool, logger gokitlog.Logger) error {
+func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
@@ -68,7 +68,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, logger gok
 		}
 
 		// Flush a full chunk to disk.
-		if proto.Size(md) > mdChunkSizeBytes {
+		if proto.Size(md) > chunkSize {
 			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)

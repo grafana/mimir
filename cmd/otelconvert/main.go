@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	mdChunkSizeBytes = 500_000_000
+	defaultMDChunkSizeBytes = 500_000_000
 )
 
 var (
@@ -24,12 +24,13 @@ var (
 )
 
 type config struct {
-	bucket bucket.Config
-	action string
-	userID string
-	block  string
-	dest   string
-	count  bool
+	bucket    bucket.Config
+	action    string
+	userID    string
+	block     string
+	dest      string
+	count     bool
+	chunkSize int
 }
 
 func main() {
@@ -43,6 +44,7 @@ func main() {
 	flag.StringVar(&cfg.block, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
+	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizeBytes, "Output chunk size")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 
 	// Parse CLI flags.
@@ -71,7 +73,7 @@ func main() {
 		}
 
 		log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
-		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, logger); err != nil {
+		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	default:
