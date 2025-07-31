@@ -21,11 +21,14 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+
+	prototypes "github.com/gogo/protobuf/types"
 )
 
 var evaluateQueryRequestType = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -76,22 +79,48 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.WriteHeader(http.StatusAccepted)
-		writer := &httpResponseWriter{w: w, logger: d.logger}
+		writer := &httpQueryResponseWriter{w: w, logger: d.logger}
 		d.evaluateQuery(r.Context(), body, writer)
 	default:
 		http.Error(w, "unknown request type", http.StatusUnsupportedMediaType)
 	}
 }
 
+func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+	switch req.TypeUrl {
+	case evaluateQueryRequestType:
+		writer := &grpcQueryResponseWriter{
+			stream: stream,
+			logger: d.logger,
+		}
+
+		d.evaluateQuery(ctx, req.Value, writer)
+
+	default:
+		err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
+					Message: fmt.Sprintf("unknown query request type: %v", req.TypeUrl),
+				},
+			},
+		})
+
+		if err != nil {
+			level.Error(d.logger).Log("msg", "failed to write error", "err", err)
+		}
+	}
+}
+
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp queryResponseWriter) {
 	req := &querierpb.EvaluateQueryRequest{}
 	if err := proto.Unmarshal(body, req); err != nil {
-		resp.WriteError(mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))
+		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))
 		return
 	}
 
 	if len(req.Nodes) != 1 {
-		resp.WriteError(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
+		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
 		return
 	}
 
@@ -99,20 +128,20 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp queryR
 
 	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
 	if err != nil {
-		resp.WriteError(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not decode plan: %s", err.Error()))
+		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not decode plan: %s", err.Error()))
 		return
 	}
 
 	e, err := d.engine.NewEvaluator(ctx, d.queryable, nil, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
-		resp.WriteError(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
+		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
 		return
 	}
 
 	defer e.Close()
 
 	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
-		resp.WriteError(errorTypeForError(err), err.Error())
+		resp.WriteError(ctx, errorTypeForError(err), err.Error())
 	}
 }
 
@@ -145,16 +174,16 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 }
 
 type queryResponseWriter interface {
-	WriteError(typ mimirpb.QueryErrorType, msg string)
-	Write(m querierpb.EvaluateQueryResponse) error
+	WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string)
+	Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error
 }
 
-type httpResponseWriter struct {
+type httpQueryResponseWriter struct {
 	w      http.ResponseWriter
 	logger log.Logger
 }
 
-func (w *httpResponseWriter) Write(m querierpb.EvaluateQueryResponse) error {
+func (w *httpQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
 	b, err := m.Marshal()
 	if err != nil {
 		return err
@@ -171,8 +200,8 @@ func (w *httpResponseWriter) Write(m querierpb.EvaluateQueryResponse) error {
 	return nil
 }
 
-func (w *httpResponseWriter) WriteError(typ mimirpb.QueryErrorType, msg string) {
-	err := w.Write(querierpb.EvaluateQueryResponse{
+func (w *httpQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
+	err := w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_Error{
 			Error: &querierpb.Error{
 				Type:    typ,
@@ -182,7 +211,35 @@ func (w *httpResponseWriter) WriteError(typ mimirpb.QueryErrorType, msg string) 
 	})
 
 	if err != nil {
-		level.Debug(w.logger).Log("msg", "could not write response message", "err", err)
+		level.Debug(w.logger).Log("msg", "could not write error", "err", err)
+	}
+}
+
+type grpcQueryResponseWriter struct {
+	stream frontendv2pb.QueryResultStream
+	logger log.Logger
+}
+
+func (w *grpcQueryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
+	return w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &m,
+		},
+	})
+}
+
+func (w *grpcQueryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
+	err := w.Write(ctx, querierpb.EvaluateQueryResponse{
+		Message: &querierpb.EvaluateQueryResponse_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: msg,
+			},
+		},
+	})
+
+	if err != nil {
+		level.Debug(w.logger).Log("msg", "could not write error", "err", err)
 	}
 }
 
@@ -204,7 +261,7 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 		})
 	}
 
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 			SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 				NodeIndex: o.nodeIndex,
@@ -219,7 +276,7 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Contex
 
 	// TODO: batch up series to return, rather than sending each series one at a time?
 
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 				NodeIndex:  o.nodeIndex,
@@ -255,7 +312,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 		defer types.HPointSlicePool.Put(&histograms, evaluator.MemoryConsumptionTracker)
 	}
 
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
 			RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
 				NodeIndex:   o.nodeIndex,
@@ -294,7 +351,7 @@ func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, 
 func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
 	defer types.FPointSlicePool.Put(&data.Samples, evaluator.MemoryConsumptionTracker)
 
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_ScalarValue{
 			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
 				NodeIndex: o.nodeIndex,
@@ -305,7 +362,7 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 }
 
 func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data string) error {
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_StringValue{
 			StringValue: &querierpb.EvaluateQueryResponseStringValue{
 				NodeIndex: o.nodeIndex,
@@ -322,7 +379,7 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		annos.Warnings, annos.Infos = annotations.AsStrings(o.originalExpression, 0, 0)
 	}
 
-	return o.w.Write(querierpb.EvaluateQueryResponse{
+	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
