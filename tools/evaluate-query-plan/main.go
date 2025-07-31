@@ -18,6 +18,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/flagext"
 
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -169,7 +170,7 @@ type streamingResponseDecoder struct {
 	r io.Reader
 }
 
-func (d *streamingResponseDecoder) Next() (*querierpb.EvaluateQueryResponse, error) {
+func (d *streamingResponseDecoder) Next() (*frontendv2pb.QueryResultStreamRequest, error) {
 	// Read the message length. If we get an EOF here, the stream is finished.
 	l := uint64(0)
 	if err := binary.Read(d.r, binary.LittleEndian, &l); err != nil {
@@ -186,7 +187,7 @@ func (d *streamingResponseDecoder) Next() (*querierpb.EvaluateQueryResponse, err
 		return nil, fmt.Errorf("could not read message body: %w", err)
 	}
 
-	resp := &querierpb.EvaluateQueryResponse{}
+	resp := &frontendv2pb.QueryResultStreamRequest{}
 	if err := proto.Unmarshal(buf, resp); err != nil {
 		return nil, fmt.Errorf("could not unmarshal response: %w", err)
 	}
