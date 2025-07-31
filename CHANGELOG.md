@@ -63,9 +63,9 @@
   * Renamed `cortex_ingest_storage_writer_produce_requests_total` to `cortex_ingest_storage_writer_produce_records_enqueued_total`
   * Renamed `cortex_ingest_storage_writer_produce_failures_total` to `cortex_ingest_storage_writer_produce_records_failed_total`
 * [CHANGE] Distributor: moved HA tracker timeout config to limits. #11774
-  * Moved `distributor.ha_tracker.ha_tracker_update_timeout` to `limits.ha_tracker_update_timeout`.
-  * Moved `distributor.ha_tracker.ha_tracker_update_timeout_jitter_max` to `limits.ha_tracker_update_timeout_jitter_max`.
-  * Moved `distributor.ha_tracker.ha_tracker_failover_timeout` to `limits.ha_tracker_failover_timeout`.
+  * Moved `distributor.ha_tracker.ha_tracker_update_timeout` to `limits.ha_tracker.ha_tracker_update_timeout`
+  * Moved `distributor.ha_tracker.ha_tracker_update_timeout_jitter_max` to `limits.ha_tracker.ha_tracker_update_timeout_jitter_max`
+  * Moved `distributor.ha_tracker.ha_tracker_failover_timeout` to `limits.ha_tracker.ha_tracker_failover_timeout`
 * [CHANGE] Distributor: `Memberlist` marked as stable as an option for backend storage for the HA tracker. #11861
 * [CHANGE] Distributor: `etcd` deprecated as an option for backend storage for the HA tracker. #12047
 * [CHANGE] Memberlist: Apply new default configuration values for MemberlistKV. This unlocks using it as backend storage for the HA Tracker. We have observed better performance with these defaults across different production loads. #11874
@@ -150,7 +150,6 @@
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
 * [ENHANCEMENT] Store-gateway: Change level 0 blocks to be reported as 'unknown/old_block' in metrics instead of '0' to improve clarity. Level 0 indicates blocks with metadata from before compaction level tracking was added to the bucket index. #11891
 * [ENHANCEMENT] Compactor, distributor, ruler, scheduler and store-gateway: Makes `-<component-ring-config>.auto-forget-unhealthy-periods` configurable for each component. Deprecates the `-store-gateway.sharding-ring.auto-forget-enabled` flag. #11923
-* [ENHANCEMENT] otlp: Stick to OTLP vocabulary on invalid label value length error. #11889
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
