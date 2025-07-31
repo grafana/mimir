@@ -391,7 +391,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
-	ValidationScheme(userID string) model.ValidationScheme
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -423,7 +423,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	validationScheme := cfg.ValidationScheme(userID)
+	validationScheme := cfg.NameValidationScheme(userID)
 
 	if !labels.IsValidMetricName(unsafeMetricName, validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)

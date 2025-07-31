@@ -75,6 +75,7 @@ require (
 	github.com/prometheus/otlptranslator v0.0.0-20250725141939-ab8d56d297e3
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
+	github.com/spf13/pflag v1.0.5
 	github.com/thanos-io/objstore v0.0.0-20250725105400-667c14043dbe
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.19.4
@@ -319,7 +320,6 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
 	github.com/spf13/cobra v1.8.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
@@ -345,7 +345,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250730103430-0d1d208bb9d7
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250731093547-bc16853f6143
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

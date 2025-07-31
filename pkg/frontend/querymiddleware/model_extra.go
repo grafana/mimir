@@ -1073,23 +1073,6 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	return json.Marshal(stream)
 }
 
-type byFirstTime []*PrometheusResponse
-
-func (a byFirstTime) Len() int           { return len(a) }
-func (a byFirstTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byFirstTime) Less(i, j int) bool { return a[i].minTime() < a[j].minTime() }
-
-func (resp *PrometheusResponse) minTime() int64 {
-	result := resp.Data.Result
-	if len(result) == 0 {
-		return -1
-	}
-	if len(result[0].Samples) == 0 {
-		return -1
-	}
-	return result[0].Samples[0].TimestampMs
-}
-
 func (resp *PrometheusResponse) Close() {
 	// Nothing to do
 }

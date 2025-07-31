@@ -58,7 +58,7 @@ func (v validateLabelsCfg) MaxLabelValueLength(_ string) int {
 	return v.maxLabelValueLength
 }
 
-func (v validateLabelsCfg) ValidationScheme(_ string) model.ValidationScheme {
+func (v validateLabelsCfg) NameValidationScheme(_ string) model.ValidationScheme {
 	return v.validationScheme
 }
 
