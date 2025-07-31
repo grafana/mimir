@@ -92,6 +92,13 @@ func TestPropagateMatchers(t *testing.T) {
 		`up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`:                        `up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob", soo="sar"})`,
 		`topk by (env) (5, foo{env="prod"}) / bottomk by (region) (5, bar{region="eu"})`:                      `topk by (env) (5, foo{env="prod"}) / bottomk by (region) (5, bar{region="eu"})`,
 		`sum by (env) (abs(foo{env="prod"})) / sum by (env) (sin(bar))`:                                       `sum by (env) (abs(foo{env="prod"})) / sum by (env) (sin(bar{env="prod"}))`,
+		`max by (baz) (avg by (foo, baz) (left)) / right{foo="bar"}`:                                          `max by (baz) (avg by (foo, baz) (left)) / right{foo="bar"}`,
+		`max by (foo) (avg by (foo, baz) (left{foo="bar"})) / right`:                                          `max by (foo) (avg by (foo, baz) (left{foo="bar"})) / right{foo="bar"}`,
+		`max by (foo) (avg by (foo, baz) (left)) / right{foo="bar"}`:                                          `max by (foo) (avg by (foo, baz) (left{foo="bar"})) / right{foo="bar"}`,
+		`max by (foo, baz) (avg by (foo) (left)) / right{foo="bar"}`:                                          `max by (foo, baz) (avg by (foo) (left{foo="bar"})) / right{foo="bar"}`,
+		`max without (foo, baz) (avg without (foo) (left)) / right{foo="bar", baz="fob", soo="sar"}`:          `max without (foo, baz) (avg without (foo) (left{soo="sar"})) / right{foo="bar", baz="fob", soo="sar"}`,
+		`max by (foo, baz) (avg without (foo) (left)) / right{foo="bar", baz="fob"}`:                          `max by (foo, baz) (avg without (foo) (left{baz="fob"})) / right{foo="bar", baz="fob"}`,
+		`max without (baz) (avg by (foo, baz) (left)) / right{foo="bar", baz="fob"}`:                          `max without (baz) (avg by (foo, baz) (left{foo="bar"})) / right{foo="bar", baz="fob"}`,
 	}
 
 	optimizer := &PropagateMatchers{}

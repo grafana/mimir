@@ -49,9 +49,10 @@ func (mapper *propagateMatchers) MapExpr(expr parser.Expr) (mapped parser.Expr, 
 // that set is a whitelist or blacklist, which are used only for aggregate expressions and the
 // expressions that contain them.
 type vectorSelectorWrapper struct {
-	vs        *parser.VectorSelector
-	labelsSet map[string]struct{}
-	whitelist bool
+	vs          *parser.VectorSelector
+	labelsSet   map[string]struct{}
+	whitelist   bool
+	containsAgg bool
 }
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
@@ -110,7 +111,8 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 
 	agg, ok := expr.(*parser.AggregateExpr)
 	if ok {
-		if len(agg.Grouping) == 0 && !agg.Without {
+		whitelist := !agg.Without
+		if len(agg.Grouping) == 0 && whitelist {
 			// Shortcut if there are no labels allowed to propagate inwards or outwards.
 			return nil, nil, false
 		}
@@ -120,11 +122,9 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 		}
 		groupingSet := makeStringSet(agg.Grouping)
 		for _, vs := range vss {
-			// TODO: what if these fields are already set?
-			vs.labelsSet = groupingSet
-			vs.whitelist = !agg.Without
+			updateVecSelWithAggInfo(vs, groupingSet, whitelist)
 		}
-		newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, !agg.Without)
+		newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, whitelist)
 		return vss, newMatchers, ok
 	}
 
@@ -142,6 +142,57 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 	}
 
 	return nil, nil, false
+}
+
+func updateVecSelWithAggInfo(vs *vectorSelectorWrapper, groupingSet map[string]struct{}, whitelist bool) {
+	if vs.containsAgg {
+		switch {
+		case vs.whitelist && whitelist:
+			vs.labelsSet = getOverlap(vs.labelsSet, groupingSet)
+		case !vs.whitelist && !whitelist:
+			vs.labelsSet = getUnion(vs.labelsSet, groupingSet)
+		case vs.whitelist && !whitelist:
+			vs.labelsSet = getDifference(vs.labelsSet, groupingSet)
+		case !vs.whitelist && whitelist:
+			vs.labelsSet = getDifference(groupingSet, vs.labelsSet)
+			vs.whitelist = true
+		}
+		return
+	}
+	vs.labelsSet = groupingSet
+	vs.whitelist = whitelist
+	vs.containsAgg = true
+}
+
+func getOverlap(set1, set2 map[string]struct{}) map[string]struct{} {
+	overlap := make(map[string]struct{}, len(set1))
+	for key := range set1 {
+		if _, exists := set2[key]; exists {
+			overlap[key] = struct{}{}
+		}
+	}
+	return overlap
+}
+
+func getUnion(set1, set2 map[string]struct{}) map[string]struct{} {
+	union := make(map[string]struct{}, len(set1)+len(set2))
+	for key := range set1 {
+		union[key] = struct{}{}
+	}
+	for key := range set2 {
+		union[key] = struct{}{}
+	}
+	return union
+}
+
+func getDifference(set1, set2 map[string]struct{}) map[string]struct{} {
+	diff := make(map[string]struct{}, len(set1))
+	for key := range set1 {
+		if _, exists := set2[key]; !exists {
+			diff[key] = struct{}{}
+		}
+	}
+	return diff
 }
 
 // TODO: Consider more functions, and add tests for these.
