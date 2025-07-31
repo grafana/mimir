@@ -27,10 +27,10 @@ jobs:
         [
           {
             "index_file": null,
-            "relative_prefix": "/docs/mimir/v2.15.x/",
+            "relative_prefix": "/docs/mimir/v2.17.x/",
             "repo": "mimir",
             "source_directory": "docs/sources/mimir",
-            "website_directory": "content/docs/mimir/v2.15.x"
+            "website_directory": "content/docs/mimir/v2.17.x"
           },
           {
             "index_file": "content/docs/helm-charts/mimir-distributed/_index.md",

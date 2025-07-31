@@ -40,6 +40,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931
 * [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
 * [CHANGE] Add `store_gateway.grpcMaxQueryResponseSizeBytes` value to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.17.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2170). #12246
 * [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
