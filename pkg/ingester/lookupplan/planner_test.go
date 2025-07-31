@@ -154,25 +154,6 @@ func (p *basicLookupPlan) ScanMatchers() []*labels.Matcher {
 	return p.scanMatchers
 }
 
-// errorMockStatistics implements Statistics interface but always returns errors
-type errorMockStatistics struct{}
-
-func newErrorMockStatistics() *errorMockStatistics {
-	return &errorMockStatistics{}
-}
-
-func (e *errorMockStatistics) TotalSeries() uint64 {
-	return 1000 // Return some non-zero value so planning can start
-}
-
-func (e *errorMockStatistics) LabelValuesCount(context.Context, string) (uint64, error) {
-	return 0, fmt.Errorf("mock statistics error: failed to get label values count")
-}
-
-func (e *errorMockStatistics) LabelValuesCardinality(context.Context, string, ...string) (uint64, error) {
-	return 0, fmt.Errorf("mock statistics error: failed to get label values cardinality")
-}
-
 func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newHighCardinalityMockStatistics()
