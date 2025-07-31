@@ -117,7 +117,7 @@ func NewMaterializer(s *schema.TSDBSchema,
 		b:                                block,
 		colIdx:                           colIdx.ColumnIndex,
 		concurrency:                      concurrency,
-		partitioner:                      util.NewGapBasedPartitioner(block.ChunksFile().Cfg.PagePartitioningMaxGapSize),
+		partitioner:                      util.NewGapBasedPartitioner(block.ChunksFile().PagePartitioningMaxGapSize()),
 		dataColToIndex:                   dataColToIndex,
 		rowCountQuota:                    rowCountQuota,
 		chunkBytesQuota:                  chunkBytesQuota,
@@ -473,7 +473,7 @@ func (m *Materializer) materializeChunks(ctx context.Context, rgi int, mint, max
 	return r, nil
 }
 
-func (m *Materializer) materializeColumn(ctx context.Context, file *storage.ParquetFile, rgi int, cc parquet.ColumnChunk, rr []RowRange, chunkColumn bool) ([]parquet.Value, error) {
+func (m *Materializer) materializeColumn(ctx context.Context, file storage.ParquetFileView, rgi int, cc parquet.ColumnChunk, rr []RowRange, chunkColumn bool) ([]parquet.Value, error) {
 	if len(rr) == 0 {
 		return nil, nil
 	}
@@ -534,7 +534,7 @@ func (m *Materializer) materializeColumn(ctx context.Context, file *storage.Parq
 			maxOffset := uint64(p.off + p.csz)
 
 			// if dictOff == 0, it means that the collum is not dictionary encoded
-			if dictOff > 0 && int(minOffset-(dictOff+dictSz)) < file.Cfg.PagePartitioningMaxGapSize {
+			if dictOff > 0 && int(minOffset-(dictOff+dictSz)) < file.PagePartitioningMaxGapSize() {
 				minOffset = dictOff
 			}
 
