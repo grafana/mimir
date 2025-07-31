@@ -17,9 +17,6 @@ import (
 
 func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
-	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
 
 	type testCase struct {
 		inputMatchers         []*labels.Matcher
@@ -47,6 +44,10 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	)
 
 	testCases := data.ParseTestCases(t)
+
+	stats := newHighCardinalityMockStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
 
 	const writeOutNewResults = false
 	if writeOutNewResults {
@@ -78,6 +79,31 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 			testCases[tcIdx].expectedScanMatchers = result.ScanMatchers()
 		})
 	}
+
+	t.Run("error_statistics", func(t *testing.T) {
+		errorStats := newErrorMockStatistics()
+		metrics := NewMetrics(nil)
+		planner := NewCostBasedPlanner(metrics, errorStats)
+
+		for _, tc := range testCases {
+			// Skip empty matcher case since it doesn't call statistics methods
+			if len(tc.inputMatchers) == 0 {
+				continue
+			}
+
+			t.Run(fmt.Sprintf("%s", tc.inputMatchers), func(t *testing.T) {
+				// Create a basic lookup plan with the input matchers
+				inputPlan := &basicLookupPlan{
+					indexMatchers: tc.inputMatchers,
+				}
+
+				result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+				// Should get an error back due to statistics errors
+				assert.Error(t, err)
+				assert.Nil(t, result)
+			})
+		}
+	})
 }
 
 func matchersStrings(ms []*labels.Matcher) []string {
@@ -126,4 +152,92 @@ func (p *basicLookupPlan) IndexMatchers() []*labels.Matcher {
 
 func (p *basicLookupPlan) ScanMatchers() []*labels.Matcher {
 	return p.scanMatchers
+}
+
+// errorMockStatistics implements Statistics interface but always returns errors
+type errorMockStatistics struct{}
+
+func newErrorMockStatistics() *errorMockStatistics {
+	return &errorMockStatistics{}
+}
+
+func (e *errorMockStatistics) TotalSeries() uint64 {
+	return 1000 // Return some non-zero value so planning can start
+}
+
+func (e *errorMockStatistics) LabelValuesCount(context.Context, string) (uint64, error) {
+	return 0, fmt.Errorf("mock statistics error: failed to get label values count")
+}
+
+func (e *errorMockStatistics) LabelValuesCardinality(context.Context, string, ...string) (uint64, error) {
+	return 0, fmt.Errorf("mock statistics error: failed to get label values cardinality")
+}
+
+func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
+	ctx := context.Background()
+	stats := newHighCardinalityMockStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
+
+	t.Run("mixed_index_and_scan_matchers", func(t *testing.T) {
+		// Create a plan that already has both index and scan matchers
+		indexMatchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
+			labels.MustNewMatcher(labels.MatchEqual, "method", "GET"),
+		}
+		scanMatchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "status", "200"),
+			labels.MustNewMatcher(labels.MatchRegexp, "instance", "web-.*"),
+		}
+
+		inputPlan := &basicLookupPlan{
+			indexMatchers: indexMatchers,
+			scanMatchers:  scanMatchers,
+		}
+
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Verify all original matchers are preserved (may be repartitioned)
+		var allOriginalMatchers []string
+		allOriginalMatchers = append(allOriginalMatchers, matchersStrings(indexMatchers)...)
+		allOriginalMatchers = append(allOriginalMatchers, matchersStrings(scanMatchers)...)
+
+		var allResultMatchers []string
+		allResultMatchers = append(allResultMatchers, matchersStrings(result.IndexMatchers())...)
+		allResultMatchers = append(allResultMatchers, matchersStrings(result.ScanMatchers())...)
+
+		assert.ElementsMatch(t, allOriginalMatchers, allResultMatchers, "Planner should preserve all matchers, just potentially repartition them")
+
+		// Verify we have both index and scan matchers in result (planner should optimize)
+		assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers")
+		assert.NotEmpty(t, result.ScanMatchers(), "Result should have scan matchers")
+	})
+
+	t.Run("scan_only_input_gets_optimized", func(t *testing.T) {
+		// Create a plan that only has scan matchers
+		scanOnlyMatchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "cpu_usage_percent"),
+			labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
+			labels.MustNewMatcher(labels.MatchEqual, "method", "POST"),
+		}
+
+		inputPlan := &basicLookupPlan{
+			indexMatchers: []*labels.Matcher{}, // No index matchers
+			scanMatchers:  scanOnlyMatchers,
+		}
+
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Verify all original matchers are preserved
+		allOriginalMatchers := matchersStrings(scanOnlyMatchers)
+		var allResultMatchers []string
+		allResultMatchers = append(allResultMatchers, matchersStrings(result.IndexMatchers())...)
+		allResultMatchers = append(allResultMatchers, matchersStrings(result.ScanMatchers())...)
+
+		assert.ElementsMatch(t, allOriginalMatchers, allResultMatchers, "Planner should preserve all matchers from scan-only input")
+	})
 }
