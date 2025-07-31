@@ -20,4 +20,4 @@ LABEL org.opencontainers.image.title="otelconvert" \
     org.opencontainers.image.revision="${revision}" \
     org.opencontainers.image.version="${version}"
 
-ENTRYPOINT [ "/usr/bin/otelconvert" ]
+ENTRYPOINT [ "tail", "-f", "/dev/null" ]
