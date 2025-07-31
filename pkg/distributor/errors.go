@@ -77,7 +77,7 @@ func (e replicasDidNotMatchError) Error() string {
 }
 
 func (e replicasDidNotMatchError) Cause() mimirpb.ErrorCause {
-	return mimirpb.REPLICAS_DID_NOT_MATCH
+	return mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH
 }
 
 // Ensure that replicasDidNotMatchError implements Error.
@@ -100,7 +100,7 @@ func (e tooManyClustersError) Error() string {
 }
 
 func (e tooManyClustersError) Cause() mimirpb.ErrorCause {
-	return mimirpb.TOO_MANY_CLUSTERS
+	return mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS
 }
 
 // Ensure that tooManyClustersError implements Error.
@@ -117,7 +117,7 @@ func newValidationError(err error) validationError {
 }
 
 func (e validationError) Cause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
 func (e validationError) Unwrap() error {
@@ -146,7 +146,7 @@ func (e ingestionRateLimitedError) Error() string {
 }
 
 func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
-	return mimirpb.INGESTION_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
 }
 
 // Ensure that ingestionRateLimitedError implements Error.
@@ -171,7 +171,7 @@ func (e ingestionBurstSizeLimitedError) Error() string {
 }
 
 func (e ingestionBurstSizeLimitedError) Cause() mimirpb.ErrorCause {
-	return mimirpb.INGESTION_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
 }
 
 // Ensure that ingestionBurstSizeLimitedError implements Error.
@@ -196,7 +196,7 @@ func (e requestRateLimitedError) Error() string {
 }
 
 func (e requestRateLimitedError) Cause() mimirpb.ErrorCause {
-	return mimirpb.REQUEST_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
 }
 
 // Ensure that requestRateLimitedError implements Error.
@@ -210,7 +210,7 @@ type ingesterPushError struct {
 
 // newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
-	errorCause := mimirpb.UNKNOWN_CAUSE
+	errorCause := mimirpb.ERROR_CAUSE_UNKNOWN
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
@@ -279,22 +279,22 @@ func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) erro
 
 func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
 	switch errCause {
-	case mimirpb.BAD_DATA:
+	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return codes.InvalidArgument
-	case mimirpb.TENANT_LIMIT:
+	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return codes.FailedPrecondition
-	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
 		if serviceOverloadErrorEnabled {
 			return codes.Unavailable
 		}
 		return codes.ResourceExhausted
-	case mimirpb.REPLICAS_DID_NOT_MATCH:
+	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return codes.AlreadyExists
-	case mimirpb.TOO_MANY_CLUSTERS:
+	case mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS:
 		return codes.FailedPrecondition
-	case mimirpb.CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
 		return codes.Unavailable
-	case mimirpb.METHOD_NOT_ALLOWED:
+	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		return codes.Unimplemented
 	}
 	return codes.Internal
@@ -302,11 +302,11 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 
 func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
 	switch errCause {
-	case mimirpb.BAD_DATA:
+	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return http.StatusBadRequest
-	case mimirpb.TENANT_LIMIT:
+	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return http.StatusBadRequest
-	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
@@ -314,15 +314,15 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 			return StatusServiceOverloaded
 		}
 		return http.StatusTooManyRequests
-	case mimirpb.REPLICAS_DID_NOT_MATCH:
+	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return http.StatusAccepted
-	case mimirpb.TOO_MANY_CLUSTERS:
+	case mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS:
 		return http.StatusBadRequest
-	case mimirpb.TSDB_UNAVAILABLE:
+	case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
-	case mimirpb.CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
 		return http.StatusServiceUnavailable
-	case mimirpb.METHOD_NOT_ALLOWED:
+	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
 		return http.StatusNotImplemented
 	}
@@ -358,9 +358,9 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
 
 	// Detect the cause.
-	cause := mimirpb.UNKNOWN_CAUSE
+	cause := mimirpb.ERROR_CAUSE_UNKNOWN
 	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
-		cause = mimirpb.BAD_DATA
+		cause = mimirpb.ERROR_CAUSE_BAD_DATA
 	}
 
 	return newPartitionPushError(err, cause)
@@ -377,12 +377,12 @@ func wrapDeadlineExceededPushError(err error) error {
 func isIngestionClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
-		return ingesterPushErr.Cause() == mimirpb.BAD_DATA
+		return ingesterPushErr.Cause() == mimirpb.ERROR_CAUSE_BAD_DATA
 	}
 
 	var partitionPushErr partitionPushError
 	if errors.As(err, &partitionPushErr) {
-		return partitionPushErr.Cause() == mimirpb.BAD_DATA
+		return partitionPushErr.Cause() == mimirpb.ERROR_CAUSE_BAD_DATA
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status
@@ -409,5 +409,5 @@ func (e unavailableError) Error() string {
 }
 
 func (e unavailableError) Cause() mimirpb.ErrorCause {
-	return mimirpb.SERVICE_UNAVAILABLE
+	return mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE
 }

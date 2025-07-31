@@ -204,7 +204,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
 			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -602,7 +602,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -707,7 +707,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
+	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -959,7 +959,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.AlreadyExists, newReplicasDidNotMatchError("instance0", "instance2").Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH},
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -978,7 +978,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1523,7 +1523,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -5071,8 +5071,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
-	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
-	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
+	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH}
+	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS}
 
 	type testCase struct {
 		name              string
@@ -7291,7 +7291,7 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata

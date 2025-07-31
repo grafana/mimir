@@ -2203,7 +2203,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok, err)
 	assert.Len(t, s.Details(), 1, err)
-	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.INSTANCE_LIMIT, err)
+	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, err)
 }
 
 func TestBucketStore_Series_InvalidRequest(t *testing.T) {
