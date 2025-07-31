@@ -105,7 +105,7 @@ func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, s
 // For the relevant Prometheus error, this function will manually assert for the expected MQE error string and modify the MQE error so it will pass a later RequireEqualResults() test.
 func fixUpAndAssertPostingErrors(t *testing.T, prom, mqe *promql.Result) {
 	if mqe != nil && prom != nil && prom.Err != nil && prom.Err.Error() == "expanding series: unexpected all postings" {
-		require.Equal(t, "unexpected all postings", mqe.Err.Error())
+		require.EqualError(t, mqe.Err, "unexpected all postings")
 		mqe.Err = prom.Err
 	}
 }
@@ -118,7 +118,7 @@ func testInstantQueries(t *testing.T, startT time.Time, query string, testEnviro
 
 	// if the Prometheus engine can not prepare the query then we expect the MQE to also fail
 	if prometheusError != nil {
-		require.NotNilf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
+		require.Errorf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
 		return
 	}
 

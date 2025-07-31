@@ -25,7 +25,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 		require.Nil(t, actual, "expected nil result")
 		return
 	}
-	
+
 	require.Equal(t, expected.Err, actual.Err)
 
 	if expected.Err != nil {
