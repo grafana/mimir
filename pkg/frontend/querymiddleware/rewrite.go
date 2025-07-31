@@ -10,24 +10,28 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type rewriteMiddleware struct {
-	next   MetricsQueryHandler
-	logger log.Logger
-	cfg    Config
+	next            MetricsQueryHandler
+	logger          log.Logger
+	cfg             Config
+	mapperHistogram astmapper.ASTMapper
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
 func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
+	mapperHistogram := ast.NewMapperReorderHistogramAgg()
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
-			next:   next,
-			logger: logger,
-			cfg:    cfg,
+			next:            next,
+			logger:          logger,
+			cfg:             cfg,
+			mapperHistogram: mapperHistogram,
 		}
 	})
 }
@@ -66,8 +70,7 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	origQueryString := expr.String()
 	rewrittenQuery := expr
 
-	mapperHistogram := ast.NewMapperReorderHistogramAggregation(ctx)
-	rewrittenQuery, err = mapperHistogram.Map(rewrittenQuery)
+	rewrittenQuery, err = m.mapperHistogram.Map(ctx, rewrittenQuery)
 	if err != nil {
 		return "", false, err
 	}

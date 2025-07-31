@@ -6,6 +6,8 @@
 package astmapper
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -21,7 +23,7 @@ func newSubtreeFolder() ASTMapper {
 }
 
 // MapExpr implements ExprMapper.
-func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err

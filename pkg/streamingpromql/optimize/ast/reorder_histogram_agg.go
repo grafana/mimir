@@ -19,26 +19,18 @@ func (r *ReorderHistogramAggregation) Name() string {
 }
 
 func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	ASTExprMapper := NewMapperReorderHistogramAggregation(ctx)
-	return ASTExprMapper.Map(expr)
+	ASTExprMapper := NewMapperReorderHistogramAggregation()
+	return ASTExprMapper.Map(ctx, expr)
 }
 
-func NewMapperReorderHistogramAggregation(ctx context.Context) astmapper.ASTMapper {
-	mapper := &reorderHistogramAgg{
-		ctx: ctx,
-	}
+func NewMapperReorderHistogramAggregation() astmapper.ASTMapper {
+	mapper := &reorderHistogramAgg{}
 	return astmapper.NewASTExprMapper(mapper)
 }
 
-type reorderHistogramAgg struct {
-	ctx context.Context
-}
+type reorderHistogramAgg struct{}
 
-func (mapper *reorderHistogramAgg) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := mapper.ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
+func (mapper *reorderHistogramAgg) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	call, ok := expr.(*parser.Call)
 	if !ok || !mapper.isSwitchableCall(call.Func) {
 		return expr, false, nil

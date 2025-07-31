@@ -20,22 +20,14 @@ func (p *PruneToggles) Name() string {
 }
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	mapper := &pruneToggles{
-		ctx: ctx,
-	}
+	mapper := &pruneToggles{}
 	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
-	return ASTExprMapper.Map(expr)
+	return ASTExprMapper.Map(ctx, expr)
 }
 
-type pruneToggles struct {
-	ctx context.Context
-}
+type pruneToggles struct{}
 
-func (mapper *pruneToggles) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := mapper.ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
+func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
 	if !ok {
 		return expr, false, nil
