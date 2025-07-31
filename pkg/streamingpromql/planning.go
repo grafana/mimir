@@ -49,11 +49,11 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
 	if opts.EnablePruneToggles {
-		planner.RegisterASTOptimizationPass(&ast.PruneToggles{}) // Do this first to ensure that toggled off expressions are removed before any other optimization passes are applied.
+		planner.RegisterASTOptimizationPass(&ast.PruneToggles{}) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 	// planner.RegisterASTOptimizationPass(&ast.ReorderHistogramAggregation{}) // This is applied in query pruning middleware for now as we need to run it before query sharding, but we leave most of the code here as we plan to move it here later.
 	if opts.EnablePropagateMatchers {
 		planner.RegisterASTOptimizationPass(&ast.PropagateMatchers{})
