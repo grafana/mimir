@@ -69,6 +69,7 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+	errConfigNotFound                      = errors.New("configuration not found")
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -1188,7 +1189,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	if ok := am.lastRequestTime.CompareAndSwap(userID, time.Time{}.Unix(), time.Now().Unix()); ok {
 		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
-			if errors.Is(err, errNotUploadingFallback) {
+			if errors.Is(err, errNotUploadingFallback) || errors.Is(err, errConfigNotFound) {
 				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
 				http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
 				return
@@ -1233,12 +1234,17 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
 
-	cfg, err := am.store.GetAlertConfigs(ctx, []string{userID})
+	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
-	amConfig, _, err := am.computeConfig(cfg[userID]) // The second value indicates whether we should start the AM or not. Ignore it.
+	cfg, ok := cfgMap[userID]
+	if !ok {
+		return nil, errConfigNotFound
+	}
+
+	amConfig, _, err := am.computeConfig(cfg) // The second value indicates whether we should start the AM or not. Ignore it.
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute config: %w", err)
 	}
