@@ -129,14 +129,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	s.errorChan = make(chan error, 1)
 
 	go func() {
-		log, _ := spanlogger.New(s.client.Context(), s.log, tracer, "SeriesChunksStreamReader.StartBuffering")
+		log := spanlogger.FromContext(s.client.Context(), s.log)
+		log.DebugLog("msg", "SeriesChunksStreamReader.StartBuffering")
 
 		defer func() {
 			s.Close()
 
 			close(s.seriesMessageChan)
 			close(s.errorChan)
-			log.Finish()
 		}()
 
 		if err := s.readStream(log); err != nil {
