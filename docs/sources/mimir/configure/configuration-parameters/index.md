@@ -503,6 +503,12 @@ parquet_converter:
   # CLI flag: -parquet-converter.min-compaction-level
   [min_compaction_level: <int> | default = 2]
 
+  # (advanced) Whether compression is enabled for labels and chunks parquet
+  # files. When disabled, parquet files will be converted and stored
+  # uncompressed.
+  # CLI flag: -parquet-converter.compression-enabled
+  [compression_enabled: <boolean> | default = true]
+
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
