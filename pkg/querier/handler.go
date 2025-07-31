@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var evaluateQueryRequestType = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -204,10 +205,62 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(evaluator *streami
 func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	// We do not need to return anything to the pool here: the ring buffers in stepData are reused for subsequent steps, or returned to the pool elsewhere if not needed.
 
-	// TODO: batch up series to return, rather than sending each step one at a time?
+	// TODO: batch up series / steps to return, rather than sending each step one at a time?
 
-	//TODO implement me
-	panic("implement me")
+	floatsHead, floatsTail := stepData.Floats.UnsafePoints()
+	floats, needToReturnFloats, err := combineSlices(floatsHead, floatsTail, types.FPointSlicePool, evaluator.MemoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	if needToReturnFloats {
+		defer types.FPointSlicePool.Put(&floats, evaluator.MemoryConsumptionTracker)
+	}
+
+	histogramsHead, histogramsTail := stepData.Histograms.UnsafePoints()
+	histograms, needToReturnHistograms, err := combineSlices(histogramsHead, histogramsTail, types.HPointSlicePool, evaluator.MemoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	if needToReturnHistograms {
+		defer types.HPointSlicePool.Put(&histograms, evaluator.MemoryConsumptionTracker)
+	}
+
+	return o.w.Write(querierpb.EvaluateQueryResponse{
+		Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+			RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+				NodeIndex:   o.nodeIndex,
+				SeriesIndex: int64(seriesIndex),
+				StepT:       stepData.StepT,
+				RangeStart:  stepData.RangeStart,
+				RangeEnd:    stepData.RangeEnd,
+				Floats:      mimirpb.FromFPointsToSamples(floats),
+				Histograms:  mimirpb.FromHPointsToHistograms(histograms),
+			},
+		},
+	})
+}
+
+func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, T], memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]T, bool, error) {
+	if len(head) == 0 {
+		return tail, false, nil
+	}
+
+	if len(tail) == 0 {
+		return head, false, nil
+	}
+
+	// We can't mutate the head or tail slice, so create a new temporary slice with all points.
+	combined, err := pool.Get(len(head)+len(tail), memoryConsumptionTracker)
+	if err != nil {
+		return nil, false, err
+	}
+
+	combined = append(combined, head...)
+	combined = append(combined, tail...)
+
+	return combined, true, nil
 }
 
 func (o *evaluationObserver) ScalarEvaluated(evaluator *streamingpromql.Evaluator, data types.ScalarData) error {

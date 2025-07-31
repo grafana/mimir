@@ -177,14 +177,21 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 			return err
 		}
 
-		// FIXME: add support for evaluating at multiple steps once we support returning this over the wire from queriers to query-frontends
-		step, err := op.NextStepSamples()
-		if err != nil {
-			return err
-		}
+		stepIdx := 0
+		for {
+			step, err := op.NextStepSamples()
+			if err == types.EOS {
+				break
+			}
+			if err != nil {
+				return err
+			}
 
-		if err := observer.RangeVectorStepSamplesEvaluated(e, seriesIdx, 0, step); err != nil {
-			return err
+			if err := observer.RangeVectorStepSamplesEvaluated(e, seriesIdx, stepIdx, step); err != nil {
+				return err
+			}
+
+			stepIdx++
 		}
 	}
 
