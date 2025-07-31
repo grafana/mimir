@@ -40,7 +40,7 @@ type Constraint interface {
 	path() string
 }
 
-func MatchersToConstraint(matchers ...*labels.Matcher) ([]Constraint, error) {
+func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	r := make([]Constraint, 0, len(matchers))
 	for _, matcher := range matchers {
 		switch matcher.Type {
@@ -76,23 +76,44 @@ func Initialize(f *storage.ParquetFile, cs ...Constraint) error {
 	return nil
 }
 
+// sortConstraintsBySortingColumns reorders constraints to prioritize those that match sorting columns.
+// Constraints matching sorting columns are moved to the front, ordered by the sorting column priority.
+// Other constraints maintain their original relative order.
+func sortConstraintsBySortingColumns(cs []Constraint, sc []parquet.SortingColumn) {
+	if len(sc) == 0 {
+		return // No sorting columns, nothing to do
+	}
+
+	sortingPaths := make(map[string]int, len(sc))
+	for i, col := range sc {
+		sortingPaths[col.Path()[0]] = i
+	}
+
+	// Sort constraints: sorting column constraints first (by their order in sc), then others
+	slices.SortStableFunc(cs, func(a, b Constraint) int {
+		aIdx, aIsSorting := sortingPaths[a.path()]
+		bIdx, bIsSorting := sortingPaths[b.path()]
+
+		if aIsSorting && bIsSorting {
+			return aIdx - bIdx // Sort by sorting column order
+		}
+		if aIsSorting {
+			return -1 // a comes first
+		}
+		if bIsSorting {
+			return 1 // b comes first
+		}
+		return 0 // preserve original order for non-sorting constraints
+	})
+}
+
 func Filter(ctx context.Context, s storage.ParquetShard, rgIdx int, cs ...Constraint) ([]RowRange, error) {
 	rg := s.LabelsFile().RowGroups()[rgIdx]
 	// Constraints for sorting columns are cheaper to evaluate, so we sort them first.
 	sc := rg.SortingColumns()
 
-	var n int
-	for i := range sc {
-		if n == len(cs) {
-			break
-		}
-		for j := range cs {
-			if cs[j].path() == sc[i].Path()[0] {
-				cs[n], cs[j] = cs[j], cs[n]
-				n++
-			}
-		}
-	}
+	sortConstraintsBySortingColumns(cs, sc)
+
 	var err error
 	rr := []RowRange{{From: int64(0), Count: rg.NumRows()}}
 	for i := range cs {
