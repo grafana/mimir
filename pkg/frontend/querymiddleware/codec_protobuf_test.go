@@ -614,7 +614,7 @@ var protobufCodecScenarios = []struct {
 		name: "error response",
 		payload: mimirpb.QueryResponse{
 			Status:    mimirpb.QueryResponse_ERROR,
-			ErrorType: mimirpb.QueryResponse_UNAVAILABLE,
+			ErrorType: mimirpb.QUERY_ERROR_TYPE_UNAVAILABLE,
 			Error:     "failed",
 		},
 		response: &PrometheusResponse{

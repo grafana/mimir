@@ -65,7 +65,7 @@ var protobufCodecScenarios = map[string]struct {
 		},
 		expectedPayload: mimirpb.QueryResponse{
 			Status:    mimirpb.QueryResponse_ERROR,
-			ErrorType: mimirpb.QueryResponse_UNAVAILABLE,
+			ErrorType: mimirpb.QUERY_ERROR_TYPE_UNAVAILABLE,
 			Error:     "something went wrong",
 		},
 	},

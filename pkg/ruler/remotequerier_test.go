@@ -658,7 +658,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		"execution error": {
 			body: mimirpb.QueryResponse{
 				Status:    mimirpb.QueryResponse_ERROR,
-				ErrorType: mimirpb.QueryResponse_EXECUTION,
+				ErrorType: mimirpb.QUERY_ERROR_TYPE_EXECUTION,
 				Error:     "something went wrong",
 			},
 			expectedError: errors.New("query execution failed with error: something went wrong"),

@@ -250,6 +250,19 @@ message SampleHistogramPair {
   SampleHistogram histogram = 1;
 }
 
+// These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryErrorType {
+  QUERY_ERROR_TYPE_NONE = 0;
+  QUERY_ERROR_TYPE_TIMEOUT = 1;
+  QUERY_ERROR_TYPE_CANCELED = 2;
+  QUERY_ERROR_TYPE_EXECUTION = 3;
+  QUERY_ERROR_TYPE_BAD_DATA = 4;
+  QUERY_ERROR_TYPE_INTERNAL = 5;
+  QUERY_ERROR_TYPE_UNAVAILABLE = 6;
+  QUERY_ERROR_TYPE_NOT_FOUND = 7;
+  QUERY_ERROR_TYPE_NOT_ACCEPTABLE = 8;
+}
+
 message QueryResponse {
   // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
   enum Status {
@@ -258,22 +271,8 @@ message QueryResponse {
     SUCCESS = 1;
   }
 
-  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum ErrorType {
-    option (gogoproto.goproto_enum_prefix) = true;
-    NONE = 0;
-    TIMEOUT = 1;
-    CANCELED = 2;
-    EXECUTION = 3;
-    BAD_DATA = 4;
-    INTERNAL = 5;
-    UNAVAILABLE = 6;
-    NOT_FOUND = 7;
-    NOT_ACCEPTABLE = 8;
-  }
-
   Status status = 1;
-  ErrorType error_type = 2;
+  QueryErrorType error_type = 2;
   string error = 3;
 
   oneof data {
