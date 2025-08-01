@@ -8,7 +8,6 @@ package distributor
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -125,13 +124,13 @@ var (
 )
 
 type LabelValueTooLongError struct {
-	Label  mimirpb.LabelAdapter
-	Series []mimirpb.LabelAdapter
+	Label  labels.Label
+	Series string
 	Limit  int
 }
 
 func (e LabelValueTooLongError) Error() string {
-	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series))
+	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, e.Series)
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.
@@ -466,7 +465,11 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return LabelValueTooLongError{Label: l, Series: slices.Clone(ls), Limit: maxLabelValueLength}
+			return LabelValueTooLongError{
+				Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
+				Series: mimirpb.FromLabelAdaptersToString(ls),
+				Limit:  maxLabelValueLength,
+			}
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -230,14 +231,14 @@ func TestValidateLabels(t *testing.T) {
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
 			wantErr: alwaysErr(LabelValueTooLongError{
-				Label: mimirpb.LabelAdapter{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+				Label: labels.Label{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 				Limit: 25,
-				Series: []mimirpb.LabelAdapter{
+				Series: mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{
 					{Name: model.MetricNameLabel, Value: "badLabelValue"},
 					{Name: "group", Value: "custom label"},
 					{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 					{Name: "team", Value: "biz"},
-				},
+				}),
 			}),
 		},
 		{
@@ -734,6 +735,55 @@ func TestValidateLabelDuplication(t *testing.T) {
 		),
 	)
 	assert.Equal(t, expected, actual)
+}
+
+func TestValidateLabel_UseAfterRelease(t *testing.T) {
+	buf, err := (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "value_longer_than_maxLabelValueLength"},
+			},
+		},
+	}).Marshal()
+	require.NoError(t, err)
+
+	// Unmarshal into a reusable PreallocTimeseries.
+	var ts mimirpb.PreallocTimeseries
+	err = ts.Unmarshal(buf, nil, nil)
+	require.NoError(t, err)
+
+	// Call validateLabels to get a LabelValueTooLongError.
+	cfg := validateLabelsCfg{
+		maxLabelNameLength:  25,
+		maxLabelValueLength: 5,
+		validationScheme:    model.UTF8Validation,
+	}
+	userID := "testUser"
+	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	reg := prometheus.NewPedanticRegistry()
+	s := newSampleValidationMetrics(reg)
+	careg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
+	require.NoError(t, err)
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
+	var lengthErr LabelValueTooLongError
+	require.ErrorAs(t, err, &lengthErr)
+
+	// Reuse PreallocTimeseries by unmarshaling a different TimeSeries into
+	// the same buffer. This replaces the previous value in-place, and thus at
+	// this point no references to the buffer should be lingering.
+	_, err = (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "forbidden_value"},
+			},
+		},
+	}).MarshalTo(buf)
+	require.NoError(t, err)
+
+	// Ensure the LabelValueTooLongError doesn't retain a reference to the
+	// buffer.
+	require.NotContains(t, lengthErr.Error(), "forbidden_value")
 }
 
 type sampleValidationCfg struct {

@@ -766,6 +766,6 @@ type otelAttributeValueTooLongError struct {
 func (e otelAttributeValueTooLongError) Error() string {
 	return fmt.Sprintf(
 		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-		e.Limit, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series),
+		e.Limit, e.Label.Name, e.Label.Value, e.Series,
 	)
 }
