@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 
 ## 5.8.0-rc.0
 
