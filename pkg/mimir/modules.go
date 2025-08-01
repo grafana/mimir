@@ -818,7 +818,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 			eng = streamingEngine
 		}
 	default:
-		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Querier.QueryEngine))
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
