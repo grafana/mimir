@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -286,59 +287,90 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 }
 
 func (c *ParquetConverter) running(ctx context.Context) error {
-	go c.runBlockDiscovery(ctx)
-	go c.runBlockProcessing(ctx)
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		defer func() {
+			if r := recover(); r != nil {
+				level.Error(c.logger).Log("msg", "parquet-converter discovery goroutine panicked", "panic", r)
+			}
+		}()
+
+		discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
+		defer discoveryTicker.Stop()
+
+		for {
+			select {
+			case <-gCtx.Done():
+				return nil
+			case <-discoveryTicker.C:
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							level.Error(c.logger).Log("msg", "parquet-converter discoverAndEnqueueBlocks panicked", "panic", r)
+						}
+					}()
+					c.discoverAndEnqueueBlocks(gCtx)
+				}()
+			}
+		}
+	})
+
+	g.Go(func() error {
+		defer func() {
+			if r := recover(); r != nil {
+				level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
+			}
+		}()
+
+		for {
+			select {
+			case <-gCtx.Done():
+				return nil
+			default:
+				task, ok := c.conversionQueue.Pop()
+				if !ok {
+					select {
+					case <-gCtx.Done():
+						return nil
+					case <-time.After(1 * time.Second):
+						continue
+					}
+				}
+
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", task.Meta.ULID.String())
+						}
+					}()
+
+					c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
+
+					waitTime := time.Since(task.EnqueuedAt)
+					c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
+
+					ulogger := util_log.WithUserID(task.UserID, c.logger)
+					c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
+				}()
+			}
+		}
+	})
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return g.Wait()
 		case err := <-c.ringSubservicesWatcher.Chan():
 			return errors.Wrap(err, "parquet-converter ring subservice failed")
-		}
-	}
-}
-
-// runBlockDiscovery discovers blocks and enqueues them for processing
-func (c *ParquetConverter) runBlockDiscovery(ctx context.Context) {
-	discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
-	defer discoveryTicker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-discoveryTicker.C:
-			c.discoverAndEnqueueBlocks(ctx)
-		}
-	}
-}
-
-// runBlockProcessing processes blocks from the priority queue
-func (c *ParquetConverter) runBlockProcessing(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
 		default:
-			task, ok := c.conversionQueue.Pop()
-			if !ok {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(1 * time.Second):
-					continue
-				}
+			// Check if any goroutine failed (non-blocking)
+			select {
+			case <-gCtx.Done():
+				return g.Wait()
+			default:
 			}
-
-			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
-			c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
-
-			waitTime := time.Since(task.EnqueuedAt)
-			c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
-
-			ulogger := util_log.WithUserID(task.UserID, c.logger)
-			c.processBlock(ctx, task.UserID, task.Meta, task.Bucket, ulogger)
 		}
 	}
 }
