@@ -62,35 +62,97 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 }
 
 func TestLimitsLoadingFromYaml(t *testing.T) {
-	inp := `ingestion_rate: 0.5`
-
-	l := Limits{}
-	dec := yaml.NewDecoder(strings.NewReader(inp))
-	dec.KnownFields(true)
-	require.NoError(t, dec.Decode(&l))
-
-	assert.Equal(t, 0.5, l.IngestionRate, "from yaml")
-	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
+	testCases := []struct {
+		name     string
+		input    string
+		testFunc func(t *testing.T, l Limits)
+	}{
+		{
+			name:  "defaults",
+			input: `{}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 1024, l.MaxLabelNameLength)
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "ingestion_rate",
+			input: `ingestion_rate: 0.5`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 0.5, l.IngestionRate)
+			},
+		},
+		{
+			name:  "name_validation_scheme: legacy",
+			input: `name_validation_scheme: "legacy"`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "name_validation_scheme: utf8",
+			input: `name_validation_scheme: "utf8"`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := Limits{}
+			dec := yaml.NewDecoder(strings.NewReader(tc.input))
+			dec.KnownFields(true)
+			require.NoError(t, dec.Decode(&l))
+			tc.testFunc(t, l)
+		})
+	}
 }
 
 func TestLimitsLoadingFromJson(t *testing.T) {
-	inp := `{"ingestion_rate": 0.5}`
-
-	l := Limits{}
-	err := json.Unmarshal([]byte(inp), &l)
-	require.NoError(t, err)
-
-	assert.Equal(t, 0.5, l.IngestionRate, "from json")
-	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
+	testCases := []struct {
+		name     string
+		input    string
+		testFunc func(t *testing.T, l Limits)
+	}{
+		{
+			name:  "defaults",
+			input: `{}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 1024, l.MaxLabelNameLength)
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "ingestion_rate",
+			input: `{"ingestion_rate": 0.5}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 0.5, l.IngestionRate)
+			},
+		},
+		{
+			name:  "name_validation_scheme: utf8",
+			input: `{"name_validation_scheme": "utf8"}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := Limits{}
+			err := json.Unmarshal([]byte(tc.input), &l)
+			require.NoError(t, err)
+			tc.testFunc(t, l)
+		})
+	}
 
 	// Unmarshal should fail if input contains unknown struct fields and
 	// the decoder flag `json.Decoder.DisallowUnknownFields()` is set
-	inp = `{"unknown_fields": 100}`
-	l = Limits{}
+	inp := `{"unknown_fields": 100}`
+	l := Limits{}
 	dec := json.NewDecoder(strings.NewReader(inp))
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&l)
-	assert.Error(t, err)
+	assert.Error(t, dec.Decode(&l))
 }
 
 func TestLimitsTagsYamlMatchJson(t *testing.T) {
@@ -163,7 +225,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
-	exp.MetricNameValidationScheme = model.UTF8Validation
+	exp.MetricNameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))

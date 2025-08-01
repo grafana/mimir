@@ -296,7 +296,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Timeseries[0].LabelsRefs[0] = 128 // In the reserved space
+		writeRequest.TimeseriesRW2[0].LabelsRefs[0] = 128 // In the reserved space
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -353,7 +353,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Timeseries[0].LabelsRefs[0] = 1 // Out of bounds common symbol.
+		writeRequest.TimeseriesRW2[0].LabelsRefs[0] = 1 // Out of bounds common symbol.
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -398,33 +398,33 @@ func TestRW2Unmarshal(t *testing.T) {
 			syms := test.NewSymbolTableBuilder(nil)
 			// Create a new WriteRequest with some sample data.
 			writeRequest := makeTestRW2WriteRequest(syms)
-			writeRequest.Timeseries = []rw2.TimeSeries{
+			writeRequest.TimeseriesRW2 = []TimeSeriesRW2{
 				// Keep the one we already built
-				writeRequest.Timeseries[0],
+				writeRequest.TimeseriesRW2[0],
 				{
 					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
-					Metadata: rw2.Metadata{
-						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_COUNTER,
 						HelpRef: syms.GetSymbol("metric_2 help text."),
 					},
 				},
 				{
 					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_3")},
-					Metadata: rw2.Metadata{
-						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_COUNTER,
 						HelpRef: syms.GetSymbol("metric_3 help text."),
 					},
 				},
 				// Duplicate, should be filtered out.
 				{
 					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("metric_2")},
-					Metadata: rw2.Metadata{
-						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_COUNTER,
 						HelpRef: syms.GetSymbol("duplicated metric_2 help text, but different."),
 					},
 				},
 			}
-			writeRequest.Symbols = syms.GetSymbols()
+			writeRequest.SymbolsRW2 = syms.GetSymbols()
 			data, err := writeRequest.Marshal()
 			require.NoError(t, err)
 
@@ -444,33 +444,33 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 }
 
-func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
-	req := &rw2.Request{
-		Timeseries: []rw2.TimeSeries{
+func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *WriteRequest {
+	req := &WriteRequest{
+		TimeseriesRW2: []TimeSeriesRW2{
 			{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
-				Samples: []rw2.Sample{
+				Samples: []Sample{
 					{
-						Value:     123.456,
-						Timestamp: 1234567890,
+						Value:       123.456,
+						TimestampMs: 1234567890,
 					},
 				},
-				Exemplars: []rw2.Exemplar{
+				Exemplars: []ExemplarRW2{
 					{
 						Value:      123.456,
 						Timestamp:  1234567890,
 						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
 					},
 				},
-				Metadata: rw2.Metadata{
-					Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
 					HelpRef: syms.GetSymbol("test_metric_help"),
 					UnitRef: syms.GetSymbol("test_metric_unit"),
 				},
 			},
 		},
 	}
-	req.Symbols = syms.GetSymbols()
+	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
 }

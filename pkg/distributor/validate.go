@@ -8,7 +8,6 @@ package distributor
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -123,16 +122,6 @@ var (
 	)
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
-
-type LabelValueTooLongError struct {
-	Label  mimirpb.LabelAdapter
-	Series []mimirpb.LabelAdapter
-	Limit  int
-}
-
-func (e LabelValueTooLongError) Error() string {
-	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series))
-}
 
 // sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig interface {
@@ -391,7 +380,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
-	ValidationScheme(userID string) model.ValidationScheme
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -423,7 +412,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	validationScheme := cfg.ValidationScheme(userID)
+	validationScheme := cfg.NameValidationScheme(userID)
 
 	if !labels.IsValidMetricName(unsafeMetricName, validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
@@ -466,7 +455,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return LabelValueTooLongError{Label: l, Series: slices.Clone(ls), Limit: maxLabelValueLength}
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()

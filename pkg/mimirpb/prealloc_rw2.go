@@ -50,9 +50,10 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	// Represent metadata as extra, empty timeseries rather than attaching it to existing series.
 	// We never replicate metadata if there are multiple series with the same name, and it removes the requirement to match up the metadata to the right series.
 	for _, meta := range rw1.Metadata {
+		labelsRefs := []uint32{symbols.Symbolize("__name__"), symbols.Symbolize(meta.MetricFamilyName)}
 		rw2meta := FromMetricMetadataToMetadataRW2(meta, symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
-			LabelsRefs: []uint32{symbols.Symbolize("__name__"), symbols.Symbolize(meta.MetricFamilyName)},
+			LabelsRefs: labelsRefs,
 			Metadata:   rw2meta,
 		})
 	}

@@ -356,6 +356,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "min(a_X) / (max(a_X) + max(b_X))",
 		},
+		{
+			Expr: "sum(sum_over_time(a_X[1m])) / sum(count_over_time(a_X[1m]))",
+		},
+		{
+			Expr: "sum(sum_over_time(a_X[1d])) / sum(count_over_time(a_X[1d]))",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

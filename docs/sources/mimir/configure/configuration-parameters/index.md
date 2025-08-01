@@ -1654,6 +1654,12 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
 
+  # (experimental) Enable common subexpression elimination for range vector
+  # expressions when evaluating instant queries. This has no effect if common
+  # subexpression elimination is disabled.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
+  [enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries: <boolean> | default = true]
+
   # (experimental) Enable skipping decoding native histograms when evaluating
   # queries that do not require full histograms.
   # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
@@ -3659,11 +3665,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
-# (experimental) Split instant queries by an interval and execute in parallel. 0
-# to disable it.
-# CLI flag: -query-frontend.split-instant-queries-by-interval
-[split_instant_queries_by_interval: <duration> | default = 0s]
-
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
@@ -4254,6 +4255,13 @@ ruler_alertmanager_client_config:
 # partitions.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
+
+# (experimental) Validation scheme to use for metric and label names.
+# Distributors reject time series that do not adhere to this scheme. Rulers
+# reject rules with unsupported metric or label names. Supported values: legacy,
+# utf8.
+# CLI flag: -validation.name-validation-scheme
+[name_validation_scheme: <int> | default = legacy]
 ```
 
 ### ingest_storage
@@ -4950,6 +4958,12 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Controls the collection of statistics and whether to defer
+  # some vector selector matchers to sequential scans. This leads to better
+  # performance.
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
+  [index_lookup_planning_enabled: <boolean> | default = false]
 ```
 
 ### compactor

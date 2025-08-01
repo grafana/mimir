@@ -227,18 +227,18 @@ func TestPusherErrors(t *testing.T) {
 			expectedFailures: 1,
 		},
 		"a BAD_DATA push error is reported as client failure": {
-			returnedError:         mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
+			returnedError:         mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
 			expectedWrites:        1,
 			expectedFailures:      1,
 			expectedFailureReason: failureReasonClientError,
 		},
 		"a METHOD_NOT_ALLOWED push error is reported as failure": {
-			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
+			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
 			expectedWrites:   1,
 			expectedFailures: 1,
 		},
 		"a TSDB_UNAVAILABLE push error is reported as failure": {
-			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
+			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
 			expectedWrites:   1,
 			expectedFailures: 1,
 		},
