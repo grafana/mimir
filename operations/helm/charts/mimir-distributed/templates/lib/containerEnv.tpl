@@ -22,7 +22,7 @@ Params:
 {{- end }}
 {{- /* Convert back to list format for YAML output */}}
 {{- $envList := list }}
-{{- range $name, $envVar := $envKV }}
+{{- range $_, $envVar := $envKV }}
   {{- $envList = append $envList $envVar }}
 {{- end }}
 {{- toYaml $envList }}
