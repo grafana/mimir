@@ -29,9 +29,12 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -927,4 +930,360 @@ func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
 		return errors.New("sorry, we've an error")
 	}
 	return nil
+}
+
+func TestGrpcStreamWriter_HappyPath(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+	msg2 := createTestStreamingMessage("second message")
+	require.NoError(t, writer.Write(ctx, msg2))
+	msg3 := createTestStreamingMessage("third message")
+	require.NoError(t, writer.Write(ctx, msg3))
+	writer.Close(ctx)
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+	require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+	require.Equal(t, queryID, msg2.QueryID, "should set query ID on sent message")
+	require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
+
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
+	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"initial GetClientFor call fails": {
+			nextGetClientForCallsShouldFail: 1,
+		},
+		"initial QueryResultStream call fails": {
+			nextQueryResultStreamCallsShouldFail: 1,
+		},
+		"initial Send call fails": {
+			nextSendCallsShouldFail: 1,
+		},
+		"all but the last GetClientFor call fails": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"all but the last QueryResultStream call fails": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"all but the last Send call fails": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"one of each calls fails": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              1,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail +
+				1 // Successful attempt
+
+			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			msg1 := createTestStreamingMessage("first message")
+			require.NoError(t, writer.Write(ctx, msg1))
+			require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1}, pool.sentMessages, "should have sent message")
+			require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
+
+			msg2 := createTestStreamingMessage("second message")
+			require.NoError(t, writer.Write(ctx, msg2))
+			msg3 := createTestStreamingMessage("third message")
+			require.NoError(t, writer.Write(ctx, msg3))
+			writer.Close(ctx)
+
+			require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+			require.Equal(t, queryID, msg2.QueryID, "should set query ID on sent message")
+			require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
+			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should not return client again for subsequent messages")
+			require.True(t, pool.streamClosed, "stream should have been closed")
+		})
+	}
+}
+
+func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"all GetClientFor calls fail": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all QueryResultStream calls fail": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all Send calls fail": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"some of each calls fail": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              maxNotifyFrontendRetries - 2,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail
+
+			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			msg1 := createTestStreamingMessage("first message")
+			require.Error(t, writer.Write(ctx, msg1))
+			require.Empty(t, pool.sentMessages, "should not have sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
+
+			msg2 := createTestStreamingMessage("second message")
+			require.EqualError(t, writer.Write(ctx, msg2), "the query-frontend stream has already failed")
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
+			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should not return client again for subsequent messages")
+
+			writer.Close(ctx)
+			require.Empty(t, pool.sentMessages, "should not have sent any messages")
+		})
+	}
+}
+
+// Sending subsequent message fails
+// - does not retry
+// - removes client from pool
+// - subsequent Write calls fail without trying to send any messages
+// - calling Close does nothing except closing stream
+func TestGrpcStreamWriter_SubsequentSendFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1}, pool.sentMessages, "should have sent message")
+	require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+
+	pool.nextSendCallsShouldFail++
+	msg2 := createTestStreamingMessage("second message")
+	require.EqualError(t, writer.Write(ctx, msg2), "calling Send failed")
+
+	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
+	require.Equal(t, 1, pool.removedClientCount, "should remove client from pool")
+
+	writer.Close(ctx)
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_ClosedWithNoMessagesSent_HappyPath(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	writer.Close(ctx)
+
+	expectedMessage := &frontendv2pb.QueryResultStreamRequest{
+		QueryID: queryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Message: "query execution completed without sending any messages (this is a bug)",
+				Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+			},
+		},
+	}
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{expectedMessage}, pool.sentMessages, "should have sent message to frontend")
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once")
+	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_ClosedWithNoMessageSent_SendingMessageFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"all GetClientFor calls fail": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all QueryResultStream calls fail": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all Send calls fail": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"some of each calls fail": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              maxNotifyFrontendRetries - 2,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail
+
+			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			writer.Close(ctx)
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
+			require.Empty(t, pool.sentMessages, "should not have sent any messages")
+		})
+	}
+}
+
+func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+	msg2 := createTestStreamingMessage("second message")
+	require.NoError(t, writer.Write(ctx, msg2))
+	msg3 := createTestStreamingMessage("third message")
+	require.NoError(t, writer.Write(ctx, msg3))
+	writer.Close(ctx)
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+	require.False(t, pool.sendCalledWithClosedContext, "should not use a cancelled context for sending messages")
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
+	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
+	// In the real use, sending an error is a terminal message, and so sending multiple errors is unexpected,
+	// but the code under test here doesn't care.
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
+				Message: msg,
+			},
+		},
+	}
+}
+
+type mockFrontendClientPool struct {
+	nextGetClientForCallsShouldFail      int // The remaining number of GetClientFor calls that should fail
+	nextQueryResultStreamCallsShouldFail int // The remaining number of QueryResultStream calls that should fail
+	nextSendCallsShouldFail              int // The remaining number of Send calls that should fail
+
+	retrievedClientCount int
+	removedClientCount   int
+
+	sentMessages                []*frontendv2pb.QueryResultStreamRequest
+	sendCalledWithClosedContext bool
+	streamClosed                bool
+}
+
+func (m *mockFrontendClientPool) GetClientFor(addr string) (client.PoolClient, error) {
+	m.retrievedClientCount++
+
+	if m.nextGetClientForCallsShouldFail > 0 {
+		m.nextGetClientForCallsShouldFail--
+		return nil, errors.New("calling GetClientFor failed")
+	}
+
+	return &mockFrontendClient{pool: m}, nil
+}
+
+func (m *mockFrontendClientPool) RemoveClient(c client.PoolClient, addr string) {
+	m.removedClientCount++
+}
+
+type mockFrontendClient struct {
+	// These are needed because the PoolClient interface requires them, but they're never used in our tests.
+	grpc_health_v1.HealthClient
+	io.Closer
+
+	pool *mockFrontendClientPool
+}
+
+var _ frontendv2pb.FrontendForQuerierClient = &mockFrontendClient{}
+
+func (m *mockFrontendClient) QueryResult(ctx context.Context, in *frontendv2pb.QueryResultRequest, opts ...grpc.CallOption) (*frontendv2pb.QueryResultResponse, error) {
+	panic("unexpected non-streaming QueryResult call on mock")
+}
+
+func (m *mockFrontendClient) QueryResultStream(ctx context.Context, opts ...grpc.CallOption) (frontendv2pb.FrontendForQuerier_QueryResultStreamClient, error) {
+	if m.pool.nextQueryResultStreamCallsShouldFail > 0 {
+		m.pool.nextQueryResultStreamCallsShouldFail--
+		return nil, errors.New("calling QueryResultStream failed")
+	}
+
+	return &mockQueryResultStreamClient{ctx: ctx, pool: m.pool}, nil
+}
+
+type mockQueryResultStreamClient struct {
+	grpc.ClientStream // This is needed because the PoolClient interface requires them, but they're never used in our tests.
+
+	ctx  context.Context
+	pool *mockFrontendClientPool
+}
+
+func (m *mockQueryResultStreamClient) Send(request *frontendv2pb.QueryResultStreamRequest) error {
+	if m.ctx.Err() != nil {
+		m.pool.sendCalledWithClosedContext = true
+	}
+
+	if m.pool.nextSendCallsShouldFail > 0 {
+		m.pool.nextSendCallsShouldFail--
+		return errors.New("calling Send failed")
+	}
+
+	m.pool.sentMessages = append(m.pool.sentMessages, request)
+	return nil
+}
+
+func (m *mockQueryResultStreamClient) CloseAndRecv() (*frontendv2pb.QueryResultResponse, error) {
+	m.pool.streamClosed = true
+	return nil, nil
 }
