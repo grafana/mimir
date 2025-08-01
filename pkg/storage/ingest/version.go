@@ -5,7 +5,6 @@ package ingest
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -24,7 +23,7 @@ var (
 	// The index corresponds to the symbol value.
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
 	// Note: V2 is not yet stabilized.
-	V2CommonSymbols = []string{
+	V2CommonSymbols = mimirpb.NewCommonSymbols([]string{
 		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 		// This ensures that empty/missing refs still map to empty string.
 		"",
@@ -69,19 +68,8 @@ var (
 		"kube-system/node-local-dns",
 		"kube-state-metrics/kube-state-metrics",
 		"default/kubernetes",
-	}
-	v2CommonSymbolsMapOnce = sync.OnceValue(func() map[string]uint32 {
-		res := make(map[string]uint32, len(V2CommonSymbols))
-		for ref, str := range V2CommonSymbols {
-			res[str] = uint32(ref)
-		}
-		return res
 	})
 )
-
-func V2CommonSymbolsMap() map[string]uint32 {
-	return v2CommonSymbolsMapOnce()
-}
 
 func ValidateRecordVersion(version int) error {
 	switch version {
@@ -163,7 +151,7 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 type versionTwoRecordSerializer struct{}
 
 func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbolsMap(), V2RecordSymbolOffset)
+	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
 	defer mimirpb.ReuseRW2(reqv2)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
@@ -200,7 +188,7 @@ func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	wr.UnmarshalFromRW2 = true
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
-	wr.RW2CommonSymbols = V2CommonSymbols
+	wr.RW2CommonSymbols = V2CommonSymbols.GetSlice()
 	wr.SkipNormalizeMetadataMetricName = true
 	wr.SkipDeduplicateMetadata = true
 	return wr.Unmarshal(content)

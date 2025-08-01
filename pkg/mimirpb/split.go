@@ -48,7 +48,10 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 // The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
 // and data from the original WriteRequest.
 // The returned requests may still retain references to fields in the original WriteRequest, i.e. they are tied to its lifecycle.
-func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols []string) []*WriteRequest {
+//
+// The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
+// Timeseries are re-symbolized in place, so this function mutates the input.
+func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols *CommonSymbols) []*WriteRequest {
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
 	}
@@ -302,7 +305,7 @@ func resolvedSymbolSize(ref uint32, symbols []string, offset uint32) int {
 func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *FastSymbolsTable) TimeSeriesRW2 {
 	new := *ts
 	offset := symbols.offset
-	commonSymbols := symbols.commonSymbols
+	commonSymbols := symbols.commonSymbols.GetSlice()
 
 	new.LabelsRefs = make([]uint32, len(ts.LabelsRefs))
 	for i := range ts.LabelsRefs {
