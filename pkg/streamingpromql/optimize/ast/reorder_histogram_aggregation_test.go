@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReorderHistogramAgg(t *testing.T) {
+func TestReorderHistogramAggregation(t *testing.T) {
 	testCases := map[string]string{
 		`histogram_sum(sum(foo))`:                `sum(histogram_sum(foo))`,
 		`sum(histogram_sum(foo))`:                `sum(histogram_sum(foo))`,

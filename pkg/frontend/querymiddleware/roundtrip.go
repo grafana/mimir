@@ -467,7 +467,7 @@ func newQueryMiddlewares(
 	)
 
 	if cfg.RewriteQueriesHistogram {
-		rewriteMiddleware := newRewriteMiddleware(log, cfg)
+		rewriteMiddleware := newRewriteMiddleware(log)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			newInstrumentMiddleware("rewriting", metrics),

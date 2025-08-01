@@ -43,18 +43,18 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 	return e, boolResult, nil
 }
 
-// vectorSelectorWrapper is a struct to hold additional information about vector selectors,
-// mainly the set of matchers that are allowed to propagate inwards and outwards, and whether
-// that set is a whitelist or blacklist, which are used only for aggregate expressions and the
-// expressions that contain them.
-type vectorSelectorWrapper struct {
+// enrichedVectorSelector is a struct to hold additional information about vector selectors,
+// mainly the set of matchers that are allowed to propagate inwards and outwards (same set used
+// for both), and whether that set is for including or excluding, which are used only for aggregate
+// expressions and the expressions that contain them.
+type enrichedVectorSelector struct {
 	vs          *parser.VectorSelector
 	labelsSet   map[string]struct{}
-	whitelist   bool
+	include     bool
 	containsAgg bool
 }
 
-func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher, bool) {
 	if e.Op == parser.LOR {
 		return nil, nil, false
 	}
@@ -83,11 +83,11 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
-			vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.whitelist)
+			vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.include)
 		}
 	}
 	for _, vsR := range vssR {
-		vsR.vs.LabelMatchers = combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.whitelist)
+		vsR.vs.LabelMatchers = combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include)
 	}
 	vss := append(vssL, vssR...)
 	matchers := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
@@ -95,12 +95,12 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
-// info, see vectorSelectorWrapper), along with the label matchers associated with them, and a boolean
+// info, see enrichedVectorSelector), along with the label matchers associated with them, and a boolean
 // indicating whether any vector selectors were found.
-func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*enrichedVectorSelector, []*labels.Matcher, bool) {
 	vs, ok := expr.(*parser.VectorSelector)
 	if ok {
-		return []*vectorSelectorWrapper{{vs: vs}}, vs.LabelMatchers, true
+		return []*enrichedVectorSelector{{vs: vs}}, vs.LabelMatchers, true
 	}
 
 	pe, ok := expr.(*parser.ParenExpr)
@@ -110,8 +110,8 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 
 	agg, ok := expr.(*parser.AggregateExpr)
 	if ok {
-		whitelist := !agg.Without
-		if len(agg.Grouping) == 0 && whitelist {
+		include := !agg.Without
+		if len(agg.Grouping) == 0 && include {
 			// Shortcut if there are no labels allowed to propagate inwards or outwards.
 			return nil, nil, false
 		}
@@ -121,9 +121,9 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 		}
 		groupingSet := makeStringSet(agg.Grouping)
 		for _, vs := range vss {
-			updateVecSelWithAggInfo(vs, groupingSet, whitelist)
+			updateVecSelWithAggInfo(vs, groupingSet, include)
 		}
-		newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, whitelist)
+		newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, include)
 		return vss, newMatchers, ok
 	}
 
@@ -143,27 +143,27 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*ve
 	return nil, nil, false
 }
 
-func updateVecSelWithAggInfo(vs *vectorSelectorWrapper, groupingSet map[string]struct{}, whitelist bool) {
+func updateVecSelWithAggInfo(vs *enrichedVectorSelector, groupingSet map[string]struct{}, include bool) {
 	if vs.containsAgg {
 		switch {
-		case vs.whitelist && whitelist:
-			vs.labelsSet = getOverlap(vs.labelsSet, groupingSet)
-		case !vs.whitelist && !whitelist:
+		case vs.include && include:
+			vs.labelsSet = getIntersection(vs.labelsSet, groupingSet)
+		case !vs.include && !include:
 			vs.labelsSet = getUnion(vs.labelsSet, groupingSet)
-		case vs.whitelist && !whitelist:
+		case vs.include && !include:
 			vs.labelsSet = getDifference(vs.labelsSet, groupingSet)
-		case !vs.whitelist && whitelist:
+		case !vs.include && include:
 			vs.labelsSet = getDifference(groupingSet, vs.labelsSet)
-			vs.whitelist = true
+			vs.include = true
 		}
 		return
 	}
 	vs.labelsSet = groupingSet
-	vs.whitelist = whitelist
+	vs.include = include
 	vs.containsAgg = true
 }
 
-func getOverlap(set1, set2 map[string]struct{}) map[string]struct{} {
+func getIntersection(set1, set2 map[string]struct{}) map[string]struct{} {
 	overlap := make(map[string]struct{}, len(set1))
 	for key := range set1 {
 		if _, exists := set2[key]; exists {
@@ -213,14 +213,14 @@ func getIndexForEligibleFunction(funcName string) int {
 	}
 }
 
-func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet map[string]struct{}, whitelist bool) []*labels.Matcher {
+func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet map[string]struct{}, include bool) []*labels.Matcher {
 	matchersToAdd := make([]*labels.Matcher, 0, len(labelsSet))
 	for _, m := range matchersSrc {
 		if isMetricNameMatcher(m) {
 			continue
 		}
 		_, exists := labelsSet[m.Name]
-		if whitelist {
+		if include {
 			if !exists {
 				continue
 			}
@@ -235,14 +235,14 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	return matchersToAdd
 }
 
-func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, whitelist bool) []*labels.Matcher {
+func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, include bool) []*labels.Matcher {
 	matchersMap := makeMatchersMap(matchers)
 	newMatchers := make([]*labels.Matcher, 0, len(matchers)+len(matchersToAdd))
 	newMatchers = append(newMatchers, matchers...)
 	for _, m := range matchersToAdd {
 		if _, ok := matchersMap[m.String()]; !ok {
 			_, exists := labelsSet[m.Name]
-			if whitelist {
+			if include {
 				if !exists {
 					continue
 				}

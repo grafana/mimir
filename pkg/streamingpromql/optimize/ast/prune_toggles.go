@@ -13,6 +13,8 @@ import (
 // PruneToggles optimizes queries by pruning expressions that are toggled off, only
 // targeting a very specific query pattern that is commonly used to toggle between
 // classic and native histograms in our dashboards.
+// e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == 1)` -> `(avg(rate(foo[1m])))`
+// e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
 	mapper astmapper.ASTMapper
 }

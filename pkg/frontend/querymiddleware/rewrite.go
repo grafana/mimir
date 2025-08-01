@@ -18,19 +18,17 @@ import (
 type rewriteMiddleware struct {
 	next            MetricsQueryHandler
 	logger          log.Logger
-	cfg             Config
 	mapperHistogram astmapper.ASTMapper
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
-func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
+func newRewriteMiddleware(logger log.Logger) MetricsQueryMiddleware {
 	mapperHistogram := ast.NewMapperReorderHistogramAggregation()
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
 			next:            next,
 			logger:          logger,
-			cfg:             cfg,
 			mapperHistogram: mapperHistogram,
 		}
 	})

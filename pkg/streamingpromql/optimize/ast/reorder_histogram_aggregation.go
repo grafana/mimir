@@ -32,13 +32,13 @@ func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Exp
 }
 
 func NewMapperReorderHistogramAggregation() astmapper.ASTMapper {
-	mapper := &reorderHistogramAgg{}
+	mapper := &reorderHistogramAggregation{}
 	return astmapper.NewASTExprMapper(mapper)
 }
 
-type reorderHistogramAgg struct{}
+type reorderHistogramAggregation struct{}
 
-func (mapper *reorderHistogramAgg) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	call, ok := expr.(*parser.Call)
 	if !ok || !mapper.isSwitchableCall(call.Func) {
 		return expr, false, nil
@@ -69,10 +69,10 @@ func (mapper *reorderHistogramAgg) MapExpr(ctx context.Context, expr parser.Expr
 	return newExpr, false, nil
 }
 
-func (*reorderHistogramAgg) isSwitchableCall(callFunc *parser.Function) bool {
+func (*reorderHistogramAggregation) isSwitchableCall(callFunc *parser.Function) bool {
 	return callFunc.Name == "histogram_sum" || callFunc.Name == "histogram_count"
 }
 
-func (*reorderHistogramAgg) isSwitchableAgg(op parser.ItemType) bool {
+func (*reorderHistogramAggregation) isSwitchableAgg(op parser.ItemType) bool {
 	return op == parser.SUM || op == parser.AVG
 }
