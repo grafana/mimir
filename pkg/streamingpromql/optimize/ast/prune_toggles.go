@@ -13,16 +13,23 @@ import (
 // PruneToggles optimizes queries by pruning expressions that are toggled off, only
 // targeting a very specific query pattern that is commonly used to toggle between
 // classic and native histograms in our dashboards.
-type PruneToggles struct{}
+type PruneToggles struct {
+	mapper astmapper.ASTMapper
+}
+
+func NewPruneToggles() *PruneToggles {
+	mapper := astmapper.NewASTExprMapper(&pruneToggles{})
+	return &PruneToggles{
+		mapper: mapper,
+	}
+}
 
 func (p *PruneToggles) Name() string {
 	return "Toggled off expressions pruning"
 }
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	mapper := &pruneToggles{}
-	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
-	return ASTExprMapper.Map(ctx, expr)
+	return p.mapper.Map(ctx, expr)
 }
 
 type pruneToggles struct{}

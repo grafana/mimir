@@ -25,7 +25,7 @@ type rewriteMiddleware struct {
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
 func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
-	mapperHistogram := ast.NewMapperReorderHistogramAgg()
+	mapperHistogram := ast.NewMapperReorderHistogramAggregation()
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
 			next:            next,

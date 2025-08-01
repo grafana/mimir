@@ -36,7 +36,7 @@ func TestReorderHistogramAgg(t *testing.T) {
 		"histogram_sum(rate(foo[5m]))":           "histogram_sum(rate(foo[5m]))",
 	}
 
-	optimizer := &ReorderHistogramAggregation{}
+	optimizer := NewReorderHistogramAggregation()
 	ctx := context.Background()
 
 	for input, expected := range testCases {

@@ -12,16 +12,23 @@ import (
 )
 
 // PropagateMatchers optimizes queries by propagating matchers across binary operations.
-type PropagateMatchers struct{}
+type PropagateMatchers struct {
+	mapper astmapper.ASTMapper
+}
+
+func NewPropagateMatchers() *PropagateMatchers {
+	mapper := astmapper.NewASTExprMapper(&propagateMatchers{})
+	return &PropagateMatchers{
+		mapper: mapper,
+	}
+}
 
 func (p *PropagateMatchers) Name() string {
 	return "Matcher propagation across binary operations"
 }
 
 func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	mapper := &propagateMatchers{}
-	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
-	return ASTExprMapper.Map(ctx, expr)
+	return p.mapper.Map(ctx, expr)
 }
 
 type propagateMatchers struct{}

@@ -12,15 +12,23 @@ import (
 
 // ReorderHistogramAggregation optimizes queries by reordering histogram functions and aggregations
 // for more efficient execution.
-type ReorderHistogramAggregation struct{}
+type ReorderHistogramAggregation struct {
+	mapper astmapper.ASTMapper
+}
+
+func NewReorderHistogramAggregation() *ReorderHistogramAggregation {
+	mapper := NewMapperReorderHistogramAggregation()
+	return &ReorderHistogramAggregation{
+		mapper: mapper,
+	}
+}
 
 func (r *ReorderHistogramAggregation) Name() string {
 	return "Histogram aggregation reordering"
 }
 
 func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	ASTExprMapper := NewMapperReorderHistogramAggregation()
-	return ASTExprMapper.Map(ctx, expr)
+	return r.mapper.Map(ctx, expr)
 }
 
 func NewMapperReorderHistogramAggregation() astmapper.ASTMapper {

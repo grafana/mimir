@@ -50,7 +50,7 @@ func TestPruneToggles(t *testing.T) {
 		`(avg(rate(foo[1m]))) and on() (vector(0) == 1) or avg(rate(bar[1m])) and on() (vector(1) == 1)`: `(vector(0) == 1) or avg(rate(bar[1m]))`,
 	}
 
-	optimizer := &PruneToggles{}
+	optimizer := NewPruneToggles()
 	ctx := context.Background()
 
 	for input, expected := range testCases {

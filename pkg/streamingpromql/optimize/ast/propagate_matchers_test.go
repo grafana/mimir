@@ -101,7 +101,7 @@ func TestPropagateMatchers(t *testing.T) {
 		`max without (baz) (avg by (foo, baz) (left)) / right{foo="bar", baz="fob"}`:                          `max without (baz) (avg by (foo, baz) (left{foo="bar"})) / right{foo="bar", baz="fob"}`,
 	}
 
-	optimizer := &PropagateMatchers{}
+	optimizer := NewPropagateMatchers()
 	ctx := context.Background()
 
 	for input, expected := range testCases {
