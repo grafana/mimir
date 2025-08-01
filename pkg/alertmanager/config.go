@@ -80,37 +80,8 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
-	emailCfg := genEmailConfig(gCfg, amCfg.AlertmanagerConfig.Global)
-
-	// The map can only contain templates of the Grafana kind.
-	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
-	tmpl := append(amCfg.Templates, definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)...)
-
-	return amConfig{
-		User:               gCfg.User,
-		RawConfig:          string(rawCfg),
-		Templates:          tmpl,
-		TmplExternalURL:    externalURL,
-		UsingGrafanaConfig: true,
-		EmailConfig:        emailCfg,
-	}, nil
-}
-
-func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
-	result := make([]definition.PostableApiTemplate, 0, len(t))
-	for _, desc := range t {
-		result = append(result, definition.PostableApiTemplate{
-			Name:    desc.Filename,
-			Content: desc.Body,
-			Kind:    kind,
-		})
-	}
-	return result
-}
-
-// genEmailConfig returns an EmailSenderConfig built with globals + custom Grafana SMTP configs.
-// If no globals are provided, the default globals are used.
-func genEmailConfig(gCfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig) alertingReceivers.EmailSenderConfig {
+	// Create base config using globals.
+	g := amCfg.AlertmanagerConfig.Global
 	if g == nil {
 		defaultGlobals := config.DefaultGlobalConfig()
 		g = &defaultGlobals
@@ -122,7 +93,7 @@ func genEmailConfig(gCfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig
 		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
 		ContentTypes: []string{"text/html"},
 		EhloIdentity: g.SMTPHello,
-		ExternalURL:  gCfg.ExternalUrl,
+		ExternalURL:  externalURL.String(),
 		FromAddress:  g.SMTPFrom,
 		FromName:     "Grafana",
 		Host:         g.SMTPSmarthost.String(),
@@ -162,5 +133,29 @@ func genEmailConfig(gCfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig
 			emailCfg.AuthUser = gCfg.SmtpConfig.User
 		}
 	}
-	return emailCfg
+
+	// The map can only contain templates of the Grafana kind.
+	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
+	tmpl := append(amCfg.Templates, definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)...)
+
+	return amConfig{
+		User:               gCfg.User,
+		RawConfig:          string(rawCfg),
+		Templates:          tmpl,
+		TmplExternalURL:    externalURL,
+		UsingGrafanaConfig: true,
+		EmailConfig:        emailCfg,
+	}, nil
+}
+
+func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
+	result := make([]definition.PostableApiTemplate, 0, len(t))
+	for _, desc := range t {
+		result = append(result, definition.PostableApiTemplate{
+			Name:    desc.Filename,
+			Content: desc.Body,
+			Kind:    kind,
+		})
+	}
+	return result
 }
