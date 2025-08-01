@@ -16,6 +16,8 @@ cmd/mimir-continuous-test/mimir-continuous-test_linux_amd64
 cmd/mimir-continuous-test/mimir-continuous-test_linux_arm64
 cmd/otelconvert/otelconvert-linux-amd64
 cmd/otelconvert/otelconvert-linux-arm64
+tools/listblocks/listblocks-linux-amd64
+tools/listblocks/listblocks-linux-arm64
 tools/config-inspector/config-inspector
 tools/kafkatool/kafkatool
 .bak

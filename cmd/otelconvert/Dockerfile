@@ -14,6 +14,7 @@ SHELL [ "/busybox/sh", "-c" ]
 RUN ln -s /busybox/sh /bin/sh
 
 COPY ./cmd/otelconvert/otelconvert${BINARY_SUFFIX} /usr/bin/otelconvert
+COPY ./tools/listblocks/listblocks${BINARY_SUFFIX} /usr/bin/listblocks
 
 LABEL org.opencontainers.image.title="otelconvert" \
     org.opencontainers.image.vendor="Grafana Labs" \

@@ -815,8 +815,14 @@ cmd/otelconvert/otelconvert-linux-amd64: $(GO_FILES) cmd/otelconvert/main.go
 cmd/otelconvert/otelconvert-linux-arm64: $(GO_FILES) cmd/otelconvert/main.go
 	CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" go build $(GO_FLAGS) -o $@ ./$(@D)
 
+tools/listblocks/listblocks-linux-amd64: $(GO_FILES) tools/listblocks/main.go
+	CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" go build $(GO_FLAGS) -o $@ ./$(@D)
+
+tools/listblocks/listblocks-linux-arm64: $(GO_FILES) tools/listblocks/main.go
+	CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" go build $(GO_FLAGS) -o $@ ./$(@D)
+
 .PHONY: build-otelconvert-image-push
-build-otelconvert-image-push: cmd/otelconvert/otelconvert-linux-amd64 cmd/otelconvert/otelconvert-linux-arm64
+build-otelconvert-image-push: cmd/otelconvert/otelconvert-linux-amd64 cmd/otelconvert/otelconvert-linux-arm64 tools/listblocks/listblocks-linux-amd64 tools/listblocks/listblocks-linux-arm64
 	$(SUDO) docker buildx build \
 		--build-arg revision=$(GIT_REVISION) \
 		--build-arg branch=$(GIT_BRANCH) \
