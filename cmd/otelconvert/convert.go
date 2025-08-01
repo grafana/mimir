@@ -89,6 +89,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 		var (
 			gauge = &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{}}
 			histo = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
+
+			chkItr chunkenc.Iterator
 		)
 
 		for _, chkMeta := range chkMetas {
@@ -101,7 +103,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 				return fmt.Errorf("unexpected chunk iterator")
 			}
 
-			chkItr := chk.Iterator(nil)
+			chkItr = chk.Iterator(chkItr)
+
 			for valType := chkItr.Next(); valType != chunkenc.ValNone; valType = chkItr.Next() {
 				switch valType {
 				case chunkenc.ValFloat:
