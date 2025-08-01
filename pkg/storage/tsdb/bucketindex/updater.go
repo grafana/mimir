@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -105,6 +106,7 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Block, partials map[ulid.ULID]error, _ error) {
 	discovered := map[ulid.ULID]struct{}{}
 	partials = map[ulid.ULID]error{}
+	var partialsMx sync.Mutex
 
 	// Find all blocks in the storage.
 	err := w.bkt.Iter(ctx, "", func(name string) error {
@@ -142,12 +144,16 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		}
 
 		if errors.Is(err, ErrBlockMetaNotFound) {
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			level.Warn(w.logger).Log("msg", "skipped partial block when updating bucket index", "block", id.String())
 			return nil, nil
 		}
 		if errors.Is(err, ErrBlockMetaCorrupted) {
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			level.Error(w.logger).Log("msg", "skipped block with corrupted meta.json when updating bucket index", "block", id.String(), "err", err)
 			return nil, nil
 		}
