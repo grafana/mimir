@@ -148,6 +148,15 @@ func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
 	return prealloc
 }
 
+func (t *FastSymbolsTable) SymbolsSizeProto() int {
+	var l, n int
+	for k := range t.symbolsMap {
+		l = len(k)
+		n += 1 + l + sovMimir(uint64(l))
+	}
+	return n
+}
+
 func (t *FastSymbolsTable) Reset() {
 	clear(t.symbolsMap)
 	// We intentionally don't reset symbolsMapCapacityLowerBound.

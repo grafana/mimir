@@ -265,9 +265,13 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
+# Git worktree support: Generate volume mounts for worktree git metadata
+GITVOLUMES := $(shell ./tools/git-worktree-volumes.sh 2>/dev/null | sed 's/$$/:$(CONTAINER_MOUNT_OPTIONS)/' || true)
+
 GOVOLUMES=	-v mimir-go-cache:/go/cache \
 			-v mimir-go-pkg:/go/pkg \
-			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
+			$(GITVOLUMES)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)

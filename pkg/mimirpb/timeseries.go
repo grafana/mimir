@@ -129,6 +129,8 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range m.Timeseries {
 		m.Timeseries[idx].clearUnmarshalData()
 	}
+	m.rw2symbols = rw2PagedSymbols{}
+	m.unmarshalFromRW2 = false
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
@@ -201,14 +203,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	p.clearUnmarshalData()
 }

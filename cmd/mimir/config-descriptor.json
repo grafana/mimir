@@ -6046,6 +6046,17 @@
           "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "name_validation_scheme",
+          "required": false,
+          "desc": "Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: legacy, utf8.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldFlag": "validation.name-validation-scheme",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -10519,6 +10530,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_enabled",
+              "required": false,
+              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

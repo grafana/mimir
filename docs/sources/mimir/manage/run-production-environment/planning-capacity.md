@@ -157,6 +157,8 @@ Assuming you run one compactor instance every 20 million active series, the esti
 
 For more information about disk requirements, refer to [Compactor disk utilization](../../../references/architecture/components/compactor/#compactor-disk-utilization).
 
+For more information about how to scale the compactor for large tenants, refer to [Manage capacity for large tenants](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/run-production-environment/production-tips/#manage-capacity-for-large-tenants).
+
 **To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 
 ```

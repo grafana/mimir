@@ -4260,6 +4260,13 @@ ruler_alertmanager_client_config:
 # partitions.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
+
+# (experimental) Validation scheme to use for metric and label names.
+# Distributors reject time series that do not adhere to this scheme. Rulers
+# reject rules with unsupported metric or label names. Supported values: legacy,
+# utf8.
+# CLI flag: -validation.name-validation-scheme
+[name_validation_scheme: <int> | default = legacy]
 ```
 
 ### ingest_storage
@@ -4956,6 +4963,12 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Controls the collection of statistics and whether to defer
+  # some vector selector matchers to sequential scans. This leads to better
+  # performance.
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
+  [index_lookup_planning_enabled: <boolean> | default = false]
 ```
 
 ### compactor

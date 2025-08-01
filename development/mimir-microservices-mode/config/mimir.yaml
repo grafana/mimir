@@ -73,6 +73,7 @@ blocks_storage:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+      bucket_index_content_ttl: 10s
 
   s3:
     endpoint:          minio:9000

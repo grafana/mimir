@@ -450,7 +450,7 @@ type timeoutGate struct {
 	timeout  time.Duration
 }
 
-var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+var errGateTimeout = staticError{cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
 
 func (t timeoutGate) Start(ctx context.Context) error {
 	if t.timeout == 0 {
