@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultMDChunkSizeBytes = 500_000_000
+	defaultMDChunkSizePostings = 10000
 )
 
 var (
@@ -48,9 +48,9 @@ func main() {
 	flag.StringVar(&cfg.block, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
-	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizeBytes, "Output chunk size")
+	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizePostings, "Output chunk size in postings")
 
-	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
 
 	// Parse CLI flags.

@@ -61,20 +61,22 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 	md.Reset()
 
 	chunkCount := 0
+	postingsCount := 0
 
 	for p.Next() {
 		if err = p.Err(); err != nil {
 			return fmt.Errorf("iterate postings: %w", err)
 		}
 
-		// Flush a full chunk to disk.
-		if proto.Size(md) > chunkSize {
+		// Flush a chunk to disk.
+		if postingsCount >= chunkSize {
 			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
 
 			md.Reset()
+			postingsCount = 0
 		}
 
 		chkMetas := []chunks.Meta(nil)
@@ -171,6 +173,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 		if verbose {
 			log.Printf("current size: %d\n", proto.Size(md))
 		}
+
+		postingsCount++
 	}
 
 	// Flush any remaining partial chunk to disk.
