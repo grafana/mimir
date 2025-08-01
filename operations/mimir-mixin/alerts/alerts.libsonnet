@@ -399,7 +399,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               %(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations. Verify if a higher interval is neeeded.
             ||| % $._config,
-          }
+          },
         }
         {
           alert: $.alertName('StoreGatewayTooManyFailedOperations'),
