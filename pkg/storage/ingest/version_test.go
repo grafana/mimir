@@ -452,6 +452,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 			if len(rwv2.TimeseriesRW2) == 0 {
 				b.Fatal("unexpectedly empty")
 			}
+			mimirpb.ReuseRW2(rwv2)
 		}
 	})
 }

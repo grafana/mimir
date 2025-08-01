@@ -5,11 +5,46 @@ package mimirpb
 import (
 	"fmt"
 
+	"sync"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+const (
+	minPreallocatedTimeseriesRW2 = 100
+	maxPreallocatedTimeseriesRW2 = 10000
+)
+
+var (
+	preallocTimeseriesRW2SlicePool = sync.Pool{
+		New: func() interface{} {
+			return make([]TimeSeriesRW2, 0, minPreallocatedTimeseriesRW2)
+		},
+	}
+)
+
+func timeSeriesRW2SliceFromPool() []TimeSeriesRW2 {
+	return preallocTimeseriesRW2SlicePool.Get().([]TimeSeriesRW2)
+}
+
+func reuseTimeSeriesRW2Slice(s []TimeSeriesRW2) {
+	if cap(s) == 0 {
+		return
+	}
+
+	if cap(s) > maxPreallocatedTimeseriesRW2 {
+		return
+	}
+
+	for i := range s {
+		s[i] = TimeSeriesRW2{}
+	}
+	preallocTimeseriesRW2SlicePool.Put(s[:0])
+}
+
 func ReuseRW2(req *WriteRequest) {
 	reuseSymbolsSlice(req.SymbolsRW2)
+	reuseTimeSeriesRW2Slice(req.TimeseriesRW2)
 }
 
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
@@ -61,7 +96,12 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 	}
 
-	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
+	expTimeseriesCount := len(rw1.Timeseries) + len(rw1.Metadata)
+	rw2Timeseries := timeSeriesRW2SliceFromPool()
+	if cap(rw2Timeseries) < expTimeseriesCount {
+		rw2Timeseries = make([]TimeSeriesRW2, 0, expTimeseriesCount)
+	}
+
 	for _, ts := range rw1.Timeseries {
 		refs := make([]uint32, 0, len(ts.Labels)*2) // TODO: Pool-ify this allocation
 		metricName := ""
