@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,6 +34,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -55,6 +58,7 @@ var tracer = otel.Tracer("querier/worker")
 
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
+var errAlreadyFailed = errors.New("the query-frontend stream has already failed")
 
 func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
@@ -322,11 +326,7 @@ func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Contex
 
 	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
 	frontendCtx := context.WithoutCancel(ctx)
-	bof := backoff.New(frontendCtx, backoff.Config{
-		MinBackoff: 5 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
-		MaxRetries: maxNotifyFrontendRetries,
-	})
+	bof := createFrontendBackoff(frontendCtx)
 
 	var err error
 	for bof.Ongoing() {
@@ -357,6 +357,14 @@ func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Contex
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func createFrontendBackoff(ctx context.Context) *backoff.Backoff {
+	return backoff.New(ctx, backoff.Config{
+		MinBackoff: 5 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: maxNotifyFrontendRetries,
+	})
 }
 
 func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
@@ -434,27 +442,123 @@ sendBody:
 func (sp *schedulerProcessor) runGrpcRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
 	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
 
-	writer := &grpcStreamWriter{
-		queryID:         queryID,
-		frontendAddress: frontendAddress,
-	}
-
+	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
 	sp.grpcHandler.HandleGRPC(ctx, request, writer)
+	writer.Close(ctx)
 }
 
 type grpcStreamWriter struct {
 	queryID         uint64
 	frontendAddress string
+	clientPool      frontendClientPool
+	logger          log.Logger
+
+	client client.PoolClient
+	stream frontendv2pb.FrontendForQuerier_QueryResultStreamClient
+	failed bool
+}
+
+type frontendClientPool interface {
+	GetClientFor(addr string) (client.PoolClient, error)
+	RemoveClient(c client.PoolClient, addr string)
+}
+
+func newGrpcStreamWriter(queryID uint64, frontendAddress string, clientPool frontendClientPool, logger log.Logger) *grpcStreamWriter {
+	return &grpcStreamWriter{
+		queryID:         queryID,
+		frontendAddress: frontendAddress,
+		clientPool:      clientPool,
+		logger:          logger,
+	}
 }
 
 func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+	if g.failed {
+		return errAlreadyFailed
+	}
+
 	msg.QueryID = g.queryID
 
-	// If first request: create client, send message with retries
-	// If subsequent request: send message with existing client (or fail if first attempt failed)
+	if g.stream != nil {
+		// We already have a stream, use it.
+		// If this fails, don't retry, as we can't know if the message made it to the frontend or not, which could lead to incorrect query results.
+		if err := g.stream.Send(msg); err != nil {
+			g.clientPool.RemoveClient(g.client, g.frontendAddress)
+			g.failed = true
+			return err
+		}
 
-	// TODO
+		return nil
+	}
+
+	// This is the first message, try to send the message with retries.
+	// This is safe to do (unlike for subsequent messages), as the query-frontend will reject
+	// the QueryResultStream calls if it has already seen any message for this query.
+	ctx = context.WithoutCancel(ctx) // Even if the request has been cancelled, we want to inform the query-frontend, so that it doesn't wait for a response until it times out.
+	bof := createFrontendBackoff(ctx)
+	var err error
+	for bof.Ongoing() {
+		err = g.tryToStartStreamAndSendFirstMessage(ctx, msg)
+		if err == nil {
+			return nil
+		}
+
+		level.Warn(g.logger).Log("msg", "attempt to send message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID, "attempt", bof.NumRetries()+1)
+		bof.Wait()
+	}
+
+	level.Error(g.logger).Log("msg", "abandoned attempt to send message to query-frontend", "lastErr", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+	g.failed = true
+	return err
+}
+
+func (g *grpcStreamWriter) tryToStartStreamAndSendFirstMessage(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+	client, err := g.clientPool.GetClientFor(g.frontendAddress)
+	if err != nil {
+		return err
+	}
+
+	stream, err := client.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
+	if err != nil {
+		g.clientPool.RemoveClient(client, g.frontendAddress)
+		return err
+	}
+
+	if err := stream.Send(msg); err != nil {
+		g.clientPool.RemoveClient(client, g.frontendAddress)
+		return err
+	}
+
+	g.client = client
+	g.stream = stream
+
 	return nil
+}
+
+func (g *grpcStreamWriter) Close(ctx context.Context) {
+	if !g.failed && g.stream == nil {
+		// We haven't sent anything to the query-frontend yet.
+		// This should never happen, but if it does, send a message to the query-frontend so it's not waiting
+		// for a response that will never come.
+		msg := &frontendv2pb.QueryResultStreamRequest{
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+					Message: "query execution completed without sending any messages (this is a bug)",
+				},
+			},
+		}
+
+		if err := g.Write(ctx, msg); err != nil {
+			level.Warn(g.logger).Log("msg", "could not send message to frontend to notify of request that completed without any messages", "err", err)
+			return
+		}
+	}
+
+	if g.stream != nil {
+		// If this fails, there's not much we can do.
+		_, _ = g.stream.CloseAndRecv()
+	}
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
