@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	"github.com/grafana/alerting/receivers"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -110,13 +110,13 @@ func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definiti
 
 // genEmailConfig returns an EmailSenderConfig built with globals + custom Grafana SMTP configs.
 // If no globals are provided, the default globals are used.
-func genEmailConfig(cfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig) receivers.EmailSenderConfig {
+func genEmailConfig(cfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig) alertingReceivers.EmailSenderConfig {
 	if g == nil {
 		defaultGlobals := config.DefaultGlobalConfig()
 		g = &defaultGlobals
 	}
 
-	emailCfg := receivers.EmailSenderConfig{
+	emailCfg := alertingReceivers.EmailSenderConfig{
 		AuthPassword: string(g.SMTPAuthPassword),
 		AuthUser:     g.SMTPAuthUsername,
 		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
