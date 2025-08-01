@@ -4858,17 +4858,6 @@
         },
         {
           "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_ingesters_within",
           "required": false,
           "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",

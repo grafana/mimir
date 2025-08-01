@@ -608,7 +608,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		"range query": {
 			instances: queryRangeMiddlewares,
 			exceptions: []string{
-				"splitInstantQueryByIntervalMiddleware",
 				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
 			},
 		},
@@ -617,7 +616,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{
 				"querySharding",                         // No query sharding support.
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
-				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
 				"pruneMiddleware",                       // No query pruning support.
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.

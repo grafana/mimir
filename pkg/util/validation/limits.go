@@ -193,7 +193,6 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
-	SplitInstantQueriesByInterval         model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
@@ -395,7 +394,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
-	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 
@@ -892,12 +890,6 @@ func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 // than this limit, the query will not be sharded. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
-}
-
-// SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query
-// via the query-frontend. 0 to disable limit.
-func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
 }
 
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
