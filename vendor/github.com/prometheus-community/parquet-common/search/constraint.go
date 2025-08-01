@@ -40,6 +40,10 @@ type Constraint interface {
 	path() string
 }
 
+// MatchersToConstraints converts Prometheus label matchers into parquet search constraints.
+// It supports MatchEqual, MatchNotEqual, MatchRegexp, and MatchNotRegexp matcher types.
+// Returns a slice of constraints that can be used to filter parquet data based on the
+// provided label matchers, or an error if an unsupported matcher type is encountered.
 func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	r := make([]Constraint, 0, len(matchers))
 	for _, matcher := range matchers {
@@ -67,6 +71,16 @@ func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	return r, nil
 }
 
+// Initialize prepares the given constraints for use with the specified parquet file.
+// It calls the init method on each constraint to validate compatibility with the
+// file schema and set up any necessary internal state.
+//
+// Parameters:
+//   - f: The ParquetFile that the constraints will be applied to
+//   - cs: Variable number of constraints to initialize
+//
+// Returns an error if any constraint fails to initialize, wrapping the original
+// error with context about which constraint failed.
 func Initialize(f storage.ParquetFileView, cs ...Constraint) error {
 	for i := range cs {
 		if err := cs[i].init(f); err != nil {
@@ -107,6 +121,18 @@ func sortConstraintsBySortingColumns(cs []Constraint, sc []parquet.SortingColumn
 	})
 }
 
+// Filter applies the given constraints to a parquet row group and returns the row ranges
+// that satisfy all constraints. It optimizes performance by prioritizing constraints on
+// sorting columns, which are cheaper to evaluate.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - s: ParquetShard containing the parquet file to filter
+//   - rgIdx: Index of the row group to filter within the parquet file
+//   - cs: Variable number of constraints to apply for filtering
+//
+// Returns a slice of RowRange that represent the rows satisfying all constraints,
+// or an error if any constraint fails to filter.
 func Filter(ctx context.Context, s storage.ParquetShard, rgIdx int, cs ...Constraint) ([]RowRange, error) {
 	rg := s.LabelsFile().RowGroups()[rgIdx]
 	// Constraints for sorting columns are cheaper to evaluate, so we sort them first.
