@@ -7,39 +7,30 @@ Params:
   env = (optional) default environment variables in the Kubernetes EnvVar format
 */}}
 {{- define "mimir.lib.containerEnv" -}}
-{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
-{{- $envKV := dict }}
-{{- /* Add defaults to the dictionary */}}
-{{- range (.env | default list) }}
-  {{- $_ := set $envKV .name . }}
-{{- end }}
-{{- /* Add global extraEnv (overrides defaults) */}}
-{{- range (.ctx.Values.global.extraEnv | default list) }}
-  {{- $_ := set $envKV .name . }}
-{{- end }}
-{{- /* Add component-specific env (overrides both defaults and global) */}}
-{{- range ($componentSection.env | default list) }}
-  {{- $_ := set $envKV .name . }}
-{{- end }}
-{{- /* Convert back to list format for YAML output */}}
-{{- $envList := list }}
-{{- range $_, $envVar := $envKV }}
-  {{- $envList = append $envList $envVar }}
-{{- end }}
-{{- /* Build "env" and "envFrom" sections if there is anything to output */}}
-{{- if $envList -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- $envKV := dict -}}
+{{- range (.env | default list) -}}
+  {{- $_ := set $envKV .name . -}}
+{{- end -}}
+{{- range (.ctx.Values.global.extraEnv | default list) -}}
+  {{- $_ := set $envKV .name . -}}
+{{- end -}}
+{{- range ($componentSection.env | default list) -}}
+  {{- $_ := set $envKV .name . -}}
+{{- end -}}
+{{- $envList := list -}}
+{{- range $_, $envVar := $envKV -}}
+  {{- $envList = append $envList $envVar -}}
+{{- end -}}
 env:
-{{- toYaml $envList | nindent 2 }}
-{{- end }}
-{{- $globalExtraEnvFrom := .ctx.Values.global.extraEnvFrom | default list }}
-{{- $componentExtraEnvFrom := $componentSection.extraEnvFrom | default list }}
-{{- if or $globalExtraEnvFrom $componentExtraEnvFrom }}
+  {{- toYaml $envList | nindent 2 }}
+{{- if or .ctx.Values.global.extraEnvFrom $componentSection.extraEnvFrom }}
 envFrom:
-{{- if $globalExtraEnvFrom }}
-{{- toYaml $globalExtraEnvFrom | nindent 2 }}
+{{- with .ctx.Values.global.extraEnvFrom }}
+  {{- toYaml . | nindent 2 -}}
 {{- end }}
-{{- if $componentExtraEnvFrom }}
-{{- toYaml $componentExtraEnvFrom | nindent 2 }}
-{{- end -}}
-{{- end -}}
+{{- with $componentSection.extraEnvFrom }}
+  {{- toYaml . | nindent 12 }}
+{{- end }}
+{{- end }}
 {{- end -}}
