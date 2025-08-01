@@ -6,9 +6,11 @@
 package storegateway
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/pkg/errors"
@@ -369,8 +371,8 @@ func (s worstCaseFetchedDataStrategy) name() string {
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].totalSize < groups[j].totalSize
+	slices.SortFunc(groups, func(a, b postingGroup) int {
+		return cmp.Compare(a.totalSize, b.totalSize)
 	})
 
 	maxSelectedSeriesCount := numSeriesInSmallestIntersectingPostingGroup(groups)

@@ -2342,6 +2342,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
+              "required": false,
+              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_skipping_histogram_decoding",
               "required": false,
               "desc": "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.",
@@ -4880,17 +4891,6 @@
         },
         {
           "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_ingesters_within",
           "required": false,
           "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",
@@ -6055,6 +6055,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "name_validation_scheme",
+          "required": false,
+          "desc": "Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: legacy, utf8.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldFlag": "validation.name-validation-scheme",
           "fieldType": "int",
           "fieldCategory": "experimental"
         }
@@ -10530,6 +10541,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_enabled",
+              "required": false,
+              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

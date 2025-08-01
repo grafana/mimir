@@ -284,6 +284,10 @@ type TSDBConfig struct {
 	// TimelyHeadCompaction allows head compaction to happen when min block range can no longer be appended,
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
+
+	// IndexLookupPlanningEnabled controls the collection of statistics and whether to defer some vector selector matchers to sequential scans.
+	// This leads to better performance.
+	IndexLookupPlanningEnabled bool `yaml:"index_lookup_planning_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -330,6 +334,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
+	f.BoolVar(&cfg.IndexLookupPlanningEnabled, "blocks-storage.tsdb.index-lookup-planning-enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second

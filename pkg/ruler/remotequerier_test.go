@@ -467,7 +467,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 	}{
 		"vector response with no series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{},
 				},
@@ -476,7 +476,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with one series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -499,7 +499,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with many series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -532,7 +532,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with many labels": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -555,7 +555,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with histogram value": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Histograms: []mimirpb.VectorHistogram{
@@ -578,7 +578,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with float and histogram values": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -613,7 +613,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with malformed metric": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -630,7 +630,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"scalar response": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Scalar{
 					Scalar: &mimirpb.ScalarData{
 						TimestampMs: 1649092025515,
@@ -648,7 +648,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"matrix response": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{},
 				},
@@ -657,8 +657,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"execution error": {
 			body: mimirpb.QueryResponse{
-				Status:    mimirpb.QueryResponse_ERROR,
-				ErrorType: mimirpb.QueryResponse_EXECUTION,
+				Status:    mimirpb.QUERY_STATUS_ERROR,
+				ErrorType: mimirpb.QUERY_ERROR_TYPE_EXECUTION,
 				Error:     "something went wrong",
 			},
 			expectedError: errors.New("query execution failed with error: something went wrong"),

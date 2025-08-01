@@ -91,7 +91,7 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 	})
 }
 
-func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
+func TestWriteRequest_FieldSize(t *testing.T) {
 	req := &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
 			Samples:    []Sample{{TimestampMs: 20}},
@@ -103,21 +103,50 @@ func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
 		},
 	}
 
-	origSize := req.Size()
-	metadataSize := req.MetadataSize()
-	timeseriesSize := req.TimeseriesSize()
+	t.Run("MetadataSize and TimeseriesSize", func(t *testing.T) {
+		origSize := req.Size()
+		metadataSize := req.MetadataSize()
+		timeseriesSize := req.TimeseriesSize()
 
-	assert.Less(t, metadataSize, origSize)
-	assert.Less(t, timeseriesSize, origSize)
-	assert.Equal(t, origSize, req.Size())
+		assert.Less(t, metadataSize, origSize)
+		assert.Less(t, timeseriesSize, origSize)
+		assert.Equal(t, metadataSize+timeseriesSize, req.Size())
 
-	reqWithoutTimeseries := *req
-	reqWithoutTimeseries.Timeseries = nil
-	assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
+		reqWithoutTimeseries := *req
+		reqWithoutTimeseries.Timeseries = nil
+		assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
 
-	reqWithoutMetadata := *req
-	reqWithoutMetadata.Metadata = nil
-	assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
+		reqWithoutMetadata := *req
+		reqWithoutMetadata.Metadata = nil
+		assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
+	})
+
+	reqv2 := &WriteRequest{
+		SymbolsRW2: []string{"", "1", "2", "3", "4"},
+		TimeseriesRW2: []TimeSeriesRW2{{
+			LabelsRefs: []uint32{1, 2, 3, 4},
+			Samples:    []Sample{{TimestampMs: 20}},
+			Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+			Histograms: []Histogram{{Timestamp: 10}},
+		}},
+	}
+
+	t.Run("TimeseriesRW2Size and SymbolsRW2Size", func(t *testing.T) {
+		origSize := reqv2.Size()
+		timeseriesSize := reqv2.TimeseriesRW2Size()
+		symbolsSize := reqv2.SymbolsRW2Size()
+		assert.Less(t, timeseriesSize, origSize)
+		assert.Less(t, symbolsSize, origSize)
+		assert.Equal(t, timeseriesSize+symbolsSize, reqv2.Size())
+
+		reqWithoutTimeseries := *reqv2
+		reqWithoutTimeseries.TimeseriesRW2 = nil
+		assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
+
+		reqWithoutSymbols := *reqv2
+		reqWithoutSymbols.SymbolsRW2 = nil
+		assert.Equal(t, origSize-symbolsSize, reqWithoutSymbols.Size())
+	})
 }
 
 func TestIsFloatHistogram(t *testing.T) {
