@@ -3691,15 +3691,9 @@ func TestComputeConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			// require.Equal(t, test.expEmailCfg, cfg.EmailConfig)
 
 			require.True(t, startAM)
 			require.Equal(t, test.expCfg, cfg)
-			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
-			// } else {
-			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
-			// }
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
@@ -3712,12 +3706,6 @@ func TestComputeConfig(t *testing.T) {
 
 			require.Equal(t, test.expStartAM, startAM)
 			require.Equal(t, test.expCfg, cfg)
-			// require.Equal(t, test.expHeaders, cfg.EmailConfig.StaticHeaders)
-			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
-			// } else {
-			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
-			// }
 		})
 	}
 }

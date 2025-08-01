@@ -775,6 +775,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If Grafana config is not usable, skip if possible.
 	if !isGrafanaConfigUsable(cfgs.Grafana) {
+		// TODO: If the configuration is not skippable, it would be more accurate to use the correct config (Grafana/Mimir).
 		if !skippable || isMimirConfigCustom {
 			return cfg, true, nil
 		}
@@ -795,9 +796,9 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
 
-		// Use Grafana's settings (if any).
+		// Use Grafana's settings (if promoted).
 		var err error
-		if cfgs.Grafana.RawConfig != "" {
+		if cfgs.Grafana.Promoted && cfgs.Grafana.RawConfig != "" {
 			cfg, err = createUsableGrafanaConfig(am.logger, cfgs.Grafana, cfgs.Mimir.RawConfig)
 		}
 		return cfg, true, err
