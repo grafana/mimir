@@ -10745,6 +10745,17 @@
         },
         {
           "kind": "field",
+          "name": "update_blocks_concurrency",
+          "required": false,
+          "desc": "Number of Go routines to use when updating blocks metadata during bucket index updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "compactor.update-blocks-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.",
