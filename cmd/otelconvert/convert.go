@@ -84,6 +84,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 		}
 
 		metricName, resourceAttrs := lblsToResourceAttributes(builder)
+		builder.Reset()
 
 		var (
 			gauge = &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{}}
