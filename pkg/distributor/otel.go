@@ -135,10 +135,6 @@ func OTLPHandler(
 			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
 		}
-		if labelValueTooLongErr := (LabelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
-			// Translate from Mimir to OTel domain terminology
-			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
-		}
 		var (
 			httpCode int
 			grpcCode codes.Code
@@ -716,15 +712,4 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 	}
 
 	return firstSpan.Offset - 1, buckets
-}
-
-type otelAttributeValueTooLongError struct {
-	LabelValueTooLongError
-}
-
-func (e otelAttributeValueTooLongError) Error() string {
-	return fmt.Sprintf(
-		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-		e.Limit, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series),
-	)
 }
