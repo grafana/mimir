@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	alertingReceivers "github.com/grafana/alerting/receivers"
+	"github.com/grafana/alerting/receivers"
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -80,59 +80,7 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
-	// Create base config using globals.
-	g := amCfg.AlertmanagerConfig.Global
-	if g == nil {
-		defaultGlobals := config.DefaultGlobalConfig()
-		g = &defaultGlobals
-	}
-
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword: string(g.SMTPAuthPassword),
-		AuthUser:     g.SMTPAuthUsername,
-		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes: []string{"text/html"},
-		EhloIdentity: g.SMTPHello,
-		ExternalURL:  externalURL.String(),
-		FromAddress:  g.SMTPFrom,
-		FromName:     "Grafana",
-		Host:         g.SMTPSmarthost.String(),
-		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:   !g.SMTPRequireTLS,
-		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
-
-		// TODO: Remove once it's sent in SmtpConfig.
-		StaticHeaders: gCfg.StaticHeaders,
-	}
-
-	// Patch the base config with the custom SMTP config sent by Grafana.
-	if gCfg.SmtpConfig != nil {
-		if gCfg.SmtpConfig.EhloIdentity != "" {
-			emailCfg.EhloIdentity = gCfg.SmtpConfig.EhloIdentity
-		}
-		if gCfg.SmtpConfig.FromAddress != "" {
-			emailCfg.FromAddress = gCfg.SmtpConfig.FromAddress
-		}
-		if gCfg.SmtpConfig.FromName != "" {
-			emailCfg.FromName = gCfg.SmtpConfig.FromName
-		}
-		if gCfg.SmtpConfig.Host != "" {
-			emailCfg.Host = gCfg.SmtpConfig.Host
-		}
-		if gCfg.SmtpConfig.Password != "" {
-			emailCfg.AuthPassword = gCfg.SmtpConfig.Password
-		}
-		emailCfg.SkipVerify = gCfg.SmtpConfig.SkipVerify
-		if gCfg.SmtpConfig.StartTlsPolicy != "" {
-			emailCfg.StartTLSPolicy = gCfg.SmtpConfig.StartTlsPolicy
-		}
-		if gCfg.SmtpConfig.StaticHeaders != nil {
-			emailCfg.StaticHeaders = gCfg.SmtpConfig.StaticHeaders
-		}
-		if gCfg.SmtpConfig.User != "" {
-			emailCfg.AuthUser = gCfg.SmtpConfig.User
-		}
-	}
+	emailCfg := genEmailConfig(gCfg, amCfg.AlertmanagerConfig.Global)
 
 	// The map can only contain templates of the Grafana kind.
 	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
@@ -158,4 +106,61 @@ func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definiti
 		})
 	}
 	return result
+}
+
+// genEmailConfig returns an EmailSenderConfig built with globals + custom Grafana SMTP configs.
+// If no globals are provided, the default globals are used.
+func genEmailConfig(cfg alertspb.GrafanaAlertConfigDesc, g *config.GlobalConfig) receivers.EmailSenderConfig {
+	if g == nil {
+		defaultGlobals := config.DefaultGlobalConfig()
+		g = &defaultGlobals
+	}
+
+	emailCfg := receivers.EmailSenderConfig{
+		AuthPassword: string(g.SMTPAuthPassword),
+		AuthUser:     g.SMTPAuthUsername,
+		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes: []string{"text/html"},
+		EhloIdentity: g.SMTPHello,
+		ExternalURL:  cfg.ExternalUrl,
+		FromAddress:  g.SMTPFrom,
+		FromName:     "Grafana",
+		Host:         g.SMTPSmarthost.String(),
+		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:   !g.SMTPRequireTLS,
+		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
+
+		// TODO: Remove once it's sent in SmtpConfig.
+		StaticHeaders: cfg.StaticHeaders,
+	}
+
+	// Patch the base config with the custom SMTP config sent by Grafana.
+	if cfg.SmtpConfig != nil {
+		if cfg.SmtpConfig.EhloIdentity != "" {
+			emailCfg.EhloIdentity = cfg.SmtpConfig.EhloIdentity
+		}
+		if cfg.SmtpConfig.FromAddress != "" {
+			emailCfg.FromAddress = cfg.SmtpConfig.FromAddress
+		}
+		if cfg.SmtpConfig.FromName != "" {
+			emailCfg.FromName = cfg.SmtpConfig.FromName
+		}
+		if cfg.SmtpConfig.Host != "" {
+			emailCfg.Host = cfg.SmtpConfig.Host
+		}
+		if cfg.SmtpConfig.Password != "" {
+			emailCfg.AuthPassword = cfg.SmtpConfig.Password
+		}
+		emailCfg.SkipVerify = cfg.SmtpConfig.SkipVerify
+		if cfg.SmtpConfig.StartTlsPolicy != "" {
+			emailCfg.StartTLSPolicy = cfg.SmtpConfig.StartTlsPolicy
+		}
+		if cfg.SmtpConfig.StaticHeaders != nil {
+			emailCfg.StaticHeaders = cfg.SmtpConfig.StaticHeaders
+		}
+		if cfg.SmtpConfig.User != "" {
+			emailCfg.AuthUser = cfg.SmtpConfig.User
+		}
+	}
+	return emailCfg
 }

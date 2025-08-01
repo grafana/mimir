@@ -794,6 +794,11 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+
+		// Use Grafana's SMTP configs (if any).
+		if cfgs.Grafana.SmtpConfig != nil {
+			cfg.EmailConfig = genEmailConfig(cfgs.Grafana, nil)
+		}
 		return cfg, true, nil
 	}
 

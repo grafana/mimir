@@ -1477,7 +1477,6 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 
 	amConfig := mockAlertmanagerConfig(t)
 	amConfig.StrictInitializationEnabled = true
-	amConfig.GrafanaAlertmanagerIdleGracePeriod = 0 // No grace period, turned off in the next config sync.
 
 	externalURL := flagext.URLValue{}
 	err := externalURL.Set("http://localhost:8080/alertmanager")
@@ -1488,15 +1487,33 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Create a default Grafana config and an empty Mimir config.
-	// These should make the MOA skip the tenants.
+	// Create a tenant with a default Grafana and an empty Mimir config.
+	// It should be skipped by the MOA.
 	ctx := context.Background()
-	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
-		User:      testGrafanaUser,
-		RawConfig: grafanaConfig,
-		Promoted:  true,
-		Default:   true,
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: testGrafanaUser,
 	}))
+	smtpConfig := &alertspb.SmtpConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		Password:       "test password",
+		SkipVerify:     true,
+		StartTlsPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		User:           "test-user",
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
+		User:       testGrafanaUser,
+		RawConfig:  grafanaConfig,
+		Promoted:   true,
+		Default:    true,
+		SmtpConfig: smtpConfig,
+	}))
+
+	// Create another tenant with an empty Mimir config.
+	// It should be skipped by the MOA.
 	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
 		User: testMimirUser,
 	}))
@@ -1510,15 +1527,38 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
+	require.NoError(t, err)
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
-	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
+	// The configuration should have the custom SMTP settings.
+	exp := alertingReceivers.EmailSenderConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		AuthPassword:   "test password",
+		SkipVerify:     true,
+		StartTLSPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		AuthUser:       "test-user",
+
+		ContentTypes: []string{"text/html"}, // Added by default
+		SentBy:       "Mimir vunknown",      // The version in tests is "unknown"
+	}
+	gAM, ok := am.alertmanagers[testGrafanaUser]
+	require.True(t, ok)
+	require.Equal(t, exp, gAM.emailCfg)
+
+	w = httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
-	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 2)
 
+	// Set the idle period to 0.
 	// The Alertmanagers should be turned off after the next sync.
+	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
