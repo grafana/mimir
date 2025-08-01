@@ -36,7 +36,7 @@ import (
 const (
 	defaultDeleteBlocksConcurrency       = 16
 	defaultGetDeletionMarkersConcurrency = 16
-	defaultUpdateBlocksConcurrency       = 16
+	defaultUpdateBlocksConcurrency       = 1
 	cleanUsersServiceStarting            = "clean_up_users_during_startup"
 	cleanUsersServiceTick                = "clean_up_users"
 )
