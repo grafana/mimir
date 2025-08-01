@@ -340,6 +340,8 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
+// All histogram.FloatHistogram instances in the underlying buffer are cloned.
+// The caller is responsible for closing the returned ring buffer when it is no longer needed.
 func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
 	if v.size == 0 {
 		return &HPointRingBufferView{}, nil, nil

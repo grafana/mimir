@@ -270,6 +270,7 @@ func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
+// The caller is responsible for closing the returned ring buffer when it is no longer needed.
 func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer, error) {
 	if v.size == 0 {
 		return &FPointRingBufferView{}, nil, nil
