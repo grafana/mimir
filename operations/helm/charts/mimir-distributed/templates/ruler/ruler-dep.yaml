@@ -107,17 +107,7 @@ spec:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }}
-          env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler") | nindent 12 }}
-          {{- if or .Values.global.extraEnvFrom .Values.ruler.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler") | nindent 10 }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}

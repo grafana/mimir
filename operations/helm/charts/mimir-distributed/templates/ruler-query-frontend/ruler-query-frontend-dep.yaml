@@ -97,15 +97,7 @@ spec:
             {{- toYaml .Values.ruler_query_frontend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler_query_frontend.containerSecurityContext | nindent 12 }}
-          env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler-query-frontend") | nindent 12 }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler_query_frontend.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler-query-frontend") | nindent 10 }}
 {{- if .Values.ruler_query_frontend.extraContainers }}
 {{ toYaml .Values.ruler_query_frontend.extraContainers | indent 8}}
 {{- end }}

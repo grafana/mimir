@@ -61,8 +61,15 @@ spec:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
+          {{- if or .Values.global.extraEnv .Values.nginx.extraEnv }}
           env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "nginx") | nindent 12 }}
+          {{- with .Values.global.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.nginx.extraEnvFrom }}
           envFrom:
           {{- with .Values.global.extraEnvFrom }}

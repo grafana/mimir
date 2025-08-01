@@ -212,17 +212,7 @@ spec:
           {{- if $mem_request }}
             {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMEMLIMIT" "value" (include "mimir.siToBytes" (dict "value" $mem_request) | toString)) }}
           {{- end }}
-          env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "store-gateway" "env" $defaultEnv) | nindent 12 }}
-          {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.store_gateway.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "store-gateway" "env" $defaultEnv) | nindent 10 }}
 
 ---
 {{ end }}

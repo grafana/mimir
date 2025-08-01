@@ -113,8 +113,10 @@ spec:
             {{- range $key, $value := .extraArgs }}
             - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
             {{- end }}
+          {{- with $.ctx.Values.global.extraEnv }}
           env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" $.ctx "component" "memcached") | nindent 12 }}
+              {{ toYaml . | nindent 12 }}
+          {{- end }}
           {{- with $.ctx.Values.global.extraEnvFrom }}
           envFrom:
               {{- toYaml . | nindent 12 }}

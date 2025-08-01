@@ -89,8 +89,15 @@ spec:
             {{- toYaml .Values.graphite.querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.graphite.querier.containerSecurityContext | nindent 12 }}
+          {{- if or .Values.global.extraEnv .Values.graphite.querier.env }}
           env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "graphite-querier") | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.graphite.querier.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.admin_api.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

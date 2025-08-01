@@ -1,5 +1,6 @@
 {{/*
 Mimir common container environment variables with merge precedence
+Outputs the complete env/envFrom section for a container manifest.
 Params:
   ctx = . context
   component = name of the component
@@ -25,5 +26,20 @@ Params:
 {{- range $_, $envVar := $envKV }}
   {{- $envList = append $envList $envVar }}
 {{- end }}
-{{- toYaml $envList }}
+{{- /* Build "env" and "envFrom" sections if there is anything to output */}}
+{{- if $envList -}}
+env:
+{{- toYaml $envList | nindent 2 }}
+{{- end }}
+{{- $globalExtraEnvFrom := .ctx.Values.global.extraEnvFrom | default list }}
+{{- $componentExtraEnvFrom := $componentSection.extraEnvFrom | default list }}
+{{- if or $globalExtraEnvFrom $componentExtraEnvFrom }}
+envFrom:
+{{- if $globalExtraEnvFrom }}
+{{- toYaml $globalExtraEnvFrom | nindent 2 }}
+{{- end }}
+{{- if $componentExtraEnvFrom }}
+{{- toYaml $componentExtraEnvFrom | nindent 2 }}
+{{- end -}}
+{{- end -}}
 {{- end -}}

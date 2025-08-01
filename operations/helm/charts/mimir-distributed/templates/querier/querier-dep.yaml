@@ -113,17 +113,7 @@ spec:
             {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
             {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled $cpu_request_plus_four | toString)) }}
           {{- end }}
-          env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "querier" "env" $defaultEnv) | nindent 12 }}
-          {{- if or .Values.global.extraEnvFrom .Values.querier.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.querier.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "querier" "env" $defaultEnv) | nindent 10 }}
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}
 {{- end }}

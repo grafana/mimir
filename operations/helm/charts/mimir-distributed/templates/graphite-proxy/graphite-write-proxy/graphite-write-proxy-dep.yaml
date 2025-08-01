@@ -87,8 +87,15 @@ spec:
             {{- toYaml .Values.graphite.write_proxy.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.graphite.write_proxy.containerSecurityContext | nindent 12 }}
+          {{- if or .Values.global.extraEnv .Values.graphite.write_proxy.env }}
           env:
-            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "graphite-write-proxy") | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.graphite.write_proxy.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.graphite.write_proxy.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
