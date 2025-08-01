@@ -75,7 +75,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -125,7 +125,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -277,7 +277,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 					StatsEnabled:    statsEnabled,
@@ -413,7 +413,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 			queryID := uint64(1)
 			requestQueue := []*schedulerpb.SchedulerToQuerier{
-				{QueryID: queryID, Payload: nil, FrontendAddress: frontend.addr, UserID: "test"},
+				{QueryID: queryID, Payload: &schedulerpb.SchedulerToQuerier_HttpRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 			}
 			responses := []*httpgrpc.HTTPResponse{{
 				Code: http.StatusOK, Body: tc.responseBodyBytes,
@@ -456,6 +456,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -501,6 +502,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-loopClient.Context().Done()
@@ -543,6 +545,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -584,7 +587,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		queryID := uint64(1)
 		requestQueue := []*schedulerpb.SchedulerToQuerier{
-			{QueryID: queryID, Payload: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			{QueryID: queryID, Payload: &schedulerpb.SchedulerToQuerier_HttpRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 		}
 
 		responseBodyBytes := bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1)
