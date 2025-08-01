@@ -888,6 +888,8 @@ distributor:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    enableDefaultTriggers: true
+    additionalTriggers: []
     # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
     # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
@@ -1360,6 +1362,8 @@ ruler:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    enableDefaultTriggers: true
+    additionalTriggers: []
     # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
     # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
@@ -1489,6 +1493,8 @@ ruler_querier:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    enableDefaultTriggers: true
+    additionalTriggers: []
     querySchedulerInflightRequestsThreshold: 12
     behavior:
       scaleDown:
@@ -1611,6 +1617,8 @@ ruler_query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    enableDefaultTriggers: true
+    additionalTriggers: []
     # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
     # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
@@ -1819,6 +1827,8 @@ querier:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    enableDefaultTriggers: true
+    additionalTriggers: []
     querySchedulerInflightRequestsThreshold: 12
     # -- predictiveScalingEnabled scales up the querier based on the inflight requests in the past.
     # This helps with scaling up for predictable traffic patterns and minimizing HTTP 429 responses due to filled query queues.

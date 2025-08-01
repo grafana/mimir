@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [ENHANCEMENT] Add the possibility to add additional triggers for the `ScaledObjects` an make default triggers optional. #12124
 
 ## 5.8.0-rc.0
 
