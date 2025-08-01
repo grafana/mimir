@@ -69,9 +69,6 @@ const (
 
 	totalShardsControlHeader = "Sharding-Control"
 
-	// Instant query specific options
-	instantSplitControlHeader = "Instant-Split-Control"
-
 	operationEncode = "encode"
 	operationDecode = "decode"
 
@@ -668,18 +665,6 @@ func decodeOptions(r *http.Request, opts *Options) {
 			opts.ShardingDisabled = true
 		}
 	}
-
-	for _, value := range r.Header.Values(instantSplitControlHeader) {
-		splitInterval, err := time.ParseDuration(value)
-		if err != nil {
-			continue
-		}
-		// Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
-		opts.InstantSplitInterval = splitInterval.Nanoseconds()
-		if opts.InstantSplitInterval < 1 {
-			opts.InstantSplitDisabled = true
-		}
-	}
 }
 
 func decodeCacheDisabledOption(r *http.Request) bool {
@@ -885,12 +870,6 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 	if o.TotalShards > 0 {
 		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
-	}
-	if o.InstantSplitDisabled {
-		req.Header.Set(instantSplitControlHeader, "0")
-	}
-	if o.InstantSplitInterval > 0 {
-		req.Header.Set(instantSplitControlHeader, time.Duration(o.InstantSplitInterval).String())
 	}
 }
 
