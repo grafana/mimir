@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +24,7 @@ const (
 var (
 	writtenBytesCount = 0
 	verbose           = false
+	pprofPort         = "6060"
 )
 
 type config struct {
@@ -45,7 +49,9 @@ func main() {
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
 	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizeBytes, "Output chunk size")
+
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
 
 	// Parse CLI flags.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -54,6 +60,10 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
+
+	go func() {
+		log.Println(http.ListenAndServe(fmt.Sprintf("localhost:%s", pprofPort), nil))
+	}()
 
 	logger := gokitlog.NewNopLogger()
 
@@ -72,7 +82,12 @@ func main() {
 			log.Fatalln("config failed validation:", err)
 		}
 
-		log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
+		if cfg.count {
+			log.Printf("dry run converting block at %s...\n", cfg.block)
+		} else {
+			log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
+		}
+
 		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
