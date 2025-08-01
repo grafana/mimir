@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.0-rc.2
+
+### Grafana Mimir
+
+* [BUGFIX] otlp: Reverts #11889 which has a pooled memory re-use bug.
+
 ## 2.17.0-rc.1
 
 ### Grafana Mimir
