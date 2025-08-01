@@ -15,7 +15,7 @@ func ReuseRW2(req *WriteRequest) {
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
 // It might retain references in the RW1 request. It's not safe to free the RW1 request until the RW2 request is no longer used.
-func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, offset uint32) (*WriteRequest, error) {
+func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols map[string]uint32, offset uint32) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
 	}

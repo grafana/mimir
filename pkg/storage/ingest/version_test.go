@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -402,6 +403,53 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 				b.Fatal(err)
 			}
 			mimirpb.ReuseSlice(wr.Timeseries)
+		}
+	})
+}
+
+func BenchmarkRecordSerializer(b *testing.B) {
+	numSeries := 2000
+	numLabels := 30
+	gen := rand.New(rand.NewSource(789456123))
+	// Generate a WriteRequest.
+	req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, numSeries)}
+	for i := 0; i < len(req.Timeseries); i++ {
+		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+		for j := 0; j < numLabels; j++ {
+			mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(fmt.Sprintf("label_%d", j), fmt.Sprintf("%d", gen.Uint64())))
+		}
+	}
+
+	v2s := versionTwoRecordSerializer{}
+	v1s := versionOneRecordSerializer{}
+
+	b.Run("v2 serialize (full flow)", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v2s.ToRecords(123, "user-1", req, 16000000)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 serialize (full flow)", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v1s.ToRecords(123, "user-1", req, 16000000)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 -> v2 convert", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			rwv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbolsMap(), V2RecordSymbolOffset)
+			if err != nil {
+				b.Fatal("error %w", err)
+			}
+			if len(rwv2.TimeseriesRW2) == 0 {
+				b.Fatal("unexpectedly empty")
+			}
 		}
 	})
 }

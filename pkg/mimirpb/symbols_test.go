@@ -86,7 +86,7 @@ func TestSymbolsTable(t *testing.T) {
 	})
 
 	t.Run("common symbols", func(t *testing.T) {
-		commonSymbols := []string{"", "__name__", "__aggregation__"}
+		commonSymbols := symbolsToMap([]string{"", "__name__", "__aggregation__"})
 		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		s.ConfigureCommonSymbols(8, commonSymbols)
 
@@ -171,12 +171,13 @@ func BenchmarkSymbolizer(b *testing.B) {
 			lbls[i*2] = "__name__"
 			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
 		}
+		commonSymbols := symbolsToMap(benchmarkCommonSymbols)
 
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
 			st := symbolsTableFromPool()
-			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+			st.ConfigureCommonSymbols(64, commonSymbols)
 
 			for _, l := range lbls {
 				_ = st.Symbolize(l)
@@ -204,12 +205,13 @@ func BenchmarkSymbolizer(b *testing.B) {
 			}
 			series = append(series, s)
 		}
+		commonSymbols := symbolsToMap(benchmarkCommonSymbols)
 
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
 			st := symbolsTableFromPool()
-			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+			st.ConfigureCommonSymbols(64, commonSymbols)
 
 			for _, s := range series {
 				for _, l := range s {
@@ -226,6 +228,14 @@ func BenchmarkSymbolizer(b *testing.B) {
 			reuseSymbolsTable(st)
 		}
 	})
+}
+
+func symbolsToMap(syms []string) map[string]uint32 {
+	res := make(map[string]uint32, len(syms))
+	for ref, sym := range syms {
+		res[sym] = uint32(ref)
+	}
+	return res
 }
 
 var (
