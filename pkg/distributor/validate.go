@@ -237,7 +237,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 }
 
 // validateSample returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
@@ -258,7 +258,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 }
 
 // validateSampleHistogram returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
@@ -317,7 +317,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 }
 
 // validateExemplar returns an error if the exemplar is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
@@ -401,7 +401,7 @@ func removeNonASCIIChars(in string) (out string) {
 }
 
 // validateLabels returns an err if the labels are invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
