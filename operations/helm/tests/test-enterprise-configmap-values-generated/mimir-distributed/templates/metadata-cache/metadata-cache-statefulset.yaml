@@ -63,8 +63,6 @@ spec:
             - -c 16384
             - -v
             - -u 11211
-          env:
-            []
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

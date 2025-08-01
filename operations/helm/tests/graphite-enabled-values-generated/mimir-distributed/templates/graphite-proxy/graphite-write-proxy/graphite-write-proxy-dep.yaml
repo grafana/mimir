@@ -86,8 +86,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

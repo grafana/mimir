@@ -50,7 +50,5 @@ spec:
             - "-tests.write-read-series-test.max-query-age=48h"
             - "-server.http-listen-port=8080"
           volumeMounts:
-          env:
-            []
       restartPolicy: OnFailure
       volumes:

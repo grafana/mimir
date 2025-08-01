@@ -93,7 +93,6 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "5"
-          envFrom:
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

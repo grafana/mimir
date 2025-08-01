@@ -93,8 +93,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
+          
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

@@ -56,7 +56,5 @@ spec:
             - -flag-number=0
             - -flag-string=hello
           volumeMounts:
-          env:
-            []
       restartPolicy: OnFailure
       volumes:

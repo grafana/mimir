@@ -123,8 +123,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -251,8 +249,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -379,5 +375,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
