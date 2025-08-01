@@ -65,12 +65,16 @@ type ingesterMetrics struct {
 	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
-	compactionsTriggered       prometheus.Counter
-	compactionsFailed          prometheus.Counter
+	compactionsTriggeredForTenant prometheus.Counter
+	compactionsFailedForTenant    prometheus.Counter
+
 	forcedCompactionInProgress prometheus.Gauge
 	appenderAddDuration        prometheus.Histogram
 	appenderCommitDuration     prometheus.Histogram
 	idleTsdbChecks             *prometheus.CounterVec
+
+	compactionIterationMissed prometheus.Gauge
+	compactionLastDuration    prometheus.Gauge
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -341,18 +345,27 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_active_native_histogram_buckets_custom_tracker",
 			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
-
-		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_triggered_total",
-			Help: "Total number of triggered compactions.",
-		}),
-		compactionsFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_failed_total",
-			Help: "Total number of compactions that failed.",
-		}),
 		forcedCompactionInProgress: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_tsdb_forced_compactions_in_progress",
 			Help: "Reports 1 if there's a forced TSDB head compaction in progress, 0 otherwise.",
+		}),
+
+		compactionsTriggeredForTenant: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_compactions_triggered_total",
+			Help: "Total number of triggered TSDB Head compactions by tenant.",
+		}),
+		compactionsFailedForTenant: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_compactions_failed_total",
+			Help: "Total number of TSDB Head compaction compactions that failed by tenant.",
+		}),
+
+		compactionIterationMissed: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_compaction_missed_iterations_total",
+			Help: "Total number of compaction iterations that were missed due to delays.",
+		}),
+		compactionLastDuration: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_compaction_last_duration_seconds",
+			Help: "Duration of the last compaction iteration in seconds.",
 		}),
 
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{

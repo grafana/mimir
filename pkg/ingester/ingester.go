@@ -344,6 +344,11 @@ type Ingester struct {
 	// Tracks the number of compactions in progress.
 	numCompactionsInProgress atomic.Uint32
 
+	// Tracks the compactions' intervals.
+	compactionLastTick         time.Time
+	compactionExpectedInterval time.Duration
+	compactionMissedTicks      int64
+
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
 	usersMetadata    map[string]*userMetricsMetadata
@@ -3270,6 +3275,36 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
+			compactionStart := time.Now()
+
+			// Track the expected interval for missed tick detection.
+			i.compactionExpectedInterval = standardInterval
+
+			// Check for delayed ticks (missed ticks detection)
+			if !i.compactionLastTick.IsZero() {
+				actualInterval := compactionStart.Sub(i.compactionLastTick)
+				tolerance := time.Duration(float64(i.compactionExpectedInterval) * 0.05) // 5% tolerance
+
+				if actualInterval > tolerance {
+					i.compactionMissedTicks++
+
+					missed := int64(actualInterval/i.compactionExpectedInterval) - 1
+					if missed > 0 {
+						i.metrics.compactionIterationMissed.Add(float64(missed))
+					}
+
+					level.Warn(i.logger).Log(
+						"msg", "compaction tick delayed, skipping compaction",
+						"expected_interval", i.compactionExpectedInterval,
+						"actual_interval", actualInterval,
+						"delay", actualInterval-i.compactionExpectedInterval,
+						"missed_iterations", missed)
+					i.compactionLastTick = compactionStart
+					continue
+				}
+			}
+			i.compactionLastTick = compactionStart
+
 			// Count the number of compactions in progress to keep the downscale handler from
 			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
 			i.numCompactionsInProgress.Inc()
@@ -3280,6 +3315,8 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
+
+			i.metrics.compactionLastDuration.Set(time.Since(compactionStart).Seconds())
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
@@ -3427,7 +3464,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		var err error
 
-		i.metrics.compactionsTriggered.Inc()
+		i.metrics.compactionsTriggeredForTenant.Inc()
 
 		minTimeBefore := userDB.Head().MinTime()
 
@@ -3450,7 +3487,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		}
 
 		if err != nil {
-			i.metrics.compactionsFailed.Inc()
+			i.metrics.compactionsFailedForTenant.Inc()
 			level.Warn(i.logger).Log("msg", "TSDB blocks compaction for user has failed", "user", userID, "err", err, "compactReason", reason)
 		} else {
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
