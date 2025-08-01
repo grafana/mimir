@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
 
 ## 5.8.0-rc.0
 
