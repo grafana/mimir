@@ -22,19 +22,12 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
-<<<<<<< HEAD
 	parquetGo "github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/search"
 	parquetStorage "github.com/prometheus-community/parquet-common/storage"
-=======
-	"github.com/pkg/errors"
-	"github.com/prometheus-community/parquet-common/queryable"
-	"github.com/prometheus-community/parquet-common/schema"
-	parquetstorage "github.com/prometheus-community/parquet-common/storage"
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -45,10 +38,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-<<<<<<< HEAD
 	"github.com/grafana/mimir/pkg/parquetconverter"
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -89,11 +79,8 @@ type ParquetBucketStore struct {
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
-<<<<<<< HEAD
 	loadIndexToDisk bool
 	fileOpts        []parquetStorage.FileOption
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -121,11 +108,8 @@ func NewParquetBucketStore(
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
-<<<<<<< HEAD
 	loadIndexToDisk bool,
 	fileOpts []parquetStorage.FileOption,
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	metrics *ParquetBucketStoreMetrics,
@@ -146,13 +130,10 @@ func NewParquetBucketStore(
 
 		queryGate:       queryGate,
 		lazyLoadingGate: lazyLoadingGate,
-<<<<<<< HEAD
 		loadIndexToDisk: loadIndexToDisk,
 		fileOpts: append(fileOpts,
 			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
 		),
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
@@ -375,13 +356,8 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-<<<<<<< HEAD
 		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
 			return []parquetStorage.ParquetShard{shard}, nil
-=======
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		}
 
 		g.Go(func() error {
@@ -485,13 +461,8 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		shard := b.ShardReader()
-<<<<<<< HEAD
 		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
 			return []parquetStorage.ParquetShard{shard}, nil
-=======
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{shard}, nil
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		}
 
 		g.Go(func() error {
@@ -617,13 +588,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 ) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
 	spanLogger := spanlogger.FromContext(ctx, s.logger)
 
-<<<<<<< HEAD
 	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
 		var parquetShards []parquetStorage.ParquetShard
-=======
-	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-		var parquetShards []parquetstorage.ParquetShard
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		for _, shardReader := range shardReaders {
 			parquetShards = append(parquetShards, shardReader)
 		}
@@ -631,7 +597,6 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	}
 
 	decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-<<<<<<< HEAD
 	opts := s.querierOpts
 	if shardSelector != nil {
 		shardFilter := func(_ context.Context, _ *storage.SelectHints) (search.MaterializedLabelsFilter, bool) {
@@ -641,9 +606,6 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	}
 
 	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, opts...)
-=======
-	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, s.querierOpts...)
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error creating parquet queryable")
 	}
@@ -666,11 +628,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	// not support streaming results, the iterator we get from q.Select is
 	// already backed by a slice. So we are not losing as much as it may seem.
 	// We are planning to implement proper streaming.
-<<<<<<< HEAD
 	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, req.SkipChunks)
-=======
-	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, shardSelector, req.SkipChunks)
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
 	}
@@ -694,7 +652,6 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	return labelsIt, newConcreteIterator(aggrChunks), nil
 }
 
-<<<<<<< HEAD
 type materializedLabelsShardFilter struct {
 	shardSelector *sharding.ShardSelector
 }
@@ -720,8 +677,6 @@ func shardOwnedUncached(shard *sharding.ShardSelector, lset labels.Labels) bool 
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, labelsIt iterator[labels.Labels]) (numSeries int, err error) {
 	var (
 		encodeDuration = time.Duration(0)
@@ -1012,7 +967,6 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	}
 
 	for id, meta := range metas {
-<<<<<<< HEAD
 		level.Debug(s.logger).Log("msg", "syncing block", "id", id, "meta", meta)
 		if s.blockSet.contains(id) {
 			level.Debug(s.logger).Log("msg", "block already loaded, skipping", "id", id)
@@ -1031,11 +985,6 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 			continue
 		}
 
-=======
-		if s.blockSet.contains(id) {
-			continue
-		}
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		select {
 		case <-ctx.Done():
 		case blockc <- meta:
@@ -1087,20 +1036,13 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-<<<<<<< HEAD
-=======
-	// TODO get shard reader from pool
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	blockReader, err := s.readerPool.GetReader(
 		ctx,
 		meta.ULID,
 		s.bkt,
 		blockLocalDir,
-<<<<<<< HEAD
 		s.loadIndexToDisk,
 		s.fileOpts,
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		s.logger,
 	)
 
@@ -1239,24 +1181,13 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 // storage.ChunkSeriesSet and returns them as slices, converting the chunks to
 // storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
 // empty.
-<<<<<<< HEAD
 func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
-=======
-func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, shardSelector *sharding.ShardSelector, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	var seriesLabels []labels.Labels
 	var aggrChunks [][]storepb.AggrChunk
 
 	for chunkSeriesSet.Next() {
 		chunkSeries := chunkSeriesSet.At()
 		lbls := chunkSeries.Labels()
-<<<<<<< HEAD
-=======
-		if !shardOwnedUncached(shardSelector, lbls) {
-			continue
-		}
-
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		seriesLabels = append(seriesLabels, lbls)
 
 		if skipChunks {
@@ -1283,23 +1214,6 @@ func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, shardSelec
 	return seriesLabels, aggrChunks, chunkSeriesSet.Err()
 }
 
-<<<<<<< HEAD
-=======
-// shardOwnedUncached checks if the given labels belong to the shard specified
-// by the shard selector. As opposed to shardOwned & friends from the
-// non-Parquet path, this function does not cache hashes. This is because, at
-// least yet, we don't have easy access to an identifier for the series in the
-// block to use as a cache key.
-func shardOwnedUncached(shard *sharding.ShardSelector, lset labels.Labels) bool {
-	if shard == nil {
-		return true
-	}
-
-	hash := labels.StableHash(lset)
-	return hash%shard.ShardCount == shard.ShardIndex
-}
-
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 func prometheusChunkEncodingToStorePBChunkType(enc chunkenc.Encoding) storepb.Chunk_Encoding {
 	switch enc {
 	case chunkenc.EncXOR:

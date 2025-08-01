@@ -112,11 +112,8 @@ func prepareConfig(t *testing.T) Config {
 	// Speed up tests
 	cfg.ConversionInterval = 100 * time.Millisecond
 	cfg.DiscoveryInterval = 100 * time.Millisecond
-<<<<<<< HEAD
 
 	cfg.MinCompactionLevel = 0
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	return cfg
 }
 

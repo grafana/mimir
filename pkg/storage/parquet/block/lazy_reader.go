@@ -28,10 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-<<<<<<< HEAD
-=======
-	"golang.org/x/sync/errgroup"
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 )
 
 var (
@@ -74,7 +70,6 @@ func NewLazyParquetReaderMetrics(reg prometheus.Registerer) *LazyParquetReaderMe
 	}
 }
 
-<<<<<<< HEAD
 type LazyReader interface {
 	Reader
 	UsedAt() int64
@@ -88,8 +83,6 @@ type LazyReader interface {
 	UnloadIfIdleSince(tsNano int64) error
 }
 
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 type readerRequest struct {
 	response chan loadedReader
 }
@@ -116,20 +109,11 @@ type unloadRequest struct {
 	idleSinceNanos int64
 }
 
-<<<<<<< HEAD
 type lazyReaderLoader struct {
-=======
-// LazyReaderLocalLabelsBucketChunks implements the parquet block Reader interface.
-// The Reader downloads the block shard's labels file from bucket to disk
-// but does not open the labels file from local disk or the chunks file from the bucket
-// until the respective calls to the Reader interface's LabelsFile() or ChunksFile() methods.
-type LazyReaderLocalLabelsBucketChunks struct {
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	ctx context.Context
 
 	blockID  ulid.ULID
 	shardIdx int
-<<<<<<< HEAD
 
 	labelsFileOpener storage.ParquetOpener
 	chunksFileOpener storage.ParquetOpener
@@ -198,222 +182,12 @@ func (r *lazyReaderLoader) controlLoop() {
 			unloadPromise.response <- nil
 		}
 	}
-=======
-	// earlyValidation indicates whether the labels file should be validated as
-	// soon as it is downloaded to local disk.
-	earlyValidation bool
-
-	// bkt to download the labels file to local disk and open the chunks file from the bucket
-	bkt      objstore.InstrumentedBucketReader
-	localDir string
-	fileOpts []storage.FileOption
-
-	metrics         *LazyParquetReaderMetrics
-	onClosed        func(*LazyReaderLocalLabelsBucketChunks)
-	lazyLoadingGate gate.Gate
-
-	loadedReader chan readerRequest
-	unloadReq    chan unloadRequest
-
-	// Keep track of the last time it was used.
-	usedAt *atomic.Int64
-
-	done chan struct{}
-
-	logger log.Logger
-}
-
-// NewLazyReaderLocalLabelsBucketChunks initializes a parquet block Reader
-// and downloads the block shard's labels file from bucket to disk.
-func NewLazyReaderLocalLabelsBucketChunks(
-	ctx context.Context,
-	blockID ulid.ULID,
-	bkt objstore.InstrumentedBucketReader,
-	localDir string,
-	//fileOpts []storage.FileOption,
-	metrics *LazyParquetReaderMetrics,
-	onClosed func(*LazyReaderLocalLabelsBucketChunks),
-	lazyLoadingGate gate.Gate,
-	earlyValidation bool,
-	logger log.Logger,
-) (*LazyReaderLocalLabelsBucketChunks, error) {
-	reader := &LazyReaderLocalLabelsBucketChunks{
-		ctx:             ctx,
-		blockID:         blockID,
-		shardIdx:        FirstShardIndex,
-		earlyValidation: earlyValidation,
-		bkt:             bkt,
-		localDir:        localDir,
-		fileOpts: []storage.FileOption{
-			storage.WithFileOptions(
-				parquet.SkipBloomFilters(false),
-			),
-		},
-
-		metrics:  metrics,
-		usedAt:   atomic.NewInt64(0),
-		onClosed: onClosed,
-
-		lazyLoadingGate: lazyLoadingGate,
-
-		loadedReader: make(chan readerRequest),
-		unloadReq:    make(chan unloadRequest),
-		done:         make(chan struct{}),
-
-		logger: logger,
-	}
-
-	g := errgroup.Group{}
-	g.Go(func() error {
-		return reader.ensureLabelsFileToLocalDisk()
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	go reader.controlLoop()
-	return reader, nil
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) labelsFileName() string {
-	return schema.LabelsPfileNameForShard(r.blockID.String(), r.shardIdx)
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) labelsFileLocalPath() string {
-	// trim labels filename prefix before joining as it includes the block ID already
-	return filepath.Join(r.localDir, strings.TrimPrefix(r.labelsFileName(), r.blockID.String()))
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) ensureLabelsFileToLocalDisk() error {
-	localPath := r.labelsFileLocalPath()
-	_, err := os.Stat(localPath)
-	if err == nil {
-		// file exists, nothing to do.
-		return nil
-	}
-	if !os.IsNotExist(err) {
-		return errors.Wrap(err, "read parquet labels file from disk")
-	}
-
-	level.Debug(r.logger).Log("msg", "parquet labels file not on disk; loading", "path", localPath, "validating", r.earlyValidation)
-	start := time.Now()
-	if r.earlyValidation {
-		if err := r.convertLabelsFileToLocalDisk(); err != nil {
-			return errors.Wrap(err, "download and validate labels file")
-		}
-	} else {
-		if err := r.downloadLabelsFileToLocalDisk(); err != nil {
-			return errors.Wrap(err, "download labels file")
-		}
-	}
-	level.Debug(r.logger).Log("msg", "loaded parquet labels file to disk", "path", localPath, "elapsed", time.Since(start))
-	return nil
-}
-
-// convertLabelsFileToLocalDisk utilizes the prometheus parquet convert package
-// in order to download the labels file from the bucket to local disk.
-// The usage of `convert` rather than a simple bucket download/copy is more CPU-intensive,
-// but enables us to choose the output schema and projection of the labels file if desired
-// and use the built-in read/write buffering and validation capabilities of the convert package.
-func (r *LazyReaderLocalLabelsBucketChunks) convertLabelsFileToLocalDisk() error {
-	labelsFileName := r.labelsFileName()
-	bucketFileOpener := storage.NewParquetBucketOpener(r.bkt)
-
-	bucketLabelsFile, err := bucketFileOpener.Open(r.ctx, labelsFileName, r.fileOpts...)
-	if err != nil {
-		return errors.Wrap(err, "open bucket parquet labels file")
-	}
-	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFile, "close bucket labels file")
-	bucketLabelsFileReader := parquet.NewGenericReader[any](bucketLabelsFile)
-	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFileReader, "close bucket labels file reader")
-	labelsFileSchema, err := schema.FromLabelsFile(bucketLabelsFile.File)
-	if err != nil {
-		return errors.Wrap(err, "get schema from bucket parquet labels file")
-	}
-	labelsProjection, err := labelsFileSchema.LabelsProjection()
-	if err != nil {
-		return errors.Wrap(err, "get schema projection from bucket parquet labels file schema")
-	}
-	outSchemaProjections := []*schema.TSDBProjection{labelsProjection}
-
-	pipeReaderFileWriter := convert.NewPipeReaderFileWriter(r.localDir)
-	shardedBucketToFileWriter := convert.NewShardedWrite(
-		bucketLabelsFileReader, labelsFileSchema, outSchemaProjections, pipeReaderFileWriter, &convert.DefaultConvertOpts,
-	)
-	err = shardedBucketToFileWriter.Write(r.ctx)
-	if err != nil {
-		return errors.Wrap(err, "convert bucket parquet labels file to disk")
-	}
-	return nil
-}
-
-// downloadLabelsFileToLocalDisk downloads the labels file from the bucket to
-// local disk. It does not parse or validate the file in any way, it simply
-// downloads it as-is.
-func (r *LazyReaderLocalLabelsBucketChunks) downloadLabelsFileToLocalDisk() error {
-	reader, err := r.bkt.Get(r.ctx, r.labelsFileName())
-	if err != nil {
-		return errors.Wrap(err, "download parquet labels file from bucket")
-	}
-	defer runutil.CloseWithLogOnErr(r.logger, reader, "close bucket labels reader")
-
-	outPath := r.labelsFileLocalPath()
-	outPathDir := filepath.Dir(outPath)
-	err = os.MkdirAll(outPathDir, os.ModePerm)
-	if err != nil {
-		return errors.Wrap(err, "create local directory")
-	}
-
-	f, err := os.Create(outPath)
-	if err != nil {
-		return errors.Wrap(err, "create local file and open for write")
-	}
-	defer runutil.CloseWithLogOnErr(r.logger, f, "close local parquet labels file")
-
-	if _, err := f.ReadFrom(reader); err != nil {
-		return errors.Wrap(err, "read parquet labels file from bucket to local file")
-	}
-	return nil
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
-	loaded := r.getOrLoadReader(r.ctx)
-	if loaded.err != nil {
-		// TODO: the current interface does not allow to return an error
-		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
-		return nil
-	}
-	return loaded.reader.LabelsFile()
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() *storage.ParquetFile {
-	loaded := r.getOrLoadReader(r.ctx)
-	if loaded.err != nil {
-		// TODO: the current interface does not allow to return an error
-		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
-		return nil
-	}
-	return loaded.reader.ChunksFile()
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, error) {
-	loaded := r.getOrLoadReader(r.ctx)
-	if loaded.err != nil {
-		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
-	}
-	return loaded.reader.TSDBSchema()
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 }
 
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
-<<<<<<< HEAD
 func (r *lazyReaderLoader) getOrLoadReader(ctx context.Context) loadedReader {
-=======
-func (r *LazyReaderLocalLabelsBucketChunks) getOrLoadReader(ctx context.Context) loadedReader {
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	readerReq := readerRequest{response: make(chan loadedReader)}
 	select {
 	case <-r.done:
@@ -434,17 +208,12 @@ func (r *LazyReaderLocalLabelsBucketChunks) getOrLoadReader(ctx context.Context)
 }
 
 // loadReader is called from getOrLoadReader, without any locks.
-<<<<<<< HEAD
 func (r *lazyReaderLoader) loadReader() (Reader, error) {
 	level.Debug(r.logger).Log("msg", "load reader for block", "block_id", r.blockID)
-=======
-func (r *LazyReaderLocalLabelsBucketChunks) loadReader() (Reader, error) {
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
 	// then goroutine that continues would not be able to get Write lock.)
-<<<<<<< HEAD
 	if r.lazyLoadingGate != nil {
 		err := r.lazyLoadingGate.Start(r.ctx)
 		if err != nil {
@@ -463,56 +232,22 @@ func (r *LazyReaderLocalLabelsBucketChunks) loadReader() (Reader, error) {
 		r.shardIdx,
 		r.labelsFileOpener,
 		r.chunksFileOpener,
-=======
-	err := r.lazyLoadingGate.Start(r.ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to wait for turn")
-	}
-	defer r.lazyLoadingGate.Done()
-
-	level.Debug(r.logger).Log("msg", "start lazy open local parquet labels file", "path", r.localDir)
-	r.metrics.loadCount.Inc()
-	startTime := time.Now()
-
-	labelsLocalFilePath := r.labelsFileLocalPath()
-	// The BasicReader appends the block ID to the local directory, so we need to trim it here.
-	// TODO: we should rethink the namings conventions to locate the files to avoid these hacks.
-	localDir := strings.TrimSuffix(r.localDir, r.blockID.String())
-	labelsLocalFileOpener := NewParquetLocalFileOpener(localDir)
-	chunksBucketOpener := storage.NewParquetBucketOpener(r.bkt)
-
-	reader, err := NewBasicReader(
-		r.ctx,
-		r.blockID.String(),
-		r.shardIdx,
-		labelsLocalFileOpener,
-		chunksBucketOpener,
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		r.fileOpts...,
 	)
 
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
-<<<<<<< HEAD
 		return nil, errors.Wrapf(err, "lazy open parquet labels file")
 	}
 
 	elapsed := time.Since(startTime)
 	level.Debug(r.logger).Log("msg", "finish lazy open parquet labels file", "elapsed", time.Since(startTime))
-=======
-		return nil, errors.Wrapf(err, "lazy open local parquet labels file %s", labelsLocalFilePath)
-	}
-
-	elapsed := time.Since(startTime)
-	level.Debug(r.logger).Log("msg", "finish lazy open local parquet labels file", "path", r.localDir, "elapsed", time.Since(startTime))
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 
 	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
 	return reader, nil
 }
 
-<<<<<<< HEAD
 // IsIdleSince returns true if the reader is idle since given time (as unix nano).
 func (r *lazyReaderLoader) IsIdleSince(ts int64) bool {
 	lastUse := r.LoadedLastUse()
@@ -526,39 +261,6 @@ func (r *lazyReaderLoader) LoadedLastUse() int64 {
 }
 
 func (r *lazyReaderLoader) unloadIfIdleSince(tsNano int64) error {
-=======
-// Close implements Reader.
-func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
-	select {
-	case <-r.done:
-		return nil // already closed
-	default:
-	}
-	if r.onClosed != nil {
-		defer r.onClosed(r)
-	}
-
-	// Unload without checking if idle.
-	if err := r.unloadIfIdleSince(0); err != nil {
-		return fmt.Errorf("unload index-header: %w", err)
-	}
-
-	close(r.done)
-	return nil
-}
-
-func (r *LazyReaderLocalLabelsBucketChunks) waitAndCloseReader(req readerRequest) {
-	resp := <-req.response
-	if resp.reader != nil {
-		// TODO: this should be necessary but is not currently working
-		// resp.inUse.Done()
-	}
-}
-
-// unloadIfIdleSince closes underlying BinaryReader if the reader is idle since given time (as unix nano). If idleSince is 0,
-// the check on the last usage is skipped. Calling this function on a already unloaded reader is a no-op.
-func (r *LazyReaderLocalLabelsBucketChunks) unloadIfIdleSince(tsNano int64) error {
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	req := unloadRequest{
 		// The channel is unbuffered because we will read the response. It should be buffered if we can give up before reading from it
 		response:       make(chan error),
@@ -572,7 +274,6 @@ func (r *LazyReaderLocalLabelsBucketChunks) unloadIfIdleSince(tsNano int64) erro
 	}
 }
 
-<<<<<<< HEAD
 func (r *lazyReaderLoader) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
 	if resp.reader != nil {
@@ -923,64 +624,6 @@ func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, er
 }
 
 func waitReadersOrPanic(wg *sync.WaitGroup) {
-=======
-func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
-	var loaded loadedReader
-
-	for {
-		select {
-		case <-r.done:
-			return
-		case readerReq := <-r.loadedReader:
-			if loaded.reader == nil {
-				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
-				loaded = loadedReader{}
-				loaded.reader, loaded.err = r.loadReader()
-				if loaded.reader != nil {
-					// TODO: this should be necessary but is not currently working
-					// loaded.inUse = &sync.WaitGroup{}
-				}
-			}
-			if loaded.reader != nil {
-				// TODO: this should be necessary but is not currently working
-				// loaded.inUse.Add(1)
-				r.usedAt.Store(time.Now().UnixNano())
-			}
-			readerReq.response <- loaded
-
-		case unloadPromise := <-r.unloadReq:
-			if loaded.reader == nil {
-				// Nothing to do if already unloaded.
-				unloadPromise.response <- nil
-				continue
-			}
-
-			// Do not unloadIfIdleSince if not idle.
-			if ts := unloadPromise.idleSinceNanos; ts > 0 && r.usedAt.Load() > ts {
-				unloadPromise.response <- errNotIdle
-				continue
-			}
-
-			// TODO: this should be necessary but is not currently working
-			// Wait until all users finished using current reader.
-			// waitReadersOrPanic(loaded.inUse)
-
-			r.metrics.unloadCount.Inc()
-			if err := loaded.reader.Close(); err != nil {
-				r.metrics.unloadFailedCount.Inc()
-				unloadPromise.response <- fmt.Errorf("closing binary reader: %w", err)
-				continue
-			}
-
-			loaded = loadedReader{}
-			r.usedAt.Store(0)
-			unloadPromise.response <- nil
-		}
-	}
-}
-
-func waitReadersOrPanic(wg *sync.WaitGroup) { // nolint:unused
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	// timeout is long enough for any request to finish.
 	// The idea is that we don't want to wait forever, but surface a bug.
 	const timeout = time.Hour
@@ -999,7 +642,6 @@ func waitReadersOrPanic(wg *sync.WaitGroup) { // nolint:unused
 	}
 }
 
-<<<<<<< HEAD
 func (r *LazyReaderLocalLabelsBucketChunks) UsedAt() int64 {
 	return r.readerLoader.usedAt.Load()
 }
@@ -1030,16 +672,4 @@ func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
 
 	close(r.readerLoader.done)
 	return nil
-=======
-// IsIdleSince returns true if the reader is idle since given time (as unix nano).
-func (r *LazyReaderLocalLabelsBucketChunks) IsIdleSince(ts int64) bool {
-	lastUse := r.LoadedLastUse()
-	return lastUse != 0 && lastUse <= ts
-}
-
-// LoadedLastUse returns 0 if the reader is not loaded.
-// LoadedLastUse returns a timestamp in nanoseconds of the last time this reader was used.
-func (r *LazyReaderLocalLabelsBucketChunks) LoadedLastUse() int64 {
-	return r.usedAt.Load()
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 }

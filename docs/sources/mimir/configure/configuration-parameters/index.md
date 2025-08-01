@@ -485,7 +485,6 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-block-age
   [max_block_age: <duration> | default = 0s]
 
-<<<<<<< HEAD
   # (advanced) Comma-separated list of labels to sort by when converting to
   # Parquet format. If not the file will be sorted by '__name__'.
   # CLI flag: -parquet-converter.sorting-labels
@@ -515,8 +514,6 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-queue-size
   [max_queue_size: <int> | default = 5]
 
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
@@ -4934,14 +4931,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
   [series_fetch_preference: <float> | default = 0.75]
 
-<<<<<<< HEAD
   # (advanced) True to download the Parquet labels file to disk before opening
   # it. False to open it directly from the bucket.
   # CLI flag: -blocks-storage.bucket-store.parquet-load-index-to-disk
   [parquet_load_index_to_disk: <boolean> | default = true]
 
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
   # (advanced) Maximum number of rows in a parquet file. If the number of rows
   # exceeds this value the query will stop with limit error.
   # CLI flag: -blocks-storage.bucket-store.parquet-max-row-count

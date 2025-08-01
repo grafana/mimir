@@ -12,10 +12,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
-<<<<<<< HEAD
 	"github.com/oklog/ulid/v2"
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,10 +23,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-<<<<<<< HEAD
 	"github.com/grafana/mimir/pkg/parquetconverter"
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -82,15 +76,11 @@ func TestParquetBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-<<<<<<< HEAD
 		expectedLabels := []mimirpb.LabelAdapter{
 			{Name: labels.MetricName, Value: metricName},
 			{Name: "series_id", Value: "0"},
 		}
 		assert.Equal(t, expectedLabels, seriesSet[0].Labels)
-=======
-		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	}
 
 	// Query series of another user.
@@ -144,16 +134,12 @@ func TestParquetBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-<<<<<<< HEAD
 
 	expectedLabels := []mimirpb.LabelAdapter{
 		{Name: labels.MetricName, Value: metricName},
 		{Name: "series_id", Value: "0"},
 	}
 	assert.Equal(t, expectedLabels, seriesSet[0].Labels)
-=======
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 
 	// TODO: assert metrics
 }
@@ -190,15 +176,12 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 			convert.WithName(blockId),
 		)
 		require.NoError(t, err)
-<<<<<<< HEAD
 
 		blockULID, err := ulid.Parse(blockId)
 		require.NoError(t, err)
 		instrumentedBkt := objstore.WithNoopInstr(bkt)
 		err = parquetconverter.WriteConversionMark(context.Background(), blockULID, instrumentedBkt)
 		require.NoError(t, err)
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	}
 
 }

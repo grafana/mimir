@@ -38,11 +38,8 @@ std.manifestYamlDoc({
 
     // If true, start parquet-converter
     enable_parquet: false,
-<<<<<<< HEAD
     // If true, emulate classic store-gateway behavior by loading the Parquet labels file to disk
     parquet_store_gateway_load_index_to_disk: false,
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -156,12 +153,9 @@ std.manifestYamlDoc({
       name: 'parquet-converter',
       target: 'parquet-converter',
       httpPort: 8040,
-<<<<<<< HEAD
       extraArguments: ' -parquet-converter.conversion-interval=30s' +
                       ' -parquet-converter.discovery-interval=30s' +
                       '-parquet-converter.min-compaction-level=1',
-=======
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
     }),
   },
 
@@ -200,12 +194,7 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
-<<<<<<< HEAD
       extraArguments: extraStoreGatewayArgs,
-=======
-      extraArguments:
-        if $._config.enable_parquet then '-store-gateway.parquet-enabled=true' else '',
->>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
     })
     for id in std.range(1, count)
   },
