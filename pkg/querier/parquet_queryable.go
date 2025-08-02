@@ -135,6 +135,7 @@ type parquetQueryableWithFallback struct {
 }
 
 func NewParquetQueryable(
+	config Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
 	limits *validation.Overrides,
 	blockStorageQueryable *BlocksStoreQueryable,
@@ -151,7 +152,7 @@ func NewParquetQueryable(
 		return nil, err
 	}
 
-	cache, err := newCache[parquet_storage.ParquetShard]("parquet-shards", 512, newCacheMetrics(reg))
+	cache, err := newCache[parquet_storage.ParquetShard]("parquet-shards", config.ParquetQueryableShardCacheSize, newCacheMetrics(reg))
 	if err != nil {
 		return nil, err
 	}
@@ -256,14 +257,14 @@ func NewParquetQueryable(
 		subservices:           manager,
 		blockStorageQueryable: blockStorageQueryable,
 		parquetQueryable:      parquetQueryable,
-		queryStoreAfter:       0, // TODO: get from config
+		queryStoreAfter:       config.QueryStoreAfter,
 		subservicesWatcher:    services.NewFailureWatcher(),
 		finder:                blockStorageQueryable.finder,
 		metrics:               newParquetQueryableFallbackMetrics(reg),
 		limits:                limits,
 		logger:                logger,
-		defaultBlockStoreType: parquetBlockStore, // default to parquet TODO get from config
-		fallbackDisabled:      false,             // TODO: get from config
+		defaultBlockStoreType: blockStoreType(config.ParquetQueryableDefaultBlockStore),
+		fallbackDisabled:      config.ParquetQueryableFallbackDisabled,
 	}
 
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)

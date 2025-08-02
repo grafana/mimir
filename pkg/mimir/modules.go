@@ -675,7 +675,18 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+
+	var queryable = querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier)
+
+	if t.Cfg.Querier.EnableParquetQueryable {
+		pq, err := querier.NewParquetQueryable(t.Cfg.Querier, t.Cfg.BlocksStorage, t.Overrides, q, util_log.Logger, t.Registerer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize parquet queryable: %v", err)
+		}
+		queryable = querier.NewStoreGatewayTimeRangeQueryable(pq, t.Cfg.Querier)
+	}
+
+	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, queryable)
 	return q, nil
 }
 
