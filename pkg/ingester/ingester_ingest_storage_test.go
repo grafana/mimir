@@ -184,7 +184,7 @@ func TestIngester_Start(t *testing.T) {
 
 		// We expect the TSDB Head compaction to run while replaying from Kafka.
 		assert.Eventually(t, func() bool {
-			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+			return testutil.ToFloat64(ingester.metrics.compactionsTriggeredForTenant) > 0
 		}, time.Second, 10*time.Millisecond)
 
 		// We expect metrics to be updated.
@@ -206,7 +206,7 @@ func TestIngester_Start(t *testing.T) {
 		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
 
 		assert.Eventually(t, func() bool {
-			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+			return testutil.ToFloat64(ingester.metrics.compactionsTriggeredForTenant) > 0
 		}, 5*time.Second, 10*time.Millisecond)
 
 		// Since the ingester it still replaying the partition we expect it to be in starting state.
