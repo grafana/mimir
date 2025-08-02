@@ -69,6 +69,7 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+	errConfigNotFound                      = errors.New("configuration not found")
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -793,7 +794,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
-		return cfg, true, nil
+
+		// Use Grafana's settings (if any).
+		var err error
+		if cfgs.Grafana.RawConfig != "" {
+			cfg, err = createUsableGrafanaConfig(am.logger, cfgs.Grafana, cfgs.Mimir.RawConfig)
+		}
+		return cfg, true, err
 	}
 
 	// Clear any previous skipped status since we now have a usable config.
@@ -1186,9 +1193,9 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	// If the Alertmanager initialization was skipped, start the Alertmanager.
 	if ok := am.lastRequestTime.CompareAndSwap(userID, time.Time{}.Unix(), time.Now().Unix()); ok {
-		userAM, err = am.startAlertmanager(userID)
+		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
-			if errors.Is(err, errNotUploadingFallback) {
+			if errors.Is(err, errNotUploadingFallback) || errors.Is(err, errConfigNotFound) {
 				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
 				http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
 				return
@@ -1226,19 +1233,28 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 }
 
 // startAlertmanager will start the Alertmanager for a tenant, using the fallback configuration if no config is found.
-func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		am.lastRequestTime.Delete(userID)
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
 
-	amConfig := amConfig{
-		User:            userID,
-		RawConfig:       "",
-		Templates:       nil,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
+	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
+
+	cfg, ok := cfgMap[userID]
+	if !ok {
+		return nil, errConfigNotFound
+	}
+
+	amConfig, _, err := am.computeConfig(cfg) // The second value indicates whether we should start the AM or not. Ignore it.
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute config: %w", err)
+	}
+
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
 	}
