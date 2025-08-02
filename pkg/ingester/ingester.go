@@ -347,7 +347,6 @@ type Ingester struct {
 	// Tracks the compactions' intervals.
 	compactionLastTick         time.Time
 	compactionExpectedInterval time.Duration
-	compactionMissedTicks      int64
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -3286,8 +3285,6 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 				tolerance := time.Duration(float64(i.compactionExpectedInterval) * 0.05) // 5% tolerance
 
 				if actualInterval > tolerance {
-					i.compactionMissedTicks++
-
 					missed := int64(actualInterval/i.compactionExpectedInterval) - 1
 					if missed > 0 {
 						i.metrics.compactionIterationMissed.Add(float64(missed))
