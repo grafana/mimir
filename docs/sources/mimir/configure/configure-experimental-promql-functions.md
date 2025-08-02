@@ -1,7 +1,7 @@
 ---
 title: Configure experimental PromQL functions
 description: Control what experimental PromQL functions are enabled for your Mimir installation.
-weight: 110
+weight: 220
 ---
 
 # Configure experimental PromQL functions

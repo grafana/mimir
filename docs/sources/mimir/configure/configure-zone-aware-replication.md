@@ -6,7 +6,7 @@ aliases:
 description: Learn how to replicate data across failure domains.
 menuTitle: Zone-aware replication
 title: Configure Grafana Mimir zone-aware replication
-weight: 110
+weight: 240
 ---
 
 # Configure Grafana Mimir zone-aware replication

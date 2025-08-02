@@ -6,7 +6,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to send traces using OpenTelemetry or Jaeger.
 menuTitle: Tracing
 title: Configure Grafana Mimir tracing
-weight: 100
+weight: 270
 ---
 
 # Configure Grafana Mimir tracing

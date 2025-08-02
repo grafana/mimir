@@ -6,7 +6,7 @@ aliases:
 description: Learn how to set up a testing cluster that receives the same series of the primary cluster.
 menuTitle: Mirror requests to a second cluster
 title: Mirror requests to a second Grafana Mimir cluster
-weight: 120
+weight: 250
 ---
 
 # Mirror requests to a second Grafana Mimir cluster
