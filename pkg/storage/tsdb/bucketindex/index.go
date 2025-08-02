@@ -69,6 +69,34 @@ func (idx *Index) RemoveBlock(id ulid.ULID) {
 	}
 }
 
+// ParquetBlocks returns all blocks that are available in Parquet format.
+func (idx *Index) ParquetBlocks() []*Block {
+	blocks := make([]*Block, 0, len(idx.Blocks))
+	for _, b := range idx.Blocks {
+		if b.Parquet != nil {
+			blocks = append(blocks, b)
+		}
+	}
+	return blocks
+}
+
+// NonParquetBlocks returns all blocks that are not available in Parquet format.
+func (idx *Index) NonParquetBlocks() []*Block {
+	blocks := make([]*Block, 0, len(idx.Blocks))
+	for _, b := range idx.Blocks {
+		if b.Parquet != nil {
+			continue
+		}
+		blocks = append(blocks, b)
+	}
+	return blocks
+}
+
+// ConverterMarkMeta is used in Bucket Index. It might not be the same as ConverterMark.
+type ConverterMarkMeta struct {
+	Version int `json:"version"`
+}
+
 // Block holds the information about a block in the index.
 type Block struct {
 	// Block ID.
@@ -101,6 +129,9 @@ type Block struct {
 
 	// Labels contains the external labels from the block's metadata.
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// Parquet metadata if exists. If doesn't exist it will be nil.
+	Parquet *ConverterMarkMeta `json:"parquet,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
