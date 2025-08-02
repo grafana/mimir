@@ -65,7 +65,7 @@ Manage sharding, distribution, resource management, and limits.
 
 ## Query management
 
-Manage and optimize query behavior:
+Manage and optimize query behavior.
 
 - [Configure queries to block](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-blocked-queries/)
 - [Configure experimental PromQL functions](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-experimental-promql-functions/)
@@ -73,7 +73,7 @@ Manage and optimize query behavior:
 
 ## High availability and clustering
 
-Configure Mimir for production resilience:
+Configure Mimir for production resilience.
 
 - **[Zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/)**
 - **[Mirror requests to a second cluster](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/mirror-requests-to-a-second-cluster/)**
@@ -81,7 +81,7 @@ Configure Mimir for production resilience:
 
 ## Observability and troubleshooting
 
-Monitor and debug your Mimir deployment:
+Monitor and debug your Mimir deployment.
 
 - **[Tracing](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-tracing/)**
 - **[IP address logging](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-ip-address-logging/)**
