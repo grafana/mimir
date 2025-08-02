@@ -227,7 +227,7 @@ func TestParquetQueryableFallbackDisabled(t *testing.T) {
 		finder.On("GetBlocks", mock.Anything, "user-1", minT, mock.Anything).Return(bucketindex.Blocks{
 			&bucketindex.Block{ID: block1, Parquet: &bucketindex.ConverterMarkMeta{Version: 1}},
 			&bucketindex.Block{ID: block2},
-		}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+		}, nil)
 
 		expectedError := fmt.Sprintf("consistency check failed because some blocks were not available as parquet files: %s", block2.String())
 
@@ -284,7 +284,7 @@ func TestParquetQueryableFallbackDisabled(t *testing.T) {
 		finder.On("GetBlocks", mock.Anything, "user-1", minT, mock.Anything).Return(bucketindex.Blocks{
 			&bucketindex.Block{ID: block1, Parquet: &bucketindex.ConverterMarkMeta{Version: 1}},
 			&bucketindex.Block{ID: block2, Parquet: &bucketindex.ConverterMarkMeta{Version: 1}},
-		}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+		}, nil)
 
 		t.Run("select should work without error", func(t *testing.T) {
 			mParquetQuerier.Reset()
