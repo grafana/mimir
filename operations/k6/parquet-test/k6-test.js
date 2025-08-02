@@ -83,39 +83,39 @@ function runRangeQuery(queryParams) {
 
 function runParquetQueries() {
   // Query time boundaries
-  const startDate = new Date('2025-05-01T00:00:00Z');
-  const endDate = new Date('2025-06-01T00:00:00Z');
-  
+  const startDate = new Date('2025-07-11T00:00:00Z');
+  const endDate = new Date('2025-08-01T23:59:00Z');
+
   const startTime = Math.floor(startDate.getTime() / 1000);
   const endTime = Math.floor(endDate.getTime() / 1000);
-  
+
   const cacheBuster = Math.floor(Date.now() / 1000);
-  
+
   const windowDuration = 12 * 60 * 60; // 12 hours
-  
+
   const maxStartTime = endTime - windowDuration;
   const randomStartTime = startTime + Math.floor(Math.random() * (maxStartTime - startTime));
   const randomEndTime = randomStartTime + windowDuration;
-  
+
   const queries = [
     'sum(rate(container_cpu_usage_seconds_total{namespace="mimir-dev-11", pod=~"ingester.*"}[5m]))',
     // 'sum(container_memory_working_set_bytes{namespace="mimir-dev-11", container=~"(gateway|cortex-gw|cortex-gw-internal)"})'
   ];
-  
+
   // Pick a random query
   const baseQuery = queries[Math.floor(Math.random() * queries.length)];
   const queryWithCacheBuster = `${baseQuery} + ${cacheBuster}`;
-  
+
   const queryType = baseQuery.includes('cpu') ? 'CPU usage' : 'Memory usage';
   console.info(`Querying ${queryType} for random 12-hour window: ${new Date(randomStartTime * 1000).toISOString()} to ${new Date(randomEndTime * 1000).toISOString()} (cache buster: ${cacheBuster})`);
-  
+
   const queryParams = {
     query: queryWithCacheBuster,
     start: randomStartTime,
     end: randomEndTime,
     step: '60s' // 1 minute step
   };
-  
+
   runRangeQuery(queryParams);
   sleep(10); // 10 second pause between queries
 }
@@ -144,7 +144,7 @@ export function setup() {
 export function teardown(data) {
   const endTime = new Date().toISOString();
   console.log(`✅ Load test completed at: ${endTime}`);
-  
+
   const startTime = new Date(data.startTime);
   const duration = Math.round((new Date() - startTime) / 1000);
   console.log(`⏱️  Total test duration: ${duration} seconds`);

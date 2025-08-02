@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -39,13 +40,15 @@ type Updater struct {
 	logger                        log.Logger
 	getDeletionMarkersConcurrency int
 	updateBlocksConcurrency       int
+	parquetEnabled                bool
 }
 
-func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, updateBlocksConcurrency int, logger log.Logger) *Updater {
+func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, updateBlocksConcurrency int, parquetEnabled bool, logger log.Logger) *Updater {
 	return &Updater{
 		bkt:                           bucket.NewUserBucketClient(userID, bkt, cfgProvider),
 		getDeletionMarkersConcurrency: getDeletionMarkersConcurrency,
 		updateBlocksConcurrency:       updateBlocksConcurrency,
+		parquetEnabled:                parquetEnabled,
 		logger:                        logger,
 	}
 }
@@ -85,6 +88,13 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	blocks, partials, err := w.updateBlocks(ctx, oldBlocks)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Update parquet conversion marks for blocks if parquet support is enabled
+	if w.parquetEnabled {
+		if err := w.updateParquetBlocks(ctx, blocks); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// merge blocks with inconsistent deletion marks and partial blocks related to inaccessible meta.json,
@@ -301,4 +311,83 @@ func (w *Updater) updateBlockDeletionMarkIndexEntry(ctx context.Context, id ulid
 	}
 
 	return BlockDeletionMarkFromThanosMarker(&m), nil
+}
+
+// updateParquetBlocks updates the parquet conversion status for all blocks by checking
+// for parquet conversion marker files in object storage.
+func (w *Updater) updateParquetBlocks(ctx context.Context, blocks []*Block) error {
+	discoveredParquetBlocks := make(map[ulid.ULID]struct{})
+
+	level.Info(w.logger).Log("msg", "starting parquet blocks update", "total_blocks", len(blocks))
+
+	// Check each block for parquet conversion markers - Mimir stores them as blockID/parquet-conversion-mark.json
+	// TODO we need to refactor this since doing an attributes call for each block is not efficient.
+	for _, block := range blocks {
+		markPath := path.Join(block.ID.String(), parquetconverter.ParquetConversionMarkFileName)
+
+		// Check if the marker exists without reading its content
+		_, err := w.bkt.Attributes(ctx, markPath)
+		if err == nil {
+			discoveredParquetBlocks[block.ID] = struct{}{}
+		} else if !w.bkt.IsObjNotFoundErr(err) {
+			level.Warn(w.logger).Log("msg", "error checking parquet marker", "block_id", block.ID.String(), "path", markPath, "err", err)
+		}
+	}
+
+	level.Info(w.logger).Log("msg", "discovered parquet blocks", "count", len(discoveredParquetBlocks))
+
+	// Update parquet metadata for each block
+	parquetBlocksUpdated := 0
+	parquetBlocksCleared := 0
+	for _, block := range blocks {
+		if _, hasParquet := discoveredParquetBlocks[block.ID]; hasParquet {
+			// Block has parquet conversion - update the metadata
+			if err := w.updateParquetBlockEntry(ctx, block.ID, block); err != nil {
+				level.Error(w.logger).Log("msg", "failed to update parquet block entry", "block_id", block.ID.String(), "err", err)
+				return err
+			}
+			parquetBlocksUpdated++
+		} else if block.Parquet != nil {
+			// Parquet conversion marker was removed - clear the metadata
+			block.Parquet = nil
+			parquetBlocksCleared++
+		}
+	}
+
+	level.Info(w.logger).Log("msg", "parquet blocks update completed", "updated", parquetBlocksUpdated, "cleared", parquetBlocksCleared)
+
+	return nil
+}
+
+// updateParquetBlockEntry reads the parquet conversion marker and updates the block metadata.
+func (w *Updater) updateParquetBlockEntry(ctx context.Context, id ulid.ULID, block *Block) error {
+	level.Info(w.logger).Log("msg", "reading parquet conversion mark", "block_id", id.String())
+
+	mark, err := parquetconverter.ReadConversionMark(ctx, id, w.bkt, w.logger)
+	if err != nil {
+		level.Error(w.logger).Log("msg", "failed to read parquet conversion mark", "block_id", id.String(), "err", err)
+		return errors.Wrapf(err, "failed to read parquet conversion mark for block %s", id.String())
+	}
+
+	level.Info(w.logger).Log("msg", "read parquet conversion mark", "block_id", id.String(), "mark_version", mark.Version, "mark_nil", mark == nil)
+
+	// If no mark found or version is 0, treat as no parquet available
+	if mark == nil || mark.Version == 0 {
+		level.Warn(w.logger).Log("msg", "parquet conversion mark invalid or not found", "block_id", id.String(), "mark_nil", mark == nil, "version", func() int {
+			if mark != nil {
+				return mark.Version
+			}
+			return -1
+		}())
+		return nil
+	}
+
+	// Set the parquet metadata using Mimir's ConverterMarkMeta structure
+	block.Parquet = &ConverterMarkMeta{
+		Version: mark.Version,
+	}
+
+	level.Info(w.logger).Log("msg", "successfully set parquet metadata for block", "block_id", id.String(), "version", mark.Version)
+
+	return nil
 }

@@ -551,9 +551,16 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
-	if err != nil {
-		return err
+	// First check if blocks are injected into the context (used by parquet fallback)
+	var knownBlocks bucketindex.Blocks
+	var err error
+	if injectedBlocks, ok := ExtractBlocksFromContext(ctx); ok {
+		knownBlocks = injectedBlocks
+	} else {
+		knownBlocks, err = q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(knownBlocks) == 0 {

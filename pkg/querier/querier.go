@@ -70,6 +70,11 @@ type Config struct {
 	// 0 or negative values mean unlimited concurrency.
 	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
 
+	EnableParquetQueryable            bool   `yaml:"enable_parquet_queryable" category:"experimental"`
+	ParquetQueryableShardCacheSize    int    `yaml:"parquet_queryable_shard_cache_size" category:"experimental"`
+	ParquetQueryableDefaultBlockStore string `yaml:"parquet_queryable_default_block_store" category:"experimental"`
+	ParquetQueryableFallbackDisabled  bool   `yaml:"parquet_queryable_fallback_disabled" category:"experimental"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
@@ -105,12 +110,23 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
+	f.BoolVar(&cfg.EnableParquetQueryable, "querier.enable-parquet-queryable", false, "If true, querier will try to query the parquet files if available.")
+	f.IntVar(&cfg.ParquetQueryableShardCacheSize, "querier.parquet-queryable-shard-cache-size", 512, "Maximum size of the Parquet queryable shard cache. 0 to disable.")
+	f.StringVar(&cfg.ParquetQueryableDefaultBlockStore, "querier.parquet-queryable-default-block-store", "parquet", "Parquet queryable's default block store to query. Valid options are tsdb and parquet.")
+	f.BoolVar(&cfg.ParquetQueryableFallbackDisabled, "querier.parquet-queryable-fallback-disabled", false, "Disable Parquet queryable to fallback queries to Store Gateway if the block is not available as Parquet files but available in TSDB.")
+
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
 	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
+	}
+
+	if cfg.EnableParquetQueryable {
+		if cfg.ParquetQueryableDefaultBlockStore != "tsdb" && cfg.ParquetQueryableDefaultBlockStore != "parquet" {
+			return fmt.Errorf("parquet queryable default block store must be 'tsdb' or 'parquet', got '%s'", cfg.ParquetQueryableDefaultBlockStore)
+		}
 	}
 
 	return nil
