@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-// TestParquetFieldFunctionality tests that the Parquet field is properly accessible in Block structs
+// TestParquetFieldFunctionality tests that the logic to detect if a block has Parquet files or not works.
 func TestParquetFieldFunctionality(t *testing.T) {
 	t.Run("Block with Parquet metadata", func(t *testing.T) {
 		block := &bucketindex.Block{
@@ -39,7 +39,7 @@ func TestParquetFieldFunctionality(t *testing.T) {
 		idx := &bucketindex.Index{
 			Blocks: bucketindex.Blocks{
 				&bucketindex.Block{ID: ulid.MustNew(1, nil), Parquet: &bucketindex.ConverterMarkMeta{Version: 1}},
-				&bucketindex.Block{ID: ulid.MustNew(2, nil)},                                                      // No parquet
+				&bucketindex.Block{ID: ulid.MustNew(2, nil)},
 				&bucketindex.Block{ID: ulid.MustNew(3, nil), Parquet: &bucketindex.ConverterMarkMeta{Version: 1}},
 			},
 		}
@@ -55,14 +55,15 @@ func TestParquetFieldFunctionality(t *testing.T) {
 	})
 }
 
-// TestParquetQueryableContextFunctions tests the context utilities work properly
+// TestParquetQueryableContextFunctions tests the context functions to add and get storage type from
+// context work properly
 func TestParquetQueryableContextFunctions(t *testing.T) {
 	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil)}
 	block2 := &bucketindex.Block{ID: ulid.MustNew(2, nil)}
 
 	t.Run("InjectBlocksIntoContext and ExtractBlocksFromContext", func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		// Test extraction from empty context
 		blocks, ok := ExtractBlocksFromContext(ctx)
 		require.False(t, ok)
@@ -79,7 +80,7 @@ func TestParquetQueryableContextFunctions(t *testing.T) {
 
 	t.Run("AddBlockStoreTypeToContext", func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		// Test with parquet block store type
 		ctxWithParquet := AddBlockStoreTypeToContext(ctx, string(parquetBlockStore))
 		storeType := getBlockStoreType(ctxWithParquet, tsdbBlockStore)
