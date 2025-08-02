@@ -123,11 +123,9 @@ type parquetQueryableWithFallback struct {
 
 	finder BlocksFinder
 
-	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	// metrics
 	metrics *parquetQueryableFallbackMetrics
 
 	limits *validation.Overrides
@@ -264,7 +262,7 @@ func NewParquetQueryable(
 		metrics:               newParquetQueryableFallbackMetrics(reg),
 		limits:                limits,
 		logger:                logger,
-		defaultBlockStoreType: parquetBlockStore, // default to parquet
+		defaultBlockStoreType: parquetBlockStore, // default to parquet TODO get from config
 		fallbackDisabled:      false,             // TODO: get from config
 	}
 
@@ -349,8 +347,8 @@ func (q *parquetQuerierWithFallback) LabelValues(ctx context.Context, name strin
 	span, ctx := opentracing.StartSpanFromContext(ctx, "parquetQuerierWithFallback.LabelValues")
 	defer span.Finish()
 
-	remaining, parquet, err := q.getBlocks(ctx, q.minT, q.maxT)
-	defer q.incrementOpsMetric("LabelValues", remaining, parquet)
+	remaining, pBlocks, err := q.getBlocks(ctx, q.minT, q.maxT)
+	defer q.incrementOpsMetric("LabelValues", remaining, pBlocks)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -367,8 +365,8 @@ func (q *parquetQuerierWithFallback) LabelValues(ctx context.Context, name strin
 		return nil, nil, parquetConsistencyCheckError(remaining)
 	}
 
-	if len(parquet) > 0 {
-		res, ann, qErr := q.parquetQuerier.LabelValues(InjectBlocksIntoContext(ctx, parquet...), name, hints, matchers...)
+	if len(pBlocks) > 0 {
+		res, ann, qErr := q.parquetQuerier.LabelValues(InjectBlocksIntoContext(ctx, pBlocks...), name, hints, matchers...)
 		if qErr != nil {
 			return nil, nil, err
 		}
@@ -400,8 +398,8 @@ func (q *parquetQuerierWithFallback) LabelNames(ctx context.Context, hints *stor
 	span, ctx := opentracing.StartSpanFromContext(ctx, "parquetQuerierWithFallback.LabelNames")
 	defer span.Finish()
 
-	remaining, parquet, err := q.getBlocks(ctx, q.minT, q.maxT)
-	defer q.incrementOpsMetric("LabelNames", remaining, parquet)
+	remaining, pBlocks, err := q.getBlocks(ctx, q.minT, q.maxT)
+	defer q.incrementOpsMetric("LabelNames", remaining, pBlocks)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -419,8 +417,8 @@ func (q *parquetQuerierWithFallback) LabelNames(ctx context.Context, hints *stor
 		return nil, nil, parquetConsistencyCheckError(remaining)
 	}
 
-	if len(parquet) > 0 {
-		res, ann, qErr := q.parquetQuerier.LabelNames(InjectBlocksIntoContext(ctx, parquet...), hints, matchers...)
+	if len(pBlocks) > 0 {
+		res, ann, qErr := q.parquetQuerier.LabelNames(InjectBlocksIntoContext(ctx, pBlocks...), hints, matchers...)
 		if qErr != nil {
 			return nil, nil, err
 		}
@@ -477,8 +475,8 @@ func (q *parquetQuerierWithFallback) Select(ctx context.Context, sortSeries bool
 		return storage.EmptySeriesSet()
 	}
 
-	remaining, parquet, err := q.getBlocks(ctx, mint, maxt)
-	defer q.incrementOpsMetric("Select", remaining, parquet)
+	remaining, pBlocks, err := q.getBlocks(ctx, mint, maxt)
+	defer q.incrementOpsMetric("Select", remaining, pBlocks)
 
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -490,19 +488,19 @@ func (q *parquetQuerierWithFallback) Select(ctx context.Context, sortSeries bool
 	}
 
 	// Lets sort the series to merge
-	if len(parquet) > 0 && len(remaining) > 0 {
+	if len(pBlocks) > 0 && len(remaining) > 0 {
 		sortSeries = true
 	}
 
 	promises := make([]chan storage.SeriesSet, 0, 2)
 
-	if len(parquet) > 0 {
+	if len(pBlocks) > 0 {
 		p := make(chan storage.SeriesSet, 1)
 		promises = append(promises, p)
 		go func() {
 			span, _ := opentracing.StartSpanFromContext(ctx, "parquetQuerier.Select")
 			defer span.Finish()
-			parquetCtx := InjectBlocksIntoContext(ctx, parquet...)
+			parquetCtx := InjectBlocksIntoContext(ctx, pBlocks...)
 			p <- q.parquetQuerier.Select(parquetCtx, sortSeries, &hints, matchers...)
 		}()
 	}
