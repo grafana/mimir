@@ -16,7 +16,7 @@
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
 * [ENHANCEMENT] MQE: Add support for applying common subexpression elimination to range vector expressions in instant queries. #12236
 * [ENHANCEMENT] Ingester: Add compaction delay detection when ingest storage is enabled. When compaction intervals exceed a 5% tolerance threshold,
-  the ingester will skip the delayed compaction and track missed iterations via new metrics `cortex_ingester_tsdb_compaction_missed_iterations_total` and
+  the ingester skips the delayed compaction and tracks missed iterations via the new metrics `cortex_ingester_tsdb_compaction_missed_iterations_total` and
   `cortex_ingester_tsdb_compaction_last_duration_seconds`. #12274
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
