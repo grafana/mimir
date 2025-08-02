@@ -12,7 +12,8 @@ import (
 )
 
 func TestQueryPruner(t *testing.T) {
-	pruner := NewQueryPruner(context.Background(), log.NewNopLogger())
+	pruner := NewQueryPruner(log.NewNopLogger())
+	ctx := context.Background()
 
 	for _, tt := range []struct {
 		in  string
@@ -180,7 +181,7 @@ func TestQueryPruner(t *testing.T) {
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			mapped, err := pruner.Map(expr)
+			mapped, err := pruner.Map(ctx, expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 		})

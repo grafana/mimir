@@ -189,8 +189,8 @@ func TestPusherConsumer(t *testing.T) {
 				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
-				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
-				{err: ingesterError(mimirpb.BAD_DATA, codes.Unknown, "ingester test error")}, // status code doesn't matter
+				{err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "ingester test error")},
+				{err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.Unknown, "ingester test error")}, // status code doesn't matter
 				okResponse,
 			},
 			expectedWRs: writeReqs[0:3],
@@ -209,8 +209,8 @@ func TestPusherConsumer(t *testing.T) {
 				{ctx: ctx, content: wrBytes[4], tenantID: tenantID},
 			},
 			responses: []response{
-				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
-				{err: ingesterError(mimirpb.TSDB_UNAVAILABLE, codes.Unavailable, "ingester internal error")},
+				{err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "ingester test error")},
+				{err: ingesterError(mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE, codes.Unavailable, "ingester internal error")},
 			},
 			expectedWRs: writeReqs[0:2], // the rest of the requests are not attempted
 			expErr:      "ingester internal error",
@@ -346,7 +346,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 	}
 
 	t.Run("should log a client error if does not implement optional logging interface", func(t *testing.T) {
-		pusherErr := ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error")
+		pusherErr := ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "mocked error")
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
@@ -363,7 +363,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 	t.Run("should log a client error if does implement optional logging interface and ShouldLog() returns true", func(t *testing.T) {
 		pusherErrSampler := util_log.NewSampler(100)
-		pusherErr := pusherErrSampler.WrapError(ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error"))
+		pusherErr := pusherErrSampler.WrapError(ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "mocked error"))
 
 		// Pre-requisite: the mocked error should implement the optional logging interface.
 		var optionalLoggingErr middleware.OptionalLogging
@@ -384,7 +384,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 	})
 
 	t.Run("should not log a client error if does implement optional logging interface and ShouldLog() returns false", func(t *testing.T) {
-		pusherErr := middleware.DoNotLogError{Err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error")}
+		pusherErr := middleware.DoNotLogError{Err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "mocked error")}
 
 		// Pre-requisite: the mocked error should implement the optional logging interface.
 		var optionalLoggingErr middleware.OptionalLogging

@@ -6,12 +6,13 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"html/template"
 	"net/http"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -99,11 +100,11 @@ func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 	els := append([]IndexPageLinkGroup(nil), pc.elements...)
 	pc.mu.Unlock()
 
-	sort.Slice(els, func(i, j int) bool {
-		if els[i].weight != els[j].weight {
-			return els[i].weight < els[j].weight
-		}
-		return els[i].Desc < els[j].Desc
+	slices.SortFunc(els, func(a, b IndexPageLinkGroup) int {
+		return cmp.Or(
+			cmp.Compare(a.weight, b.weight),
+			strings.Compare(a.Desc, b.Desc),
+		)
 	})
 
 	return els
@@ -287,6 +288,7 @@ func NewQuerierHandler(
 		true,
 		0,
 		querierCfg.EngineConfig.LookbackDelta,
+		false,
 	)
 
 	api.InstallCodec(protobufCodec{})

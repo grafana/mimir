@@ -28,6 +28,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -35,6 +36,8 @@ type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ .
 func (c mockHTTPGRPCClient) Handle(ctx context.Context, req *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return c(ctx, req, opts...)
 }
+
+var prometheusGrpcURL = &url.URL{Path: "/prometheus"}
 
 func TestRemoteQuerier_Read(t *testing.T) {
 	// setup returns a mocked HTTPgRPC client and a pointer to the received HTTPRequest
@@ -64,7 +67,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should issue a remote read request", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
@@ -76,23 +79,23 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
-		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
 	})
 
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Read(ctx, &prompb.Query{}, false)
 		require.NoError(t, err)
 
-		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, api.ReadConsistencyStrong, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
 	})
 }
 
@@ -101,7 +104,7 @@ func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Second, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 	_, err := q.Read(context.Background(), &prompb.Query{}, false)
 	require.Error(t, err)
@@ -139,7 +142,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 			t.Run(fmt.Sprintf("format = %s", format), func(t *testing.T) {
 				client, inReq := setup()
 
-				q := NewRemoteQuerier(client, time.Minute, 1, format, "/prometheus", log.NewNopLogger())
+				q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, format, prometheusGrpcURL, log.NewNopLogger())
 				_, err := q.Query(context.Background(), "qs", tm)
 				require.NoError(t, err)
 
@@ -148,7 +151,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 				require.Equal(t, "query=qs&time="+url.QueryEscape(tm.Format(time.RFC3339Nano)), string(inReq.Body))
 				require.Equal(t, "/prometheus/api/v1/query", inReq.Url)
 
-				acceptHeader := getHeader(inReq.Headers, "Accept")
+				acceptHeader := getGrpcHeader(inReq.Headers, "Accept")
 
 				switch format {
 				case formatJSON:
@@ -165,23 +168,23 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 		_, err := q.Query(context.Background(), "qs", tm)
 		require.NoError(t, err)
 
-		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
 	})
 
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Query(ctx, "qs", tm)
 		require.NoError(t, err)
 
-		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, api.ReadConsistencyStrong, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
 	})
 }
 
@@ -276,7 +279,7 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 				}
 				return testCase.response, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
 			_, err := q.Query(ctx, "qs", time.Now())
 			if testCase.err == nil {
@@ -405,7 +408,7 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 					Body: []byte(scenario.body),
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -464,7 +467,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 	}{
 		"vector response with no series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{},
 				},
@@ -473,7 +476,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with one series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -496,7 +499,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with many series": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -529,7 +532,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with many labels": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -552,7 +555,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with histogram value": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Histograms: []mimirpb.VectorHistogram{
@@ -575,7 +578,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with float and histogram values": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -610,7 +613,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"vector response with malformed metric": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
@@ -627,7 +630,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"scalar response": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Scalar{
 					Scalar: &mimirpb.ScalarData{
 						TimestampMs: 1649092025515,
@@ -645,7 +648,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"matrix response": {
 			body: mimirpb.QueryResponse{
-				Status: mimirpb.QueryResponse_SUCCESS,
+				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{},
 				},
@@ -654,8 +657,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 		},
 		"execution error": {
 			body: mimirpb.QueryResponse{
-				Status:    mimirpb.QueryResponse_ERROR,
-				ErrorType: mimirpb.QueryResponse_EXECUTION,
+				Status:    mimirpb.QUERY_STATUS_ERROR,
+				ErrorType: mimirpb.QUERY_ERROR_TYPE_EXECUTION,
 				Error:     "something went wrong",
 			},
 			expectedError: errors.New("query execution failed with error: something went wrong"),
@@ -678,7 +681,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 					Body: b,
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatProtobuf, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatProtobuf, prometheusGrpcURL, log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -701,7 +704,7 @@ func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
 			Body: []byte("some body content"),
 		}, nil
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -713,7 +716,7 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Second, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -771,7 +774,7 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 				return testCase.resp, testCase.err
 			}
 			logger := newLoggerWithCounter()
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", logger)
+			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, logger)
 
 			tm := time.Unix(1649092025, 515834)
 
@@ -808,4 +811,17 @@ func (l *loggerWithCounter) Log(keyvals ...interface{}) error {
 
 func (l *loggerWithCounter) count() int64 {
 	return l.counter.Load()
+}
+
+func getGrpcHeader(headers []*httpgrpc.Header, name string) string {
+	for _, h := range headers {
+		if h.Key == name && len(h.Values) > 0 {
+			return h.Values[0]
+		}
+	}
+	return ""
+}
+
+func newGrpcRoundTripper(client httpgrpc.HTTPClient) http.RoundTripper {
+	return httpgrpcutil.AdaptHTTPGrpcClientToHTTPRoundTripper(client)
 }

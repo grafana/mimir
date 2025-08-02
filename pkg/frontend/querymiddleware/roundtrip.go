@@ -418,7 +418,6 @@ func newQueryMiddlewares(
 	queryInstantMiddleware = append(queryInstantMiddleware,
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
-		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),

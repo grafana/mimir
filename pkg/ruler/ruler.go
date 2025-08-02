@@ -1355,7 +1355,7 @@ func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
 
 // NameValidationScheme returns the validation scheme to use for a particular tenant.
 func (r *Ruler) NameValidationScheme(userID string) model.ValidationScheme {
-	return r.limits.ValidationScheme(userID)
+	return r.limits.NameValidationScheme(userID)
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current

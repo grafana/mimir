@@ -1468,6 +1468,62 @@ receivers:
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {
+	const testGrafanaUser = "user1"
+	const testMimirUser = "user2"
+
+	// Run this test using a real storage client.
+	store := prepareInMemoryAlertStore()
+
+	amConfig := mockAlertmanagerConfig(t)
+	amConfig.StrictInitializationEnabled = true
+	amConfig.GrafanaAlertmanagerIdleGracePeriod = 0 // No grace period, turned off in the next config sync.
+
+	externalURL := flagext.URLValue{}
+	err := externalURL.Set("http://localhost:8080/alertmanager")
+	require.NoError(t, err)
+	amConfig.ExternalURL = externalURL
+
+	// Create the Multitenant Alertmanager.
+	reg := prometheus.NewPedanticRegistry()
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+
+	// Create a default Grafana config and an empty Mimir config.
+	// These should make the MOA skip the tenants.
+	ctx := context.Background()
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
+		User:      testGrafanaUser,
+		RawConfig: grafanaConfig,
+		Promoted:  true,
+		Default:   true,
+	}))
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: testMimirUser,
+	}))
+
+	// Sync configurations, the Alertmanagers shouldn't be initialized.
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 0)
+
+	// Make requests as the users. The Alertmanagers should be initialized.
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
+	w := httptest.NewRecorder()
+
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
+	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Len(t, am.alertmanagers, 1)
+
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
+	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Len(t, am.alertmanagers, 2)
+
+	// The Alertmanagers should be turned off after the next sync.
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 0)
+}
+
 // This test checks that the fallback configuration does not overwrite a configuration
 // written to storage before it is picked up by the instance.
 func TestMultitenantAlertmanager_ServeHTTPBeforeSyncFailsIfConfigExists(t *testing.T) {
@@ -2546,7 +2602,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
-	// If no fallback configration is set, it returns a valid empty configuration.
+	// If no fallback configuration is set, it returns a valid empty configuration.
 	fallbackConfig, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 

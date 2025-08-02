@@ -217,7 +217,7 @@ type RulesLimits interface {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
-	ValidationScheme(userID string) model.ValidationScheme
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {
