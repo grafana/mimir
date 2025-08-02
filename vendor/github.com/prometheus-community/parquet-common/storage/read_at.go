@@ -21,18 +21,12 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-type SizeReaderAt interface {
-	io.ReaderAt
-	Size() int64
-}
-
 type ReadAtWithContextCloser interface {
-	WithContext(ctx context.Context) SizeReaderAt
 	io.Closer
+	WithContext(ctx context.Context) io.ReaderAt
 }
 
 type fileReadAt struct {
-	ctx context.Context
 	*os.File
 }
 
@@ -43,23 +37,11 @@ func NewFileReadAt(f *os.File) ReadAtWithContextCloser {
 	}
 }
 
-func (f *fileReadAt) WithContext(ctx context.Context) SizeReaderAt {
-	return &fileReadAt{
-		ctx:  ctx,
-		File: f.File,
-	}
-}
-
-func (f *fileReadAt) Size() int64 {
-	fi, err := f.Stat()
-	if err != nil {
-		return 0
-	}
-	return fi.Size()
+func (f *fileReadAt) WithContext(_ context.Context) io.ReaderAt {
+	return f.File
 }
 
 type bReadAt struct {
-	ctx  context.Context
 	path string
 	obj  objstore.BucketReader
 }
@@ -72,60 +54,52 @@ func NewBucketReadAt(path string, obj objstore.BucketReader) ReadAtWithContextCl
 	}
 }
 
-func (b *bReadAt) WithContext(ctx context.Context) SizeReaderAt {
-	return &bReadAt{
-		ctx:  ctx,
-		path: b.path,
-		obj:  b.obj,
+func (b *bReadAt) WithContext(ctx context.Context) io.ReaderAt {
+	return readAtFunc{
+		f: func(p []byte, off int64) (n int, err error) {
+			rc, err := b.obj.GetRange(ctx, b.path, off, int64(len(p)))
+			if err != nil {
+				return 0, err
+			}
+			defer func() { _ = rc.Close() }()
+			n, err = io.ReadFull(rc, p)
+			if err == io.EOF {
+				err = nil
+			}
+			return
+		},
 	}
-}
-
-func (b *bReadAt) Size() int64 {
-	attr, err := b.obj.Attributes(context.Background(), b.path)
-	if err != nil {
-		return 0
-	}
-	return attr.Size
 }
 
 func (b *bReadAt) Close() error {
 	return nil
 }
 
-func (b *bReadAt) ReadAt(p []byte, off int64) (n int, err error) {
-	rc, err := b.obj.GetRange(b.ctx, b.path, off, int64(len(p)))
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = rc.Close() }()
-	n, err = io.ReadFull(rc, p)
-	if err == io.EOF {
-		err = nil
-	}
-	return
+type readAtFunc struct {
+	f func([]byte, int64) (n int, err error)
+}
+
+func (r readAtFunc) ReadAt(p []byte, off int64) (n int, err error) {
+	return r.f(p, off)
 }
 
 type optimisticReaderAt struct {
-	r      SizeReaderAt
+	r      io.ReaderAt
 	b      []byte
 	offset int64
 }
 
-func (or optimisticReaderAt) Size() int64 {
-	return or.r.Size()
-}
-
-func (or optimisticReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
-	if off >= or.offset && off < or.offset+int64(len(or.b)) {
-		diff := off - or.offset
-		n := copy(p, or.b[diff:])
+func (b optimisticReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
+	if off >= b.offset && off < b.offset+int64(len(b.b)) {
+		diff := off - b.offset
+		n := copy(p, b.b[diff:])
 		return n, nil
 	}
 
-	return or.r.ReadAt(p, off)
+	return b.r.ReadAt(p, off)
 }
 
-func NewOptimisticReaderAt(r SizeReaderAt, minOffset, maxOffset int64) SizeReaderAt {
+func NewOptimisticReaderAt(r io.ReaderAt, minOffset, maxOffset int64) io.ReaderAt {
 	if minOffset < maxOffset {
 		b := make([]byte, maxOffset-minOffset)
 		n, err := r.ReadAt(b, minOffset)
