@@ -36,7 +36,7 @@ Set up secure multi-tenant environments.
 
 ## Storage and data management
 
-Configure how Mimir stores and manages your data.
+Configure how Grafana Mimir stores and manages your data.
 
 - [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-object-storage-backend/)
 - [Configure Grafana Mimir metrics storage retention](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-metrics-storage-retention/)
@@ -45,7 +45,7 @@ Configure how Mimir stores and manages your data.
 
 ## Ingestion and data sources
 
-Configure how data is ingested into Mimir.
+Configure how data is ingested into Grafana Mimir.
 
 - [Configure native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-native-histograms-ingestion/)
 - [Configure the OpenTelemetry Collector to write metrics into Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-otel-collector/)
@@ -73,15 +73,15 @@ Manage and optimize query behavior.
 
 ## High availability and clustering
 
-Configure Mimir for production resilience.
+Configure Grafana Mimir for production resilience.
 
-- **[Zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/)**
-- **[Mirror requests to a second cluster](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/mirror-requests-to-a-second-cluster/)**
-- **[DNS service discovery](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-dns-service-discovery/)**
+- [Configure Grafana Mimir zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/)
+- [Mirror requests to a second Grafana Mimir cluster](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/mirror-requests-to-a-second-cluster/)
+- [About Grafana Mimir DNS service discovery](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-dns-service-discovery/)
 
 ## Observability and troubleshooting
 
-Monitor and debug your Mimir deployment.
+Monitor and debug your Grafana Mimir deployment.
 
-- **[Tracing](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-tracing/)**
-- **[IP address logging](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-ip-address-logging/)**
+- [Configure Grafana Mimir tracing](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-tracing/)
+- [About Grafana Mimir IP address logging of a reverse proxy](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-ip-address-logging/)
