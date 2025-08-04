@@ -1529,15 +1529,15 @@ func testDistributorNameValidation(
 				t.Fatalf("unsupported rw version: %s", rwVersion)
 			}
 			require.NoError(t, err)
-			require.Equal(t, writeRes.StatusCode, tc.wantStatus[validationScheme])
+			require.Equal(t, tc.wantStatus[validationScheme], writeRes.StatusCode)
 			if writeRes.StatusCode != http.StatusOK {
 				// No point in running queries if we didn't write anything.
 				return
 			}
-			for q, res := range tc.queries {
-				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+			for q, want := range tc.queries {
+				got, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
-				require.Equal(t, res.String(), result.String())
+				require.Equal(t, want.String(), got.String())
 			}
 		})
 	}
