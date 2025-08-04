@@ -764,10 +764,10 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // A bool is returned, indicating whether the Alertmanager should be started.
 //
 // Order of precedence:
-// 1. Custom Mimir configuration
-// 2. Custom, promoted Grafana configuration
-// 3. Default Grafana configuration
-// 4. Default Mimir configuration (lowest precedence, created by default for all tenants)
+// 1. Custom Mimir configurations
+// 2. Custom, promoted Grafana configurations
+// 3. Default Grafana configurations
+// 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
 //
 // Considerations:
 // - Unpromoted Grafana configurations are always ignored
@@ -776,7 +776,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	userID := cfgs.Mimir.User
 
 	// Custom Mimir configurations have the highest precedence.
-	if am.isMimirConfigUsable(cfgs.Mimir) {
+	if am.isMimirConfigCustom(cfgs.Mimir) {
 		if isGrafanaConfigUsable(cfgs.Grafana) {
 			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
 		}
@@ -834,8 +834,8 @@ func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
 	return cfg.Promoted && cfg.RawConfig != ""
 }
 
-// isGrafanaConfigUsable returns true if the Mimir configuration is non-default and non-empty.
-func (am *MultitenantAlertmanager) isMimirConfigUsable(cfg alertspb.AlertConfigDesc) bool {
+// isMimirConfigCustom returns true if the Mimir configuration is non-default and non-empty.
+func (am *MultitenantAlertmanager) isMimirConfigCustom(cfg alertspb.AlertConfigDesc) bool {
 	return cfg.RawConfig != am.fallbackConfig && cfg.RawConfig != ""
 }
 
