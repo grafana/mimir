@@ -76,7 +76,7 @@ require (
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/spf13/pflag v1.0.5
-	github.com/thanos-io/objstore v0.0.0-20250725105400-667c14043dbe
+	github.com/thanos-io/objstore v0.0.0-20250731075400-8e1610eb4d62
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.19.4
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
