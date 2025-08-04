@@ -408,7 +408,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 			expectCTzero: false,
 		},
 		"start time ok": {
-			startTs:      now.Add(-2 * time.Minute),
+			startTs:      now.Add(-30 * time.Second),
 			expectCTzero: true,
 		},
 		"start time equal to sample timestamp": {
@@ -416,7 +416,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 			expectCTzero: false,
 		},
 		"start time in the future": {
-			startTs:      now.Add(2 * time.Minute),
+			startTs:      now.Add(30 * time.Second),
 			expectCTzero: false,
 		},
 	}
