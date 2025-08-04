@@ -77,6 +77,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errInvalidNameValidationScheme                 = errors.New("name validation scheme has to be utf8 when unescaped OTel metric/label names are enabled")
 )
 
 const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
@@ -293,6 +294,7 @@ type Limits struct {
 	OTelConvertHistogramsToNHCB              bool                   `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
 	OTelPromoteScopeMetadata                 bool                   `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
 	OTelNativeDeltaIngestion                 bool                   `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTelEnableUnescapedNames                 bool                   `yaml:"otel_enable_unescaped_names" json:"otel_enable_unescaped_names" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -344,6 +346,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+	f.BoolVar(&l.OTelEnableUnescapedNames, "distributor.otel-enable-unescaped-names", false, "Whether to disable escaping of metric and label names to the classical Prometheus format when ingesting OTLP metrics. If -distributor.otel-metric-suffixes-enabled is true, type and unit suffixes are still appended as required. When this is enabled, -validation.name-validation-scheme has to be configured as 'utf8'.")
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
@@ -570,6 +573,9 @@ func (l *Limits) validate() error {
 	}
 
 	validationScheme := model.ValidationScheme(l.NameValidationScheme)
+	if l.OTelEnableUnescapedNames && validationScheme != model.UTF8Validation {
+		return errInvalidNameValidationScheme
+	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
@@ -1376,6 +1382,10 @@ func (o *Overrides) OTelPromoteScopeMetadata(tenantID string) bool {
 
 func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
+}
+
+func (o *Overrides) OTelEnableUnescapedNames(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelEnableUnescapedNames
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.

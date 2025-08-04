@@ -41,7 +41,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 		}
 
 		pt := dataPoints.At(x)
-		labels := createAttributes(
+		labels, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -52,6 +52,9 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return err
+		}
 		sample := &mimirpb.Sample{
 			// convert ns to ms
 			TimestampMs: convertTimeStamp(pt.Timestamp()),
@@ -83,7 +86,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -94,6 +97,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return err
+		}
 		sample := &mimirpb.Sample{
 			// convert ns to ms
 			TimestampMs: timestamp,
