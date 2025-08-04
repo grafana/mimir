@@ -40,6 +40,7 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/promtest"
 )
 
 func init() {
@@ -198,7 +199,7 @@ func TestFrontendCancel(t *testing.T) {
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
 
-func TestFrontendMetricsCleanup(t *testing.T) {
+func TestFrontendMetrics(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
@@ -234,6 +235,9 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
 				# TYPE cortex_query_frontend_queue_length gauge
 			`), "cortex_query_frontend_queue_length"))
+
+		require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_frontend_queue_duration_seconds"))
+		require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_frontend_queue_duration_seconds", 1))
 	}
 
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
