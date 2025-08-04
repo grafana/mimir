@@ -780,14 +780,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		if isGrafanaConfigUsable(cfgs.Grafana) {
 			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
 		}
-		am.removeFromSkippedList(userID) // We have a usable config, remove from 'skipped' list.
+		am.removeFromSkippedList(userID)
 		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
 	// Custom Grafana configurations have the second highest precedence.
 	if isGrafanaConfigUsable(cfgs.Grafana) && !cfgs.Grafana.Default {
-		am.removeFromSkippedList(userID) // We have a usable config, remove from 'skipped' list.
-		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
+		am.removeFromSkippedList(userID)
 		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
@@ -795,14 +794,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If we have no custom configs, check the last request time to know whether to start the AM.
 	if am.cfg.StrictInitializationEnabled && (!isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default) {
 		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() { // No recent requests.
+		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
 		}
 
-		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-
 		// Use the zero value to signal that the tenant was skipped.
 		// If the value stored is not what we have in memory, the tenant received a request since the last read.
+		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
 		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
 		}
