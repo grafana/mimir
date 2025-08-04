@@ -824,7 +824,7 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 
 		var err error
 		if isGrafanaConfigUsable(cfgs.Grafana) {
-			cfg, err = amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+			cfg, err = am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		}
 		return cfg, true, err
 	}
@@ -836,7 +836,7 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
-		cfg, err := amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
