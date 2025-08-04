@@ -61,6 +61,7 @@ type OTLPHandlerLimits interface {
 	OTelConvertHistogramsToNHCB(id string) bool
 	OTelPromoteScopeMetadata(id string) bool
 	OTelNativeDeltaIngestion(id string) bool
+	OTelEnableUnescapedNames(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -290,24 +291,27 @@ func newOTLPParser(
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
+		allowUTF8 := limits.OTelEnableUnescapedNames(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
+		convOpts := conversionOptions{
+			addSuffixes:                       addSuffixes,
+			enableCTZeroIngestion:             enableCTZeroIngestion,
+			enableStartTimeQuietZero:          enableStartTimeQuietZero,
+			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+			convertHistogramsToNHCB:           convertHistogramsToNHCB,
+			promoteScopeMetadata:              promoteScopeMetadata,
+			promoteResourceAttributes:         promoteResourceAttributes,
+			allowDeltaTemporality:             allowDeltaTemporality,
+			allowUTF8:                         allowUTF8,
+		}
 		metrics, metricsDropped, err := otelMetricsToTimeseries(
 			ctx,
 			otlpConverter,
 			otlpReq.Metrics(),
-			conversionOptions{
-				addSuffixes:                       addSuffixes,
-				enableCTZeroIngestion:             enableCTZeroIngestion,
-				enableStartTimeQuietZero:          enableStartTimeQuietZero,
-				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
-				convertHistogramsToNHCB:           convertHistogramsToNHCB,
-				promoteScopeMetadata:              promoteScopeMetadata,
-				promoteResourceAttributes:         promoteResourceAttributes,
-				allowDeltaTemporality:             allowDeltaTemporality,
-			},
+			convOpts,
 			spanLogger,
 		)
 		if metricsDropped > 0 {
@@ -339,7 +343,7 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		req.Metadata = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
 
 		return nil
 	}
@@ -470,7 +474,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
+func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) []*mimirpb.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -483,8 +487,8 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 
 	namer := otlptranslator.MetricNamer{
 		Namespace:          "",
-		WithMetricSuffixes: addSuffixes,
-		UTF8Allowed:        false,
+		WithMetricSuffixes: opts.addSuffixes,
+		UTF8Allowed:        opts.allowUTF8,
 	}
 
 	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
@@ -518,6 +522,7 @@ type conversionOptions struct {
 	promoteScopeMetadata              bool
 	promoteResourceAttributes         []string
 	allowDeltaTemporality             bool
+	allowUTF8                         bool
 }
 
 func otelMetricsToTimeseries(
@@ -536,6 +541,7 @@ func otelMetricsToTimeseries(
 		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
 		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 		AllowDeltaTemporality:               opts.allowDeltaTemporality,
+		AllowUTF8:                           opts.allowUTF8,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
