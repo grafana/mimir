@@ -129,7 +129,9 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			res := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
+			res := otelMetricsToMetadata(otelMetrics, conversionOptions{
+				addSuffixes: tc.enableSuffixes,
+			})
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
@@ -1852,6 +1854,8 @@ func (o otlpLimitsMock) OTelPromoteScopeMetadata(string) bool {
 }
 
 func (o otlpLimitsMock) OTelNativeDeltaIngestion(string) bool { return false }
+
+func (o otlpLimitsMock) OTelEnableUnescapedNames(string) bool { return false }
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))

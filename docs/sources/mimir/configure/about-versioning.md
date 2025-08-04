@@ -121,6 +121,8 @@ The following features are currently experimental:
     - `distributor.otel-native-delta-ingestion`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
+  - Disable escaping of metric and label names in OTLP endpoint
+    - `-distributor.otel-enable-unescaped-names`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`

@@ -1583,6 +1583,26 @@ func TestLimits_validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should pass if otel_enable_unescaped_names is true and name_validation_scheme is utf8": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.OTelEnableUnescapedNames = true
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if otel_enable_unescaped_names is true and name_validation_scheme is legacy": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.OTelEnableUnescapedNames = true
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				return cfg
+			}(),
+			expectedErr: errInvalidNameValidationScheme,
+		},
 	}
 
 	for testName, testData := range tests {
