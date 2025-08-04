@@ -6016,6 +6016,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_enable_unescaped_names",
+          "required": false,
+          "desc": "Whether to disable escaping of metric and label names to the classical Prometheus format when ingesting OTLP metrics. If -distributor.otel-metric-suffixes-enabled is true, type and unit suffixes are still appended as required. When this is enabled, -validation.name-validation-scheme has to be configured as 'utf8'.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-enable-unescaped-names",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
