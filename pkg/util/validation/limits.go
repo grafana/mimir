@@ -77,6 +77,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errInvalidNameValidationScheme                 = errors.New("name validation scheme has to be utf8 when unescaped OTel metric/label names are enabled")
 )
 
 const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
@@ -572,6 +573,9 @@ func (l *Limits) validate() error {
 	}
 
 	validationScheme := model.ValidationScheme(l.NameValidationScheme)
+	if l.OTelEnableUnescapedNames && validationScheme != model.UTF8Validation {
+		return errInvalidNameValidationScheme
+	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")

@@ -115,12 +115,10 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
+	// UTF-8 format names have to be in quotes.
+	metricQuery := fmt.Sprintf(`{"%s"}`, convertedMetricName)
+
 	// Query the series.
-	metricQuery := convertedMetricName
-	if opts.enableUnescapedNames {
-		// Necessary syntax for UTF-8 format names.
-		metricQuery = fmt.Sprintf(`{"%s"}`, convertedMetricName)
-	}
 	result, err := c.Query(metricQuery, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
@@ -179,11 +177,8 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
-	histogramQuery := convertedHistogramName
-	if opts.enableUnescapedNames {
-		// Necessary syntax for UTF-8 format names.
-		histogramQuery = fmt.Sprintf(`{"%s"}`, convertedHistogramName)
-	}
+	// UTF-8 format names have to be in quotes.
+	histogramQuery := fmt.Sprintf(`{"%s"}`, convertedHistogramName)
 	result, err = c.Query(histogramQuery, now)
 	require.NoError(t, err)
 
