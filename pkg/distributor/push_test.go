@@ -129,9 +129,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			res := otelMetricsToMetadata(otelMetrics, conversionOptions{
+			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			})
+			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
