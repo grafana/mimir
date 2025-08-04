@@ -178,19 +178,20 @@ func NewParquetQueryable(
 
 	cDecoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 
+	createLimitFunc := func(getLimitFunc func(string) int, defaultValue int64) func(context.Context) int64 {
+		return func(ctx context.Context) int64 {
+			userID, err := tenant.TenantID(ctx)
+			if err != nil {
+				return defaultValue
+			}
+			return int64(getLimitFunc(userID))
+		}
+	}
+
 	parquetQueryableOpts := []queryable.QueryableOpts{
-		queryable.WithRowCountLimitFunc(func(ctx context.Context) int64 {
-			// TODO: add parquet-specific limits to validation.Overrides
-			return 1000000 // default limit
-		}),
-		queryable.WithChunkBytesLimitFunc(func(ctx context.Context) int64 {
-			// TODO: add parquet-specific limits to validation.Overrides
-			return 1024 * 1024 * 100 // 100MB default limit
-		}),
-		queryable.WithDataBytesLimitFunc(func(ctx context.Context) int64 {
-			// TODO: add parquet-specific limits to validation.Overrides
-			return 1024 * 1024 * 500 // 500MB default limit
-		}),
+		queryable.WithRowCountLimitFunc(createLimitFunc(limits.ParquetMaxFetchedRowCount, 10_000_000)),
+		queryable.WithChunkBytesLimitFunc(createLimitFunc(limits.ParquetMaxFetchedChunkBytes, 1_000*1024*1024)),
+		queryable.WithDataBytesLimitFunc(createLimitFunc(limits.ParquetMaxFetchedDataBytes, 5_000*1024*1024)),
 		queryable.WithMaterializedLabelsFilterCallback(materializedLabelsFilterCallback),
 		queryable.WithMaterializedSeriesCallback(func(ctx context.Context, cs []storage.ChunkSeries) error {
 			queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
