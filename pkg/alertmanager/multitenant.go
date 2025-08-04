@@ -786,7 +786,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If the Mimir config is not usable, return the Grafana config.
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
