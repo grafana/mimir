@@ -761,13 +761,18 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 }
 
 // computeConfig takes Mimir and Grafana configurations and returns a config we can use to start an Alertmanager.
-// This config can have elements of both input configurations. A bool is returned, indicating whether the Alertmanager should be started.
+// A bool is returned, indicating whether the Alertmanager should be started.
+//
+// Order of precedence:
+// 1. Mimir non-default configuration
+// 2. Grafana non-default configuration
+// 3. Grafana default configuration
+// 4. Mimir default configuration (lower precedence, it gets created by default for all tenants)
+//
 // Considerations:
-// - A Grafana configuration is "usable" if it is non-empty, non-default, and promoted
-// - A Mimir configuration is "usable" if it's non-empty and non-default
-// - If both configurations are "usable", the Mimir one takes precedence (merging is not implemented)
-// - If both configurations are default, the Grafana one takes precedence
 // - Unpromoted Grafana configurations are always ignored
+// - Grafana configurations get patched with Mimir globals
+// - Merging Mimir and Grafana configurations is not implemented
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	if am.cfg.StrictInitializationEnabled {
 		return am.computeConfigForStrictInit(cfgs)
@@ -781,7 +786,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If the Mimir config is not usable, return the Grafana config.
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
 	}
 
@@ -796,7 +801,7 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 	userID := cfgs.Mimir.User
 	cfg := newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
-	if !isGrafanaConfigUsable(cfgs.Grafana) {
+	if !isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default {
 		if am.isMimirConfigUsable(cfgs.Mimir) {
 			return cfg, true, nil
 		}
@@ -816,7 +821,12 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
-		return cfg, true, nil
+
+		var err error
+		if isGrafanaConfigUsable(cfgs.Grafana) {
+			cfg, err = amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		}
+		return cfg, true, err
 	}
 
 	// Clear any previous skipped status since we now have a usable config.
@@ -826,7 +836,7 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
-		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := amConfigFromGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
 	}
 
@@ -834,9 +844,9 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 	return cfg, true, nil
 }
 
-// isGrafanaConfigUsable returns true if the Grafana configuration is promoted, non-default, and not empty.
+// isGrafanaConfigUsable returns true if the Grafana configuration is promoted and not empty.
 func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
-	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
+	return cfg.Promoted && cfg.RawConfig != ""
 }
 
 // isGrafanaConfigUsable returns true if the Mimir configuration is non-default and non-empty.

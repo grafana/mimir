@@ -21,10 +21,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
-// createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
+// amConfigFromGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The amConfig.EmailConfig field can be used to create Grafana email integrations.
-func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
+func amConfigFromGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err

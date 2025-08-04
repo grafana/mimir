@@ -537,7 +537,7 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	// Perform a similar flow of transformations that would happen in the Alertmanager on Sync & Apply.
-	grafanaConfig, err := createUsableGrafanaConfig(logger, cfg, "")
+	grafanaConfig, err := amConfigFromGrafanaConfig(logger, cfg, "")
 	if err != nil {
 		return err
 	}
