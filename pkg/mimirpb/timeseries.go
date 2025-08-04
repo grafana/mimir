@@ -160,7 +160,7 @@ type PreallocTimeseries struct {
 func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 	for i := 0; i < len(p.Labels); i++ {
 		pair := p.Labels[i]
-		if string(pair.Name) == labelName {
+		if pair.Name == labelName {
 			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
 			p.clearUnmarshalData()
 			return
