@@ -823,7 +823,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 }
 
-// removeFromSkippedList remove a tenant from the 'skipped' tenants list (if strict initialization is enabled).
+// removeFromSkippedList remove a tenant from the 'skipped' tenants list.
 func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
 	if !am.cfg.StrictInitializationEnabled {
 		return
