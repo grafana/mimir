@@ -8,6 +8,7 @@
 package mimirpb
 
 import (
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -46,27 +47,20 @@ func CopyLabels(input []labels.Label) labels.Labels {
 		size += len(l.Value)
 	}
 
-	// Copy all strings into the buffer, and use 'yoloString' to convert buffer
-	// slices to strings.
-	buf := make([]byte, size)
+	var b strings.Builder
+	b.Grow(size)
+	for _, l := range input {
+		b.WriteString(l.Name)
+		b.WriteString(l.Value)
+	}
+	allStrings := b.String()
 
 	for i, l := range input {
-		result[i].Name, buf = copyStringToBuffer(l.Name, buf)
-		result[i].Value, buf = copyStringToBuffer(l.Value, buf)
+		result[i].Name, allStrings = allStrings[:len(l.Name)], allStrings[len(l.Name):]
+		result[i].Value, allStrings = allStrings[:len(l.Value)], allStrings[len(l.Value):]
 	}
+
 	return result
-}
-
-// Copies string to buffer (which must be big enough), and converts buffer slice containing
-// the string copy into new string.
-func copyStringToBuffer(in string, buf []byte) (string, []byte) {
-	l := len(in)
-	c := copy(buf, in)
-	if c != l {
-		panic("not copied full string")
-	}
-
-	return yoloString(buf[0:l]), buf[l:]
 }
 
 // FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
