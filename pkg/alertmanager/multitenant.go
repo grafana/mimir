@@ -773,30 +773,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // - Unpromoted Grafana configurations are always ignored
 // - Merging Mimir and Grafana configurations is not implemented
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
-	if am.cfg.StrictInitializationEnabled {
-		return am.computeConfigForStrictInit(cfgs)
-	}
-
-	// If the Grafana config is not usable, return the Mimir config.
-	if !isGrafanaConfigUsable(cfgs.Grafana) {
-		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
-	}
-
-	// If the Mimir config is not usable, return the Grafana config.
-	if !am.isMimirConfigUsable(cfgs.Mimir) {
-		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
-		return cfg, true, err
-	}
-
-	// If both configs are usable, fall back to Mimir's.
-	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
-}
-
-// computeConfigForStrictInit generates a final configuration from Grafana and Mimir configs like computeConfig, but it updates internal state
-// and decides whether to start an Alertmanager for a tenant based on their configs and activity.
-func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
 
 	if !isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default {
@@ -804,18 +780,20 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
 
-		// No usable configs, only run if receiving requests recently.
-		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
-		}
+		if am.cfg.StrictInitializationEnabled {
+			// No usable configs, only run if receiving requests recently.
+			createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+			if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
+				return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
+			}
 
-		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+			gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
 
-		// Use the zero value to signal that the tenant was skipped.
-		// If the value stored is not what we have in memory, the tenant received a request since the last read.
-		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
-			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
+			// Use the zero value to signal that the tenant was skipped.
+			// If the value stored is not what we have in memory, the tenant received a request since the last read.
+			if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
+				return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
+			}
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
@@ -824,20 +802,25 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 			cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 			return cfg, true, err
 		}
+
+		// If the Grafana config is not usable, return the Mimir config.
 		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
-	// Clear any previous skipped status since we now have a usable config.
-	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
-		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+	if am.cfg.StrictInitializationEnabled { // We now have a usable config, remove from 'skipped' list.
+		if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
+			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+		}
 	}
 
+	// If the Mimir config is not usable, return the Grafana config.
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
 		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
+	// If both configs are usable, fall back to Mimir's.
 	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
 	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 }
