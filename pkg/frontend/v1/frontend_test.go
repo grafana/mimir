@@ -223,6 +223,37 @@ func TestFrontendMetrics(t *testing.T) {
 
 		assert.Equal(t, "Hello World", string(body))
 
+		require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_frontend_queue_duration_seconds"))
+		require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_frontend_queue_duration_seconds", 1))
+	}
+
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
+}
+
+func TestFrontendMetricsCleanup(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte("Hello World"))
+		require.NoError(t, err)
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+
+	test := func(addr string, fr *Frontend) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
+		require.NoError(t, err)
+		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
+		require.NoError(t, err)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Hello World", string(body))
+
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
 				# TYPE cortex_query_frontend_queue_length gauge
@@ -235,9 +266,6 @@ func TestFrontendMetrics(t *testing.T) {
 				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
 				# TYPE cortex_query_frontend_queue_length gauge
 			`), "cortex_query_frontend_queue_length"))
-
-		require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_frontend_queue_duration_seconds"))
-		require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_frontend_queue_duration_seconds", 1))
 	}
 
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
