@@ -13,8 +13,8 @@ import (
 const (
 	minPreallocatedTimeseriesRW2 = 100
 	maxPreallocatedTimeseriesRW2 = 10000
-	minPreallocatedLabelsRefs    = 200
-	maxPreallocatedLabelsRefs    = 2000000 // TODO
+	minPreallocatedLabelsRefs    = 20
+	maxPreallocatedLabelsRefs    = 200
 )
 
 var (
