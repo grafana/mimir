@@ -453,7 +453,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 	}
 
 	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig.original, userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders, smtpConfig)
-	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
+	if err := am.validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
 		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errValidatingConfig, err.Error())})
@@ -527,7 +527,7 @@ func (am *MultitenantAlertmanager) GetGrafanaConfigStatus(w http.ResponseWriter,
 }
 
 // ValidateUserGrafanaConfig validates the Grafana Alertmanager configuration.
-func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
+func (am *MultitenantAlertmanager) validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
 	// config and b) start an Alertmanager instance for them if a fallback
@@ -537,7 +537,7 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	// Perform a similar flow of transformations that would happen in the Alertmanager on Sync & Apply.
-	grafanaConfig, err := createUsableGrafanaConfig(logger, cfg, "")
+	grafanaConfig, err := am.amConfigFromGrafanaConfig(cfg)
 	if err != nil {
 		return err
 	}
