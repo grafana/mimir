@@ -290,7 +290,7 @@ receivers:
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			am := MultitenantAlertmanager{logger: log.NewNopLogger()}
-			cfg, err := createUsableGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
+			cfg, err := amConfigFromGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
 			if test.expErr != "" {
 				require.Error(t, err)
 				require.Equal(t, test.expErr, err.Error())
@@ -326,7 +326,7 @@ receivers:
 
 			// Ensure that configuration is deterministic. For example, ordering of receivers.
 			// This is important for change detection.
-			cfg2, err := createUsableGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
+			cfg2, err := amConfigFromGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
 			require.NoError(t, err)
 
 			require.Equal(t, cfg.RawConfig, cfg2.RawConfig)
