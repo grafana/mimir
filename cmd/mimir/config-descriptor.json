@@ -6742,28 +6742,6 @@
         },
         {
           "kind": "field",
-          "name": "max_outstanding_per_tenant",
-          "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429.",
-          "fieldValue": null,
-          "fieldDefaultValue": 100,
-          "fieldFlag": "querier.max-outstanding-requests-per-tenant",
-          "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "querier_forget_delay",
-          "required": false,
-          "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.querier-forget-delay",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",

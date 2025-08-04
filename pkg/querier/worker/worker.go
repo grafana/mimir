@@ -74,8 +74,8 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-func (cfg *Config) IsFrontendOrSchedulerConfigured() bool {
-	return cfg.FrontendAddress != "" || cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+func (cfg *Config) IsSchedulerConfigured() bool {
+	return cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
 }
 
 // RequestHandler for HTTP requests wrapped in protobuf messages.
@@ -140,7 +140,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	)
 
 	switch {
-	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
+	case cfg.IsSchedulerConfigured():
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
 		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
@@ -150,20 +150,8 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
 		workerClient = "query-scheduler-worker"
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
-
-	case cfg.FrontendAddress != "":
-		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
-
-		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return servicediscovery.NewDNS(log, cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
-		}
-
-		grpcCfg = cfg.QueryFrontendGRPCClientConfig
-		workerClient = "query-frontend-worker"
-		processor = newFrontendProcessor(cfg, handler, log)
-
 	default:
-		return nil, errors.New("no query-scheduler or query-frontend address")
+		return nil, errors.New("no query-scheduler address")
 	}
 
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)

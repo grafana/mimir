@@ -25,7 +25,6 @@ import (
 )
 
 type querierTenantFederationConfig struct {
-	querySchedulerEnabled  bool
 	shuffleShardingEnabled bool
 }
 
@@ -33,21 +32,8 @@ func TestQuerierTenantFederation(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{})
 }
 
-func TestQuerierTenantFederationWithQueryScheduler(t *testing.T) {
-	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
-		querySchedulerEnabled: true,
-	})
-}
-
 func TestQuerierTenantFederationWithShuffleSharding(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
-		shuffleShardingEnabled: true,
-	})
-}
-
-func TestQuerierTenantFederationWithQuerySchedulerAndShuffleSharding(t *testing.T) {
-	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
-		querySchedulerEnabled:  true,
 		shuffleShardingEnabled: true,
 	})
 }
@@ -71,19 +57,14 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-ingester.max-global-exemplars-per-user":           "10000",
 	})
 
-	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	}
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 
-	if cfg.shuffleShardingEnabled {
-		// Use only single querier for each user.
-		flags["-query-frontend.max-queriers-per-tenant"] = "1"
-	}
+	// Use only single querier for each user.
+	flags["-query-frontend.max-queriers-per-tenant"] = "1"
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
@@ -91,10 +72,6 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	// Start the query-frontend.
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
-
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
@@ -172,14 +149,8 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "other"))))
 
-	// check metric label values for query queue length in either query frontend or query scheduler
-	queueComponent := queryFrontend
-	queueMetricName := "cortex_query_frontend_queue_length"
-	if cfg.querySchedulerEnabled {
-		queueComponent = queryScheduler
-		queueMetricName = "cortex_query_scheduler_queue_length"
-	}
-	require.NoError(t, queueComponent.WaitSumMetricsWithOptions(e2e.Equals(0), []string{queueMetricName}, e2e.WithLabelMatchers(
+	// check metric label values for query queue length in the query scheduler
+	require.NoError(t, queryScheduler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_query_scheduler_queue_length"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")))))
 
 	// TODO: check cache invalidation on tombstone cache gen increase

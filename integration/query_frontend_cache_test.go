@@ -40,6 +40,12 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		"-query-frontend.max-cache-freshness":       "0", // Cache everything.
 	}, cacheConfig(cacheService))
 
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 	// Start the query-frontend.
 	queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "true"}), e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontendAligned))
@@ -47,8 +53,8 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "false"}), e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontendUnaligned))
 
-	querierAligned := e2emimir.NewQuerier("querier-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))
-	querierUnaligned := e2emimir.NewQuerier("querier-unaligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendUnaligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))
+	querierAligned := e2emimir.NewQuerier("querier-aligned", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querierUnaligned := e2emimir.NewQuerier("querier-unaligned", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))

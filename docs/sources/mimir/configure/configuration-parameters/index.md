@@ -1695,18 +1695,6 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.active-series-write-timeout
 [active_series_write_timeout: <duration> | default = 5m]
 
-# (advanced) Maximum number of outstanding requests per tenant per frontend;
-# requests beyond this error with HTTP 429.
-# CLI flag: -querier.max-outstanding-requests-per-tenant
-[max_outstanding_per_tenant: <int> | default = 100]
-
-# (experimental) If a querier disconnects without sending notification about
-# graceful shutdown, the query-frontend will keep the querier in the tenant's
-# shard until the forget delay has passed. This feature is useful to reduce the
-# blast radius when shuffle-sharding is enabled.
-# CLI flag: -query-frontend.querier-forget-delay
-[querier_forget_delay: <duration> | default = 0s]
-
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and
