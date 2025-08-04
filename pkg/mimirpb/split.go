@@ -89,7 +89,6 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		// if a single timeseries is bigger than the limit.
 		if nextReqSize+seriesSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
 			// Finalize the next partial request.
-			// nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 			nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 			partialReqs = append(partialReqs, nextReq)
 
