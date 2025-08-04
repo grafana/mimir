@@ -124,7 +124,7 @@ var seps = []byte{'\xff'}
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, metadata mimirpb.MetricMetadata, extras ...string,
-) []mimirpb.LabelAdapter {
+) ([]mimirpb.LabelAdapter, error) {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
@@ -168,7 +168,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	l := make(map[string]string, maxLabelCount)
 	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
 	for _, label := range labels {
-		finalKey := labelNamer.Build(label.Name)
+		finalKey, err := labelNamer.Build(label.Name)
+		if err != nil {
+			return nil, err
+		}
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -177,17 +180,28 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := labelNamer.Build(lbl.Name)
+		normalized, err := labelNamer.Build(lbl.Name)
+		if err != nil {
+			return nil, err
+		}
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
 	}
 	if promoteScope {
+		var rangeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name := labelNamer.Build("otel_scope_" + k)
+			name, err := labelNamer.Build("otel_scope_" + k)
+			if err != nil {
+				rangeErr = err
+				return false
+			}
 			l[name] = v.AsString()
 			return true
 		})
+		if rangeErr != nil {
+			return nil, rangeErr
+		}
 		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
 		l["otel_scope_name"] = scope.name
 		l["otel_scope_version"] = scope.version
@@ -237,7 +251,11 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 		// internal labels should be maintained.
 		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
-			name = labelNamer.Build(name)
+			var err error
+			name, err = labelNamer.Build(name)
+			if err != nil {
+				return nil, err
+			}
 		}
 		l[name] = extras[i+1]
 	}
@@ -247,7 +265,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		labels = append(labels, mimirpb.LabelAdapter{Name: k, Value: v})
 	}
 
-	return labels
+	return labels, nil
 }
 
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
@@ -284,7 +302,10 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampNs := pt.StartTimestamp()
 		startTimestampMs := convertTimeStamp(startTimestampNs)
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		if err != nil {
+			return err
+		}
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -499,7 +520,10 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		if err != nil {
+			return err
+		}
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &mimirpb.Sample{
@@ -678,9 +702,9 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time, converter *MimirConverter) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time, converter *MimirConverter) error {
 	if settings.DisableTargetInfo {
-		return
+		return nil
 	}
 
 	attributes := resource.Attributes()
@@ -698,7 +722,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 	}
 	if nonIdentifyingAttrsCount == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
-		return
+		return nil
 	}
 
 	name := targetMetricName
@@ -711,7 +735,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, mimirpb.MetricMetadata{}, model.MetricNameLabel, name)
+	labels, err := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, mimirpb.MetricMetadata{}, model.MetricNameLabel, name)
+	if err != nil {
+		return err
+	}
 	haveIdentifier := false
 	for _, l := range labels {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
@@ -722,7 +749,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 
 	if !haveIdentifier {
 		// We need at least one identifying label to generate target_info.
-		return
+		return nil
 	}
 
 	// Generate target_info samples starting at earliestTimestamp and ending at latestTimestamp,
@@ -740,12 +767,11 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 			TimestampMs: timestamp.UnixMilli(),
 		})
 	}
-	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].TimestampMs < latestTimestamp.UnixMilli() {
-		ts.Samples = append(ts.Samples, mimirpb.Sample{
-			Value:       float64(1),
-			TimestampMs: latestTimestamp.UnixMilli(),
-		})
-	}
+	ts.Samples = append(ts.Samples, mimirpb.Sample{
+		Value:       float64(1),
+		TimestampMs: latestTimestamp.UnixMilli(),
+	})
+	return nil
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

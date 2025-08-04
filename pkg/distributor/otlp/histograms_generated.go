@@ -55,7 +55,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -66,7 +66,9 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
-
+		if err != nil {
+			return nil, err
+		}
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
@@ -274,7 +276,7 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -285,6 +287,9 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return nil, err
+		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)

@@ -343,9 +343,8 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
-
-		return nil
+		req.Metadata, err = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
+		return err
 	}
 }
 
@@ -474,7 +473,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) []*mimirpb.MetricMetadata {
+func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) ([]*mimirpb.MetricMetadata, error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -498,10 +497,14 @@ func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) []*mimirp
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
+				name, err := namer.Build(otlp.TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					return nil, err
+				}
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: name,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -510,7 +513,7 @@ func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) []*mimirp
 		}
 	}
 
-	return metadata
+	return metadata, nil
 }
 
 type conversionOptions struct {
