@@ -795,14 +795,14 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	if am.cfg.StrictInitializationEnabled && (!isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default) {
 		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
 		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
+			return amConfig{}, false, nil
 		}
 
 		// Use the zero value to signal that the tenant was skipped.
 		// If the value stored is not what we have in memory, the tenant received a request since the last read.
 		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
 		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
-			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
+			return amConfig{}, false, nil
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
