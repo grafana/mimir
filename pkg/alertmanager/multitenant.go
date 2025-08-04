@@ -771,7 +771,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 //
 // Considerations:
 // - Unpromoted Grafana configurations are always ignored
-// - Grafana configurations get patched with Mimir globals
 // - Merging Mimir and Grafana configurations is not implemented
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	if am.cfg.StrictInitializationEnabled {
