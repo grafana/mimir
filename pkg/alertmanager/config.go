@@ -147,6 +147,16 @@ func (am *MultitenantAlertmanager) amConfigFromGrafanaConfig(gCfg alertspb.Grafa
 	}, nil
 }
 
+func amConfigFromMimirConfig(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
+	return amConfig{
+		User:               dec.User,
+		RawConfig:          dec.RawConfig,
+		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
+		TmplExternalURL:    url,
+		UsingGrafanaConfig: false,
+	}
+}
+
 func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
 	result := make([]definition.PostableApiTemplate, 0, len(t))
 	for _, desc := range t {

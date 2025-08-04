@@ -780,7 +780,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If the Grafana config is not usable, return the Mimir config.
 	if !isGrafanaConfigUsable(cfgs.Grafana) {
-		return newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
+		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
 	// If the Mimir config is not usable, return the Grafana config.
@@ -792,24 +792,23 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If both configs are usable, fall back to Mimir's.
 	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-	return newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
+	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 }
 
 // computeConfigForStrictInit generates a final configuration from Grafana and Mimir configs like computeConfig, but it updates internal state
 // and decides whether to start an Alertmanager for a tenant based on their configs and activity.
 func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
-	cfg := newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
 	if !isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default {
 		if am.isMimirConfigUsable(cfgs.Mimir) {
-			return cfg, true, nil
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
 
 		// No usable configs, only run if receiving requests recently.
 		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
 		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return cfg, false, nil
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
 		}
 
 		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
@@ -817,16 +816,16 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 		// Use the zero value to signal that the tenant was skipped.
 		// If the value stored is not what we have in memory, the tenant received a request since the last read.
 		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
-			return cfg, false, nil
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
 		}
 
 		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
 
-		var err error
 		if isGrafanaConfigUsable(cfgs.Grafana) {
-			cfg, err = am.amConfigFromGrafanaConfig(cfgs.Grafana)
+			cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
+			return cfg, true, err
 		}
-		return cfg, true, err
+		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
 	// Clear any previous skipped status since we now have a usable config.
@@ -841,7 +840,7 @@ func (am *MultitenantAlertmanager) computeConfigForStrictInit(cfgs alertspb.Aler
 	}
 
 	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
-	return cfg, true, nil
+	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 }
 
 // isGrafanaConfigUsable returns true if the Grafana configuration is promoted and not empty.
@@ -934,16 +933,6 @@ type amConfig struct {
 	TmplExternalURL    *url.URL
 	UsingGrafanaConfig bool
 	EmailConfig        alertingReceivers.EmailSenderConfig
-}
-
-func newMimirAmConfigFromDesc(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
-	return amConfig{
-		User:               dec.User,
-		RawConfig:          dec.RawConfig,
-		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
-		TmplExternalURL:    url,
-		UsingGrafanaConfig: false,
-	}
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -1314,7 +1303,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := newMimirAmConfigFromDesc(cfgDesc, am.cfg.ExternalURL.URL)
+	amConfig := amConfigFromMimirConfig(cfgDesc, am.cfg.ExternalURL.URL)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
