@@ -65,10 +65,12 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 
 	// Get label names and sort them by popularity (desc).
 	// We select labels that have the most different values matched first to make the decision tree higher and lower.
-	labelNames := slices.Collect(maps.Keys(valuesMatchedPerLabelName))
-	slices.SortFunc(labelNames, func(a, b string) int {
-		return cmp.Compare(len(valuesMatchedPerLabelName[b]), len(valuesMatchedPerLabelName[a]))
-	})
+	labelNames := slices.SortedFunc(
+		maps.Keys(valuesMatchedPerLabelName),
+		func(a, b string) int {
+			return cmp.Compare(len(valuesMatchedPerLabelName[b]), len(valuesMatchedPerLabelName[a]))
+		},
+	)
 
 	// valueMatchers is a map of label names to a map of values to indexedMatchers.
 	valueMatchers := make(map[string]map[string][]indexedMatchers, len(labelNames))
@@ -88,8 +90,7 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 				if m.Type == labels.MatchEqual && m.Value != "" {
 					// This is not a set matcher, but a simple equality matcher.
 					// We'll treat it as a set matcher with a single value.
-					stack := [1]string{m.Value}
-					sm = stack[:]
+					sm = []string{m.Value}
 				} else if sm = m.SetMatches(); len(sm) == 0 {
 					continue
 				}
