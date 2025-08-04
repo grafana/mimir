@@ -539,13 +539,13 @@ templates:
 	}
 	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
-	// Ensure the Grafana config is ignored when it's marked as default.
+	// Ensure the Grafana config is not ignored when it's marked as default.
 	userGrafanaCfg.Default = true
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
