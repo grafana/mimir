@@ -4,15 +4,17 @@ package mimirpb
 
 import (
 	"fmt"
-
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
 	minPreallocatedTimeseriesRW2 = 100
 	maxPreallocatedTimeseriesRW2 = 10000
+	minPreallocatedLabelsRefs    = 200
+	maxPreallocatedLabelsRefs    = 2000000 // TODO
 )
 
 var (
@@ -21,7 +23,34 @@ var (
 			return make([]TimeSeriesRW2, 0, minPreallocatedTimeseriesRW2)
 		},
 	}
+
+	// preallocLabelsRefsSlicePool pools a `*[]uint32` under the hood.
+	// Zeropool is a thin wrapper that encapsulates the extra pointer ref/deref for us.
+	// We can't just pool a []uint32 directly, as Go seems to try too hard to optimize around it and injects unexpected copies/allocations,
+	// in a way we don't see with slices of less primitive types.
+	preallocLabelsRefsSlicePool = zeropool.New(func() []uint32 {
+		return make([]uint32, 0, minPreallocatedLabelsRefs)
+	})
 )
+
+func labelsRefsSliceFromPool() []uint32 {
+	return preallocLabelsRefsSlicePool.Get()
+}
+
+func reuseLabelsRefsSlice(s []uint32) {
+	if cap(s) == 0 {
+		return
+	}
+
+	if cap(s) > maxPreallocatedLabelsRefs {
+		return
+	}
+
+	for i := range s {
+		s[i] = 0
+	}
+	preallocLabelsRefsSlicePool.Put(s[:0])
+}
 
 func timeSeriesRW2SliceFromPool() []TimeSeriesRW2 {
 	return preallocTimeseriesRW2SlicePool.Get().([]TimeSeriesRW2)
@@ -37,6 +66,7 @@ func reuseTimeSeriesRW2Slice(s []TimeSeriesRW2) {
 	}
 
 	for i := range s {
+		reuseLabelsRefsSlice(s[i].LabelsRefs)
 		s[i] = TimeSeriesRW2{}
 	}
 	preallocTimeseriesRW2SlicePool.Put(s[:0])
@@ -103,8 +133,14 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 	}
 
 	for _, ts := range rw1.Timeseries {
-		refs := make([]uint32, 0, len(ts.Labels)*2) // TODO: Pool-ify this allocation
 		metricName := ""
+		const stringsPerLabel = 2
+		expLabelsCount := len(ts.Labels) * stringsPerLabel
+		refs := labelsRefsSliceFromPool()
+		if cap(refs) < stringsPerLabel {
+			refs = make([]uint32, 0, expLabelsCount)
+		}
+
 		for i := range ts.Labels {
 			if ts.Labels[i].Name == labels.MetricName {
 				metricName = ts.Labels[i].Value
