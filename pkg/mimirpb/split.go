@@ -48,9 +48,6 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 // The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
 // and data from the original WriteRequest.
 // The returned requests may still retain references to fields in the original WriteRequest, i.e. they are tied to its lifecycle.
-//
-// The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
-// Timeseries are re-symbolized in place, so this function mutates the input.
 func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols []string) []*WriteRequest {
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
@@ -59,27 +56,27 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		return []*WriteRequest{}
 	}
 
-	newPartialReq := func() (*WriteRequest, int) {
-		r := &WriteRequest{
-			Source:              req.Source,
-			SkipLabelValidation: req.SkipLabelValidation,
-		}
-
-		return r, r.Size()
-	}
-
 	// Assume that the distribution of symbols usage is even across all timeseries, and that the timeseries are a roughly even size.
 	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
 	estimatedPartialReqs := (reqSize / maxSize) + 2
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
+	estimatedTimeseriesPerPartialReq := (len(req.TimeseriesRW2) / estimatedPartialReqs) + 1 // +1 is to round up
+
+	newPartialReq := func() (*WriteRequest, int) {
+		r := &WriteRequest{
+			Source:              req.Source,
+			SkipLabelValidation: req.SkipLabelValidation,
+			TimeseriesRW2:       make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
+		}
+
+		return r, r.Size()
+	}
 
 	// Split timeseries into partial write requests, and resymbolize each batch.
 	nextReqSymbols := symbolsTableFromPool()
 	nextReqSymbols.ConfigureCommonSymbols(offset, commonSymbols)
 	defer reuseSymbolsTable(nextReqSymbols)
 	nextReq, nextReqSize := newPartialReq()
-	nextReqTimeseriesStart := 0
-	nextReqTimeseriesLength := 0
 	nextReqSymbolsSize := 0
 
 	for i := 0; i < len(req.TimeseriesRW2); i++ {
@@ -90,37 +87,33 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if nextReqSize+seriesSize+symbolsSize > maxSize && nextReqTimeseriesLength > 0 {
+		if nextReqSize+seriesSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
 			// Finalize the next partial request.
-			nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
+			// nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 			nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
 			nextReq, nextReqSize = newPartialReq()
-			nextReqTimeseriesStart = i
-			nextReqTimeseriesLength = 0
 			nextReqSymbolsSize = 0
 			nextReqSymbols.Reset()
 			nextReqSymbols.ConfigureCommonSymbols(offset, commonSymbols)
 		}
 
-		// Add the current series to next partial request.
-		// Account for the growth in timeseries size...
-		originalTSSize := req.TimeseriesRW2[i].Size()
-		deltaTSSize := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
-		nextReqSize += originalTSSize + deltaTSSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		// Resymbolize the current series and add it to next partial request.
+		newTS := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
+		// Add the growth in series size...
+		nextReqSize += newTS.Size() + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
 		// ...and the growth in symbols size.
 		newSymbolsSize := nextReqSymbols.SymbolsSizeProto()
 		nextReqSize += newSymbolsSize - nextReqSymbolsSize
 		nextReqSymbolsSize = newSymbolsSize
 		// Finally, include the timeseries in the request.
-		nextReqTimeseriesLength++
+		nextReq.TimeseriesRW2 = append(nextReq.TimeseriesRW2, newTS)
 	}
 
-	if nextReqTimeseriesLength > 0 {
+	if len(nextReq.TimeseriesRW2) > 0 {
 		// Finalize the last partial request.
-		nextReq.TimeseriesRW2 = req.TimeseriesRW2[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 		nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 		partialReqs = append(partialReqs, nextReq)
 	}
@@ -297,41 +290,45 @@ func resolvedSymbolSize(ref uint32, symbols []string, offset uint32) int {
 }
 
 // resymbolizeTimeSeriesRW2 resolves and re-symbolizes a TimeSeriesRW2 in the context of a new request.
-// Work is done in-place, the provided timeseries is modified.
-// It returns the total size delta for the timeseries.
+// It constructs a new timeseries. The new timeseries is not deep-copied and may contain references elements of the original timeseries (e.g. Symbols).
 // It is expected that the old and new requests use the same common symbols set.
-func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *FastSymbolsTable) int {
-	delta := 0
+func resymbolizeTimeSeriesRW2(ts *TimeSeriesRW2, origSymbols []string, symbols *FastSymbolsTable) TimeSeriesRW2 {
+	new := *ts
 	offset := symbols.offset
 	commonSymbols := symbols.commonSymbols
 
+	new.LabelsRefs = make([]uint32, len(ts.LabelsRefs))
 	for i := range ts.LabelsRefs {
 		oldRef := ts.LabelsRefs[i]
 		newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
-		ts.LabelsRefs[i] = newRef
-		delta += sovMimir(uint64(newRef)) - sovMimir(uint64(oldRef))
+		new.LabelsRefs[i] = newRef
 	}
 
+	if ts.Exemplars != nil {
+		new.Exemplars = make([]ExemplarRW2, len(ts.Exemplars))
+	}
 	for i := range ts.Exemplars {
+		newExemplar := ts.Exemplars[i]
+		if ts.Exemplars[i].LabelsRefs != nil {
+			newExemplar.LabelsRefs = make([]uint32, len(ts.Exemplars[i].LabelsRefs))
+		}
 		for j := range ts.Exemplars[i].LabelsRefs {
 			oldRef := ts.Exemplars[i].LabelsRefs[j]
 			newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
-			ts.Exemplars[i].LabelsRefs[j] = newRef
-			delta += sovMimir(uint64(ts.Exemplars[i].LabelsRefs[j])) - sovMimir(uint64(oldRef))
+			newExemplar.LabelsRefs[j] = newRef
 		}
+		new.Exemplars[i] = newExemplar
 	}
 
 	oldRef := ts.Metadata.HelpRef
 	newRef := symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
-	delta += sovMimir(uint64(ts.Metadata.HelpRef)) - sovMimir(uint64(oldRef))
-	ts.Metadata.HelpRef = newRef
+	new.Metadata.HelpRef = newRef
 
 	oldRef = ts.Metadata.UnitRef
 	newRef = symbols.Symbolize(resolveRef(oldRef, origSymbols, commonSymbols, offset))
-	delta += sovMimir(uint64(ts.Metadata.UnitRef)) - sovMimir(uint64(oldRef))
-	ts.Metadata.UnitRef = newRef
+	new.Metadata.UnitRef = newRef
 
-	return delta
+	return new
 }
 
 func resolveRef(ref uint32, symbols []string, commonSymbols []string, offset uint32) string {
