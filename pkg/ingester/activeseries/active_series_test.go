@@ -41,7 +41,7 @@ func MustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]st
 // assertMatcherCounts verifies that the actual counts match expected counts by matcher name
 func assertMatcherCounts(t *testing.T, expectedCounts map[string]int, actualCounts []int, names []string) {
 	t.Helper()
-	
+
 	// Convert actual counts to a map by matcher name
 	actualCountsMap := make(map[string]int)
 	for i, count := range actualCounts {
@@ -49,7 +49,7 @@ func assertMatcherCounts(t *testing.T, expectedCounts map[string]int, actualCoun
 			actualCountsMap[names[i]] = count
 		}
 	}
-	
+
 	// Check that all expected matchers have the correct counts
 	for name, expectedCount := range expectedCounts {
 		actualCount, exists := actualCountsMap[name]
@@ -58,7 +58,7 @@ func assertMatcherCounts(t *testing.T, expectedCounts map[string]int, actualCoun
 		}
 		assert.Equal(t, expectedCount, actualCount, "Matcher %s count mismatch", name)
 	}
-	
+
 	// Check that no unexpected matchers have non-zero counts
 	for name, actualCount := range actualCountsMap {
 		if _, expected := expectedCounts[name]; !expected && actualCount > 0 {
