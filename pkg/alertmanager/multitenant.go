@@ -777,6 +777,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	if !isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default {
 		if am.isMimirConfigUsable(cfgs.Mimir) {
+			am.removeFromSkippedList(userID) // We now have a usable config, remove from 'skipped' list.
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
 
@@ -794,9 +795,9 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 			if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
 				return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), false, nil
 			}
-		}
 
-		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+			level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+		}
 
 		if isGrafanaConfigUsable(cfgs.Grafana) {
 			cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
@@ -807,11 +808,8 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
-	if am.cfg.StrictInitializationEnabled { // We now have a usable config, remove from 'skipped' list.
-		if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
-			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
-		}
-	}
+	// We now have a usable config, remove from 'skipped' list.
+	am.removeFromSkippedList(userID)
 
 	// If the Mimir config is not usable, return the Grafana config.
 	if !am.isMimirConfigUsable(cfgs.Mimir) {
@@ -823,6 +821,17 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If both configs are usable, fall back to Mimir's.
 	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
 	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
+}
+
+// removeFromSkippedList remove a tenant from the 'skipped' tenants list (if strict initialization is enabled).
+func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
+	if !am.cfg.StrictInitializationEnabled {
+		return
+	}
+
+	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
+		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+	}
 }
 
 // isGrafanaConfigUsable returns true if the Grafana configuration is promoted and not empty.

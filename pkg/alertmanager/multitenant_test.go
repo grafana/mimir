@@ -3674,6 +3674,10 @@ func TestComputeConfig(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			// Set a recent last request time for the tenant receiving requests.
+			amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
+			amWithSuffix.lastRequestTime.Store(tenantReceivingRequests+"-grafana", time.Now().Unix())
+
 			cfg, startAM, err := amWithStrictInit.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
