@@ -21,7 +21,7 @@ import (
 )
 
 // amConfigFromGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
-// If provided, it assigns the global section from the Mimir config to the Grafana config.
+// It uses the 'global' section from the Alertmanager's fallback config (if any) in the final config.
 // The amConfig.EmailConfig field can be used to create Grafana email integrations.
 func (am *MultitenantAlertmanager) amConfigFromGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
