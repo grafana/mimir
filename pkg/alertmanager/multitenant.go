@@ -805,7 +805,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	if !isMimirConfigCustom {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
-		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
