@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,8 +56,8 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 		{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7},
 	}
 
-	sort.Slice(input, func(i, j int) bool {
-		return input[i].Compare(input[j]) > 0
+	slices.SortFunc(input, func(a, b seriesChunkRef) int {
+		return b.Compare(a)
 	})
 
 	assert.Equal(t, expected, input)
@@ -1258,8 +1259,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					set.series = append(set.series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
-				sort.Slice(set.series, func(i, j int) bool {
-					return labels.Compare(set.series[i].lset, set.series[j].lset) < 0
+				slices.SortFunc(set.series, func(a, b seriesChunkRefs) int {
+					return labels.Compare(a.lset, b.lset)
 				})
 				return []seriesChunkRefsSet{set}
 			}(),
@@ -1276,8 +1277,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					series = append(series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
-				sort.Slice(series, func(i, j int) bool {
-					return labels.Compare(series[i].lset, series[j].lset) < 0
+				slices.SortFunc(series, func(a, b seriesChunkRefs) int {
+					return labels.Compare(a.lset, b.lset)
 				})
 
 				const numBatches = largerTestBlockSeriesCount / 5000
@@ -1388,8 +1389,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			tc   testCase
 		}{name, tc})
 	}
-	sort.Slice(sortedTestCases, func(i, j int) bool {
-		return sortedTestCases[i].name < sortedTestCases[j].name
+	slices.SortFunc(sortedTestCases, func(a, b struct {
+		name string
+		tc   testCase
+	}) int {
+		return strings.Compare(a.name, b.name)
 	})
 
 	for _, testCase := range sortedTestCases {

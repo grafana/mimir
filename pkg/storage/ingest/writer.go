@@ -234,6 +234,8 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	return newWriter, nil
 }
 
+type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest
+
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
 // The request may be split to multiple records to get that each single Kafka record
 // data size is not bigger than maxSize.
@@ -242,7 +244,7 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
 	reqSize := req.Size()
 
 	if reqSize <= maxSize {
@@ -255,7 +257,7 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 		return []*kgo.Record{rec}, nil
 	}
 
-	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
+	return marshalWriteRequestsToRecords(partitionID, tenantID, split(req, reqSize, maxSize))
 }
 
 func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {

@@ -12,7 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -553,8 +554,8 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 	for namespace, expectedFormattedRuleGroups := range expectedRuleGroups.Formatted() {
 		// The mapper sort groups by name in reverse order, so we apply the same sorting
 		// here to expected groups.
-		sort.Slice(expectedFormattedRuleGroups, func(i, j int) bool {
-			return expectedFormattedRuleGroups[i].Name > expectedFormattedRuleGroups[j].Name
+		slices.SortFunc(expectedFormattedRuleGroups, func(a, b rulefmt.RuleGroup) int {
+			return strings.Compare(b.Name, a.Name)
 		})
 
 		expectedYAML, err := yaml.Marshal(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})

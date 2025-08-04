@@ -61,9 +61,6 @@ type Limits interface {
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 
-	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
-	SplitInstantQueriesByInterval(userID string) time.Duration
-
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int

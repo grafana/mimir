@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
@@ -49,13 +50,7 @@ func run() error {
 	}
 
 	slices.SortFunc(blocks, func(a, b *bucketindex.Block) int {
-		if a.ID.String() > b.ID.String() {
-			return 1
-		} else if a.ID.String() < b.ID.String() {
-			return -1
-		}
-
-		return 0
+		return strings.Compare(a.ID.String(), b.ID.String())
 	})
 
 	w := csv.NewWriter(os.Stdout)

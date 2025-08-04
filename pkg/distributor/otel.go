@@ -135,10 +135,6 @@ func OTLPHandler(
 			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
 		}
-		if labelValueTooLongErr := (LabelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
-			// Translate from Mimir to OTel domain terminology
-			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
-		}
 		var (
 			httpCode int
 			grpcCode codes.Code
@@ -590,6 +586,8 @@ func (c *otlpMimirConverter) Err() error {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
+// If you provide exemplars they will be placed on the first float or
+// histogram sample.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -619,11 +617,22 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetDescription(metadata[i].GetHelp())
 				metric.SetUnit(metadata[i].GetUnit())
 			}
-			for _, sample := range ts.Samples {
+			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetDoubleValue(sample.Value)
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 
@@ -636,7 +645,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetUnit(metadata[i].GetUnit())
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-			for _, histogram := range ts.Histograms {
+			for i, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)
@@ -653,6 +662,17 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				datapoint.SetSum(histogram.GetSum())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(histogram.Sum / 10.0) // Doesn't really matter, just a placeholder
+						ex.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 	}
@@ -692,15 +712,4 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 	}
 
 	return firstSpan.Offset - 1, buckets
-}
-
-type otelAttributeValueTooLongError struct {
-	LabelValueTooLongError
-}
-
-func (e otelAttributeValueTooLongError) Error() string {
-	return fmt.Sprintf(
-		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-		e.Limit, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series),
-	)
 }

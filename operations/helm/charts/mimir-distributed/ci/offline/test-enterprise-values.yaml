@@ -9,11 +9,13 @@ enterprise:
 gateway:
   ingress:
     enabled: true
+    labels:
+      foo: bar
 
 provisioner:
   enabled: true
   additionalTenants:
     - name: team-a
-      secretNamespace: '{{ .Release.Namespace }}'
+      secretNamespace: "{{ .Release.Namespace }}"
     - name: team-b
-      secretNamespace: '{{ .Release.Namespace }}'
+      secretNamespace: "{{ .Release.Namespace }}"
