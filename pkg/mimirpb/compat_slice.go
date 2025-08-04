@@ -49,15 +49,11 @@ func CopyLabels(input []labels.Label) labels.Labels {
 
 	var b strings.Builder
 	b.Grow(size)
-	for _, l := range input {
-		b.WriteString(l.Name)
-		b.WriteString(l.Value)
-	}
-	allStrings := b.String()
-
 	for i, l := range input {
-		result[i].Name, allStrings = allStrings[:len(l.Name)], allStrings[len(l.Name):]
-		result[i].Value, allStrings = allStrings[:len(l.Value)], allStrings[len(l.Value):]
+		b.WriteString(l.Name)
+		result[i].Name = b.String()[b.Len()-len(l.Name):]
+		b.WriteString(l.Value)
+		result[i].Value = b.String()[b.Len()-len(l.Value):]
 	}
 
 	return result
