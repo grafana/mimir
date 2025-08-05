@@ -2309,6 +2309,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "enable_prune_toggles",
+              "required": false,
+              "desc": "Enable pruning query expressions that are toggled off with constants.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-prune-toggles",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
               "desc": "Enable common subexpression elimination when evaluating queries.",
@@ -7440,17 +7451,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.parallelize-shardable-queries",
           "fieldType": "boolean"
-        },
-        {
-          "kind": "field",
-          "name": "prune_queries",
-          "required": false,
-          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.prune-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
