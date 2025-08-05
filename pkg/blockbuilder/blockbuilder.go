@@ -156,12 +156,12 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 
 func (b *BlockBuilder) stopping(_ error) error {
 
-	if delay := b.cfg.shutdownGracePeriod; delay > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), delay)
+	if gracePeriod := b.cfg.shutdownGracePeriod; gracePeriod > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
 		defer cancel()
 
 		lastUpd := b.lastCompactAndUploadTime.Load()
-		deadline := time.Unix(0, lastUpd).Add(delay)
+		deadline := time.Unix(0, lastUpd).Add(gracePeriod)
 
 		if wait := time.Until(deadline); wait > 0 {
 			timer := time.NewTimer(wait)
