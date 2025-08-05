@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -604,6 +606,113 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 }
 
+func TestSchedulerProcessor_responseSize(t *testing.T) {
+	tests := []struct {
+		name             string
+		maxMessageSize   int
+		handlerResponse  *httpgrpc.HTTPResponse
+		handlerError     error
+		expectedResponse *httpgrpc.HTTPResponse
+	}{
+		{
+			name:           "success case",
+			maxMessageSize: 100,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+		},
+		{
+			name:           "response too large",
+			maxMessageSize: 100,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(strings.Repeat("some very large response", 100)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Body: []byte("response larger than the max message size (2406 vs 100)"),
+			},
+		},
+		{
+			name:           "small body but large headers",
+			maxMessageSize: 1000,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Headers: []*httpgrpc.Header{
+					{Key: "Header1", Values: []string{strings.Repeat("x", 500)}},
+				},
+				Body: []byte(strings.Repeat("x", 500)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Body: []byte("response larger than the max message size (1021 vs 1000)"),
+			},
+		},
+		{
+			name:           "handler error",
+			maxMessageSize: 100,
+			handlerError:   fmt.Errorf("handler error"),
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 500,
+				Body: []byte("handler error"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+			if tc.maxMessageSize != 0 {
+				sp.maxMessageSize = tc.maxMessageSize
+			}
+
+			recvCount := atomic.NewInt64(0)
+			queueTime := 3 * time.Second
+
+			loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+				switch recvCount.Inc() {
+				case 1:
+					return &schedulerpb.SchedulerToQuerier{
+						QueryID:         1,
+						HttpRequest:     nil,
+						FrontendAddress: frontend.addr,
+						UserID:          "user-1",
+						StatsEnabled:    true,
+						QueueTimeNanos:  queueTime.Nanoseconds(),
+					}, nil
+				default:
+					// No more messages to process, so waiting until terminated.
+					<-loopClient.Context().Done()
+					return nil, toRPCErr(loopClient.Context().Err())
+				}
+			})
+
+			// Cancel the context being used to process messages as soon as we process the first one
+			// so that the worker actually stops.
+			ctx, cancel := context.WithCancel(context.Background())
+			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				cancel()
+			}).Return(
+				tc.handlerResponse,
+				tc.handlerError,
+			)
+
+			sp.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+			actualCode := frontend.responses[1].metadata.Code
+			actualBody := frontend.responses[1].body
+
+			require.Equal(t, tc.expectedResponse.Code, actualCode)
+			require.Equal(t, tc.expectedResponse.Body, actualBody)
+		})
+	}
+}
+
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
 	loopClient.On("Send", mock.Anything).Return(nil)
@@ -751,7 +860,14 @@ type queryResult struct {
 
 func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
-	f.responses[r.QueryID] = &queryResult{body: r.HttpResponse.Body}
+	f.responses[r.QueryID] = &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    r.HttpResponse.Code,
+			Headers: r.HttpResponse.Headers,
+			Stats:   r.Stats,
+		},
+		body: r.HttpResponse.Body,
+	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
 }

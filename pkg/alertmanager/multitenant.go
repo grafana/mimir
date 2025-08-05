@@ -764,7 +764,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	userID := cfgs.Mimir.User
-	cfg := newMimirAmConfigFromDesc(cfgs.Mimir, am.cfg.ExternalURL.URL)
+	cfg := amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
 	// Check if tenants can be skipped (strict initialization enabled).
 	skippable := am.cfg.StrictInitializationEnabled
@@ -805,7 +805,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	if !isMimirConfigCustom {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
-		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
@@ -898,16 +898,6 @@ type amConfig struct {
 	TmplExternalURL    *url.URL
 	UsingGrafanaConfig bool
 	EmailConfig        alertingReceivers.EmailSenderConfig
-}
-
-func newMimirAmConfigFromDesc(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
-	return amConfig{
-		User:               dec.User,
-		RawConfig:          dec.RawConfig,
-		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
-		TmplExternalURL:    url,
-		UsingGrafanaConfig: false,
-	}
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -1278,7 +1268,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := newMimirAmConfigFromDesc(cfgDesc, am.cfg.ExternalURL.URL)
+	amConfig := amConfigFromMimirConfig(cfgDesc, am.cfg.ExternalURL.URL)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
