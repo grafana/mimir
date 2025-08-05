@@ -113,6 +113,11 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return mapper.extractVectorSelectors(pe.Expr)
 	}
 
+	ue, ok := expr.(*parser.UnaryExpr)
+	if ok {
+		return mapper.extractVectorSelectors(ue.Expr)
+	}
+
 	agg, ok := expr.(*parser.AggregateExpr)
 	if ok {
 		include := !agg.Without
