@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	defaultMDChunkSizePostings = 10000
-	defaultHistScale           = 5
-	defaultHistNumBins         = 20
+	defaultMDChunkSizePostings     = 10000
+	defaultHistScale               = 5
+	defaultHistNumBins             = 20
+	defaultResourceAttributeLabels = "service,service_name,service_instance_id,instance_id,server_address,server_port,url_scheme,server,address,port,scheme,cluster,namespace"
 )
 
 var (
@@ -30,16 +31,17 @@ var (
 )
 
 type config struct {
-	bucket      bucket.Config
-	action      string
-	userID      string
-	block       string
-	dest        string
-	count       bool
-	chunkSize   int
-	histScale   int
-	histMax     int
-	histNumBins int
+	bucket                  bucket.Config
+	action                  string
+	userID                  string
+	block                   string
+	dest                    string
+	count                   bool
+	chunkSize               int
+	histScale               int
+	histMax                 int
+	histNumBins             int
+	resourceAttributeLabels string
 }
 
 func main() {
@@ -57,6 +59,7 @@ func main() {
 	flag.IntVar(&cfg.histScale, "hist-scale", defaultHistScale, "Scaling factor used to output analysis histograms")
 	flag.IntVar(&cfg.histMax, "hist-max", -1, "Filter cardinalities higher than this value out of the histogram (-1 to include all cardinalities)")
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
+	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -96,7 +99,7 @@ func main() {
 			log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
 		}
 
-		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, logger); err != nil {
+		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	case "analyze":

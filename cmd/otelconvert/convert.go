@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	gokitlog "github.com/go-kit/log"
@@ -34,7 +35,7 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
-func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, logger gokitlog.Logger) error {
+func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
@@ -63,6 +64,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 	chunkCount := 0
 	postingsCount := 0
 
+	resourceAttributeLabels := commaStringToMap(resourceAttributeLabelsRaw)
+
 	for p.Next() {
 		if err = p.Err(); err != nil {
 			return fmt.Errorf("iterate postings: %w", err)
@@ -85,7 +88,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 			return fmt.Errorf("populate series chunk metas: %w", err)
 		}
 
-		metricName, resourceAttrs := lblsToResourceAttributes(builder)
+		metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(builder, resourceAttributeLabels)
 		builder.Reset()
 
 		var (
@@ -114,6 +117,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 					gauge.Gauge.DataPoints = append(gauge.Gauge.DataPoints, &metricsv1.NumberDataPoint{
 						TimeUnixNano: uint64(time.UnixMilli(ts).UnixNano()),
 						Value:        &metricsv1.NumberDataPoint_AsDouble{AsDouble: val},
+						Attributes:   metricAttrs,
 					})
 				case chunkenc.ValHistogram:
 					ts, h := chkItr.AtHistogram(nil)
@@ -126,6 +130,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 						ZeroThreshold: h.ZeroThreshold,
 						Positive:      translateToOTELHistogramBuckets(h.PositiveSpans, h.PositiveBucketIterator()),
 						Negative:      translateToOTELHistogramBuckets(h.NegativeSpans, h.NegativeBucketIterator()),
+						Attributes:    metricAttrs,
 					})
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chkItr.AtFloatHistogram(nil)
@@ -138,6 +143,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 						ZeroThreshold: fh.ZeroThreshold,
 						Positive:      translateToOTELFloatHistogramBuckets(fh.PositiveSpans, fh.PositiveBucketIterator()),
 						Negative:      translateToOTELFloatHistogramBuckets(fh.NegativeSpans, fh.NegativeBucketIterator()),
+						Attributes:    metricAttrs,
 					})
 				default:
 					return fmt.Errorf("unexpected value type: %s", valType)
@@ -151,6 +157,9 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 			},
 			ScopeMetrics: []*metricsv1.ScopeMetrics{
 				{
+					Scope: &commonv1.InstrumentationScope{
+						Attributes: scopeAttrs,
+					},
 					Metrics: []*metricsv1.Metric{
 						{
 							Name: metricName,
@@ -188,6 +197,16 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 	return nil
 }
 
+func commaStringToMap(s string) map[string]struct{} {
+	res := make(map[string]struct{})
+
+	for _, lbl := range strings.Split(s, ",") {
+		res[lbl] = struct{}{}
+	}
+
+	return res
+}
+
 func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int) (int, error) {
 	if countOnly {
 		n := proto.Size(md)
@@ -219,7 +238,7 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 	return chunkCount + 1, nil
 }
 
-func lblsToResourceAttributes(builder labels.ScratchBuilder) (string, []*commonv1.KeyValue) {
+func labelsToAttributes(builder labels.ScratchBuilder, resourceAttributeLabels map[string]struct{}) (string, []*commonv1.KeyValue, []*commonv1.KeyValue, []*commonv1.KeyValue) {
 	builder.Sort()
 	lbls := builder.Labels()
 
@@ -227,26 +246,45 @@ func lblsToResourceAttributes(builder labels.ScratchBuilder) (string, []*commonv
 		log.Printf("processing series %s...\n", lbls.String())
 	}
 
-	res := make([]*commonv1.KeyValue, lbls.Len())
-	var name string
+	var (
+		name          string
+		resourceAttrs []*commonv1.KeyValue
+		scopeAttrs    []*commonv1.KeyValue
+		metricAttrs   []*commonv1.KeyValue
+	)
 
-	i := 0
 	lbls.Range(func(lbl labels.Label) {
-		res[i] = &commonv1.KeyValue{
+		if _, ok := resourceAttributeLabels[lbl.Name]; ok {
+			resourceAttrs = append(resourceAttrs, &commonv1.KeyValue{
+				Key: lbl.Name,
+				Value: &commonv1.AnyValue{
+					Value: &commonv1.AnyValue_StringValue{StringValue: lbl.Value},
+				},
+			})
+			return
+		} else if strings.HasPrefix(lbl.Name, "otel_scope_") {
+			scopeAttrs = append(scopeAttrs, &commonv1.KeyValue{
+				Key: strings.TrimPrefix(lbl.Name, "otel_scope_"),
+				Value: &commonv1.AnyValue{
+					Value: &commonv1.AnyValue_StringValue{StringValue: lbl.Value},
+				},
+			})
+			return
+		}
+
+		metricAttrs = append(metricAttrs, &commonv1.KeyValue{
 			Key: lbl.Name,
 			Value: &commonv1.AnyValue{
 				Value: &commonv1.AnyValue_StringValue{StringValue: lbl.Value},
 			},
-		}
+		})
 
 		if lbl.Name == "__name__" {
 			name = lbl.Value
 		}
-
-		i++
 	})
 
-	return name, res
+	return name, resourceAttrs, scopeAttrs, metricAttrs
 }
 
 func translateToOTELHistogramBuckets(spans []histogram.Span, itr histogram.BucketIterator[uint64]) *metricsv1.ExponentialHistogramDataPoint_Buckets {
