@@ -103,6 +103,11 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return []*enrichedVectorSelector{{vs: vs}}, vs.LabelMatchers, true
 	}
 
+	ms, ok := expr.(*parser.MatrixSelector)
+	if ok {
+		return mapper.extractVectorSelectors(ms.VectorSelector)
+	}
+
 	pe, ok := expr.(*parser.ParenExpr)
 	if ok {
 		return mapper.extractVectorSelectors(pe.Expr)
@@ -197,7 +202,8 @@ func getDifference(set1, set2 map[string]struct{}) map[string]struct{} {
 // TODO: Consider more functions, and add tests for these.
 func getIndexForEligibleFunction(funcName string) int {
 	// If the function is eligible for matcher propagation, return the index of the argument
-	// that contains the vector selector. Otherwise, return -1.
+	// that contains the vector selector (may be embedded in other kinds of expressions).
+	// Otherwise, return -1.
 	switch funcName {
 	// Mathematical
 	case "abs", "sgn", "sqrt", "exp", "deriv", "ln", "log2", "log10", "ceil", "floor", "round", "clamp", "clamp_min", "clamp_max":
@@ -205,7 +211,7 @@ func getIndexForEligibleFunction(funcName string) int {
 	// Trigonometric
 	case "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "sin", "sinh", "tan", "tanh", "deg", "rad":
 		return 0
-	// Comparisons
+	// Differences between samples (using matrix selectors)
 	case "rate", "delta", "increase", "idelta", "irate":
 		return 0
 	default:

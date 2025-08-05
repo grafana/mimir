@@ -64,6 +64,7 @@ func TestPropagateMatchers(t *testing.T) {
 		`{__name__=~"left_side.*"} == ignoring(env) right_side`:                    `{__name__=~"left_side.*"} == ignoring(env) right_side`,
 		`abs(up{foo="bar"}) + sin(down) - left{baz="fob"}`:                         `abs(up{foo="bar", baz="fob"}) + sin(down{foo="bar", baz="fob"}) - left{foo="bar", baz="fob"}`,
 		`up{foo="bar"} / round(down{baz="fob"}, 1)`:                                `up{foo="bar", baz="fob"} / round(down{foo="bar", baz="fob"}, 1)`,
+		`rate(up{foo="bar"}[5m]) + delta(down{baz="fob"}[10m])`:                    `rate(up{foo="bar", baz="fob"}[5m]) + delta(down{foo="bar", baz="fob"}[10m])`,
 
 		// Aggregations
 		`sum(up) / sum(down)`:                                                                                 `sum(up) / sum(down)`,
