@@ -1263,8 +1263,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
-  -distributor.otel-enable-unescaped-names
-    	[experimental] Whether to disable escaping of metric and label names to the classical Prometheus format when ingesting OTLP metrics. If -distributor.otel-metric-suffixes-enabled is true, type and unit suffixes are still appended as required. When this is enabled, -validation.name-validation-scheme has to be configured as 'utf8'.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
   -distributor.otel-metric-suffixes-enabled
@@ -1275,6 +1273,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Optionally specify OTel resource attributes to promote to labels.
   -distributor.otel-promote-scope-metadata
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
+  -distributor.otel-translation-strategy value
+    	[experimental] Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: "", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int

@@ -24,6 +24,7 @@ import (
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -1258,6 +1259,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
+				NameValidationScheme:          validation.ValidationSchemeValue(model.LegacyValidation),
+				OTelTranslationStrategy:       validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+				OTelMetricSuffixesEnabled:     false,
 			}
 			limits := validation.NewOverrides(
 				validation.Limits{},
@@ -1345,7 +1349,10 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetEmptyGauge()
 
 	limits := validation.NewOverrides(
-		validation.Limits{},
+		validation.Limits{
+			NameValidationScheme:    validation.ValidationSchemeValue(model.LegacyValidation),
+			OTelTranslationStrategy: validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+		},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 

@@ -347,19 +347,19 @@ func (c *Config) Validate(log log.Logger) error {
 		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
 	}
 	// validate the default limits
-	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
-func (c *Config) ValidateLimits(limits validation.Limits) error {
-	if err := c.Querier.ValidateLimits(limits); err != nil {
+// ValidateLimits validates the runtime limits.
+func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
-	return nil
+	return limits.Validate()
 }
 
 func (c *Config) isModuleEnabled(m string) bool {
