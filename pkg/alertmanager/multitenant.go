@@ -768,46 +768,40 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // 2. Custom, promoted Grafana configurations
 // 3. Default Grafana configurations
 // 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
-//
-// Considerations:
-// - Unpromoted Grafana configurations are always ignored
-// - Merging Mimir and Grafana configurations is not implemented
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
-	userID := cfgs.Mimir.User
-
 	// Custom Mimir configurations have the highest precedence.
 	if am.isMimirConfigCustom(cfgs.Mimir) {
-		if isGrafanaConfigUsable(cfgs.Grafana) {
-			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
+		if !cfgs.Grafana.Default {
+			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		}
-		am.removeFromSkippedList(userID)
+		am.removeFromSkippedList(cfgs.Mimir.User)
 		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
+	// Unpromoted Grafana configurations are always ignored.
+	if !cfgs.Grafana.Promoted {
+		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
+		if am.isReceivingRequests(cfgs.Mimir.User) {
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
+		}
+		return amConfig{}, false, nil
+	}
+
 	// Custom Grafana configurations have the second highest precedence.
-	if isGrafanaConfigUsable(cfgs.Grafana) && !cfgs.Grafana.Default {
-		am.removeFromSkippedList(userID)
+	if !cfgs.Grafana.Default {
+		am.removeFromSkippedList(cfgs.Mimir.User)
 		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
-	// If we have no custom configs, check the last request time to know whether to start the AM.
-	if am.cfg.StrictInitializationEnabled && (!isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default) {
-		if !am.isReceivingRequests(userID) {
-			return amConfig{}, false, nil
-		}
-
-		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+	// We have no custom configs. Check the last request time to determine whether to start the AM.
+	if !am.isReceivingRequests(cfgs.Mimir.User) {
+		return amConfig{}, false, nil
 	}
 
 	// Default Grafana configurations have the third highest precedence.
-	if isGrafanaConfigUsable(cfgs.Grafana) {
-		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
-		return cfg, true, err
-	}
-
-	// Default Mimir configurations have the lowest precedence.
-	return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
+	cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
+	return cfg, true, err
 }
 
 // removeFromSkippedList remove a tenant from the 'skipped' tenants list.
@@ -822,8 +816,12 @@ func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
 }
 
 // isReceivingRequests checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
-// This should only be used if strict initialization is enabled. We don't keep track of request times otherwise.
+// If strict initialization is not enabled, it always returns true, as we don't keep track of request times.
 func (am *MultitenantAlertmanager) isReceivingRequests(userID string) bool {
+	if !am.cfg.StrictInitializationEnabled {
+		return true
+	}
+
 	createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
 	if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
 		return false
@@ -836,12 +834,8 @@ func (am *MultitenantAlertmanager) isReceivingRequests(userID string) bool {
 		return false
 	}
 
+	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
 	return true
-}
-
-// isGrafanaConfigUsable returns true if the Grafana configuration is promoted and not empty.
-func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
-	return cfg.Promoted && cfg.RawConfig != ""
 }
 
 // isMimirConfigCustom returns true if the Mimir configuration is non-default and non-empty.
