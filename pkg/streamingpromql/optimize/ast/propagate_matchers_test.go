@@ -6,9 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/testdata"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/testdata"
 )
 
 func TestPropagateMatchers(t *testing.T) {

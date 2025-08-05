@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/testdata"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/testdata"
 )
 
 func TestASTOptPassReorderHistogramAggregation(t *testing.T) {
