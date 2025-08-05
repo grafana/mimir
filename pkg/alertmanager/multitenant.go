@@ -770,7 +770,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	// Custom Mimir configurations have the highest precedence.
-	if am.isMimirConfigCustom(cfgs.Mimir) {
+	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
 		if !cfgs.Grafana.Default {
 			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		}
@@ -836,11 +836,6 @@ func (am *MultitenantAlertmanager) isReceivingRequests(userID string) bool {
 
 	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
 	return true
-}
-
-// isMimirConfigCustom returns true if the Mimir configuration is non-default and non-empty.
-func (am *MultitenantAlertmanager) isMimirConfigCustom(cfg alertspb.AlertConfigDesc) bool {
-	return cfg.RawConfig != am.fallbackConfig && cfg.RawConfig != ""
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
