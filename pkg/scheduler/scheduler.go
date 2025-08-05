@@ -530,9 +530,9 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		}
 
 		if req.HttpRequest != nil {
-			msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{req.HttpRequest}
+			msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{HttpRequest: req.HttpRequest}
 		} else if req.ProtobufRequest != nil {
-			msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{req.ProtobufRequest}
+			msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: req.ProtobufRequest}
 		}
 
 		var err error

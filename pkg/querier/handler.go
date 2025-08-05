@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -27,8 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-
-	prototypes "github.com/gogo/protobuf/types"
 )
 
 var evaluateQueryRequestType = proto.MessageName(&querierpb.EvaluateQueryRequest{})
