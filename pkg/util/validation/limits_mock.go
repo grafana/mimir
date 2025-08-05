@@ -5,7 +5,10 @@
 
 package validation
 
-import "github.com/grafana/dskit/flagext"
+import (
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/otlptranslator"
+)
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
 type mockTenantLimits struct {
@@ -41,6 +44,7 @@ func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Lim
 func MockDefaultLimits() *Limits {
 	defaults := Limits{}
 	flagext.DefaultValues(&defaults)
+	defaults.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 	return &defaults
 }
 

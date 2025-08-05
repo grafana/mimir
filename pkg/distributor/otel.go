@@ -61,7 +61,8 @@ type OTLPHandlerLimits interface {
 	OTelConvertHistogramsToNHCB(id string) bool
 	OTelPromoteScopeMetadata(id string) bool
 	OTelNativeDeltaIngestion(id string) bool
-	OTelEnableUnescapedNames(id string) bool
+	OTelTranslationStrategy(id string) otlptranslator.TranslationStrategyOption
+	NameValidationScheme(id string) model.ValidationScheme
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -281,7 +282,6 @@ func newOTLPParser(
 		if err != nil {
 			return err
 		}
-		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		if resourceAttributePromotionConfig == nil {
 			resourceAttributePromotionConfig = limits
@@ -291,13 +291,14 @@ func newOTLPParser(
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
-		allowUTF8 := limits.OTelEnableUnescapedNames(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(tenantID)
+		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		convOpts := conversionOptions{
-			addSuffixes:                       addSuffixes,
+			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
 			enableCTZeroIngestion:             enableCTZeroIngestion,
 			enableStartTimeQuietZero:          enableStartTimeQuietZero,
 			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
@@ -305,7 +306,7 @@ func newOTLPParser(
 			promoteScopeMetadata:              promoteScopeMetadata,
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
-			allowUTF8:                         allowUTF8,
+			allowUTF8:                         !translationStrategy.ShouldEscape(),
 		}
 		metrics, metricsDropped, err := otelMetricsToTimeseries(
 			ctx,
@@ -345,6 +346,37 @@ func newOTLPParser(
 		req.Timeseries = metrics
 		req.Metadata, err = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
 		return err
+	}
+}
+
+// validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
+// Any inconsistency at this point indicates a programming error, so we panic on errors.
+func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, tenantID string) {
+	validationScheme := limits.NameValidationScheme(tenantID)
+	switch validationScheme {
+	case model.LegacyValidation:
+		if !translationStrategy.ShouldEscape() {
+			panic(fmt.Errorf(
+				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
+				validationScheme, translationStrategy,
+			))
+		}
+	case model.UTF8Validation:
+		if translationStrategy.ShouldEscape() {
+			panic(fmt.Errorf(
+				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
+				validationScheme, translationStrategy,
+			))
+		}
+	default:
+		panic(fmt.Errorf("unhandled name validation scheme: %s", validationScheme))
+	}
+
+	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+	if addSuffixes && !translationStrategy.ShouldAddSuffixes() {
+		panic(fmt.Errorf("OTel metric suffixes are enabled, but incompatible OTel translation strategy: %s", translationStrategy))
+	} else if !addSuffixes && translationStrategy.ShouldAddSuffixes() {
+		panic(fmt.Errorf("OTel metric suffixes are disabled, but incompatible OTel translation strategy: %s", translationStrategy))
 	}
 }
 

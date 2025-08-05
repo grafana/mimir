@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -25,23 +26,22 @@ import (
 )
 
 func TestOTLPIngestion(t *testing.T) {
-	t.Run("with metric suffixes, with escaped metric/label names", func(t *testing.T) {
-		testOTLPIngestion(t, testOTLPIngestionOpts{enableSuffixes: true, enableUnescapedNames: false})
+	t.Run("with metric suffixes, with escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes})
 	})
-	t.Run("without metric suffixes, with escaped metric/label names", func(t *testing.T) {
-		testOTLPIngestion(t, testOTLPIngestionOpts{enableSuffixes: false, enableUnescapedNames: false})
+	t.Run("without metric suffixes, with escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes})
 	})
-	t.Run("with metric suffixes, without escaped metric/label names", func(t *testing.T) {
-		testOTLPIngestion(t, testOTLPIngestionOpts{enableSuffixes: true, enableUnescapedNames: true})
+	t.Run("with metric suffixes, without escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes})
 	})
-	t.Run("without metric suffixes, without escaped metric/label names", func(t *testing.T) {
-		testOTLPIngestion(t, testOTLPIngestionOpts{enableSuffixes: false, enableUnescapedNames: true})
+	t.Run("without metric suffixes, without escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.NoTranslation})
 	})
 }
 
 type testOTLPIngestionOpts struct {
-	enableSuffixes       bool
-	enableUnescapedNames bool
+	translationStrategy otlptranslator.TranslationStrategyOption
 }
 
 func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
@@ -61,7 +61,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
 	validationScheme := model.LegacyValidation
-	if opts.enableUnescapedNames {
+	if !opts.translationStrategy.ShouldEscape() {
 		// Without the UTF-8 validation scheme, unescaped names will be rejected.
 		validationScheme = model.UTF8Validation
 	}
@@ -71,8 +71,8 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 		BlocksStorageS3Flags(),
 		RulerStorageS3Flags(),
 		map[string]string{
-			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(opts.enableSuffixes),
-			"-distributor.otel-enable-unescaped-names":  strconv.FormatBool(opts.enableUnescapedNames),
+			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(opts.translationStrategy.ShouldAddSuffixes()),
+			"-distributor.otel-translation-strategy":    string(opts.translationStrategy),
 			"-validation.name-validation-scheme":        validationScheme.String(),
 		},
 	)
@@ -84,12 +84,12 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	require.NoError(t, err)
 
 	sfx := ""
-	if opts.enableSuffixes {
+	if opts.translationStrategy.ShouldAddSuffixes() {
 		sfx = "_bytes"
 	}
 
 	convertedMetricName := fmt.Sprintf("series_1%s", sfx)
-	if opts.enableUnescapedNames {
+	if !opts.translationStrategy.ShouldEscape() {
 		convertedMetricName = fmt.Sprintf("series.1%s", sfx)
 	}
 
@@ -163,7 +163,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 
 	convertedHistogramName := fmt.Sprintf("series_histogram%s", sfx)
-	if opts.enableUnescapedNames {
+	if !opts.translationStrategy.ShouldEscape() {
 		convertedHistogramName = fmt.Sprintf("series.histogram%s", sfx)
 	}
 

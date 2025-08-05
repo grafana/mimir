@@ -514,7 +514,7 @@ func TestConfig_ValidateLimits(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.testConfig.ValidateLimits(tc.limitsConfig)
+			err := tc.testConfig.ValidateLimits(&tc.limitsConfig)
 			if tc.hasError {
 				require.Error(t, err)
 			} else {
