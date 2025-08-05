@@ -42,7 +42,7 @@ message SchedulerToQuerier {
 
   oneof payload {
     httpgrpc.HTTPRequest httpRequest = 2;
-    google.protobuf.Any request = 7;
+    ProtobufRequest protobufRequest = 7;
   }
 
   // Where should querier send HTTP Response to (using FrontendForQuerier interface).
@@ -57,6 +57,11 @@ message SchedulerToQuerier {
 
   // How much time did query spend in the queue.
   int64 queueTimeNanos = 6;
+}
+
+message ProtobufRequest {
+  google.protobuf.Any payload = 1;
+  map<string, string> traceHeaders = 2;
 }
 
 // Scheduler interface exposed to Frontend. Frontend can enqueue and cancel requests.
@@ -90,7 +95,7 @@ message FrontendToScheduler {
   string userID = 4;
   oneof payload {
     httpgrpc.HTTPRequest httpRequest = 5;
-    google.protobuf.Any request = 8;
+    ProtobufRequest protobufRequest = 8;
   }
   bool statsEnabled = 6;
   repeated string additionalQueueDimensions = 7;

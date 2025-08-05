@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
@@ -108,7 +109,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	return s, schedulerpb.NewSchedulerForFrontendClient(c), schedulerpb.NewSchedulerForQuerierClient(c)
 }
 
-func TestSchedulerBasicEnqueue(t *testing.T) {
+func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -125,14 +126,48 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
 
-		msg2, err := querierLoop.Recv()
+		msg, err := querierLoop.Recv()
 		require.NoError(t, err)
-		require.Equal(t, uint64(1), msg2.QueryID)
-		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
-		require.Equal(t, "GET", msg2.GetHttpRequest().Method)
-		require.Equal(t, "/hello", msg2.GetHttpRequest().Url)
-		require.True(t, msg2.StatsEnabled)
-		require.Greater(t, msg2.QueueTimeNanos, int64(0))
+		require.Equal(t, uint64(1), msg.QueryID)
+		require.Equal(t, "frontend-12345", msg.FrontendAddress)
+		require.Equal(t, "GET", msg.GetHttpRequest().Method)
+		require.Equal(t, "/hello", msg.GetHttpRequest().Url)
+		require.Nil(t, msg.GetProtobufRequest())
+		require.True(t, msg.StatsEnabled)
+		require.Greater(t, msg.QueueTimeNanos, int64(0))
+		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
+	}
+
+	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerBasicEnqueue_GRPCPayload(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		Payload:      &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+		StatsEnabled: true,
+	})
+
+	{
+		querierLoop, err := querierClient.QuerierLoop(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+		msg, err := querierLoop.Recv()
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), msg.QueryID)
+		require.Equal(t, "frontend-12345", msg.FrontendAddress)
+		require.Equal(t, request, msg.GetProtobufRequest())
+		require.Nil(t, msg.GetHttpRequest())
+		require.True(t, msg.StatsEnabled)
+		require.Greater(t, msg.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 

@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -240,19 +241,19 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			if parentSpanContext, valid := httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest()); valid {
+			if parentSpanContext, valid := contextWithSpanFromRequest(ctx, request); valid {
 				var queueSpan trace.Span
 				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
 				defer queueSpan.End()
-				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
 			switch payload := request.Payload.(type) {
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
-			case *schedulerpb.SchedulerToQuerier_Request:
-				sp.runGrpcRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.Request)
+			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
+				sp.runGrpcRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -278,6 +279,18 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				}
 			}
 		}()
+	}
+}
+
+func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.SchedulerToQuerier) (context.Context, bool) {
+	switch request.Payload.(type) {
+	case *schedulerpb.SchedulerToQuerier_HttpRequest:
+		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
+	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
+		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().TraceHeaders))
+		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
+	default:
+		return ctx, false
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -264,7 +265,16 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.ENQUEUE:
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
-			parentSpanContext, _ := httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.GetHttpRequest())
+			var parentSpanContext context.Context
+
+			if httpRequest := msg.GetHttpRequest(); httpRequest != nil {
+				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.GetHttpRequest())
+			} else if protobufRequest := msg.GetProtobufRequest(); protobufRequest != nil {
+				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, propagation.MapCarrier(protobufRequest.TraceHeaders))
+			} else {
+				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")
+			}
+
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
@@ -357,9 +367,16 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
-		Request:                   msg.GetHttpRequest(),
 		StatsEnabled:              msg.StatsEnabled,
 		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
+	}
+
+	if httpRequest := msg.GetHttpRequest(); httpRequest != nil {
+		req.HttpRequest = httpRequest
+	} else if protobufRequest := msg.GetProtobufRequest(); protobufRequest != nil {
+		req.ProtobufRequest = protobufRequest
+	} else {
+		return fmt.Errorf("unsupported payload type: %T", msg.Payload)
 	}
 
 	now := time.Now()
@@ -504,14 +521,27 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		_, span := tracer.Start(req.Ctx, "forwardRequestToQuerier")
 		span.SetAttributes(attribute.String("querier_id", querierID))
 
-		err := querier.Send(&schedulerpb.SchedulerToQuerier{
+		msg := &schedulerpb.SchedulerToQuerier{
 			UserID:          req.UserID,
 			QueryID:         req.QueryID,
 			FrontendAddress: req.FrontendAddr,
-			Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{req.Request},
 			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
-		})
+		}
+
+		if req.HttpRequest != nil {
+			msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{req.HttpRequest}
+		} else if req.ProtobufRequest != nil {
+			msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{req.ProtobufRequest}
+		}
+
+		var err error
+
+		if msg.Payload == nil {
+			err = errors.New("queued request contains neither a HTTP nor a Protobuf payload, this should never happen")
+		} else {
+			err = querier.Send(msg)
+		}
 
 		if grpcutil.IsCanceled(err) {
 			// The querier abruptly closing the connection should be the only reason we'd get a cancellation error here.

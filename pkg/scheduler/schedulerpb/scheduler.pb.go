@@ -8,6 +8,7 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 	types "github.com/gogo/protobuf/types"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
 	grpc "google.golang.org/grpc"
@@ -134,7 +135,7 @@ type SchedulerToQuerier struct {
 	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//	*SchedulerToQuerier_HttpRequest
-	//	*SchedulerToQuerier_Request
+	//	*SchedulerToQuerier_ProtobufRequest
 	Payload isSchedulerToQuerier_Payload `protobuf_oneof:"payload"`
 	// Where should querier send HTTP Response to (using FrontendForQuerier interface).
 	FrontendAddress string `protobuf:"bytes,3,opt,name=frontendAddress,proto3" json:"frontendAddress,omitempty"`
@@ -189,12 +190,12 @@ type isSchedulerToQuerier_Payload interface {
 type SchedulerToQuerier_HttpRequest struct {
 	HttpRequest *httpgrpc.HTTPRequest `protobuf:"bytes,2,opt,name=httpRequest,proto3,oneof" json:"httpRequest,omitempty"`
 }
-type SchedulerToQuerier_Request struct {
-	Request *types.Any `protobuf:"bytes,7,opt,name=request,proto3,oneof" json:"request,omitempty"`
+type SchedulerToQuerier_ProtobufRequest struct {
+	ProtobufRequest *ProtobufRequest `protobuf:"bytes,7,opt,name=protobufRequest,proto3,oneof" json:"protobufRequest,omitempty"`
 }
 
-func (*SchedulerToQuerier_HttpRequest) isSchedulerToQuerier_Payload() {}
-func (*SchedulerToQuerier_Request) isSchedulerToQuerier_Payload()     {}
+func (*SchedulerToQuerier_HttpRequest) isSchedulerToQuerier_Payload()     {}
+func (*SchedulerToQuerier_ProtobufRequest) isSchedulerToQuerier_Payload() {}
 
 func (m *SchedulerToQuerier) GetPayload() isSchedulerToQuerier_Payload {
 	if m != nil {
@@ -217,9 +218,9 @@ func (m *SchedulerToQuerier) GetHttpRequest() *httpgrpc.HTTPRequest {
 	return nil
 }
 
-func (m *SchedulerToQuerier) GetRequest() *types.Any {
-	if x, ok := m.GetPayload().(*SchedulerToQuerier_Request); ok {
-		return x.Request
+func (m *SchedulerToQuerier) GetProtobufRequest() *ProtobufRequest {
+	if x, ok := m.GetPayload().(*SchedulerToQuerier_ProtobufRequest); ok {
+		return x.ProtobufRequest
 	}
 	return nil
 }
@@ -256,8 +257,59 @@ func (m *SchedulerToQuerier) GetQueueTimeNanos() int64 {
 func (*SchedulerToQuerier) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
 		(*SchedulerToQuerier_HttpRequest)(nil),
-		(*SchedulerToQuerier_Request)(nil),
+		(*SchedulerToQuerier_ProtobufRequest)(nil),
 	}
+}
+
+type ProtobufRequest struct {
+	Payload      *types.Any        `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	TraceHeaders map[string]string `protobuf:"bytes,2,rep,name=traceHeaders,proto3" json:"traceHeaders,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *ProtobufRequest) Reset()      { *m = ProtobufRequest{} }
+func (*ProtobufRequest) ProtoMessage() {}
+func (*ProtobufRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+}
+func (m *ProtobufRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ProtobufRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ProtobufRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ProtobufRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ProtobufRequest.Merge(m, src)
+}
+func (m *ProtobufRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *ProtobufRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ProtobufRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ProtobufRequest proto.InternalMessageInfo
+
+func (m *ProtobufRequest) GetPayload() *types.Any {
+	if m != nil {
+		return m.Payload
+	}
+	return nil
+}
+
+func (m *ProtobufRequest) GetTraceHeaders() map[string]string {
+	if m != nil {
+		return m.TraceHeaders
+	}
+	return nil
 }
 
 type FrontendToScheduler struct {
@@ -272,7 +324,7 @@ type FrontendToScheduler struct {
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*FrontendToScheduler_HttpRequest
-	//	*FrontendToScheduler_Request
+	//	*FrontendToScheduler_ProtobufRequest
 	Payload                   isFrontendToScheduler_Payload `protobuf_oneof:"payload"`
 	StatsEnabled              bool                          `protobuf:"varint,6,opt,name=statsEnabled,proto3" json:"statsEnabled,omitempty"`
 	AdditionalQueueDimensions []string                      `protobuf:"bytes,7,rep,name=additionalQueueDimensions,proto3" json:"additionalQueueDimensions,omitempty"`
@@ -281,7 +333,7 @@ type FrontendToScheduler struct {
 func (m *FrontendToScheduler) Reset()      { *m = FrontendToScheduler{} }
 func (*FrontendToScheduler) ProtoMessage() {}
 func (*FrontendToScheduler) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
 }
 func (m *FrontendToScheduler) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -320,12 +372,12 @@ type isFrontendToScheduler_Payload interface {
 type FrontendToScheduler_HttpRequest struct {
 	HttpRequest *httpgrpc.HTTPRequest `protobuf:"bytes,5,opt,name=httpRequest,proto3,oneof" json:"httpRequest,omitempty"`
 }
-type FrontendToScheduler_Request struct {
-	Request *types.Any `protobuf:"bytes,8,opt,name=request,proto3,oneof" json:"request,omitempty"`
+type FrontendToScheduler_ProtobufRequest struct {
+	ProtobufRequest *ProtobufRequest `protobuf:"bytes,8,opt,name=protobufRequest,proto3,oneof" json:"protobufRequest,omitempty"`
 }
 
-func (*FrontendToScheduler_HttpRequest) isFrontendToScheduler_Payload() {}
-func (*FrontendToScheduler_Request) isFrontendToScheduler_Payload()     {}
+func (*FrontendToScheduler_HttpRequest) isFrontendToScheduler_Payload()     {}
+func (*FrontendToScheduler_ProtobufRequest) isFrontendToScheduler_Payload() {}
 
 func (m *FrontendToScheduler) GetPayload() isFrontendToScheduler_Payload {
 	if m != nil {
@@ -369,9 +421,9 @@ func (m *FrontendToScheduler) GetHttpRequest() *httpgrpc.HTTPRequest {
 	return nil
 }
 
-func (m *FrontendToScheduler) GetRequest() *types.Any {
-	if x, ok := m.GetPayload().(*FrontendToScheduler_Request); ok {
-		return x.Request
+func (m *FrontendToScheduler) GetProtobufRequest() *ProtobufRequest {
+	if x, ok := m.GetPayload().(*FrontendToScheduler_ProtobufRequest); ok {
+		return x.ProtobufRequest
 	}
 	return nil
 }
@@ -394,7 +446,7 @@ func (m *FrontendToScheduler) GetAdditionalQueueDimensions() []string {
 func (*FrontendToScheduler) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
 		(*FrontendToScheduler_HttpRequest)(nil),
-		(*FrontendToScheduler_Request)(nil),
+		(*FrontendToScheduler_ProtobufRequest)(nil),
 	}
 }
 
@@ -406,7 +458,7 @@ type SchedulerToFrontend struct {
 func (m *SchedulerToFrontend) Reset()      { *m = SchedulerToFrontend{} }
 func (*SchedulerToFrontend) ProtoMessage() {}
 func (*SchedulerToFrontend) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
 }
 func (m *SchedulerToFrontend) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -456,7 +508,7 @@ type NotifyQuerierShutdownRequest struct {
 func (m *NotifyQuerierShutdownRequest) Reset()      { *m = NotifyQuerierShutdownRequest{} }
 func (*NotifyQuerierShutdownRequest) ProtoMessage() {}
 func (*NotifyQuerierShutdownRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
 }
 func (m *NotifyQuerierShutdownRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -498,7 +550,7 @@ type NotifyQuerierShutdownResponse struct {
 func (m *NotifyQuerierShutdownResponse) Reset()      { *m = NotifyQuerierShutdownResponse{} }
 func (*NotifyQuerierShutdownResponse) ProtoMessage() {}
 func (*NotifyQuerierShutdownResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{6}
 }
 func (m *NotifyQuerierShutdownResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -532,6 +584,8 @@ func init() {
 	proto.RegisterEnum("schedulerpb.SchedulerToFrontendStatus", SchedulerToFrontendStatus_name, SchedulerToFrontendStatus_value)
 	proto.RegisterType((*QuerierToScheduler)(nil), "schedulerpb.QuerierToScheduler")
 	proto.RegisterType((*SchedulerToQuerier)(nil), "schedulerpb.SchedulerToQuerier")
+	proto.RegisterType((*ProtobufRequest)(nil), "schedulerpb.ProtobufRequest")
+	proto.RegisterMapType((map[string]string)(nil), "schedulerpb.ProtobufRequest.TraceHeadersEntry")
 	proto.RegisterType((*FrontendToScheduler)(nil), "schedulerpb.FrontendToScheduler")
 	proto.RegisterType((*SchedulerToFrontend)(nil), "schedulerpb.SchedulerToFrontend")
 	proto.RegisterType((*NotifyQuerierShutdownRequest)(nil), "schedulerpb.NotifyQuerierShutdownRequest")
@@ -541,54 +595,60 @@ func init() {
 func init() { proto.RegisterFile("scheduler.proto", fileDescriptor_2b3fc28395a6d9c5) }
 
 var fileDescriptor_2b3fc28395a6d9c5 = []byte{
-	// 746 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x55, 0x3d, 0x6f, 0xda, 0x50,
-	0x14, 0xf5, 0xe3, 0x33, 0x5c, 0xd2, 0x84, 0xbe, 0x90, 0x96, 0xa0, 0xd4, 0xb1, 0x50, 0x15, 0xd1,
-	0x0c, 0x26, 0xa2, 0x4b, 0x2b, 0x45, 0x95, 0x48, 0xe2, 0x14, 0xd4, 0xd4, 0x04, 0x63, 0xd4, 0x8f,
-	0x05, 0x19, 0xfc, 0x00, 0x2b, 0xc4, 0xcf, 0xf1, 0x87, 0x2a, 0xb6, 0x2e, 0xdd, 0xfb, 0x33, 0xfa,
-	0x03, 0xfa, 0x23, 0x3a, 0x66, 0xcc, 0xd0, 0xa1, 0x21, 0x4b, 0xc7, 0xfc, 0x84, 0x0a, 0x63, 0x53,
-	0x43, 0x21, 0x89, 0xba, 0xdd, 0x77, 0x7d, 0x8e, 0xfc, 0xce, 0x39, 0xf7, 0xda, 0xb0, 0x6a, 0xb5,
-	0x7b, 0x44, 0x75, 0xfa, 0xc4, 0xe4, 0x0d, 0x93, 0xda, 0x14, 0x27, 0x27, 0x0d, 0xa3, 0x95, 0xdd,
-	0xed, 0x6a, 0x76, 0xcf, 0x69, 0xf1, 0x6d, 0x7a, 0x56, 0xe8, 0x9a, 0x4a, 0x47, 0xd1, 0x95, 0x82,
-	0x6a, 0x9d, 0x6a, 0x76, 0xa1, 0x67, 0xdb, 0x46, 0xd7, 0x34, 0xda, 0x93, 0x62, 0x4c, 0xcf, 0xa6,
-	0xbb, 0xb4, 0x4b, 0xdd, 0xb2, 0x30, 0xaa, 0xbc, 0xee, 0x46, 0x97, 0xd2, 0x6e, 0x9f, 0x14, 0xdc,
-	0x53, 0xcb, 0xe9, 0x14, 0x14, 0x7d, 0x30, 0x7e, 0x94, 0x2b, 0x02, 0xae, 0x39, 0xc4, 0xd4, 0x88,
-	0x29, 0xd3, 0xba, 0xff, 0x6a, 0xbc, 0x09, 0x89, 0xf3, 0x71, 0xb7, 0x72, 0x98, 0x41, 0x1c, 0xca,
-	0x27, 0xa4, 0xbf, 0x8d, 0xdc, 0xf7, 0x10, 0xe0, 0x09, 0x56, 0xa6, 0x1e, 0x1f, 0x67, 0x20, 0x3e,
-	0xc2, 0x0c, 0x3c, 0x4a, 0x44, 0xf2, 0x8f, 0xf8, 0x25, 0x24, 0x47, 0xf7, 0x94, 0xc8, 0xb9, 0x43,
-	0x2c, 0x3b, 0x13, 0xe2, 0x50, 0x3e, 0x59, 0x5c, 0xe7, 0x27, 0x77, 0x2f, 0xcb, 0xf2, 0x89, 0xf7,
-	0xb0, 0xcc, 0x48, 0x41, 0x2c, 0xde, 0x85, 0xb8, 0xe9, 0xd1, 0xe2, 0x2e, 0x2d, 0xcd, 0x8f, 0xc5,
-	0xf0, 0xbe, 0x18, 0xbe, 0xa4, 0x0f, 0xca, 0x8c, 0xe4, 0xc3, 0x70, 0x1e, 0x56, 0x3b, 0x26, 0xd5,
-	0x6d, 0xa2, 0xab, 0x25, 0x55, 0x35, 0x89, 0x65, 0x65, 0xc2, 0xae, 0x82, 0xd9, 0x36, 0x7e, 0x04,
-	0x31, 0xc7, 0x72, 0x25, 0x46, 0x5c, 0x80, 0x77, 0xc2, 0x39, 0x58, 0xb6, 0x6c, 0xc5, 0xb6, 0x04,
-	0x5d, 0x69, 0xf5, 0x89, 0x9a, 0x89, 0x72, 0x28, 0xbf, 0x24, 0x4d, 0xf5, 0xf0, 0x36, 0xac, 0x9c,
-	0x3b, 0xc4, 0x21, 0xb2, 0x76, 0x46, 0x44, 0x45, 0xa7, 0x56, 0x26, 0xc6, 0xa1, 0x7c, 0x58, 0x9a,
-	0xe9, 0xee, 0x27, 0x20, 0x6e, 0x28, 0x83, 0x3e, 0x55, 0xd4, 0xdc, 0x97, 0x30, 0xac, 0x1d, 0x79,
-	0x57, 0x08, 0x9a, 0xfd, 0x02, 0x22, 0xf6, 0xc0, 0x20, 0xae, 0x69, 0x2b, 0xc5, 0xa7, 0x7c, 0x60,
-	0x02, 0xf8, 0x39, 0x78, 0x79, 0x60, 0x10, 0xc9, 0x65, 0xcc, 0x93, 0x1a, 0x9a, 0x2f, 0x35, 0x90,
-	0x4d, 0x78, 0x3a, 0x9b, 0x45, 0x26, 0xcc, 0x64, 0x16, 0xfd, 0xbf, 0xcc, 0x96, 0xee, 0x97, 0xd9,
-	0xac, 0xe3, 0xb1, 0x39, 0x8e, 0xef, 0xc1, 0x86, 0xa2, 0xaa, 0x9a, 0xad, 0x51, 0x5d, 0xe9, 0xd7,
-	0x46, 0x2e, 0x1f, 0x6a, 0x67, 0x44, 0xb7, 0x34, 0xaa, 0x5b, 0x99, 0x38, 0x17, 0xce, 0x27, 0xa4,
-	0xc5, 0x80, 0x60, 0x0e, 0xa7, 0xb0, 0x16, 0x98, 0x5e, 0xdf, 0x61, 0xfc, 0x0a, 0x62, 0xa3, 0xf7,
-	0x39, 0x96, 0x17, 0xc4, 0xf6, 0x54, 0x10, 0x73, 0x18, 0x75, 0x17, 0x2d, 0x79, 0x2c, 0x9c, 0x86,
-	0x28, 0x31, 0x4d, 0x6a, 0x7a, 0x11, 0x8c, 0x0f, 0xb9, 0x3d, 0xd8, 0x14, 0xa9, 0xad, 0x75, 0x06,
-	0xde, 0x96, 0xd4, 0x7b, 0x8e, 0xad, 0xd2, 0x4f, 0xba, 0xef, 0xd5, 0xed, 0x9b, 0xb6, 0x05, 0x4f,
-	0x16, 0xb0, 0x2d, 0x83, 0xea, 0x16, 0xd9, 0xd9, 0x83, 0xc7, 0x0b, 0x46, 0x04, 0x2f, 0x41, 0xa4,
-	0x22, 0x56, 0xe4, 0x14, 0x83, 0x93, 0x10, 0x17, 0xc4, 0x5a, 0x43, 0x68, 0x08, 0x29, 0x84, 0x01,
-	0x62, 0x07, 0x25, 0xf1, 0x40, 0x38, 0x4e, 0x85, 0x76, 0xda, 0xb0, 0xb1, 0x50, 0x17, 0x8e, 0x41,
-	0xa8, 0xfa, 0x26, 0xc5, 0x60, 0x0e, 0x36, 0xe5, 0x6a, 0xb5, 0xf9, 0xb6, 0x24, 0x7e, 0x68, 0x4a,
-	0x42, 0xad, 0x21, 0xd4, 0xe5, 0x7a, 0xf3, 0x44, 0x90, 0x9a, 0xb2, 0x20, 0x96, 0x44, 0x39, 0x85,
-	0x70, 0x02, 0xa2, 0x82, 0x24, 0x55, 0xa5, 0x54, 0x08, 0x3f, 0x84, 0x07, 0xf5, 0x72, 0x43, 0x96,
-	0x2b, 0xe2, 0xeb, 0xe6, 0x61, 0xf5, 0x9d, 0x98, 0x0a, 0x17, 0x7f, 0xa2, 0x80, 0xdf, 0x47, 0xd4,
-	0xf4, 0x3f, 0x17, 0x0d, 0x48, 0x7a, 0xe5, 0x31, 0xa5, 0x06, 0xde, 0x9a, 0xb2, 0xfb, 0xdf, 0x6f,
-	0x52, 0x76, 0x6b, 0x51, 0x1e, 0x1e, 0x36, 0xc7, 0xe4, 0xd1, 0x2e, 0xc2, 0x3a, 0xac, 0xcf, 0xb5,
-	0x0c, 0x3f, 0x9b, 0xe2, 0xdf, 0x16, 0x4a, 0x76, 0xe7, 0x3e, 0xd0, 0x71, 0x02, 0x45, 0x03, 0xd2,
-	0x41, 0x75, 0x93, 0x71, 0x7a, 0x0f, 0xcb, 0x7e, 0xed, 0xea, 0xe3, 0xee, 0xda, 0xeb, 0x2c, 0x77,
-	0xd7, 0xc0, 0x8d, 0x15, 0xee, 0x97, 0x2e, 0xae, 0x58, 0xe6, 0xf2, 0x8a, 0x65, 0x6e, 0xae, 0x58,
-	0xf4, 0x79, 0xc8, 0xa2, 0x6f, 0x43, 0x16, 0xfd, 0x18, 0xb2, 0xe8, 0x62, 0xc8, 0xa2, 0x5f, 0x43,
-	0x16, 0xfd, 0x1e, 0xb2, 0xcc, 0xcd, 0x90, 0x45, 0x5f, 0xaf, 0x59, 0xe6, 0xe2, 0x9a, 0x65, 0x2e,
-	0xaf, 0x59, 0xe6, 0x63, 0xf0, 0xc7, 0xd2, 0x8a, 0xb9, 0x8b, 0xf8, 0xfc, 0x4f, 0x00, 0x00, 0x00,
-	0xff, 0xff, 0xad, 0x54, 0x7e, 0x56, 0x7f, 0x06, 0x00, 0x00,
+	// 841 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x55, 0xcd, 0x6e, 0xe3, 0x54,
+	0x14, 0xf6, 0xb5, 0xdb, 0xa4, 0x39, 0x29, 0x53, 0xcf, 0x9d, 0x0e, 0xb8, 0x51, 0x71, 0xad, 0x08,
+	0x8d, 0x4c, 0x17, 0xce, 0x28, 0x6c, 0x06, 0x54, 0x81, 0x32, 0x53, 0x0f, 0xa9, 0x18, 0x9c, 0xf6,
+	0xc6, 0x11, 0x3f, 0x9b, 0xc8, 0x89, 0x6f, 0x13, 0xab, 0xa9, 0xaf, 0xeb, 0x1f, 0x90, 0x77, 0x3c,
+	0x02, 0x2f, 0xc0, 0x9e, 0x47, 0x61, 0xc1, 0xa2, 0x2b, 0x34, 0x0b, 0x16, 0x34, 0xdd, 0xb0, 0x9c,
+	0x47, 0x40, 0x71, 0xec, 0x60, 0x67, 0x92, 0x16, 0x31, 0xbb, 0x73, 0xce, 0xfd, 0xbe, 0xf8, 0x9c,
+	0xf3, 0x7d, 0xf7, 0x06, 0x76, 0x82, 0xe1, 0x98, 0xda, 0xd1, 0x84, 0xfa, 0x9a, 0xe7, 0xb3, 0x90,
+	0xe1, 0xea, 0xa2, 0xe0, 0x0d, 0x6a, 0x4f, 0x47, 0x4e, 0x38, 0x8e, 0x06, 0xda, 0x90, 0x5d, 0x36,
+	0x46, 0xbe, 0x75, 0x6e, 0xb9, 0x56, 0xc3, 0x0e, 0x2e, 0x9c, 0xb0, 0x31, 0x0e, 0x43, 0x6f, 0xe4,
+	0x7b, 0xc3, 0x45, 0x30, 0xa7, 0xd7, 0x76, 0x47, 0x6c, 0xc4, 0x92, 0xb0, 0x31, 0x8b, 0xd2, 0xea,
+	0xde, 0x88, 0xb1, 0xd1, 0x84, 0x36, 0x92, 0x6c, 0x10, 0x9d, 0x37, 0x2c, 0x37, 0x9e, 0x1f, 0xd5,
+	0x9b, 0x80, 0xcf, 0x22, 0xea, 0x3b, 0xd4, 0x37, 0x59, 0x37, 0xfb, 0x34, 0xde, 0x87, 0xca, 0xd5,
+	0xbc, 0x7a, 0x72, 0x2c, 0x21, 0x05, 0xa9, 0x15, 0xf2, 0x6f, 0xa1, 0xfe, 0x3b, 0x0f, 0x78, 0x81,
+	0x35, 0x59, 0xca, 0xc7, 0x12, 0x94, 0x67, 0x98, 0x38, 0xa5, 0x6c, 0x90, 0x2c, 0xc5, 0x9f, 0x42,
+	0x75, 0xd6, 0x27, 0xa1, 0x57, 0x11, 0x0d, 0x42, 0x89, 0x57, 0x90, 0x5a, 0x6d, 0x3e, 0xd6, 0x16,
+	0xbd, 0xb7, 0x4d, 0xf3, 0x34, 0x3d, 0x6c, 0x73, 0x24, 0x8f, 0xc5, 0x6d, 0xd8, 0xc9, 0xba, 0xce,
+	0xe8, 0xe5, 0x84, 0xbe, 0xaf, 0xe5, 0x36, 0xa5, 0x9d, 0x16, 0x31, 0x6d, 0x8e, 0x2c, 0xd3, 0xb0,
+	0x0a, 0x3b, 0xe7, 0x3e, 0x73, 0x43, 0xea, 0xda, 0x2d, 0xdb, 0xf6, 0x69, 0x10, 0x48, 0x42, 0x32,
+	0xd9, 0x72, 0x19, 0xbf, 0x0f, 0xa5, 0x28, 0x48, 0x46, 0xdf, 0x48, 0x00, 0x69, 0x86, 0xeb, 0xb0,
+	0x1d, 0x84, 0x56, 0x18, 0xe8, 0xae, 0x35, 0x98, 0x50, 0x5b, 0xda, 0x54, 0x90, 0xba, 0x45, 0x0a,
+	0x35, 0xfc, 0x04, 0x1e, 0x5c, 0x45, 0x34, 0xa2, 0xa6, 0x73, 0x49, 0x0d, 0xcb, 0x65, 0x81, 0x54,
+	0x52, 0x90, 0x2a, 0x90, 0xa5, 0xea, 0xf3, 0x0a, 0x94, 0x3d, 0x2b, 0x9e, 0x30, 0xcb, 0xae, 0xff,
+	0x81, 0x60, 0x67, 0xa9, 0x7f, 0xac, 0x2d, 0x8e, 0x93, 0x5d, 0x56, 0x9b, 0xbb, 0xda, 0x5c, 0x43,
+	0x2d, 0x1b, 0x4b, 0x6b, 0xb9, 0x31, 0xc9, 0x40, 0x98, 0xc0, 0x76, 0xe8, 0x5b, 0x43, 0xda, 0xa6,
+	0x96, 0x4d, 0xfd, 0x40, 0xe2, 0x15, 0x41, 0xad, 0x36, 0xb5, 0xbb, 0x76, 0xa4, 0x99, 0x39, 0x82,
+	0xee, 0x86, 0x7e, 0x4c, 0x0a, 0xbf, 0x51, 0xfb, 0x02, 0x1e, 0xbe, 0x05, 0xc1, 0x22, 0x08, 0x17,
+	0x34, 0x4e, 0x3d, 0x31, 0x0b, 0xf1, 0x2e, 0x6c, 0xfe, 0x60, 0x4d, 0x22, 0x9a, 0xc8, 0x5a, 0x21,
+	0xf3, 0xe4, 0x33, 0xfe, 0x19, 0xaa, 0xff, 0x22, 0xc0, 0xa3, 0x97, 0xe9, 0x6e, 0xf3, 0xee, 0x7a,
+	0x06, 0x1b, 0x61, 0xec, 0xd1, 0xe4, 0x47, 0x1e, 0x34, 0x3f, 0x2a, 0x34, 0xb9, 0x02, 0x6f, 0xc6,
+	0x1e, 0x25, 0x09, 0x63, 0x95, 0x86, 0xfc, 0x6a, 0x0d, 0x73, 0x66, 0x14, 0x8a, 0x66, 0x5c, 0xa7,
+	0xee, 0x92, 0x49, 0x37, 0xdf, 0xcd, 0xa4, 0x5b, 0xff, 0xcf, 0xa4, 0xcb, 0x16, 0x2b, 0xad, 0xb0,
+	0xd8, 0x11, 0xec, 0x59, 0xb6, 0xed, 0x84, 0x0e, 0x73, 0xad, 0xc9, 0xd9, 0xcc, 0x56, 0xc7, 0xce,
+	0x25, 0x75, 0x03, 0x87, 0xb9, 0x81, 0x54, 0x56, 0x04, 0xb5, 0x42, 0xd6, 0x03, 0xf2, 0xc6, 0xbb,
+	0x80, 0x47, 0xb9, 0x6b, 0x9c, 0x6d, 0x1e, 0x7f, 0x0e, 0xa5, 0xd9, 0xf7, 0xa2, 0x20, 0x15, 0xe8,
+	0x49, 0x61, 0x88, 0x15, 0x8c, 0x6e, 0x82, 0x26, 0x29, 0x6b, 0x66, 0x08, 0xea, 0xfb, 0xcc, 0xcf,
+	0x0c, 0x91, 0x24, 0xf5, 0x23, 0xd8, 0x37, 0x58, 0xe8, 0x9c, 0xc7, 0xe9, 0x73, 0xd1, 0x1d, 0x47,
+	0xa1, 0xcd, 0x7e, 0x74, 0xb3, 0xc9, 0xef, 0x7e, 0x72, 0x0e, 0xe0, 0xc3, 0x35, 0xec, 0xc0, 0x63,
+	0x6e, 0x40, 0x0f, 0x8f, 0xe0, 0x83, 0x35, 0xd6, 0xc1, 0x5b, 0xb0, 0x71, 0x62, 0x9c, 0x98, 0x22,
+	0x87, 0xab, 0x50, 0xd6, 0x8d, 0xb3, 0x9e, 0xde, 0xd3, 0x45, 0x84, 0x01, 0x4a, 0x2f, 0x5a, 0xc6,
+	0x0b, 0xfd, 0x95, 0xc8, 0x1f, 0x0e, 0x61, 0x6f, 0xed, 0x5c, 0xb8, 0x04, 0x7c, 0xe7, 0x2b, 0x91,
+	0xc3, 0x0a, 0xec, 0x9b, 0x9d, 0x4e, 0xff, 0xeb, 0x96, 0xf1, 0x5d, 0x9f, 0xe8, 0x67, 0x3d, 0xbd,
+	0x6b, 0x76, 0xfb, 0xa7, 0x3a, 0xe9, 0x9b, 0xba, 0xd1, 0x32, 0x4c, 0x11, 0xe1, 0x0a, 0x6c, 0xea,
+	0x84, 0x74, 0x88, 0xc8, 0xe3, 0x87, 0xf0, 0x5e, 0xb7, 0xdd, 0x33, 0xcd, 0x13, 0xe3, 0xcb, 0xfe,
+	0x71, 0xe7, 0x1b, 0x43, 0x14, 0x9a, 0x7f, 0xa2, 0xdc, 0xbe, 0x5f, 0x32, 0x3f, 0x7b, 0x37, 0x7b,
+	0x50, 0x4d, 0xc3, 0x57, 0x8c, 0x79, 0xf8, 0xa0, 0xb0, 0xee, 0xb7, 0x1f, 0xe7, 0xda, 0xc1, 0x3a,
+	0x3d, 0x52, 0x6c, 0x9d, 0x53, 0xd1, 0x53, 0x84, 0x5d, 0x78, 0xbc, 0x72, 0x65, 0xf8, 0xe3, 0x02,
+	0xff, 0x2e, 0x51, 0x6a, 0x87, 0xff, 0x05, 0x3a, 0x57, 0xa0, 0xe9, 0xc1, 0x6e, 0x7e, 0xba, 0x85,
+	0x9d, 0xbe, 0x85, 0xed, 0x2c, 0x4e, 0xe6, 0x53, 0xee, 0xbb, 0xef, 0x35, 0xe5, 0x3e, 0xc3, 0xcd,
+	0x27, 0x7c, 0xde, 0xba, 0xbe, 0x91, 0xb9, 0xd7, 0x37, 0x32, 0xf7, 0xe6, 0x46, 0x46, 0x3f, 0x4d,
+	0x65, 0xf4, 0xeb, 0x54, 0x46, 0xbf, 0x4d, 0x65, 0x74, 0x3d, 0x95, 0xd1, 0x5f, 0x53, 0x19, 0xfd,
+	0x3d, 0x95, 0xb9, 0x37, 0x53, 0x19, 0xfd, 0x7c, 0x2b, 0x73, 0xd7, 0xb7, 0x32, 0xf7, 0xfa, 0x56,
+	0xe6, 0xbe, 0xcf, 0xff, 0xc3, 0x0e, 0x4a, 0xc9, 0x05, 0xfc, 0xe4, 0x9f, 0x00, 0x00, 0x00, 0xff,
+	0xff, 0x76, 0xeb, 0xed, 0x7d, 0x88, 0x07, 0x00, 0x00,
 }
 
 func (x FrontendToSchedulerType) String() string {
@@ -698,14 +758,14 @@ func (this *SchedulerToQuerier_HttpRequest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *SchedulerToQuerier_Request) Equal(that interface{}) bool {
+func (this *SchedulerToQuerier_ProtobufRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*SchedulerToQuerier_Request)
+	that1, ok := that.(*SchedulerToQuerier_ProtobufRequest)
 	if !ok {
-		that2, ok := that.(SchedulerToQuerier_Request)
+		that2, ok := that.(SchedulerToQuerier_ProtobufRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -717,8 +777,40 @@ func (this *SchedulerToQuerier_Request) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if !this.Request.Equal(that1.Request) {
+	if !this.ProtobufRequest.Equal(that1.ProtobufRequest) {
 		return false
+	}
+	return true
+}
+func (this *ProtobufRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ProtobufRequest)
+	if !ok {
+		that2, ok := that.(ProtobufRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Payload.Equal(that1.Payload) {
+		return false
+	}
+	if len(this.TraceHeaders) != len(that1.TraceHeaders) {
+		return false
+	}
+	for i := range this.TraceHeaders {
+		if this.TraceHeaders[i] != that1.TraceHeaders[i] {
+			return false
+		}
 	}
 	return true
 }
@@ -799,14 +891,14 @@ func (this *FrontendToScheduler_HttpRequest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *FrontendToScheduler_Request) Equal(that interface{}) bool {
+func (this *FrontendToScheduler_ProtobufRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*FrontendToScheduler_Request)
+	that1, ok := that.(*FrontendToScheduler_ProtobufRequest)
 	if !ok {
-		that2, ok := that.(FrontendToScheduler_Request)
+		that2, ok := that.(FrontendToScheduler_ProtobufRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -818,7 +910,7 @@ func (this *FrontendToScheduler_Request) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if !this.Request.Equal(that1.Request) {
+	if !this.ProtobufRequest.Equal(that1.ProtobufRequest) {
 		return false
 	}
 	return true
@@ -930,13 +1022,38 @@ func (this *SchedulerToQuerier_HttpRequest) GoString() string {
 		`HttpRequest:` + fmt.Sprintf("%#v", this.HttpRequest) + `}`}, ", ")
 	return s
 }
-func (this *SchedulerToQuerier_Request) GoString() string {
+func (this *SchedulerToQuerier_ProtobufRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&schedulerpb.SchedulerToQuerier_Request{` +
-		`Request:` + fmt.Sprintf("%#v", this.Request) + `}`}, ", ")
+	s := strings.Join([]string{`&schedulerpb.SchedulerToQuerier_ProtobufRequest{` +
+		`ProtobufRequest:` + fmt.Sprintf("%#v", this.ProtobufRequest) + `}`}, ", ")
 	return s
+}
+func (this *ProtobufRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&schedulerpb.ProtobufRequest{")
+	if this.Payload != nil {
+		s = append(s, "Payload: "+fmt.Sprintf("%#v", this.Payload)+",\n")
+	}
+	keysForTraceHeaders := make([]string, 0, len(this.TraceHeaders))
+	for k, _ := range this.TraceHeaders {
+		keysForTraceHeaders = append(keysForTraceHeaders, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForTraceHeaders)
+	mapStringForTraceHeaders := "map[string]string{"
+	for _, k := range keysForTraceHeaders {
+		mapStringForTraceHeaders += fmt.Sprintf("%#v: %#v,", k, this.TraceHeaders[k])
+	}
+	mapStringForTraceHeaders += "}"
+	if this.TraceHeaders != nil {
+		s = append(s, "TraceHeaders: "+mapStringForTraceHeaders+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 func (this *FrontendToScheduler) GoString() string {
 	if this == nil {
@@ -964,12 +1081,12 @@ func (this *FrontendToScheduler_HttpRequest) GoString() string {
 		`HttpRequest:` + fmt.Sprintf("%#v", this.HttpRequest) + `}`}, ", ")
 	return s
 }
-func (this *FrontendToScheduler_Request) GoString() string {
+func (this *FrontendToScheduler_ProtobufRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&schedulerpb.FrontendToScheduler_Request{` +
-		`Request:` + fmt.Sprintf("%#v", this.Request) + `}`}, ", ")
+	s := strings.Join([]string{`&schedulerpb.FrontendToScheduler_ProtobufRequest{` +
+		`ProtobufRequest:` + fmt.Sprintf("%#v", this.ProtobufRequest) + `}`}, ", ")
 	return s
 }
 func (this *SchedulerToFrontend) GoString() string {
@@ -1407,16 +1524,16 @@ func (m *SchedulerToQuerier_HttpRequest) MarshalToSizedBuffer(dAtA []byte) (int,
 	}
 	return len(dAtA) - i, nil
 }
-func (m *SchedulerToQuerier_Request) MarshalTo(dAtA []byte) (int, error) {
+func (m *SchedulerToQuerier_ProtobufRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SchedulerToQuerier_Request) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SchedulerToQuerier_ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
-	if m.Request != nil {
+	if m.ProtobufRequest != nil {
 		{
-			size, err := m.Request.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.ProtobufRequest.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -1428,6 +1545,60 @@ func (m *SchedulerToQuerier_Request) MarshalToSizedBuffer(dAtA []byte) (int, err
 	}
 	return len(dAtA) - i, nil
 }
+func (m *ProtobufRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ProtobufRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.TraceHeaders) > 0 {
+		for k := range m.TraceHeaders {
+			v := m.TraceHeaders[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintScheduler(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintScheduler(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintScheduler(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.Payload != nil {
+		{
+			size, err := m.Payload.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintScheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *FrontendToScheduler) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1524,16 +1695,16 @@ func (m *FrontendToScheduler_HttpRequest) MarshalToSizedBuffer(dAtA []byte) (int
 	}
 	return len(dAtA) - i, nil
 }
-func (m *FrontendToScheduler_Request) MarshalTo(dAtA []byte) (int, error) {
+func (m *FrontendToScheduler_ProtobufRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *FrontendToScheduler_Request) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *FrontendToScheduler_ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
-	if m.Request != nil {
+	if m.ProtobufRequest != nil {
 		{
-			size, err := m.Request.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.ProtobufRequest.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -1698,18 +1869,39 @@ func (m *SchedulerToQuerier_HttpRequest) Size() (n int) {
 	}
 	return n
 }
-func (m *SchedulerToQuerier_Request) Size() (n int) {
+func (m *SchedulerToQuerier_ProtobufRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.Request != nil {
-		l = m.Request.Size()
+	if m.ProtobufRequest != nil {
+		l = m.ProtobufRequest.Size()
 		n += 1 + l + sovScheduler(uint64(l))
 	}
 	return n
 }
+func (m *ProtobufRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Payload != nil {
+		l = m.Payload.Size()
+		n += 1 + l + sovScheduler(uint64(l))
+	}
+	if len(m.TraceHeaders) > 0 {
+		for k, v := range m.TraceHeaders {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovScheduler(uint64(len(k))) + 1 + len(v) + sovScheduler(uint64(len(v)))
+			n += mapEntrySize + 1 + sovScheduler(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
 func (m *FrontendToScheduler) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1757,14 +1949,14 @@ func (m *FrontendToScheduler_HttpRequest) Size() (n int) {
 	}
 	return n
 }
-func (m *FrontendToScheduler_Request) Size() (n int) {
+func (m *FrontendToScheduler_ProtobufRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.Request != nil {
-		l = m.Request.Size()
+	if m.ProtobufRequest != nil {
+		l = m.ProtobufRequest.Size()
 		n += 1 + l + sovScheduler(uint64(l))
 	}
 	return n
@@ -1848,12 +2040,33 @@ func (this *SchedulerToQuerier_HttpRequest) String() string {
 	}, "")
 	return s
 }
-func (this *SchedulerToQuerier_Request) String() string {
+func (this *SchedulerToQuerier_ProtobufRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&SchedulerToQuerier_Request{`,
-		`Request:` + strings.Replace(fmt.Sprintf("%v", this.Request), "Any", "types.Any", 1) + `,`,
+	s := strings.Join([]string{`&SchedulerToQuerier_ProtobufRequest{`,
+		`ProtobufRequest:` + strings.Replace(fmt.Sprintf("%v", this.ProtobufRequest), "ProtobufRequest", "ProtobufRequest", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ProtobufRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForTraceHeaders := make([]string, 0, len(this.TraceHeaders))
+	for k, _ := range this.TraceHeaders {
+		keysForTraceHeaders = append(keysForTraceHeaders, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForTraceHeaders)
+	mapStringForTraceHeaders := "map[string]string{"
+	for _, k := range keysForTraceHeaders {
+		mapStringForTraceHeaders += fmt.Sprintf("%v: %v,", k, this.TraceHeaders[k])
+	}
+	mapStringForTraceHeaders += "}"
+	s := strings.Join([]string{`&ProtobufRequest{`,
+		`Payload:` + strings.Replace(fmt.Sprintf("%v", this.Payload), "Any", "types.Any", 1) + `,`,
+		`TraceHeaders:` + mapStringForTraceHeaders + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1884,12 +2097,12 @@ func (this *FrontendToScheduler_HttpRequest) String() string {
 	}, "")
 	return s
 }
-func (this *FrontendToScheduler_Request) String() string {
+func (this *FrontendToScheduler_ProtobufRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&FrontendToScheduler_Request{`,
-		`Request:` + strings.Replace(fmt.Sprintf("%v", this.Request), "Any", "types.Any", 1) + `,`,
+	s := strings.Join([]string{`&FrontendToScheduler_ProtobufRequest{`,
+		`ProtobufRequest:` + strings.Replace(fmt.Sprintf("%v", this.ProtobufRequest), "ProtobufRequest", "ProtobufRequest", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2202,7 +2415,7 @@ func (m *SchedulerToQuerier) Unmarshal(dAtA []byte) error {
 			}
 		case 7:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Request", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field ProtobufRequest", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -2229,11 +2442,224 @@ func (m *SchedulerToQuerier) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v := &types.Any{}
+			v := &ProtobufRequest{}
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Payload = &SchedulerToQuerier_Request{v}
+			m.Payload = &SchedulerToQuerier_ProtobufRequest{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ProtobufRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ProtobufRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ProtobufRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Payload", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Payload == nil {
+				m.Payload = &types.Any{}
+			}
+			if err := m.Payload.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceHeaders", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.TraceHeaders == nil {
+				m.TraceHeaders = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowScheduler
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowScheduler
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthScheduler
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthScheduler
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowScheduler
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthScheduler
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthScheduler
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipScheduler(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthScheduler
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.TraceHeaders[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2476,7 +2902,7 @@ func (m *FrontendToScheduler) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 8:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Request", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field ProtobufRequest", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -2503,11 +2929,11 @@ func (m *FrontendToScheduler) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v := &types.Any{}
+			v := &ProtobufRequest{}
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Payload = &FrontendToScheduler_Request{v}
+			m.Payload = &FrontendToScheduler_ProtobufRequest{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
