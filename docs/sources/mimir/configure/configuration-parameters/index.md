@@ -4245,8 +4245,11 @@ ruler_alertmanager_client_config:
 [otel_native_delta_ingestion: <boolean> | default = false]
 
 # (experimental) Translation strategy to apply in OTLP endpoint for metric and
-# label names. Supported values: "", UnderscoreEscapingWithSuffixes,
-# UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
+# label names. If unspecified (the default), the strategy is derived from
+# -validation.name-validation-scheme and
+# -distributor.otel-metric-suffixes-enabled. Supported values: "",
+# UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes,
+# NoUTF8EscapingWithSuffixes, NoTranslation.
 # CLI flag: -distributor.otel-translation-strategy
 [otel_translation_strategy: <string> | default = ""]
 

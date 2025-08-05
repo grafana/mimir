@@ -6018,7 +6018,7 @@
           "kind": "field",
           "name": "otel_translation_strategy",
           "required": false,
-          "desc": "Translation strategy to apply in OTLP endpoint for metric and label names. Supported values: \"\", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.",
+          "desc": "Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: \"\", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "distributor.otel-translation-strategy",
