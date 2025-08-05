@@ -353,7 +353,7 @@ func TestDistributor_PushBufferReuse(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for range 100 {
+	for range 2000 {
 		wg.Add(2)
 
 		go func() {
