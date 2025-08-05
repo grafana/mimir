@@ -160,8 +160,8 @@ func (b *BlockBuilder) stopping(_ error) error {
 		ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
 		defer cancel()
 
-		lastUpd := b.lastCompactAndUploadTime.Load()
-		deadline := time.Unix(0, lastUpd).Add(gracePeriod)
+		lastJob := b.lastCompactAndUploadTime.Load()
+		deadline := time.Unix(0, lastJob).Add(gracePeriod)
 
 		if wait := time.Until(deadline); wait > 0 {
 			timer := time.NewTimer(wait)
@@ -348,7 +348,7 @@ consumerLoop:
 
 	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
-	b.lastCompactAndUploadTime.Store(time.Now().Unix())
+	b.lastCompactAndUploadTime.Store(time.Now().UnixNano())
 	if err != nil {
 		return 0, err
 	}
