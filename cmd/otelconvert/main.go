@@ -20,6 +20,7 @@ import (
 const (
 	defaultMDChunkSizePostings = 10000
 	defaultHistScale           = 5
+	defaultHistNumBins         = 20
 )
 
 var (
@@ -29,14 +30,16 @@ var (
 )
 
 type config struct {
-	bucket    bucket.Config
-	action    string
-	userID    string
-	block     string
-	dest      string
-	count     bool
-	chunkSize int
-	histScale int
+	bucket      bucket.Config
+	action      string
+	userID      string
+	block       string
+	dest        string
+	count       bool
+	chunkSize   int
+	histScale   int
+	histMax     int
+	histNumBins int
 }
 
 func main() {
@@ -52,6 +55,8 @@ func main() {
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
 	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizePostings, "Output chunk size in postings")
 	flag.IntVar(&cfg.histScale, "hist-scale", defaultHistScale, "Scaling factor used to output analysis histograms")
+	flag.IntVar(&cfg.histMax, "hist-max", -1, "Filter cardinalities higher than this value out of the histogram (-1 to include all cardinalities)")
+	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -99,7 +104,7 @@ func main() {
 			log.Fatalln("config failed validation:", err)
 		}
 
-		if err := analyzeBlock(ctx, cfg.block, cfg.dest, cfg.histScale, logger); err != nil {
+		if err := analyzeBlock(ctx, cfg.block, cfg.dest, cfg.histScale, cfg.histMax, cfg.histNumBins, logger); err != nil {
 			log.Fatalln("failed to analyze block:", err)
 		}
 	default:

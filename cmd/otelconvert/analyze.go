@@ -27,7 +27,7 @@ func validateAnalyzeConfig(cfg config) error {
 	return nil
 }
 
-func analyzeBlock(ctx context.Context, blockDir, dest string, histScale int, logger gokitlog.Logger) error {
+func analyzeBlock(ctx context.Context, blockDir, dest string, histScale, histMax, histNumBins int, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
@@ -87,14 +87,17 @@ func analyzeBlock(ctx context.Context, blockDir, dest string, histScale int, log
 			cardinality: c,
 		})
 
+		if c > histMax {
+			continue
+		}
 		cardVals = append(cardVals, float64(c))
 	}
 
-	log.Printf("distribution of cardinalities over %d labels:\n", len(lblCardinalities))
-	h := histogram.Hist(20, cardVals)
+	log.Printf("distribution of cardinalities over %d labels:\n", len(cardVals))
+	h := histogram.Hist(histNumBins, cardVals)
 	_ = histogram.Fprint(os.Stdout, h, histogram.Linear(histScale))
 
-	log.Printf("writing cardinalities to %s...\n", dest)
+	log.Printf("writing cardinalities for %d labels to %s...\n", len(lblCardinalities), dest)
 
 	slices.SortFunc(lblCardinalities, func(a, b labelCardinality) int {
 		return a.cardinality - b.cardinality
