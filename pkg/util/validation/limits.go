@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
@@ -77,7 +78,6 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
-	errInvalidNameValidationScheme                 = errors.New("name validation scheme has to be utf8 when unescaped OTel metric/label names are enabled")
 )
 
 const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
@@ -287,14 +287,14 @@ type Limits struct {
 	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
-	OTelCreatedTimestampZeroIngestionEnabled bool                   `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
-	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
-	OTelKeepIdentifyingResourceAttributes    bool                   `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
-	OTelConvertHistogramsToNHCB              bool                   `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
-	OTelPromoteScopeMetadata                 bool                   `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
-	OTelNativeDeltaIngestion                 bool                   `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
-	OTelEnableUnescapedNames                 bool                   `yaml:"otel_enable_unescaped_names" json:"otel_enable_unescaped_names" category:"experimental"`
+	OTelMetricSuffixesEnabled                bool                         `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelCreatedTimestampZeroIngestionEnabled bool                         `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
+	PromoteOTelResourceAttributes            flagext.StringSliceCSV       `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
+	OTelKeepIdentifyingResourceAttributes    bool                         `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
+	OTelConvertHistogramsToNHCB              bool                         `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
+	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
+	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -346,7 +346,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
-	f.BoolVar(&l.OTelEnableUnescapedNames, "distributor.otel-enable-unescaped-names", false, "Whether to disable escaping of metric and label names to the classical Prometheus format when ingesting OTLP metrics. If -distributor.otel-metric-suffixes-enabled is true, type and unit suffixes are still appended as required. When this is enabled, -validation.name-validation-scheme has to be configured as 'utf8'.")
+	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
@@ -538,7 +538,7 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	if err = l.validate(); err != nil {
+	if err = l.Validate(); err != nil {
 		return err
 	}
 
@@ -563,7 +563,8 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 	return limitsToStructWithExtensionFields(l), nil
 }
 
-func (l *Limits) validate() error {
+// Validate the Limits.
+func (l *Limits) Validate() error {
 	switch model.ValidationScheme(l.NameValidationScheme) {
 	case model.UTF8Validation, model.LegacyValidation:
 	case model.UnsetValidation:
@@ -573,8 +574,65 @@ func (l *Limits) validate() error {
 	}
 
 	validationScheme := model.ValidationScheme(l.NameValidationScheme)
-	if l.OTelEnableUnescapedNames && validationScheme != model.UTF8Validation {
-		return errInvalidNameValidationScheme
+	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
+	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.UnderscoreEscapingWithSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoUTF8EscapingWithSuffixes:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoTranslation:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case "":
+		// Generate translation strategy based on other settings.
+		switch validationScheme {
+		case model.LegacyValidation:
+			if l.OTelMetricSuffixesEnabled {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+			} else {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+			}
+		case model.UTF8Validation:
+			if l.OTelMetricSuffixesEnabled {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+			} else {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
 	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
@@ -1384,8 +1442,8 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
 }
 
-func (o *Overrides) OTelEnableUnescapedNames(tenantID string) bool {
-	return o.getOverridesForUser(tenantID).OTelEnableUnescapedNames
+func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
+	return otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.

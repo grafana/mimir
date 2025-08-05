@@ -4244,13 +4244,14 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-native-delta-ingestion
 [otel_native_delta_ingestion: <boolean> | default = false]
 
-# (experimental) Whether to disable escaping of metric and label names to the
-# classical Prometheus format when ingesting OTLP metrics. If
-# -distributor.otel-metric-suffixes-enabled is true, type and unit suffixes are
-# still appended as required. When this is enabled,
-# -validation.name-validation-scheme has to be configured as 'utf8'.
-# CLI flag: -distributor.otel-enable-unescaped-names
-[otel_enable_unescaped_names: <boolean> | default = false]
+# (experimental) Translation strategy to apply in OTLP endpoint for metric and
+# label names. If unspecified (the default), the strategy is derived from
+# -validation.name-validation-scheme and
+# -distributor.otel-metric-suffixes-enabled. Supported values: "",
+# UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes,
+# NoUTF8EscapingWithSuffixes, NoTranslation.
+# CLI flag: -distributor.otel-translation-strategy
+[otel_translation_strategy: <string> | default = ""]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
