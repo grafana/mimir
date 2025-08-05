@@ -778,8 +778,8 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
-	// Unpromoted Grafana configurations are always ignored.
-	if !cfgs.Grafana.Promoted {
+	// Unpromoted/empty Grafana configurations are always ignored.
+	if !cfgs.Grafana.Promoted || cfgs.Grafana.RawConfig == "" {
 		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
 		if am.isReceivingRequests(cfgs.Mimir.User) {
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
