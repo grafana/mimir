@@ -165,22 +165,22 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
 	tests := map[string]struct {
 		shutdownGracePeriod time.Duration
-		lastUpdateAge       time.Duration
+		timeSinceLastJob    time.Duration
 	}{
-		"recent_update_should_delay_shutdown": {
+		"recent_job_should_delay_shutdown": {
 			shutdownGracePeriod: 2 * time.Second,
-			lastUpdateAge:       1 * time.Second,
+			timeSinceLastJob:    1 * time.Second,
 		},
-		"old_update_does_not_delay_shutdown": {
+		"old_job_does_not_delay_shutdown": {
 			shutdownGracePeriod: 2 * time.Second,
-			lastUpdateAge:       3 * time.Second,
+			timeSinceLastJob:    3 * time.Second,
 		},
-		"very_old_update_does_not_delay_shutdown": {
+		"very_old_job_does_not_delay_shutdown": {
 			shutdownGracePeriod: 2 * time.Second,
-			lastUpdateAge:       1 * time.Hour,
+			timeSinceLastJob:    1 * time.Hour,
 		},
-		"no_delay_configured": {
-			lastUpdateAge: 1 * time.Second,
+		"no_delay_configured_does_not_delay_shutdown": {
+			timeSinceLastJob: 1 * time.Second,
 		},
 	}
 
@@ -194,8 +194,8 @@ func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
 
-			lastUpdate := time.Now().Add(-tt.lastUpdateAge).UnixNano()
-			bb.lastUpdate.Store(lastUpdate)
+			lastCompactAndUploadTime := time.Now().Add(-tt.timeSinceLastJob).UnixNano()
+			bb.lastCompactAndUploadTime.Store(lastCompactAndUploadTime)
 
 			var stopped bool
 			go func() {
@@ -204,7 +204,7 @@ func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
 			}()
 
 			tick := 50 * time.Millisecond
-			if minWait := tt.shutdownGracePeriod - tt.lastUpdateAge; minWait > 0 {
+			if minWait := tt.shutdownGracePeriod - tt.timeSinceLastJob; minWait > 0 {
 				require.Never(t, func() bool {
 					return stopped
 				}, minWait, tick, "expected service running")

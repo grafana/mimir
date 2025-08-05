@@ -39,15 +39,15 @@ var tracer = otel.Tracer("pkg/blockbuilder")
 type BlockBuilder struct {
 	services.Service
 
-	cfg             Config
-	logger          log.Logger
-	register        prometheus.Registerer
-	limits          *validation.Overrides
-	kafkaClient     *kgo.Client
-	bucketClient    objstore.Bucket
-	schedulerClient schedulerpb.SchedulerClient
-	schedulerConn   *grpc.ClientConn
-	lastUpdate      atomic.Int64
+	cfg                      Config
+	logger                   log.Logger
+	register                 prometheus.Registerer
+	limits                   *validation.Overrides
+	kafkaClient              *kgo.Client
+	bucketClient             objstore.Bucket
+	schedulerClient          schedulerpb.SchedulerClient
+	schedulerConn            *grpc.ClientConn
+	lastCompactAndUploadTime atomic.Int64
 
 	// the current job iteration number. For tests.
 	jobIteration atomic.Int64
@@ -160,7 +160,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 		ctx, cancel := context.WithTimeout(context.Background(), delay)
 		defer cancel()
 
-		lastUpd := b.lastUpdate.Load()
+		lastUpd := b.lastCompactAndUploadTime.Load()
 		deadline := time.Unix(0, lastUpd).Add(delay)
 
 		if wait := time.Until(deadline); wait > 0 {
@@ -348,7 +348,7 @@ consumerLoop:
 
 	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
-	b.lastUpdate.Store(time.Now().Unix())
+	b.lastCompactAndUploadTime.Store(time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
