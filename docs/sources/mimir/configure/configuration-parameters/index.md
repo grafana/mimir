@@ -1766,6 +1766,26 @@ The `querier` block configures the querier.
 # CLI flag: -querier.max-concurrent-remote-read-queries
 [max_concurrent_remote_read_queries: <int> | default = 2]
 
+# (experimental) If true, querier will try to query the parquet files if
+# available.
+# CLI flag: -querier.enable-parquet-queryable
+[enable_parquet_queryable: <boolean> | default = false]
+
+# (experimental) Maximum size of the Parquet queryable shard cache. 0 to
+# disable.
+# CLI flag: -querier.parquet-queryable-shard-cache-size
+[parquet_queryable_shard_cache_size: <int> | default = 512]
+
+# (experimental) Parquet queryable's default block store to query. Valid options
+# are tsdb and parquet.
+# CLI flag: -querier.parquet-queryable-default-block-store
+[parquet_queryable_default_block_store: <string> | default = "parquet"]
+
+# (experimental) Disable Parquet queryable to fallback queries to Store Gateway
+# if the block is not available as Parquet files but available in TSDB.
+# CLI flag: -querier.parquet-queryable-fallback-disabled
+[parquet_queryable_fallback_disabled: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
@@ -3819,6 +3839,21 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
+# Maximum number of rows that can be fetched from parquet files in a single
+# query. 0 to disable.
+# CLI flag: -querier.parquet-max-fetched-row-count
+[parquet_max_fetched_row_count: <int> | default = 10000000]
+
+# Maximum size of chunks in bytes that can be fetched from parquet files in a
+# single query. 0 to disable.
+# CLI flag: -querier.parquet-max-fetched-chunk-bytes
+[parquet_max_fetched_chunk_bytes: <int> | default = 1048576000]
+
+# Maximum size of data in bytes that can be fetched from parquet files in a
+# single query. This includes both chunks and labels. 0 to disable.
+# CLI flag: -querier.parquet-max-fetched-data-bytes
+[parquet_max_fetched_data_bytes: <int> | default = 5242880000]
+
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received instant, range or remote read query.
 # CLI flag: -query-frontend.max-total-query-length
@@ -5361,6 +5396,11 @@ sharding_ring:
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
 [upload_sparse_index_headers: <boolean> | default = false]
+
+# (experimental) If enabled, the compactor will track parquet conversion markers
+# in the bucket index.
+# CLI flag: -compactor.parquet-enabled
+[parquet_enabled: <boolean> | default = false]
 ```
 
 ### store_gateway

@@ -66,6 +66,9 @@ const (
 	resultsCacheTTLForOutOfOrderWindowFlag    = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
 	alignQueriesWithStepFlag                  = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
+	ParquetMaxFetchedRowCountFlag             = "querier.parquet-max-fetched-row-count"
+	ParquetMaxFetchedChunkBytesFlag           = "querier.parquet-max-fetched-chunk-bytes"
+	ParquetMaxFetchedDataBytesFlag            = "querier.parquet-max-fetched-data-bytes"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
 
@@ -194,6 +197,11 @@ type Limits struct {
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+
+	// Parquet-specific querier limits.
+	ParquetMaxFetchedRowCount   int `yaml:"parquet_max_fetched_row_count" json:"parquet_max_fetched_row_count"`
+	ParquetMaxFetchedChunkBytes int `yaml:"parquet_max_fetched_chunk_bytes" json:"parquet_max_fetched_chunk_bytes"`
+	ParquetMaxFetchedDataBytes  int `yaml:"parquet_max_fetched_data_bytes" json:"parquet_max_fetched_data_bytes"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -386,6 +394,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
+
+	// Parquet-specific querier limits
+	f.IntVar(&l.ParquetMaxFetchedRowCount, ParquetMaxFetchedRowCountFlag, 10_000_000, "Maximum number of rows that can be fetched from parquet files in a single query. 0 to disable.")
+	f.IntVar(&l.ParquetMaxFetchedChunkBytes, ParquetMaxFetchedChunkBytesFlag, 1_000*1024*1024, "Maximum size of chunks in bytes that can be fetched from parquet files in a single query. 0 to disable.")
+	f.IntVar(&l.ParquetMaxFetchedDataBytes, ParquetMaxFetchedDataBytesFlag, 5_000*1024*1024, "Maximum size of data in bytes that can be fetched from parquet files in a single query. This includes both chunks and labels. 0 to disable.")
 
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -810,6 +823,21 @@ func (o *Overrides) MaxFetchedChunkBytesPerQuery(userID string) int {
 // This is only effective when using Mimir's query engine (not Prometheus' engine).
 func (o *Overrides) MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64 {
 	return o.getOverridesForUser(userID).MaxEstimatedMemoryConsumptionPerQuery
+}
+
+// ParquetMaxFetchedRowCount returns the maximum number of rows that can be fetched from parquet files per query.
+func (o *Overrides) ParquetMaxFetchedRowCount(userID string) int {
+	return o.getOverridesForUser(userID).ParquetMaxFetchedRowCount
+}
+
+// ParquetMaxFetchedChunkBytes returns the maximum size of chunks in bytes that can be fetched from parquet files per query.
+func (o *Overrides) ParquetMaxFetchedChunkBytes(userID string) int {
+	return o.getOverridesForUser(userID).ParquetMaxFetchedChunkBytes
+}
+
+// ParquetMaxFetchedDataBytes returns the maximum size of data in bytes that can be fetched from parquet files per query.
+func (o *Overrides) ParquetMaxFetchedDataBytes(userID string) int {
+	return o.getOverridesForUser(userID).ParquetMaxFetchedDataBytes
 }
 
 // MaxQueryLookback returns the max lookback period of queries.

@@ -51,6 +51,7 @@ type BlocksCleanerConfig struct {
 	UpdateBlocksConcurrency       int
 	NoBlocksFileCleanupEnabled    bool
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
+	ParquetEnabled                bool                    // Whether to track parquet conversion markers in bucket index.
 }
 
 type BlocksCleaner struct {
@@ -460,7 +461,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, c.cfg.ParquetEnabled, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err

@@ -35,7 +35,7 @@ type Constraint interface {
 	// filter returns a set of non-overlapping increasing row indexes that may satisfy the constraint.
 	filter(ctx context.Context, rgIdx int, primary bool, rr []RowRange) ([]RowRange, error)
 	// init initializes the constraint with respect to the file schema and projections.
-	init(f storage.ParquetFileView) error
+	init(f *storage.ParquetFile) error
 	// path is the path for the column that is constrained
 	path() string
 }
@@ -67,7 +67,7 @@ func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	return r, nil
 }
 
-func Initialize(f storage.ParquetFileView, cs ...Constraint) error {
+func Initialize(f *storage.ParquetFile, cs ...Constraint) error {
 	for i := range cs {
 		if err := cs[i].init(f); err != nil {
 			return fmt.Errorf("unable to initialize constraint %d: %w", i, err)
@@ -189,7 +189,7 @@ type equalConstraint struct {
 	pth string
 
 	val parquet.Value
-	f   storage.ParquetFileView
+	f   *storage.ParquetFile
 
 	comp func(l, r parquet.Value) int
 }
@@ -293,7 +293,7 @@ func (ec *equalConstraint) filter(ctx context.Context, rgIdx int, primary bool, 
 
 	// If the gap between the first page and the dic page is less than PagePartitioningMaxGapSize,
 	// we include the dic to be read in the single read
-	if int(minOffset-(dictOff+dictSz)) < ec.f.PagePartitioningMaxGapSize() {
+	if int(minOffset-(dictOff+dictSz)) < ec.f.Cfg.PagePartitioningMaxGapSize {
 		minOffset = dictOff
 	}
 
@@ -359,7 +359,7 @@ func (ec *equalConstraint) filter(ctx context.Context, rgIdx int, primary bool, 
 	return intersectRowRanges(simplify(res), rr), nil
 }
 
-func (ec *equalConstraint) init(f storage.ParquetFileView) error {
+func (ec *equalConstraint) init(f *storage.ParquetFile) error {
 	c, ok := f.Schema().Lookup(ec.path())
 	ec.f = f
 	if !ok {
@@ -385,7 +385,7 @@ func (ec *equalConstraint) matches(v parquet.Value) bool {
 }
 
 func (ec *equalConstraint) skipByBloomfilter(cc parquet.ColumnChunk) (bool, error) {
-	if ec.f.SkipBloomFilters() {
+	if ec.f.Cfg.SkipBloomFilters {
 		return false, nil
 	}
 
@@ -407,7 +407,7 @@ func Regex(path string, r *labels.FastRegexMatcher) Constraint {
 type regexConstraint struct {
 	pth   string
 	cache map[parquet.Value]bool
-	f     storage.ParquetFileView
+	f     *storage.ParquetFile
 	r     *labels.FastRegexMatcher
 }
 
@@ -515,7 +515,7 @@ func (rc *regexConstraint) filter(ctx context.Context, rgIdx int, primary bool, 
 	return intersectRowRanges(simplify(res), rr), nil
 }
 
-func (rc *regexConstraint) init(f storage.ParquetFileView) error {
+func (rc *regexConstraint) init(f *storage.ParquetFile) error {
 	c, ok := f.Schema().Lookup(rc.path())
 	rc.f = f
 	if !ok {
@@ -562,7 +562,7 @@ func (nc *notConstraint) filter(ctx context.Context, rgIdx int, primary bool, rr
 	return complementRowRanges(base, rr), nil
 }
 
-func (nc *notConstraint) init(f storage.ParquetFileView) error {
+func (nc *notConstraint) init(f *storage.ParquetFile) error {
 	return nc.c.init(f)
 }
 
