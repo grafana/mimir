@@ -312,6 +312,9 @@ github.com/aws/smithy-go/time
 github.com/aws/smithy-go/tracing
 github.com/aws/smithy-go/transport/http
 github.com/aws/smithy-go/transport/http/internal/io
+# github.com/aybabtme/uniplot v0.0.0-20151203143629-039c559e5e7e
+## explicit
+github.com/aybabtme/uniplot/histogram
 # github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 ## explicit; go 1.20
 github.com/bboreham/go-loser

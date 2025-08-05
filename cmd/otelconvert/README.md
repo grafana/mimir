@@ -12,8 +12,16 @@ make build-otelconvert-image-push
 ## Prep
 
 To list existing blocks:
+
+### GCP
 ```shell
-go run tools/listblocks/main.go -backend=gcs -gcs.bucket-name=dev-us-central-0-mimir-dev-11-blocks -user=9960
+go run tools/listblocks/main.go -backend=gcs -gcs.bucket-name=dev-us-central-0-mimir-dev-11-blocks -user=9960 -show-block-size -show-stats
+```
+
+### AWS
+```shell
+/usr/bin/listblocks -backend=s3 -s3.access-key-id=$BLOCKS_STORAGE_S3_ACCESS_KEY_ID -s3.secret-access-key=$BLOCKS_STORAGE_S3_SECRET_ACCESS_KEY -s3.endpoint=s3.dualstack.eu-south-2.amazonaws.com -s3.bucket-name=ops-eu-south-0-mimir-ops-03-blocks -user=10428 -show-
+block-size -show-stats
 ```
 
 ## Run

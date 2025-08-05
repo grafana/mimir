@@ -19,6 +19,7 @@ import (
 
 const (
 	defaultMDChunkSizePostings = 10000
+	defaultHistScale           = 5
 )
 
 var (
@@ -35,6 +36,7 @@ type config struct {
 	dest      string
 	count     bool
 	chunkSize int
+	histScale int
 }
 
 func main() {
@@ -43,12 +45,13 @@ func main() {
 
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
-	flag.StringVar(&cfg.action, "action", "", "The action to take (options: 'download', 'convert')")
+	flag.StringVar(&cfg.action, "action", "", "The action to take (options: 'download', 'convert', 'analyze')")
 	flag.StringVar(&cfg.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
 	flag.StringVar(&cfg.block, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
 	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizePostings, "Output chunk size in postings")
+	flag.IntVar(&cfg.histScale, "hist-scale", defaultHistScale, "Scaling factor used to output analysis histograms")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -90,6 +93,14 @@ func main() {
 
 		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
+		}
+	case "analyze":
+		if err := validateAnalyzeConfig(cfg); err != nil {
+			log.Fatalln("config failed validation:", err)
+		}
+
+		if err := analyzeBlock(ctx, cfg.block, cfg.dest, cfg.histScale, logger); err != nil {
+			log.Fatalln("failed to analyze block:", err)
 		}
 	default:
 		log.Fatalln("--action must be 'download' or 'convert'")
