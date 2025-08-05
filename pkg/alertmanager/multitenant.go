@@ -793,15 +793,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If we have no custom configs, check the last request time to know whether to start the AM.
 	if am.cfg.StrictInitializationEnabled && (!isGrafanaConfigUsable(cfgs.Grafana) || cfgs.Grafana.Default) {
-		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return amConfig{}, false, nil
-		}
-
-		// Use the zero value to signal that the tenant was skipped.
-		// If the value stored is not what we have in memory, the tenant received a request since the last read.
-		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
+		if !am.isReceivingRequests(userID) {
 			return amConfig{}, false, nil
 		}
 
@@ -827,6 +819,24 @@ func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
 	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
 		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
 	}
+}
+
+// isReceivingRequests checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
+// This should only be used if strict initialization is enabled. We don't keep track of request times otherwise.
+func (am *MultitenantAlertmanager) isReceivingRequests(userID string) bool {
+	createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+	if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
+		return false
+	}
+
+	// Use the zero value to signal that the tenant was skipped.
+	// If the value stored is not what we have in memory, the tenant received a request since the last read.
+	gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
+		return false
+	}
+
+	return true
 }
 
 // isGrafanaConfigUsable returns true if the Grafana configuration is promoted and not empty.
