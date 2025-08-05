@@ -246,7 +246,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
-		if ok && oldg.Equals(newg) {
+		if ok && ((oldg == newg) || oldg.Equals(newg)) {
 			groups[gn] = oldg
 			continue
 		}
@@ -326,6 +326,16 @@ func (m *Manager) LoadGroups(
 		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields)
 		if errs != nil {
 			return nil, errs
+		}
+
+		// The groups for this file are unchanged from what's already loaded.
+		if rgs == nil {
+			// The ruler doesn't remember file->rule group directly, so we have to linearly search them all, room for improvement...
+			for key, group := range m.groups {
+				if group.File() == fn {
+					groups[key] = group
+				}
+			}
 		}
 
 		for _, rg := range rgs.Groups {

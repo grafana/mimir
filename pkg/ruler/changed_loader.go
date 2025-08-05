@@ -24,6 +24,8 @@ func (c ChangedFileLoader) Load(identifier string, ignoreUnknownFields bool) (*r
 	}
 	checksum := sha256.Sum256(b)
 	if latestChecksum, ok := c.checksums[identifier]; ok && checksum == latestChecksum {
+		// Using nil as a hacky sentinel value to indicate that the file didn't change.
+		// If we upstream this we can use something more robust.
 		return nil, nil
 	}
 
