@@ -47,8 +47,8 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 		return expr, false, nil
 	}
 
-	_, _, boolResult := mapper.propagateMatchersInBinaryExpr(e)
-	return e, boolResult, nil
+	mapper.propagateMatchersInBinaryExpr(e)
+	return e, true, nil
 }
 
 // enrichedVectorSelector is a struct to hold additional information about vector selectors,
@@ -62,24 +62,26 @@ type enrichedVectorSelector struct {
 	containsAgg bool
 }
 
-func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	if e.Op == parser.LOR {
-		return nil, nil, false
+		return nil, nil
 	}
 
-	vssL, matchersL, okL := mapper.extractVectorSelectors(e.LHS)
-	vssR, matchersR, okR := mapper.extractVectorSelectors(e.RHS)
+	vssL, matchersL := mapper.extractVectorSelectors(e.LHS)
+	okL := len(vssL) > 0
+	vssR, matchersR := mapper.extractVectorSelectors(e.RHS)
+	okR := len(vssR) > 0
 	switch {
 	case !okL && !okR:
-		return nil, nil, false
+		return nil, nil
 	case !okL:
-		return vssR, matchersR, true
+		return vssR, matchersR
 	case !okR:
-		return vssL, matchersL, true
+		return vssL, matchersL
 	}
 
 	if e.VectorMatching == nil {
-		return nil, nil, false
+		return nil, nil
 	}
 
 	matchingLabelsSet := makeStringSet(e.VectorMatching.MatchingLabels)
@@ -105,16 +107,16 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 	vss := append(vssL, vssR...)
 	matchers, _ := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
-	return vss, matchers, true
+	return vss, matchers
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
 // info, see enrichedVectorSelector), along with the label matchers associated with them, and a boolean
 // indicating whether any vector selectors were found.
-func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*enrichedVectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		return []*enrichedVectorSelector{{vs: e}}, e.LabelMatchers, true
+		return []*enrichedVectorSelector{{vs: e}}, e.LabelMatchers
 	case *parser.MatrixSelector:
 		return mapper.extractVectorSelectors(e.VectorSelector)
 	case *parser.ParenExpr:
@@ -125,7 +127,7 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		if i := getIndexForEligibleFunction(e.Func.Name); i >= 0 {
 			return mapper.extractVectorSelectors(e.Args[i])
 		}
-		return nil, nil, false
+		return nil, nil
 	case *parser.AggregateExpr:
 		return mapper.extractVectorSelectorsFromAggregateExpr(e)
 	case *parser.BinaryExpr:
@@ -134,31 +136,31 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 	case *parser.StepInvariantExpr:
 		// Used only for optimizations and not produced directly by parser, and should not contain
 		// any vector selectors anyway.
-		return nil, nil, false
+		return nil, nil
 	case *parser.SubqueryExpr:
 		// We do not support subqueries for now due to complexity.
-		return nil, nil, false
+		return nil, nil
 	default:
-		return nil, nil, false
+		return nil, nil
 	}
 }
 
-func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
 		// Shortcut if there are no labels allowed to propagate inwards or outwards.
-		return nil, nil, false
+		return nil, nil
 	}
-	vss, labelMatchers, ok := mapper.extractVectorSelectors(e.Expr)
-	if !ok {
-		return nil, nil, false
+	vss, labelMatchers := mapper.extractVectorSelectors(e.Expr)
+	if len(vss) == 0 {
+		return nil, nil
 	}
 	groupingSet := makeStringSet(e.Grouping)
 	for _, vs := range vss {
 		updateVecSelWithAggInfo(vs, groupingSet, include)
 	}
 	newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, include)
-	return vss, newMatchers, ok
+	return vss, newMatchers
 }
 
 func updateVecSelWithAggInfo(vs *enrichedVectorSelector, groupingSet map[string]struct{}, include bool) {
