@@ -6,41 +6,15 @@ import (
 	"context"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/testdata"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReorderHistogramAggregation(t *testing.T) {
-	testCases := map[string]string{
-		`histogram_sum(sum(foo))`:                   `sum(histogram_sum(foo))`,
-		`sum(histogram_sum(foo))`:                   `sum(histogram_sum(foo))`,
-		`histogram_sum(avg(foo))`:                   `avg(histogram_sum(foo))`,
-		`avg(histogram_sum(foo))`:                   `avg(histogram_sum(foo))`,
-		`histogram_sum(sum(rate(foo[5m])))`:         `sum(histogram_sum(rate(foo[5m])))`,
-		`sum(histogram_sum(rate(foo[5m])))`:         `sum(histogram_sum(rate(foo[5m])))`,
-		`histogram_sum(avg(rate(foo[5m])))`:         `avg(histogram_sum(rate(foo[5m])))`,
-		`avg(histogram_sum(rate(foo[5m])))`:         `avg(histogram_sum(rate(foo[5m])))`,
-		`histogram_count(sum(foo))`:                 `sum(histogram_count(foo))`,
-		`sum(histogram_count(foo))`:                 `sum(histogram_count(foo))`,
-		`histogram_count(avg(foo))`:                 `avg(histogram_count(foo))`,
-		`avg(histogram_count(foo))`:                 `avg(histogram_count(foo))`,
-		`histogram_count(sum(rate(foo[5m])))`:       `sum(histogram_count(rate(foo[5m])))`,
-		`sum(histogram_count(rate(foo[5m])))`:       `sum(histogram_count(rate(foo[5m])))`,
-		`histogram_count(avg(rate(foo[5m])))`:       `avg(histogram_count(rate(foo[5m])))`,
-		`avg(histogram_count(rate(foo[5m])))`:       `avg(histogram_count(rate(foo[5m])))`,
-		`(((histogram_sum(sum(foo)))))`:             `(((sum(histogram_sum(foo)))))`,
-		`histogram_sum(sum(foo+bar))`:               `sum(histogram_sum(foo+bar))`,
-		`histogram_sum(sum(foo)+sum(bar))`:          `histogram_sum(sum(foo)+sum(bar))`,
-		"histogram_sum(sum by (job) (foo))":         "sum by (job) (histogram_sum(foo))",
-		"histogram_sum(sum without (job) (foo))":    "sum without (job) (histogram_sum(foo))",
-		"histogram_sum(rate(foo[5m]))":              "histogram_sum(rate(foo[5m]))",
-		`3 + (((histogram_sum(sum(foo)))))`:         `3 + (((sum(histogram_sum(foo)))))`,
-		`vector(3) + (((histogram_sum(sum(foo)))))`: `vector(3) + (((sum(histogram_sum(foo)))))`,
-	}
-
 	ctx := context.Background()
 
-	for input, expected := range testCases {
+	for input, expected := range testdata.TestCasesReorderHistogramAggregation {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
