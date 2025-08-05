@@ -103,7 +103,6 @@ func TestPropagateMatchers(t *testing.T) {
 		`max without (baz) (avg by (foo, baz) (left)) / right{foo="bar", baz="fob"}`:                          `max without (baz) (avg by (foo, baz) (left{foo="bar"})) / right{foo="bar", baz="fob"}`,
 	}
 
-	optimizer := NewPropagateMatchers()
 	ctx := context.Background()
 
 	for input, expected := range testCases {
@@ -113,10 +112,12 @@ func TestPropagateMatchers(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+			optimizer := NewPropagateMatchers()
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
+			require.Equal(t, input != expected, optimizer.mapper.HasChanged())
 		})
 	}
 }

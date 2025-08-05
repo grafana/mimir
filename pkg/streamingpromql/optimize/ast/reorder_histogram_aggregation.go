@@ -6,20 +6,17 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 // ReorderHistogramAggregation optimizes queries by reordering histogram functions and aggregations
 // for more efficient execution.
 type ReorderHistogramAggregation struct {
-	mapper astmapper.ASTMapper
+	mapper *ASTExprMapperWithState
 }
 
 func NewReorderHistogramAggregation() *ReorderHistogramAggregation {
-	mapper := NewMapperReorderHistogramAggregation()
 	return &ReorderHistogramAggregation{
-		mapper: mapper,
+		mapper: NewReorderHistogramAggregationMapper(),
 	}
 }
 
@@ -31,12 +28,18 @@ func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Exp
 	return r.mapper.Map(ctx, expr)
 }
 
-func NewMapperReorderHistogramAggregation() astmapper.ASTMapper {
+func NewReorderHistogramAggregationMapper() *ASTExprMapperWithState {
 	mapper := &reorderHistogramAggregation{}
-	return astmapper.NewASTExprMapper(mapper)
+	return NewASTExprMapperWithState(mapper)
 }
 
-type reorderHistogramAggregation struct{}
+type reorderHistogramAggregation struct {
+	changed bool
+}
+
+func (mapper *reorderHistogramAggregation) HasChanged() bool {
+	return mapper.changed
+}
 
 func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	call, ok := expr.(*parser.Call)
@@ -65,6 +68,8 @@ func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr par
 		Without:  agg.Without,
 		PosRange: agg.PosRange,
 	}
+
+	mapper.changed = true
 
 	return newExpr, false, nil
 }

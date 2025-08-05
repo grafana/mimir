@@ -10,31 +10,24 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type rewriteMiddleware struct {
-	next                    MetricsQueryHandler
-	logger                  log.Logger
-	cfg                     Config
-	mapperHistogram         astmapper.ASTMapper
-	mapperPropagateMatchers astmapper.ASTMapper
+	next   MetricsQueryHandler
+	logger log.Logger
+	cfg    Config
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
 func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
-	mapperHistogram := ast.NewMapperReorderHistogramAggregation()
-	mapperPropagateMatchers := ast.NewMapperPropagateMatchers()
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
-			next:                    next,
-			logger:                  logger,
-			cfg:                     cfg,
-			mapperHistogram:         mapperHistogram,
-			mapperPropagateMatchers: mapperPropagateMatchers,
+			next:   next,
+			logger: logger,
+			cfg:    cfg,
 		}
 	})
 }
@@ -70,24 +63,33 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	if err != nil {
 		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
-	origQueryString := expr.String()
 	rewrittenQuery := expr
+	changed := false
 
 	if m.cfg.RewriteQueriesHistogram {
-		rewrittenQuery, err = m.mapperHistogram.Map(ctx, rewrittenQuery)
+		mapperHistogram := ast.NewReorderHistogramAggregationMapper()
+		rewrittenQuery, err = mapperHistogram.Map(ctx, rewrittenQuery)
 		if err != nil {
 			return "", false, err
+		}
+		if mapperHistogram.HasChanged() {
+			changed = true
 		}
 	}
 
 	if m.cfg.RewriteQueriesPropagateMatchers {
-		rewrittenQuery, err = m.mapperPropagateMatchers.Map(ctx, rewrittenQuery)
+		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
+		rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
 		if err != nil {
 			return "", false, err
 		}
+		if mapperPropagateMatchers.HasChanged() {
+			changed = true
+		}
 	}
 
-	rewrittenQueryString := rewrittenQuery.String()
-
-	return rewrittenQueryString, origQueryString != rewrittenQueryString, nil
+	if changed {
+		return rewrittenQuery.String(), true, nil
+	}
+	return "", false, nil
 }

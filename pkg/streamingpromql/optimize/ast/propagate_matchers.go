@@ -7,19 +7,16 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 // PropagateMatchers optimizes queries by propagating matchers across binary operations.
 type PropagateMatchers struct {
-	mapper astmapper.ASTMapper
+	mapper *ASTExprMapperWithState
 }
 
 func NewPropagateMatchers() *PropagateMatchers {
-	mapper := NewMapperPropagateMatchers()
 	return &PropagateMatchers{
-		mapper: mapper,
+		mapper: NewPropagateMatchersMapper(),
 	}
 }
 
@@ -31,12 +28,18 @@ func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser
 	return p.mapper.Map(ctx, expr)
 }
 
-func NewMapperPropagateMatchers() astmapper.ASTMapper {
+func NewPropagateMatchersMapper() *ASTExprMapperWithState {
 	mapper := &propagateMatchers{}
-	return astmapper.NewASTExprMapper(mapper)
+	return NewASTExprMapperWithState(mapper)
 }
 
-type propagateMatchers struct{}
+type propagateMatchers struct {
+	changed bool
+}
+
+func (mapper *propagateMatchers) HasChanged() bool {
+	return mapper.changed
+}
 
 func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
@@ -80,7 +83,6 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 
 	matchingLabelsSet := makeStringSet(e.VectorMatching.MatchingLabels)
-	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 	var newMatchersL []*labels.Matcher
 	if e.Op == parser.LUNLESS {
 		// For LUNLESS, we do not propagate matchers from the right-hand side to the left-hand side.
@@ -88,14 +90,21 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
-			vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.include)
+			if newLabelMatchers, changed := combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.include); changed {
+				vsL.vs.LabelMatchers = newLabelMatchers
+				mapper.changed = true
+			}
 		}
 	}
+	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 	for _, vsR := range vssR {
-		vsR.vs.LabelMatchers = combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include)
+		if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
+			vsR.vs.LabelMatchers = newLabelMatchers
+			mapper.changed = true
+		}
 	}
 	vss := append(vssL, vssR...)
-	matchers := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
+	matchers, _ := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
 	return vss, matchers, true
 }
 
@@ -245,10 +254,11 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	return matchersToAdd
 }
 
-func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, include bool) []*labels.Matcher {
+func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, include bool) ([]*labels.Matcher, bool) {
 	matchersMap := makeMatchersMap(matchers)
 	newMatchers := make([]*labels.Matcher, 0, len(matchers)+len(matchersToAdd))
 	newMatchers = append(newMatchers, matchers...)
+	changed := false
 	for _, m := range matchersToAdd {
 		if _, ok := matchersMap[m.String()]; !ok {
 			_, exists := labelsSet[m.Name]
@@ -262,9 +272,10 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[st
 				}
 			}
 			newMatchers = append(newMatchers, m)
+			changed = true
 		}
 	}
-	return newMatchers
+	return newMatchers, changed
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
