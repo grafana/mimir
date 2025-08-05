@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/http/httptest"
 	"slices"
 	"sort"
 	"strconv"
@@ -41,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
@@ -330,6 +332,69 @@ func TestDistributor_Push(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistributor_PushBufferReuse(t *testing.T) {
+	t.Parallel()
+
+	limits := prepareDefaultLimits()
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:    2,
+		happyIngesters:  2,
+		numDistributors: 1,
+		limits:          limits,
+	})
+	d := ds[0]
+
+	handler := Handler(100000, d.RequestBufferPool, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{},
+		d.PushWithMiddlewares,
+		nil, log.NewNopLogger(),
+	)
+
+	var wg sync.WaitGroup
+
+	for range 100 {
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			resp := httptest.NewRecorder()
+			req := createRequest(t, createPrometheusRemoteWriteProtobuf(t,
+				prompb.TimeSeries{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test"},
+						{Name: "foo", Value: strings.Repeat("x", 3000)},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: time.Now().UnixMilli()},
+					},
+				},
+			))
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, 400, resp.Code, resp.Body.String())
+			assert.Equal(t, resp.Body.String(), `received a series whose label value length exceeds the limit, label: 'foo', value: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' (truncated) series: 'test{foo="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' (err-mimir-label-value-too-long). To adjust the related per-tenant limit, configure -validation.max-length-label-value, or contact your service administrator.`+"\n")
+		}()
+
+		go func() {
+			defer wg.Done()
+			resp := httptest.NewRecorder()
+			req := createRequest(t, createPrometheusRemoteWriteProtobuf(t,
+				prompb.TimeSeries{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test"},
+						{Name: "foo", Value: "CORRUPTION"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: time.Now().UnixMilli()},
+					},
+				},
+			))
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, 200, resp.Code, resp.Body.String())
+		}()
+	}
+
+	wg.Wait()
 }
 
 func verifySpanEvent(t *testing.T, event trace.Event, name string, attributes []attribute.KeyValue) {

@@ -559,10 +559,11 @@ func createMalformedRW1Request(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
+func createPrometheusRemoteWriteProtobuf(t testing.TB, timeseries ...prompb.TimeSeries) []byte {
 	t.Helper()
-	input := prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
+
+	if len(timeseries) == 0 {
+		timeseries = []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
 					{Name: "__name__", Value: "foo"},
@@ -573,7 +574,11 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 				Histograms: []prompb.Histogram{
 					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))},
 			},
-		},
+		}
+	}
+
+	input := prompb.WriteRequest{
+		Timeseries: timeseries,
 	}
 	inputBytes, err := input.Marshal()
 	require.NoError(t, err)
