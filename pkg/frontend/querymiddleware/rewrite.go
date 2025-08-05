@@ -16,20 +16,25 @@ import (
 )
 
 type rewriteMiddleware struct {
-	next            MetricsQueryHandler
-	logger          log.Logger
-	mapperHistogram astmapper.ASTMapper
+	next                    MetricsQueryHandler
+	logger                  log.Logger
+	cfg                     Config
+	mapperHistogram         astmapper.ASTMapper
+	mapperPropagateMatchers astmapper.ASTMapper
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
-func newRewriteMiddleware(logger log.Logger) MetricsQueryMiddleware {
+func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
 	mapperHistogram := ast.NewMapperReorderHistogramAggregation()
+	mapperPropagateMatchers := ast.NewMapperPropagateMatchers()
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
-			next:            next,
-			logger:          logger,
-			mapperHistogram: mapperHistogram,
+			next:                    next,
+			logger:                  logger,
+			cfg:                     cfg,
+			mapperHistogram:         mapperHistogram,
+			mapperPropagateMatchers: mapperPropagateMatchers,
 		}
 	})
 }
@@ -68,9 +73,18 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	origQueryString := expr.String()
 	rewrittenQuery := expr
 
-	rewrittenQuery, err = m.mapperHistogram.Map(ctx, rewrittenQuery)
-	if err != nil {
-		return "", false, err
+	if m.cfg.RewriteQueriesHistogram {
+		rewrittenQuery, err = m.mapperHistogram.Map(ctx, rewrittenQuery)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
+	if m.cfg.RewriteQueriesPropagateMatchers {
+		rewrittenQuery, err = m.mapperPropagateMatchers.Map(ctx, rewrittenQuery)
+		if err != nil {
+			return "", false, err
+		}
 	}
 
 	rewrittenQueryString := rewrittenQuery.String()

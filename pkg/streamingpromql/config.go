@@ -24,8 +24,7 @@ type EngineOpts struct {
 	// but for now, we use this option to change the behavior of selectors.
 	EagerLoadSelectors bool `yaml:"-"`
 
-	EnablePruneToggles      bool `yaml:"enable_prune_toggles" category:"experimental"`
-	EnablePropagateMatchers bool `yaml:"enable_propagate_matchers" category:"experimental"`
+	EnablePruneToggles bool `yaml:"enable_prune_toggles" category:"experimental"`
 
 	EnableCommonSubexpressionElimination                                          bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries bool `yaml:"enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries" category:"experimental"`
@@ -34,7 +33,6 @@ type EngineOpts struct {
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnablePruneToggles, "querier.mimir-query-engine.enable-prune-toggles", true, "Enable pruning query expressions that are toggled off with constants.")
-	f.BoolVar(&o.EnablePropagateMatchers, "querier.mimir-query-engine.enable-propagate-matchers", true, "Enable copying label matchers where relevant across binary expressions.")
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries", true, "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.")
 	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
@@ -54,8 +52,7 @@ func NewTestEngineOpts() EngineOpts {
 
 		Pedantic: true,
 
-		EnablePruneToggles:      true,
-		EnablePropagateMatchers: true,
+		EnablePruneToggles: true,
 
 		EnableCommonSubexpressionElimination:                                          true,
 		EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries: true,

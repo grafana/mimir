@@ -17,7 +17,7 @@ type PropagateMatchers struct {
 }
 
 func NewPropagateMatchers() *PropagateMatchers {
-	mapper := astmapper.NewASTExprMapper(&propagateMatchers{})
+	mapper := NewMapperPropagateMatchers()
 	return &PropagateMatchers{
 		mapper: mapper,
 	}
@@ -29,6 +29,11 @@ func (p *PropagateMatchers) Name() string {
 
 func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
 	return p.mapper.Map(ctx, expr)
+}
+
+func NewMapperPropagateMatchers() astmapper.ASTMapper {
+	mapper := &propagateMatchers{}
+	return astmapper.NewASTExprMapper(mapper)
 }
 
 type propagateMatchers struct{}

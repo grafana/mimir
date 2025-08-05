@@ -1654,11 +1654,6 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
   [enable_prune_toggles: <boolean> | default = true]
 
-  # (experimental) Enable copying label matchers where relevant across binary
-  # expressions.
-  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
-  [enable_propagate_matchers: <boolean> | default = true]
-
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
@@ -1809,6 +1804,11 @@ results_cache:
 # order of execution.
 # CLI flag: -query-frontend.rewrite-histogram-queries
 [rewrite_histogram_queries: <boolean> | default = false]
+
+# (experimental) True to enable rewriting queries to propagate label matchers
+# across binary expressions.
+# CLI flag: -query-frontend.rewrite-propagate-matchers
+[rewrite_propagate_matchers: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,

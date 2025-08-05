@@ -2065,8 +2065,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
-  -querier.mimir-query-engine.enable-propagate-matchers
-    	[experimental] Enable copying label matchers where relevant across binary expressions. (default true)
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
@@ -2353,6 +2351,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.rewrite-histogram-queries
     	[experimental] True to enable rewriting histogram queries for a more efficient order of execution.
+  -query-frontend.rewrite-propagate-matchers
+    	[experimental] True to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
