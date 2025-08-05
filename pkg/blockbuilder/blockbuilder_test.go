@@ -162,6 +162,60 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	require.Empty(t, list, "expected data_dir to be empty")
 }
 
+func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
+	tests := map[string]struct {
+		shutdownGracePeriod time.Duration
+		lastUpdateAge       time.Duration
+	}{
+		"recent_update_should_delay_shutdown": {
+			shutdownGracePeriod: 2 * time.Second,
+			lastUpdateAge:       1 * time.Second,
+		},
+		"old_update_does_not_delay_shutdown": {
+			shutdownGracePeriod: 2 * time.Second,
+			lastUpdateAge:       3 * time.Second,
+		},
+		"very_old_update_does_not_delay_shutdown": {
+			shutdownGracePeriod: 2 * time.Second,
+			lastUpdateAge:       1 * time.Hour,
+		},
+		"no_delay_configured": {
+			lastUpdateAge: 1 * time.Second,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			cfg, overrides := blockBuilderConfig(t, "127.0.0.1")
+			cfg.shutdownGracePeriod = tt.shutdownGracePeriod
+
+			bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+
+			lastUpdate := time.Now().Add(-tt.lastUpdateAge).UnixNano()
+			bb.lastUpdate.Store(lastUpdate)
+
+			var stopped bool
+			go func() {
+				require.NoError(t, bb.stopping(nil))
+				stopped = true
+			}()
+
+			tick := 50 * time.Millisecond
+			if minWait := tt.shutdownGracePeriod - tt.lastUpdateAge; minWait > 0 {
+				require.Never(t, func() bool {
+					return stopped
+				}, minWait, tick, "expected service running")
+			}
+			require.Eventually(t, func() bool {
+				return stopped
+			}, tt.shutdownGracePeriod+2*tick, tick, "expected service stopped")
+		})
+	}
+}
+
 func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, partition int32, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {
 	var samples []mimirpb.Sample
 	for _, st := range sampleTs {

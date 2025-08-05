@@ -47,6 +47,7 @@ type BlockBuilder struct {
 	bucketClient    objstore.Bucket
 	schedulerClient schedulerpb.SchedulerClient
 	schedulerConn   *grpc.ClientConn
+	lastUpdate      atomic.Int64
 
 	// the current job iteration number. For tests.
 	jobIteration atomic.Int64
@@ -154,6 +155,24 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
+
+	if delay := b.cfg.shutdownGracePeriod; delay > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), delay)
+		defer cancel()
+
+		lastUpd := b.lastUpdate.Load()
+		deadline := time.Unix(0, lastUpd).Add(delay)
+
+		if wait := time.Until(deadline); wait > 0 {
+			timer := time.NewTimer(wait)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+			}
+		}
+	}
+
 	b.kafkaClient.Close()
 	b.schedulerClient.Close()
 
@@ -329,6 +348,7 @@ consumerLoop:
 
 	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
+	b.lastUpdate.Store(time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}

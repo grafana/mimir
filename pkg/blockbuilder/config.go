@@ -22,7 +22,8 @@ type Config struct {
 
 	SchedulerConfig SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
-	ApplyMaxGlobalSeriesPerUserBelow int `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
+	ApplyMaxGlobalSeriesPerUserBelow int           `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
+	shutdownGracePeriod              time.Duration `yaml:"shutdown_grace_period" category:"experimental"`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
@@ -46,6 +47,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
 	f.IntVar(&cfg.ApplyMaxGlobalSeriesPerUserBelow, "block-builder.apply-max-global-series-per-user-below", 0, "Apply the global series limit per partition if the global series limit for the user is <= this given value. 0 means limits are disabled. If a user's limit is more than the given value, then the limits are not applied as well.")
+	f.DurationVar(&cfg.shutdownGracePeriod, "block-builder.shutdown-grace-period", 30*time.Second, "Interval between the completion of the last compactions and service shutdown")
 
 	cfg.SchedulerConfig.RegisterFlags(f)
 }
@@ -60,6 +62,10 @@ func (cfg *SchedulerConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) Validate() error {
 	if err := cfg.Kafka.Validate(); err != nil {
 		return fmt.Errorf("kafka: %w", err)
+	}
+
+	if cfg.shutdownGracePeriod < 0 {
+		return fmt.Errorf("shutdwn grace period must be non-negative")
 	}
 
 	if err := cfg.SchedulerConfig.GRPCClientConfig.Validate(); err != nil {
