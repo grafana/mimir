@@ -8,6 +8,7 @@ package querier
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -189,6 +190,7 @@ func NewParquetQueryable(
 	}
 
 	parquetQueryableOpts := []queryable.QueryableOpts{
+		queryable.WithConcurrency(runtime.GOMAXPROCS(0)),
 		queryable.WithRowCountLimitFunc(createLimitFunc(limits.ParquetMaxFetchedRowCount, 10_000_000)),
 		queryable.WithChunkBytesLimitFunc(createLimitFunc(limits.ParquetMaxFetchedChunkBytes, 1_000*1024*1024)),
 		queryable.WithDataBytesLimitFunc(createLimitFunc(limits.ParquetMaxFetchedDataBytes, 5_000*1024*1024)),
