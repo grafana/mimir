@@ -4,7 +4,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to use different object storage backend implementations.
 menuTitle: Object storage
 title: Configure Grafana Mimir object storage backend
-weight: 65
+weight: 70
 ---
 
 # Configure Grafana Mimir object storage backend
