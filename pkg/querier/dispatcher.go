@@ -48,7 +48,12 @@ func NewDispatcher(logger log.Logger, engine *streamingpromql.Engine, queryable 
 
 // ServeHTTP responds to requests made to the evaluation HTTP endpoint.
 // This is primarily used for debugging: most requests will arrive from query-frontends via
-// the query-scheduler over gRPC and therefore be handled by ServeGRPC.
+// the query-scheduler over gRPC and therefore be handled by HandleGRPC.
+//
+// Why do we call this method "ServeHTTP", and the other "HandleGRPC"?
+// We want to satisfy the http.Handler interface, which requires a method called ServeHTTP,
+// and the querier/worker.RequestHandler interface that uses the verb "handle"
+// in its method name, so we've made the querier/worker.GRPCRequestHandler interface use "handle" as well.
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	contentType := r.Header.Get("Content-Type")
