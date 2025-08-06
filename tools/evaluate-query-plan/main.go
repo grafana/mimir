@@ -62,7 +62,10 @@ func (a *app) ParseFlags() error {
 	flag.Var(&a.to, "to", "end of range query time range")
 	flag.DurationVar(&a.step, "step", time.Minute, "range query time step")
 	flag.StringVar(&a.tenantID, "tenant-id", "anonymous", "tenant ID")
-	flag.Parse()
+
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		return err
+	}
 
 	if a.expr == "" {
 		return errors.New("expression is required")
