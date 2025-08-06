@@ -50,12 +50,26 @@ type RequestBuffers struct {
 	buffers []*bytes.Buffer
 	// Allows avoiding heap allocation
 	buffersBacking [10]*bytes.Buffer
+	taintOnCleanUp []byte
+}
+
+// TaintBuffersOnCleanUp configures a RequestBuffers to write some repeated
+// "taint" word into buffers before they are released back into the pool.
+//
+// Useful for making use-after-release bugs noticeable during testing.
+func TaintBuffersOnCleanUp(taintWord []byte) func(r *RequestBuffers) {
+	return func(r *RequestBuffers) {
+		r.taintOnCleanUp = taintWord
+	}
 }
 
 // NewRequestBuffers returns a new RequestBuffers given a Pool.
-func NewRequestBuffers(p Pool) *RequestBuffers {
+func NewRequestBuffers(p Pool, cfg ...func(*RequestBuffers)) *RequestBuffers {
 	rb := &RequestBuffers{
 		p: p,
+	}
+	for _, cfg := range cfg {
+		cfg(rb)
 	}
 	rb.buffers = rb.buffersBacking[:0]
 	return rb
@@ -86,7 +100,13 @@ func (rb *RequestBuffers) CleanUp() {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
-		rb.p.Put(b.Bytes())
+		buf := b.Bytes()
+		if len(rb.taintOnCleanUp) > 0 {
+			for i := range buf {
+				buf[i] = rb.taintOnCleanUp[i%len(rb.taintOnCleanUp)]
+			}
+		}
+		rb.p.Put(buf)
 	}
 	rb.buffers = rb.buffers[:0]
 }
