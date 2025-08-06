@@ -617,7 +617,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable) // TODO: pass this to the worker below as well
+		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points

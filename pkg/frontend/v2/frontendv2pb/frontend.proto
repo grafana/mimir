@@ -39,7 +39,7 @@ message QueryResultStreamRequest {
     QueryResultMetadata metadata = 2;
     QueryResultBody body = 3;
 
-    // Used for streaming non-httpgrpc responses (one message per request kind):
+    // Used for streaming non-httpgrpc responses:
     querierpb.Error error = 4;
     querierpb.EvaluateQueryResponse evaluateQueryResponse = 5;
   }
