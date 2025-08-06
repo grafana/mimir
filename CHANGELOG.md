@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail with experimental ingest storage is enabled. #12090
 * [BUGFIX] otlp: Reverts #11889 which has a pooled memory re-use bug.
 
 ## 2.17.0-rc.1
