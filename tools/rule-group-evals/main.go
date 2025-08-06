@@ -161,7 +161,7 @@ func analyseRuleGroup(group *Group) {
 func printAnalysisResultsCSV(groups []*Group) {
 	// Sort groups by estimated duration % desc.
 	slices.SortFunc(groups, func(a, b *Group) int {
-		return int(b.estimatedDurationPercentage() - a.estimatedDurationPercentage())
+		return int(b.estimatedConcurrentEvaluationPercentage() - a.estimatedConcurrentEvaluationPercentage())
 	})
 
 	fmt.Println(strings.Join([]string{
@@ -238,7 +238,7 @@ func downloadNamespaceRules(destination string, cluster string, namespace string
 
 	g := errgroup.Group{}
 	g.SetLimit(10)
-	tenants := tenantNames()
+	tenants := tenantNames(namespace)
 	noErr(os.MkdirAll(filepath.Join(destination, namespace), 0777))
 	for tenantIdx, tenant := range tenants {
 		tenant := tenant
@@ -248,6 +248,7 @@ func downloadNamespaceRules(destination string, cluster string, namespace string
 			req, err := http.NewRequest(http.MethodGet, "http://localhost:8080/prometheus/api/v1/rules", nil)
 			noErr(err)
 			req.Header.Set("x-scope-orgid", tenant)
+			req.Header.Set("x-cluster", namespace)
 			resp, err := http.DefaultClient.Do(req)
 			noErr(err)
 			respBody, err := io.ReadAll(resp.Body)
@@ -259,9 +260,12 @@ func downloadNamespaceRules(destination string, cluster string, namespace string
 	noErr(g.Wait())
 }
 
-func tenantNames() []string {
+func tenantNames(namespace string) []string {
 	respMap := map[string]interface{}{}
-	resp, err := http.Get("http://localhost:8080/ruler/rule_groups")
+	req, err := http.NewRequest(http.MethodGet, "http://localhost:8080/ruler/rule_groups", nil)
+	noErr(err)
+	req.Header.Set("x-cluster", namespace)
+	resp, err := http.DefaultClient.Do(req)
 	noErr(err)
 	respBody, err := io.ReadAll(resp.Body)
 	noErr(err)
