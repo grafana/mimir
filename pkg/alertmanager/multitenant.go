@@ -781,7 +781,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Unpromoted/empty Grafana configurations are always ignored.
 	if !cfgs.Grafana.Promoted || cfgs.Grafana.RawConfig == "" {
 		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
-		if am.isReceivingRequests(cfgs.Mimir.User) {
+		if am.isTenantActive(cfgs.Mimir.User) {
 			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
 		return amConfig{}, false, nil
@@ -794,8 +794,8 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		return cfg, true, err
 	}
 
-	// We have no custom configs. Check the last request time to determine whether to start the AM.
-	if !am.isReceivingRequests(cfgs.Mimir.User) {
+	// We have no custom configs. Check the last activity time to determine whether to start the AM.
+	if !am.isTenantActive(cfgs.Mimir.User) {
 		return amConfig{}, false, nil
 	}
 
@@ -815,22 +815,22 @@ func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
 	}
 }
 
-// isReceivingRequests checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
+// isTenantActive checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
 // If strict initialization is not enabled, it always returns true, as we don't keep track of request times.
-func (am *MultitenantAlertmanager) isReceivingRequests(userID string) bool {
+func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
 	if !am.cfg.StrictInitializationEnabled {
 		return true
 	}
 
-	createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-	if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
+	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+	if !loaded || time.Unix(lastRequestTime.(int64), 0).IsZero() {
 		return false
 	}
 
 	// Use the zero value to signal that the tenant was skipped.
 	// If the value stored is not what we have in memory, the tenant received a request since the last read.
-	gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
+	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, lastRequestTime, time.Time{}.Unix()) {
 		return false
 	}
 
