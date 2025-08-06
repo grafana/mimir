@@ -10,6 +10,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.continuous_test.replicas }}
+  revisionHistoryLimit: {{ .Values.continuous_test.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "continuous-test") | nindent 6 }}

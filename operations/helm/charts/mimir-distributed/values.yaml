@@ -568,6 +568,7 @@ alertmanager:
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- Allows to override the container image of the alertmanager component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
@@ -855,6 +856,7 @@ distributor:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1211,6 +1213,7 @@ overrides_exporter:
     # tag: 2.15.0
 
   replicas: 1
+  revisionHistoryLimit: 10
 
   annotations: {}
 
@@ -1308,6 +1311,7 @@ ruler:
     # tag: 2.15.0
 
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1437,6 +1441,7 @@ ruler_querier:
     # tag: 2.15.0
 
   replicas: 2
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1563,6 +1568,7 @@ ruler_query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1679,6 +1685,7 @@ ruler_query_scheduler:
     # tag: 2.15.0
 
   replicas: 2
+  revisionHistoryLimit: 10
 
   service:
     annotations: {}
@@ -1775,6 +1782,7 @@ querier:
     # tag: 2.15.0
 
   replicas: 2
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1914,6 +1922,7 @@ query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -2031,6 +2040,7 @@ query_scheduler:
     # tag: 2.15.0
 
   replicas: 2
+  revisionHistoryLimit: 10
 
   service:
     annotations: {}
@@ -3008,6 +3018,7 @@ nginx:
   enabled: true
   # -- Number of replicas for nginx
   replicas: 1
+  revisionHistoryLimit: 10
   # -- Enable logging of 2xx and 3xx HTTP requests
   verboseLogging: true
   autoscaling:
@@ -3404,6 +3415,7 @@ gateway:
 
   # -- Number of replicas for the Deployment
   replicas: 1
+  revisionHistoryLimit: 10
 
   # -- HorizontalPodAutoscaler
   autoscaling:
@@ -4211,6 +4223,7 @@ admin_api:
     # tag: 2.15.0
 
   replicas: 1
+  revisionHistoryLimit: 10
 
   annotations: {}
   service:
@@ -4381,6 +4394,7 @@ graphite:
   querier:
     # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
     replicas: 2
+    revisionHistoryLimit: 10
 
     schemasConfiguration:
       storageSchemas: |-
@@ -4475,6 +4489,7 @@ graphite:
 
   write_proxy:
     replicas: 2
+    revisionHistoryLimit: 10
 
     service:
       annotations: {}
@@ -4704,6 +4719,7 @@ federation_frontend:
 
   # -- Number of replicas for the federation-frontend
   replicas: 2
+  revisionHistoryLimit: 10
   # -- Deployment strategy for the federation-frontend pods
   strategy:
     type: RollingUpdate
@@ -4824,6 +4840,7 @@ continuous_test:
     # tag: 2.15.0
   # -- Number of replicas to start of continuous test
   replicas: 1
+  revisionHistoryLimit: 10
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
   # -- The endpoints to use for writing to and reading metrics from your instance.
