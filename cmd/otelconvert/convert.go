@@ -32,6 +32,9 @@ func validateConvertConfig(cfg config) error {
 	if cfg.dest == "" && !cfg.count {
 		return fmt.Errorf("must use either --dest or --count")
 	}
+	if cfg.outputFormat != "protobuf" && cfg.outputFormat != "json" {
+		return fmt.Errorf("--output-format must be one of 'json' or 'protobuf'")
+	}
 
 	return nil
 }

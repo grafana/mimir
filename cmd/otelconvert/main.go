@@ -22,6 +22,7 @@ const (
 	defaultHistScale               = 5
 	defaultHistNumBins             = 20
 	defaultResourceAttributeLabels = "service,service_name,service_instance_id,instance_id,server_address,server_port,url_scheme,server,address,port,scheme,cluster,namespace"
+	defaultOutputFormat            = "protobuf"
 )
 
 var (
@@ -63,7 +64,7 @@ func main() {
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
 	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
 	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
-	flag.StringVar(&cfg.outputFormat, "output-format", "protobuf", "Format to output chunks in (options: 'json', 'protobuf')")
+	flag.StringVar(&cfg.outputFormat, "output-format", defaultOutputFormat, "Format to output chunks in (options: 'json', 'protobuf')")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
