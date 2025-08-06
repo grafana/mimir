@@ -160,12 +160,12 @@
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
     if $._config.multi_zone_ingester_pdbz_enabled then
-        $.zpdbTemplate('ingester-rollout', 'ingester', 1, $._config.ingest_storage_enabled)
+      $.zpdbTemplate('ingester-rollout', 'ingester', 1, $._config.ingest_storage_enabled)
     else
-        podDisruptionBudget.new('ingester-rollout') +
-        podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' }) +
-        podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }) +
-        podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
+      podDisruptionBudget.new('ingester-rollout') +
+      podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' }) +
+      podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }) +
+      podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 
   //
   // Single-zone ingesters shouldn't be configured when multi-zone is enabled.
@@ -310,12 +310,12 @@
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
     if $._config.multi_store_gateway_ingester_pdbz_enabled then
-            $.zpdbTemplate('store-gateway-rollout', 'store-gateway', 1)
-        else
-            podDisruptionBudget.new('store-gateway-rollout') +
-            podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' }) +
-            podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }) +
-            podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
+      $.zpdbTemplate('store-gateway-rollout', 'store-gateway', 1)
+    else
+      podDisruptionBudget.new('store-gateway-rollout') +
+      podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' }) +
+      podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }) +
+      podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 
   //
   // Single-zone store-gateways shouldn't be configured when multi-zone is enabled.

@@ -18,7 +18,7 @@
           'rollout-group': rolloutGroup,
         },
       },
-      podNamePartitionRegex: if (ingestStorageEnabled) then '[a-z\\-]+-zone-[a-z]-([0-9]+),$1' else ''
-    }
+      podNamePartitionRegex: if (ingestStorageEnabled) then '[a-z\\-]+-zone-[a-z]-([0-9]+),$1' else '',
+    },
   },
 }
