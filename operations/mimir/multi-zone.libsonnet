@@ -309,7 +309,7 @@
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
-    if $._config.multi_store_gateway_ingester_pdbz_enabled then
+    if $._config.multi_zone_store_gateway_pdbz_enabled then
       $.zpdbTemplate('store-gateway-rollout', 'store-gateway', 1)
     else
       podDisruptionBudget.new('store-gateway-rollout') +
