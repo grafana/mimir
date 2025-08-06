@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultMDChunkSizePostings     = 10000
+	defaultMDChunkSizePostings     = 1000
 	defaultHistScale               = 5
 	defaultHistNumBins             = 20
 	defaultResourceAttributeLabels = "service,service_name,service_instance_id,instance_id,server_address,server_port,url_scheme,server,address,port,scheme,cluster,namespace"
