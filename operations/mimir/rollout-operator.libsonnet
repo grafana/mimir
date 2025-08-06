@@ -40,17 +40,17 @@
     $._config.ingest_storage_ingester_autoscaling_enabled ||
     $._config.enable_rollout_operator_webhook,
 
-  local ingester_pdbz_enabled =
+  local ingester_zpdb_enabled =
     $._config.multi_zone_ingester_enabled &&
-    $._config.multi_zone_ingester_pdbz_enabled &&
+    $._config.multi_zone_ingester_zpdb_enabled &&
     $._config.enable_rollout_operator_webhook,
 
-  local store_gateway_pdbz_enabled =
+  local store_gateway_zpdb_enabled =
     $._config.multi_zone_store_gateway_enabled &&
-    $._config.multi_zone_store_gateway_enabled &&
+    $._config.multi_zone_store_gateway_zpdb_enabled &&
     $._config.enable_rollout_operator_webhook,
 
-  local pdbz_enabled = ingester_pdbz_enabled || store_gateway_pdbz_enabled,
+  local zpdb_enabled = ingester_zpdb_enabled || store_gateway_zpdb_enabled,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
@@ -63,8 +63,8 @@
   rollout_operator_node_affinity_matchers:: [],
 
   // Create custom resource template for PodDisruptionZoneBudget
-  pdbz_crd:
-    if pdbz_enabled then
+  zpdb_crd:
+    if zpdb_enabled then
       std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
 
   rollout_operator_container::
@@ -126,7 +126,7 @@
         ] else []
       )
       + (
-        if pdbz_enabled then [
+        if zpdb_enabled then [
           policyRule.withApiGroups('rollout-operator.grafana.com') +
           policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
           policyRule.withVerbs(['get', 'list', 'watch']),
@@ -190,7 +190,7 @@
       namespace: $._config.namespace,
     }),
 
-  zpdb_validation_webhook: if !pdbz_enabled then null else
+  zpdb_validation_webhook: if !zpdb_enabled then null else
     validatingWebhookConfiguration.new('zpdb-validation-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
@@ -227,7 +227,7 @@
       },
     ]),
 
-  pod_eviction_webhook: if !pdbz_enabled then null else
+  pod_eviction_webhook: if !zpdb_enabled then null else
     validatingWebhookConfiguration.new('pod-eviction-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,

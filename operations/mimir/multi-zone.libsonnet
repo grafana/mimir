@@ -16,7 +16,7 @@
     multi_zone_ingester_replicas: 0,
     multi_zone_ingester_max_unavailable: 50,
     // use the PodDisruptionZoneBudget - requires the rollout operator webhook to also be enabled
-    multi_zone_ingester_pdbz_enabled: false,
+    multi_zone_ingester_zpdb_enabled: false,
 
     multi_zone_store_gateway_enabled: false,
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
@@ -26,7 +26,7 @@
     // To speed up rollouts, we increase the max unavailable to rollout all store-gateways in a zone in a single batch.
     multi_zone_store_gateway_max_unavailable: if $._config.store_gateway_lazy_loading_enabled then 50 else 1000,
     // use the PodDisruptionZoneBudget - requires the rollout operator webhook to also be enabled
-    multi_zone_store_gateway_pdbz_enabled: false,
+    multi_zone_store_gateway_zpdb_enabled: false,
 
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
@@ -159,7 +159,7 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
-    if $._config.multi_zone_ingester_pdbz_enabled then
+    if $._config.multi_zone_ingester_zpdb_enabled then
       $.zpdbTemplate('ingester-rollout', 'ingester', 1, $._config.ingest_storage_enabled)
     else
       podDisruptionBudget.new('ingester-rollout') +
@@ -309,7 +309,7 @@
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
-    if $._config.multi_zone_store_gateway_pdbz_enabled then
+    if $._config.multi_zone_store_gateway_zpdb_enabled then
       $.zpdbTemplate('store-gateway-rollout', 'store-gateway', 1)
     else
       podDisruptionBudget.new('store-gateway-rollout') +
