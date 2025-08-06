@@ -103,7 +103,7 @@ func analyzeBlock(ctx context.Context, blockDir, dest string, histScale, histMax
 		return a.cardinality - b.cardinality
 	})
 
-	f, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	f, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("open file '%s' for writing: %w", dest, err)
 	}

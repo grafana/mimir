@@ -35,7 +35,7 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
-func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, logger gokitlog.Logger) error {
+func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, dedupe bool, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
@@ -73,7 +73,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 
 		// Flush a chunk to disk.
 		if postingsCount >= chunkSize {
-			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
+			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
@@ -188,7 +188,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 
 	// Flush any remaining partial chunk to disk.
 	if proto.Size(md) > 0 {
-		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount)
+		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
 		}
@@ -207,11 +207,16 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int) (int, error) {
+func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int, dedupe bool) (int, error) {
+	sizeBeforeDedupe := proto.Size(md)
+	if dedupe {
+		deduplicate(md)
+	}
+
 	if countOnly {
 		n := proto.Size(md)
 		writtenBytesCount += n
-		log.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
+		log.Printf("registered %d bytes (%d bytes before dedupe) for chunk %d (%d bytes overall)\n", n, sizeBeforeDedupe, chunkCount, writtenBytesCount)
 
 		return chunkCount + 1, nil
 	}
@@ -233,7 +238,7 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 	}
 	defer func() { _ = f.Close() }()
 
-	log.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
+	log.Printf("wrote chunk %d to disk (%d bytes, %d bytes before dedupe)\n", chunkCount, n, sizeBeforeDedupe)
 
 	return chunkCount + 1, nil
 }

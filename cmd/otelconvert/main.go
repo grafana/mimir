@@ -42,6 +42,7 @@ type config struct {
 	histMax                 int
 	histNumBins             int
 	resourceAttributeLabels string
+	dedupe                  bool
 }
 
 func main() {
@@ -60,6 +61,7 @@ func main() {
 	flag.IntVar(&cfg.histMax, "hist-max", -1, "Filter cardinalities higher than this value out of the histogram (-1 to include all cardinalities)")
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
 	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
+	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -99,7 +101,7 @@ func main() {
 			log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
 		}
 
-		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, logger); err != nil {
+		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, cfg.dedupe, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	case "analyze":
