@@ -48,12 +48,12 @@ func NewDispatcher(logger log.Logger, engine *streamingpromql.Engine, queryable 
 
 // ServeHTTP responds to requests made to the evaluation HTTP endpoint.
 // This is primarily used for debugging: most requests will arrive from query-frontends via
-// the query-scheduler over gRPC and therefore be handled by HandleGRPC.
+// the query-scheduler over gRPC and therefore be handled by HandleProtobuf.
 //
-// Why do we call this method "ServeHTTP", and the other "HandleGRPC"?
+// Why do we call this method "ServeHTTP", and the other "HandleProtobuf"?
 // We want to satisfy the http.Handler interface, which requires a method called ServeHTTP,
 // and the querier/worker.RequestHandler interface that uses the verb "handle"
-// in its method name, so we've made the querier/worker.GRPCRequestHandler interface use "handle" as well.
+// in its method name, so we've made the querier/worker.ProtobufRequestHandler interface use "handle" as well.
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	contentType := r.Header.Get("Content-Type")
@@ -94,7 +94,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
 	messageName, err := prototypes.AnyMessageName(req)
 	if err != nil {
 		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err), d.logger)

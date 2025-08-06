@@ -61,11 +61,11 @@ var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("q
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 var errAlreadyFailed = errors.New("the query-frontend stream has already failed")
 
-func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
+func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
 		httpHandler:      httpHandler,
-		grpcHandler:      grpcHandler,
+		protobufHandler:  protobufHandler,
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
@@ -112,9 +112,9 @@ type frontendResponseStreamer func(
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
-	httpHandler      RequestHandler
-	grpcHandler      GRPCRequestHandler
-	streamResponse   frontendResponseStreamer
+	httpHandler     RequestHandler
+	protobufHandler ProtobufRequestHandler
+	streamResponse  frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
@@ -253,7 +253,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-				sp.runGrpcRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -452,11 +452,11 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) runGrpcRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
+func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
 	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
 
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.grpcHandler.HandleGRPC(ctx, request, writer)
+	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
 	writer.Close(ctx)
 }
 

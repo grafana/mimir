@@ -71,7 +71,7 @@ func TestErrorTypeForError(t *testing.T) {
 	}
 }
 
-func TestDispatcher_HandleGRPC(t *testing.T) {
+func TestDispatcher_HandleProtobuf(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 10s
 			my_series{"idx"="0"} 0+1x10
@@ -514,7 +514,7 @@ func TestDispatcher_HandleGRPC(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			stream := &mockQueryResultStream{t: t}
-			dispatcher.HandleGRPC(ctx, testCase.req, stream)
+			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 		})
 	}

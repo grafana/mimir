@@ -85,8 +85,8 @@ type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
 
-type GRPCRequestHandler interface {
-	HandleGRPC(context.Context, *types.Any, frontendv2pb.QueryResultStream)
+type ProtobufRequestHandler interface {
+	HandleProtobuf(context.Context, *types.Any, frontendv2pb.QueryResultStream)
 }
 
 // Single processor handles all streaming operations to query-frontend or query-scheduler to fetch queries
@@ -128,7 +128,7 @@ type querierWorker struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func NewQuerierWorker(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewQuerierWorker(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	if cfg.QuerierID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -155,7 +155,7 @@ func NewQuerierWorker(cfg Config, httpHandler RequestHandler, grpcHandler GRPCRe
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
 		workerClient = "query-scheduler-worker"
-		processor, servs = newSchedulerProcessor(cfg, httpHandler, grpcHandler, log, reg)
+		processor, servs = newSchedulerProcessor(cfg, httpHandler, protobufHandler, log, reg)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
