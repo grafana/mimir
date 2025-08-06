@@ -19,6 +19,7 @@ import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -35,7 +36,7 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
-func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, dedupe bool, logger gokitlog.Logger) error {
+func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, dedupe bool, outputFormat string, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
@@ -73,7 +74,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 
 		// Flush a chunk to disk.
 		if postingsCount >= chunkSize {
-			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe)
+			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe, outputFormat)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
@@ -188,7 +189,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 
 	// Flush any remaining partial chunk to disk.
 	if proto.Size(md) > 0 {
-		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe)
+		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe, outputFormat)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
 		}
@@ -207,23 +208,38 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int, dedupe bool) (int, error) {
+func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int, dedupe bool, outputFormat string) (int, error) {
 	sizeBeforeDedupe := proto.Size(md)
 	if dedupe {
 		deduplicate(md)
 	}
 
+	var (
+		buf []byte
+		err error
+	)
+
+	switch outputFormat {
+	case "json":
+		buf, err = protojson.Marshal(md)
+		if err != nil {
+			return chunkCount, fmt.Errorf("marshal json message: %w", err)
+		}
+	case "protobuf":
+		buf, err = proto.Marshal(md)
+		if err != nil {
+			return chunkCount, fmt.Errorf("marshal protobuf message: %w", err)
+		}
+	default:
+		return chunkCount, fmt.Errorf("unsupported output format: %s", outputFormat)
+	}
+
 	if countOnly {
-		n := proto.Size(md)
+		n := len(buf)
 		writtenBytesCount += n
 		log.Printf("registered %d bytes (%d bytes before dedupe) for chunk %d (%d bytes overall)\n", n, sizeBeforeDedupe, chunkCount, writtenBytesCount)
 
 		return chunkCount + 1, nil
-	}
-
-	buf, err := proto.Marshal(md)
-	if err != nil {
-		return chunkCount, fmt.Errorf("marshal protobuf message: %w", err)
 	}
 
 	fp := filepath.Join(destDir, strconv.Itoa(chunkCount))

@@ -43,6 +43,7 @@ type config struct {
 	histNumBins             int
 	resourceAttributeLabels string
 	dedupe                  bool
+	outputFormat            string
 }
 
 func main() {
@@ -62,6 +63,7 @@ func main() {
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
 	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
 	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
+	flag.StringVar(&cfg.outputFormat, "output-format", "protobuf", "Format to output chunks in (options: 'json', 'protobuf')")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -96,12 +98,12 @@ func main() {
 		}
 
 		if cfg.count {
-			log.Printf("dry run converting block at %s...\n", cfg.block)
+			log.Printf("dry run converting block at %s in %s format...\n", cfg.block, cfg.outputFormat)
 		} else {
-			log.Printf("converting block at %s to %s...\n", cfg.block, cfg.dest)
+			log.Printf("converting block at %s to %s in %s format...\n", cfg.block, cfg.dest, cfg.outputFormat)
 		}
 
-		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, cfg.dedupe, logger); err != nil {
+		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, cfg.dedupe, cfg.outputFormat, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	case "analyze":
