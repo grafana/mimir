@@ -6,10 +6,10 @@
 package mimirpb
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -129,6 +129,8 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range m.Timeseries {
 		m.Timeseries[idx].clearUnmarshalData()
 	}
+	m.rw2symbols = rw2PagedSymbols{}
+	m.unmarshalFromRW2 = false
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
@@ -184,7 +186,7 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.
 func (p *PreallocTimeseries) SortLabelsIfNeeded() {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// no need to run slices.SortFunc, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
 	last := ""
@@ -201,14 +203,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	p.clearUnmarshalData()
 }
@@ -252,8 +247,8 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 }
 
 func (p *PreallocTimeseries) SortExemplars() {
-	sort.Slice(p.Exemplars, func(i, j int) bool {
-		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	slices.SortFunc(p.Exemplars, func(a, b Exemplar) int {
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	p.clearUnmarshalData()
 }
@@ -270,7 +265,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA

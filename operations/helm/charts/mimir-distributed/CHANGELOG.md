@@ -29,6 +29,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
+* [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
+* [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
+
+## 5.8.0-rc.0
+
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
 * [CHANGE] All: Environment variable `JAEGER_REPORTER_MAX_QUEUE_SIZE` is no longer set. Components will use OTel's default value of `2048` unless explicitly configured. You can still configure `JAEGER_REPORTER_MAX_QUEUE_SIZE` if you configure tracing using Jaeger env vars, and you can always set `OTEL_BSP_MAX_QUEUE_SIZE` OTel configuration. #11700
@@ -36,7 +43,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931
 * [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
 * [CHANGE] Add `store_gateway.grpcMaxQueryResponseSizeBytes` value to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
-* [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.17.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2170). #12246
+* [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
@@ -44,7 +52,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
 * [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
-* [ENHANCEMENT] Configure option for emptyDir in store-gateway: #11951
 
 ## 5.7.0
 

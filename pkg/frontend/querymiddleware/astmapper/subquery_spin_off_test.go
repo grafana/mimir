@@ -271,13 +271,14 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
-			mapper := NewSubquerySpinOffMapper(context.Background(), defaultStepFunc, log.NewNopLogger(), stats)
+			mapper := NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+			ctx := context.Background()
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			mapped, err := mapper.Map(expr)
+			mapped, err := mapper.Map(ctx, expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 			assert.Equal(t, tt.expectedSubqueries, stats.SpunOffSubqueries())

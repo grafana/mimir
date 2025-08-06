@@ -4,6 +4,7 @@ aliases:
 description: Learn about ingester circuit breakers.
 menuTitle: Ingester circuit breakers
 title: About Grafana Mimir ingester circuit breakers
+weight: 180
 ---
 
 # About Grafana Mimir ingester circuit breakers

@@ -80,7 +80,7 @@ func TranslateToPromqlAPIError(err error) error {
 			if len(details) == 1 {
 				if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 					switch errorDetails.GetCause() {
-					case mimirpb.TOO_BUSY:
+					case mimirpb.ERROR_CAUSE_TOO_BUSY:
 						return promql.ErrQueryTimeout(s.Message())
 					}
 				}

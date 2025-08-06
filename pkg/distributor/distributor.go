@@ -14,7 +14,6 @@ import (
 	"math/rand"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,12 +65,6 @@ import (
 )
 
 var tracer = otel.Tracer("pkg/distributor")
-
-func init() {
-	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
-	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
-}
 
 var (
 	// Validation errors.
@@ -814,7 +807,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 0 {
 		return nil
@@ -861,7 +854,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 // validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Histograms) == 0 {
 		return nil
@@ -958,7 +951,7 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
@@ -1099,15 +1092,18 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
+		dropLabels := d.limits.DropLabels(userID)
+		relabelConfigs := d.limits.MetricRelabelConfigs(userID)
+
 		var removeTsIndexes []int
 		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
-			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
+			if len(relabelConfigs) > 0 {
 				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
 				lb.Set(metaLabelTenantID, userID)
-				keep := relabel.ProcessBuilder(lb, mrc...)
+				keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
@@ -1116,7 +1112,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 				req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
 			}
 
-			for _, labelName := range d.limits.DropLabels(userID) {
+			for _, labelName := range dropLabels {
 				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
 
@@ -2736,8 +2732,8 @@ func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBuc
 			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
 		})
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Metric < result[j].Metric
+	slices.SortFunc(result, func(a, b cardinality.ActiveMetricWithBucketCount) int {
+		return strings.Compare(a.Metric, b.Metric)
 	})
 	return result, fetchedSeries
 }

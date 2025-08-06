@@ -9,28 +9,18 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewQueryPruner(ctx context.Context, logger log.Logger) ASTMapper {
-	pruner := newQueryPruner(ctx, logger)
+func NewQueryPruner(logger log.Logger) ASTMapper {
+	pruner := &queryPruner{
+		logger: logger,
+	}
 	return NewASTExprMapper(pruner)
 }
 
 type queryPruner struct {
-	ctx    context.Context
 	logger log.Logger
 }
 
-func newQueryPruner(ctx context.Context, logger log.Logger) *queryPruner {
-	return &queryPruner{
-		ctx:    ctx,
-		logger: logger,
-	}
-}
-
-func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := pruner.ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
+func (pruner *queryPruner) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
 	if !ok {
 		return expr, false, nil

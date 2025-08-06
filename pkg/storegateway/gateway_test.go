@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1598,8 +1599,8 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 
 	return tokens
@@ -1660,7 +1661,7 @@ func (m *mockShardingStrategy) FilterBlocks(ctx context.Context, userID string, 
 }
 
 func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucketindex.Index {
-	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
+	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, 16, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))
