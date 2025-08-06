@@ -907,15 +907,6 @@ ha_tracker:
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout.
-  [ha_tracker_update_timeout: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.
-  [ha_tracker_update_timeout_jitter_max: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_failover_timeout.
-  [ha_tracker_failover_timeout: <duration> | default = ]
-
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
 # be rejected.
