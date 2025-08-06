@@ -267,11 +267,12 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			// information, since that is a long-running request.
 			var parentSpanContext context.Context
 
-			if httpRequest := msg.GetHttpRequest(); httpRequest != nil {
-				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.GetHttpRequest())
-			} else if protobufRequest := msg.GetProtobufRequest(); protobufRequest != nil {
-				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, propagation.MapCarrier(protobufRequest.TraceHeaders))
-			} else {
+			switch req := msg.Payload.(type) {
+			case *schedulerpb.FrontendToScheduler_HttpRequest:
+				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, req.HttpRequest)
+			case *schedulerpb.FrontendToScheduler_ProtobufRequest:
+				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, propagation.MapCarrier(req.ProtobufRequest.TraceHeaders))
+			default:
 				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")
 			}
 
@@ -371,11 +372,12 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
 
-	if httpRequest := msg.GetHttpRequest(); httpRequest != nil {
-		req.HttpRequest = httpRequest
-	} else if protobufRequest := msg.GetProtobufRequest(); protobufRequest != nil {
-		req.ProtobufRequest = protobufRequest
-	} else {
+	switch p := msg.Payload.(type) {
+	case *schedulerpb.FrontendToScheduler_HttpRequest:
+		req.HttpRequest = p.HttpRequest
+	case *schedulerpb.FrontendToScheduler_ProtobufRequest:
+		req.ProtobufRequest = p.ProtobufRequest
+	default:
 		return fmt.Errorf("unsupported payload type: %T", msg.Payload)
 	}
 
