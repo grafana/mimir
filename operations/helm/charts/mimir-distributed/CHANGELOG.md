@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
+* [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
 
 ## 5.8.0-rc.0
 

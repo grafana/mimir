@@ -68,7 +68,8 @@ spec:
           configMap:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
