@@ -30,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var evaluateQueryRequestType = proto.MessageName(&querierpb.EvaluateQueryRequest{})
+var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -70,7 +70,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch protoType {
-	case evaluateQueryRequestType:
+	case evaluateQueryRequestMessageName:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -90,8 +90,14 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
-	switch req.TypeUrl {
-	case evaluateQueryRequestType:
+	messageName, err := prototypes.AnyMessageName(req)
+	if err != nil {
+		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err), d.logger)
+		return
+	}
+
+	switch messageName {
+	case evaluateQueryRequestMessageName:
 		writer := &queryResponseWriter{
 			stream: stream,
 			logger: d.logger,
@@ -100,18 +106,23 @@ func (d *Dispatcher) HandleGRPC(ctx context.Context, req *prototypes.Any, stream
 		d.evaluateQuery(ctx, req.Value, writer)
 
 	default:
-		err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
-			Data: &frontendv2pb.QueryResultStreamRequest_Error{
-				Error: &querierpb.Error{
-					Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-					Message: fmt.Sprintf("unknown query request type: %v", req.TypeUrl),
-				},
-			},
-		})
+		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl), d.logger)
+		return
+	}
+}
 
-		if err != nil {
-			level.Error(d.logger).Log("msg", "failed to write error", "err", err)
-		}
+func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStream, t mimirpb.QueryErrorType, msg string, logger log.Logger) {
+	err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    t,
+				Message: msg,
+			},
+		},
+	})
+
+	if err != nil {
+		level.Debug(logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
 	}
 }
 
@@ -211,18 +222,7 @@ func (w *queryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQue
 }
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	err := w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
-				Type:    typ,
-				Message: msg,
-			},
-		},
-	})
-
-	if err != nil {
-		level.Debug(w.logger).Log("msg", "could not write error", "err", err)
-	}
+	writeErrorToStream(ctx, w.stream, typ, msg, w.logger)
 }
 
 type evaluationObserver struct {
