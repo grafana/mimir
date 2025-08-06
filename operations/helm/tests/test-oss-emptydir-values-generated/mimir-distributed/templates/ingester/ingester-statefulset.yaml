@@ -1,53 +1,64 @@
 ---
-# Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-logical-multizone-values-mimir-store-gateway-zone-a
+  name: test-oss-emptydir-values-mimir-ingester-zone-a
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-oss-logical-multizone-values
-    app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/instance: test-oss-emptydir-values
+    app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
-    name: "store-gateway-zone-a"
-    rollout-group: store-gateway
+    name: "ingester-zone-a"
+    rollout-group: ingester
     zone: zone-a
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
-    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
 spec:
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-oss-logical-multizone-values
-      app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      app.kubernetes.io/instance: test-oss-emptydir-values
+      app.kubernetes.io/component: ingester
+      rollout-group: ingester
       zone: zone-a
   updateStrategy:
     type: OnDelete
-  serviceName: test-oss-logical-multizone-values-mimir-store-gateway-headless
+  serviceName: test-oss-emptydir-values-mimir-ingester-headless
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-oss-logical-multizone-values
+        app.kubernetes.io/instance: test-oss-emptydir-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
-        name: "store-gateway-zone-a"
-        rollout-group: store-gateway
+        name: "ingester-zone-a"
+        rollout-group: ingester
         zone: zone-a
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-logical-multizone-values-mimir
+      serviceAccountName: test-oss-emptydir-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -62,33 +73,30 @@ spec:
         labelSelector:
           matchLabels:
             app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-logical-multizone-values
-            app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 120
+            app.kubernetes.io/instance: test-oss-emptydir-values
+            app.kubernetes.io/component: ingester
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-config
+            name: test-oss-emptydir-values-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-runtime
-        - name: storage
-          emptyDir:
-            {}
+            name: test-oss-emptydir-values-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:
-        - name: store-gateway
+        - name: ingester
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=store-gateway"
+            - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-store-gateway.sharding-ring.instance-availability-zone=zone-a"
-            - "-server.grpc-max-send-msg-size-bytes=209715200"
+            - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -116,64 +124,80 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            requests:
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
 ---
-# Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-logical-multizone-values-mimir-store-gateway-zone-b
+  name: test-oss-emptydir-values-mimir-ingester-zone-b
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-oss-logical-multizone-values
-    app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/instance: test-oss-emptydir-values
+    app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
-    name: "store-gateway-zone-b"
-    rollout-group: store-gateway
+    name: "ingester-zone-b"
+    rollout-group: ingester
     zone: zone-b
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
-    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-oss-logical-multizone-values-mimir-store-gateway-zone-a
+    grafana.com/rollout-downscale-leader: test-oss-emptydir-values-mimir-ingester-zone-a
   namespace: "citestns"
 spec:
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-oss-logical-multizone-values
-      app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      app.kubernetes.io/instance: test-oss-emptydir-values
+      app.kubernetes.io/component: ingester
+      rollout-group: ingester
       zone: zone-b
   updateStrategy:
     type: OnDelete
-  serviceName: test-oss-logical-multizone-values-mimir-store-gateway-headless
+  serviceName: test-oss-emptydir-values-mimir-ingester-headless
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-oss-logical-multizone-values
+        app.kubernetes.io/instance: test-oss-emptydir-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
-        name: "store-gateway-zone-b"
-        rollout-group: store-gateway
+        name: "ingester-zone-b"
+        rollout-group: ingester
         zone: zone-b
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-logical-multizone-values-mimir
+      serviceAccountName: test-oss-emptydir-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -188,33 +212,30 @@ spec:
         labelSelector:
           matchLabels:
             app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-logical-multizone-values
-            app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 120
+            app.kubernetes.io/instance: test-oss-emptydir-values
+            app.kubernetes.io/component: ingester
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-config
+            name: test-oss-emptydir-values-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-runtime
-        - name: storage
-          emptyDir:
-            {}
+            name: test-oss-emptydir-values-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:
-        - name: store-gateway
+        - name: ingester
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=store-gateway"
+            - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-store-gateway.sharding-ring.instance-availability-zone=zone-b"
-            - "-server.grpc-max-send-msg-size-bytes=209715200"
+            - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -242,64 +263,80 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            requests:
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
 ---
-# Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-logical-multizone-values-mimir-store-gateway-zone-c
+  name: test-oss-emptydir-values-mimir-ingester-zone-c
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-oss-logical-multizone-values
-    app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/instance: test-oss-emptydir-values
+    app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
-    name: "store-gateway-zone-c"
-    rollout-group: store-gateway
+    name: "ingester-zone-c"
+    rollout-group: ingester
     zone: zone-c
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
-    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-oss-logical-multizone-values-mimir-store-gateway-zone-b
+    grafana.com/rollout-downscale-leader: test-oss-emptydir-values-mimir-ingester-zone-b
   namespace: "citestns"
 spec:
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-oss-logical-multizone-values
-      app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      app.kubernetes.io/instance: test-oss-emptydir-values
+      app.kubernetes.io/component: ingester
+      rollout-group: ingester
       zone: zone-c
   updateStrategy:
     type: OnDelete
-  serviceName: test-oss-logical-multizone-values-mimir-store-gateway-headless
+  serviceName: test-oss-emptydir-values-mimir-ingester-headless
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-oss-logical-multizone-values
+        app.kubernetes.io/instance: test-oss-emptydir-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
-        name: "store-gateway-zone-c"
-        rollout-group: store-gateway
+        name: "ingester-zone-c"
+        rollout-group: ingester
         zone: zone-c
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-logical-multizone-values-mimir
+      serviceAccountName: test-oss-emptydir-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -314,33 +351,30 @@ spec:
         labelSelector:
           matchLabels:
             app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-logical-multizone-values
-            app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 120
+            app.kubernetes.io/instance: test-oss-emptydir-values
+            app.kubernetes.io/component: ingester
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-config
+            name: test-oss-emptydir-values-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: test-oss-logical-multizone-values-mimir-runtime
-        - name: storage
-          emptyDir:
-            {}
+            name: test-oss-emptydir-values-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:
-        - name: store-gateway
+        - name: ingester
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=store-gateway"
+            - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-store-gateway.sharding-ring.instance-availability-zone=zone-c"
-            - "-server.grpc-max-send-msg-size-bytes=209715200"
+            - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -368,10 +402,15 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            requests:
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
