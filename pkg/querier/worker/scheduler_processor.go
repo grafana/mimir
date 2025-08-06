@@ -112,9 +112,9 @@ type frontendResponseStreamer func(
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
-	httpHandler     RequestHandler
-	protobufHandler ProtobufRequestHandler
-	streamResponse  frontendResponseStreamer
+	httpHandler      RequestHandler
+	protobufHandler  ProtobufRequestHandler
+	streamResponse   frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
