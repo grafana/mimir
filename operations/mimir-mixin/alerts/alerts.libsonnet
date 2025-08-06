@@ -386,6 +386,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
+          alert: $.alertName('ingesterHeadCompactionIterationMissed'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_ingester_tsdb_compaction_missed_iterations_total[%(range_interval)s])) > 0
+          ||| % $._config {
+          },
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations. Verify if a higher interval is neeeded.
+            ||| % $._config,
+          },
+        }
+        {
           alert: $.alertName('StoreGatewayTooManyFailedOperations'),
           'for': '5m',
           expr: |||
