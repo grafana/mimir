@@ -11,7 +11,7 @@
 * [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
 * [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
 * [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
-* [CHANGE] Distributor: Remove deprecated global HA tracker timeout config flags. #12321
+* [CHANGE] Distributor: Remove deprecated global HA tracker timeout configuration flags. #12321
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306
 * [ENHANCEMENT] Compactor: Add `-compactor.update-blocks-concurrency` flag to control concurrency for updating block metadata during bucket index updates, separate from deletion marker concurrency. #12117
