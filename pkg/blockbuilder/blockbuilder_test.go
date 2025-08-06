@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -162,7 +163,7 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	require.Empty(t, list, "expected data_dir to be empty")
 }
 
-func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
+func TestBlockBuilder_GracefulShutdownDurations(t *testing.T) {
 	tests := map[string]struct {
 		shutdownGracePeriod time.Duration
 		timeSinceLastJob    time.Duration
@@ -197,20 +198,20 @@ func TestBlockBuilder_Stopping_DelaysAsExpected(t *testing.T) {
 			lastCompactAndUploadTime := time.Now().Add(-tt.timeSinceLastJob).UnixNano()
 			bb.lastCompactAndUploadTime.Store(lastCompactAndUploadTime)
 
-			var stopped bool
+			var stopped atomic.Bool
 			go func() {
 				require.NoError(t, bb.stopping(nil))
-				stopped = true
+				stopped.Store(true)
 			}()
 
 			tick := 50 * time.Millisecond
 			if minWait := tt.shutdownGracePeriod - tt.timeSinceLastJob; minWait > 0 {
 				require.Never(t, func() bool {
-					return stopped
+					return stopped.Load()
 				}, minWait, tick, "expected service running")
 			}
 			require.Eventually(t, func() bool {
-				return stopped
+				return stopped.Load()
 			}, tt.shutdownGracePeriod+2*tick, tick, "expected service stopped")
 		})
 	}
