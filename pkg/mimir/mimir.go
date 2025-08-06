@@ -31,15 +31,13 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/spanprofiler"
 	"github.com/okzk/sdnotify"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
@@ -74,13 +72,13 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -185,6 +183,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
+	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
@@ -200,14 +199,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
-
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
-	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
@@ -231,6 +228,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
+			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
@@ -335,20 +333,33 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
+		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
+	}
 	// validate the default limits
-	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
-func (c *Config) ValidateLimits(limits validation.Limits) error {
-	if err := c.Querier.ValidateLimits(limits); err != nil {
+// ValidateLimits validates the runtime limits.
+func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
-	return nil
+	return limits.Validate()
 }
 
 func (c *Config) isModuleEnabled(m string) bool {
@@ -598,13 +609,35 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	})
 }
 
+func (c *Config) registerMemberlistKVFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
+	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
+
+	c.MemberlistKV.RegisterFlags(throwaway)
+
+	defaultsOverrides := map[string]string{
+		"memberlist.packet-dial-timeout":    "500ms",
+		"memberlist.packet-write-timeout":   "500ms",
+		"memberlist.max-concurrent-writes":  "5",
+		"memberlist.acquire-writer-timeout": "1s",
+	}
+
+	throwaway.VisitAll(func(f *flag.Flag) {
+		if defaultValue, overridden := defaultsOverrides[f.Name]; overridden {
+			// Ignore errors when setting new values. We have a test to verify that it works.
+			_ = f.Value.Set(defaultValue)
+		}
+
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
+}
+
 // CommonConfigInheriter abstracts config that inherit common config values.
 type CommonConfigInheriter interface {
 	CommonConfigInheritance() CommonConfigInheritance
 }
 
 // UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
-// A list of CommonConfig inheriters can be provided
+// A list of CommonConfig inheriters can be provided.
 func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
 	for _, inh := range inheriters {
 		specificStorageLocations := specificLocationsUnmarshaler{}
@@ -760,6 +793,7 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -823,16 +857,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupObjstoreTracing()
-
-	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
-	// Note, for performance reasons, span profiler only labels root spans.
-	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
-	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
-	// gets converged into the latter.
-	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
-
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -866,13 +890,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	reg.MustRegister(collectors.NewGoCollector(
 		collectors.WithGoCollectorRuntimeMetrics(rules...),
 	))
-}
-
-// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
-func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
-	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.

@@ -37,6 +37,67 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Queries / sec by read path\nQueries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 1,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")",
+                        "format": "time_series",
+                        "legendFormat": "{{proxy}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Queries / sec by read path",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Gateway",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
@@ -61,7 +122,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 1,
+                  "id": 2,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -136,11 +197,11 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "short"
                      },
                      "overrides": [ ]
                   },
-                  "id": 2,
+                  "id": 3,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -177,7 +238,7 @@
                   "type": "timeseries",
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "ms",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -220,7 +281,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 3,
+                  "id": 4,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -270,7 +331,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -331,7 +392,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -411,7 +472,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -461,7 +522,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 7,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -522,7 +583,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -571,7 +632,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -621,7 +682,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -683,7 +744,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 12,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -732,7 +793,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 12,
+                  "id": 13,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -823,67 +884,6 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
-                        "format": "time_series",
-                        "legendFormat": "99th percentile",
-                        "refId": "A"
-                     },
-                     {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
-                        "format": "time_series",
-                        "legendFormat": "50th percentile",
-                        "refId": "B"
-                     },
-                     {
-                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_series_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_series_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
-                        "format": "time_series",
-                        "legendFormat": "Average",
-                        "refId": "C"
-                     }
-                  ],
-                  "title": "Series per query",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [ ]
-                  },
                   "id": 14,
                   "links": [ ],
                   "nullPointMode": "null as zero",
@@ -899,25 +899,25 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_samples_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_samples_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_series_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) / sum(cluster_job:cortex_ingester_queried_series_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      }
                   ],
-                  "title": "Samples per query",
+                  "title": "Series per query",
                   "type": "timeseries"
                },
                {
@@ -960,19 +960,80 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_exemplars_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_exemplars_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_samples_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) / sum(cluster_job:cortex_ingester_queried_samples_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Samples per query",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 16,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "1 * sum(cluster_job:cortex_ingester_queried_exemplars_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) / sum(cluster_job:cortex_ingester_queried_exemplars_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
@@ -1018,7 +1079,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 17,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1030,7 +1091,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1097,7 +1158,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1109,7 +1170,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1194,7 +1255,7 @@
                         }
                      ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1205,7 +1266,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{$read_path_matcher}[$__rate_interval]))",
@@ -1216,7 +1277,19 @@
                   ],
                   "title": "Consistency checks failed",
                   "type": "timeseries"
-               },
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Querier",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
                {
                   "datasource": "$datasource",
                   "description": "### Rejected queries\nThe proportion of all queries received by queriers that were rejected for some reason.\n\n",
@@ -1244,7 +1317,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1255,7 +1328,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
@@ -1266,13 +1339,105 @@
                   ],
                   "title": "Rejected queries",
                   "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                  "id": 21,
+                  "options": {
+                     "calculate": true,
+                     "calculation": {
+                        "xBuckets": {
+                           "mode": "count",
+                           "value": 60
+                        },
+                        "yBuckets": {
+                           "mode": "count",
+                           "value": 40
+                        }
+                     },
+                     "cellGap": 0,
+                     "cellValues": {
+                        "unit": "reqps"
+                     },
+                     "legend": {
+                        "show": false
+                     },
+                     "tooltip": {
+                        "yHistogram": true
+                     },
+                     "yAxis": {
+                        "min": 0,
+                        "unit": "bytes"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Estimated memory consumption",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated per-query memory consumption",
+                  "type": "heatmap"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 22,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                        "format": "time_series",
+                        "legendFormat": "Queries",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fallback to Prometheus' query engine",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Querier",
+            "title": "",
             "titleSize": "h6"
          },
          {
@@ -1304,7 +1469,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1395,7 +1560,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1449,7 +1614,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 25,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1541,7 +1706,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1555,13 +1720,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level=~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level=~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{level}}",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level!~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level!~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "5+",
                         "legendLink": null
@@ -1595,7 +1760,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1609,7 +1774,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(data_type) (\n  # Exclude \"chunks refetched\".\n  rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component=\"store-gateway\", stage!=\"refetched\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(data_type) (\n  # Exclude \"chunks refetched\".\n  rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component=\"store-gateway\", stage!=\"refetched\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{data_type}}",
                         "legendLink": null
@@ -1643,7 +1808,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1657,7 +1822,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(data_type) (\n  # Exclude \"chunks processed\" to only count \"chunks returned\", other than postings and series.\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage!=\"processed\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(data_type) (\n  # Exclude \"chunks processed\" to only count \"chunks returned\", other than postings and series.\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage!=\"processed\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{data_type}}",
                         "legendLink": null
@@ -1703,7 +1868,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1717,7 +1882,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "{{stage}}",
                         "legendLink": null
@@ -1751,7 +1916,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1765,7 +1930,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])))\n",
+                        "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])))\n",
                         "format": "time_series",
                         "legendFormat": "{{stage}}",
                         "legendLink": null
@@ -1801,7 +1966,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1815,7 +1980,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "# Clamping min to 0 because if preloading not useful at all, then the actual value we get is\n# slightly negative because of the small overhead introduced by preloading.\nclamp_min(1 - (\n    sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n    /\n    sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n), 0)\n",
+                        "expr": "# Clamping min to 0 because if preloading not useful at all, then the actual value we get is\n# slightly negative because of the small overhead introduced by preloading.\nclamp_min(1 - (\n    sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n    /\n    sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n), 0)\n",
                         "format": "time_series",
                         "legendFormat": "% of time reduced by preloading",
                         "legendLink": null
@@ -1862,7 +2027,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1876,7 +2041,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "cortex_bucket_store_blocks_loaded{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}",
+                        "expr": "cortex_bucket_store_blocks_loaded{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -1941,7 +2106,7 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1955,13 +2120,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_bucket_store_block_loads_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_block_loads_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_bucket_store_block_load_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_block_load_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
@@ -2026,7 +2191,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2040,13 +2205,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_bucket_store_block_drops_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_block_drops_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_bucket_store_block_drop_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_block_drop_failures_total{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
@@ -2092,7 +2257,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2106,7 +2271,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "cortex_bucket_store_indexheader_lazy_load_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"} - cortex_bucket_store_indexheader_lazy_unload_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}",
+                        "expr": "cortex_bucket_store_indexheader_lazy_load_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"} - cortex_bucket_store_indexheader_lazy_unload_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -2140,7 +2305,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 36,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2155,19 +2320,19 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "legendFormat": "99th Percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "legendFormat": "50th Percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_store_indexheader_lazy_load_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
@@ -2220,7 +2385,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 37,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2235,19 +2400,19 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "legendFormat": "99th Percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "legendFormat": "50th Percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_bucket_stores_gate_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_stores_gate_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_bucket_stores_gate_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",gate=\"index_header\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_stores_gate_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",gate=\"index_header\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
@@ -2312,7 +2477,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2326,7 +2491,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_bucket_store_series_hash_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum(rate(cortex_bucket_store_series_hash_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_bucket_store_series_hash_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum(rate(cortex_bucket_store_series_hash_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "hit ratio",
                         "legendLink": null
@@ -2361,7 +2526,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2375,7 +2540,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(thanos_store_index_cache_hits_total{item_type=\"ExpandedPostings\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum(rate(thanos_store_index_cache_requests_total{item_type=\"ExpandedPostings\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(thanos_store_index_cache_hits_total{item_type=\"ExpandedPostings\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum(rate(thanos_store_index_cache_requests_total{item_type=\"ExpandedPostings\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "hit ratio",
                         "legendLink": null
@@ -2410,7 +2575,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2424,7 +2589,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_cache_memory_hits_total{name=\"chunks-attributes-cache\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum(rate(cortex_cache_memory_requests_total{name=\"chunks-attributes-cache\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_cache_memory_hits_total{name=\"chunks-attributes-cache\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum(rate(cortex_cache_memory_requests_total{name=\"chunks-attributes-cache\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "hit ratio",
                         "legendLink": null
@@ -2545,7 +2710,7 @@
                "current": {
                   "selected": true,
                   "text": "All",
-                  "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
+                  "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
                },
                "hide": 0,
                "includeAll": false,
@@ -2556,12 +2721,12 @@
                   {
                      "selected": true,
                      "text": "All",
-                     "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
+                     "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
                   },
                   {
                      "selected": false,
                      "text": "Main",
-                     "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\""
+                     "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|querier.*|query-frontend.*|query-scheduler.*))\""
                   },
                   {
                      "selected": false,
@@ -2569,7 +2734,7 @@
                      "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
                   }
                ],
-               "query": "All : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\",Main : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\",Remote ruler : cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\"",
+               "query": "All : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\",Main : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|querier.*|query-frontend.*|query-scheduler.*))\",Remote ruler : cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\"",
                "skipUrlSync": false,
                "type": "custom",
                "useTags": false

@@ -47,6 +47,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -139,6 +142,9 @@ func TestDistributor_Push(t *testing.T) {
 		expectedMetrics       string
 		timeOut               bool
 		configure             func(*Config)
+		customRequest         *mimirpb.WriteRequest
+		// Expect trace event from sample deduplication due to conflicting timestamps?
+		expectDedupTraceEvent bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -198,7 +204,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
 			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -235,8 +241,35 @@ func TestDistributor_Push(t *testing.T) {
 				cfg.ReusableIngesterPushWorkers = 2
 			},
 		},
+		"A push with duplicate timestamps should deduplicate and emit trace events": {
+			numIngesters:          3,
+			happyIngesters:        3,
+			metricNames:           []string{"cortex_discarded_samples_total", lastSeenTimestamp},
+			expectDedupTraceEvent: true,
+			// Custom request with two different samples with same timestamp.
+			customRequest: makeWriteRequestWith(
+				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
+					append(makeSamples(10000, 1.0), append(makeSamples(20000, 1.0), makeSamples(20000, 2.0)...)...), nil, nil),
+			),
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample_duplicate_timestamp",user="user"} 1
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 20
+			`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			spanRecorder := tracetest.NewSpanRecorder()
+			tracer := trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder)).Tracer("test")
+			const spanName = "test_push_operation"
+			ctx, span := tracer.Start(ctx, spanName)
+			t.Cleanup(func() {
+				span.End()
+			})
+
 			limits := prepareDefaultLimits()
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
@@ -250,7 +283,12 @@ func TestDistributor_Push(t *testing.T) {
 				configure:       tc.configure,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			var request *mimirpb.WriteRequest
+			if tc.customRequest != nil {
+				request = tc.customRequest
+			} else {
+				request = makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			}
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
@@ -277,8 +315,49 @@ func TestDistributor_Push(t *testing.T) {
 					return testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), tc.metricNames...)
 				})
 			}
+
+			const eventName = "Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]"
+			span.End()
+			event, found := findSpanEvent(t, spanRecorder, spanName, eventName)
+			if !tc.expectDedupTraceEvent {
+				require.False(t, found, "Expected no sample deduplication trace events")
+			} else {
+				require.True(t, found, "Expected a sample deduplication trace event")
+				verifySpanEvent(t, event, eventName, []attribute.KeyValue{
+					attribute.String("metric", "test_metric"),
+					attribute.Int64("count", 1),
+				})
+			}
 		})
 	}
+}
+
+func verifySpanEvent(t *testing.T, event trace.Event, name string, attributes []attribute.KeyValue) {
+	t.Helper()
+
+	assert.Equal(t, name, event.Name)
+	assert.Equal(t, attributes, event.Attributes)
+}
+
+func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, spanName, eventName string) (trace.Event, bool) {
+	t.Helper()
+
+	var event trace.Event
+	for _, sp := range spanRecorder.Ended() {
+		if sp.Name() != spanName {
+			continue
+		}
+
+		for _, ev := range sp.Events() {
+			if ev.Name != eventName {
+				continue
+			}
+			require.Emptyf(t, event.Name, "Expected only one event with name %q", eventName)
+
+			event = ev
+		}
+	}
+	return event, event.Name != ""
 }
 
 func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
@@ -356,12 +435,12 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_received_exemplars_total",
 		"cortex_distributor_received_metadata_total",
 		"cortex_distributor_deduped_samples_total",
+		"cortex_distributor_requests_in_total",
 		"cortex_distributor_samples_in_total",
 		"cortex_distributor_exemplars_in_total",
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
-		"cortex_distributor_label_values_with_newlines_total",
 		"cortex_distributor_dropped_native_histograms_total",
 	}
 
@@ -371,13 +450,13 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
+	d.incomingRequests.WithLabelValues("userA", "2.0").Add(1)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
 	d.nonHASamples.WithLabelValues("userA").Add(5)
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
-	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
 	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -406,7 +485,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		cortex_distributor_received_metadata_total{user="userA"} 5
 		cortex_distributor_received_metadata_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+		# HELP cortex_distributor_received_samples_total The total number of received samples, including native histogram samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userA"} 5
 		cortex_distributor_received_samples_total{user="userB"} 10
@@ -416,6 +495,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		cortex_distributor_received_exemplars_total{user="userA"} 5
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
+		# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
+        # TYPE cortex_distributor_requests_in_total counter
+        cortex_distributor_requests_in_total{user="userA",version="2.0"} 1
+
 		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 		cortex_distributor_samples_in_total{user="userA"} 5
@@ -423,10 +506,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
-
-		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
-		# TYPE cortex_distributor_label_values_with_newlines_total counter
-		cortex_distributor_label_values_with_newlines_total{user="userA"} 1
 		`), metrics...))
 
 	d.cleanupInactiveUser("userA")
@@ -451,7 +530,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_received_metadata_total counter
 		cortex_distributor_received_metadata_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+		# HELP cortex_distributor_received_samples_total The total number of received samples, including native histogram samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userB"} 10
 
@@ -464,9 +543,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
-
-		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
-		# TYPE cortex_distributor_label_values_with_newlines_total counter
 		`), metrics...))
 }
 
@@ -526,7 +602,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -631,7 +707,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
+	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -883,7 +959,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.AlreadyExists, newReplicasDidNotMatchError("instance0", "instance2").Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH},
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -902,7 +978,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1447,7 +1523,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -1527,7 +1603,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 	}
 }
 
-func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
+func TestDistributor_ValidateSeries(t *testing.T) {
 	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
 
 	testCases := map[string]struct {
@@ -1593,8 +1669,7 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
-				require.False(t, shouldRemove)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 				require.NoError(t, err)
 			}
 
@@ -1770,7 +1845,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					_, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2013,9 +2088,8 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
-				assert.False(t, shouldRemove)
 			}
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -2121,13 +2195,11 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
-					require.True(t, shouldRemove)
 				} else {
 					assert.NoError(t, err)
-					assert.False(t, shouldRemove)
 				}
 			}
 			if tc.expectedError == nil {
@@ -2147,14 +2219,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	return ret
 }
@@ -2207,7 +2272,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "ingestion rate limit",
+			expectedErr: "ingestion burst size limit",
 		},
 		"too many labels limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -2336,7 +2401,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
 				limits.CostAttributionLabels = []string{"team"}
-				limits.MaxCostAttributionCardinalityPerUser = 100
+				limits.MaxCostAttributionCardinality = 100
 			},
 		},
 	}
@@ -2388,13 +2453,12 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					})
 
 					caCase.cfg(&limits)
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(b, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Initialize the cost attribution manager
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
-						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, prometheus.NewRegistry(), caCase.customRegistry)
 						require.NoError(b, err)
 					}
 
@@ -2415,7 +2479,10 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					b.ResetTimer()
 
 					for n := 0; n < b.N; n++ {
-						_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+						b.StopTimer()
+						rw := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+						b.StartTimer()
+						_, err := distributor.Push(ctx, rw)
 
 						if testData.expectedErr == "" && err != nil {
 							b.Fatalf("no error expected but got %v", err)
@@ -4589,16 +4656,21 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
 					// the final ingester may not have received series yet.
 					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-					test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
+					require.Eventually(t, func() bool {
 						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-						require.NoError(t, err)
-						assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
-						// Make sure the resultant label names are sorted
-						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
-							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+						if err != nil {
+							return false
+						}
+						if testData.expectedSeriesCountTotal != seriesCountTotal {
+							// Not all ingesters have received the series yet.
+							return false
+						}
+
+						slices.SortFunc(cardinalityMap.Items, func(l, r *client.LabelValueSeriesCount) int {
+							return strings.Compare(l.LabelName, r.LabelName)
 						})
-						return cardinalityMap
-					})
+						return assert.EqualValues(t, testData.expectedResult, cardinalityMap)
+					}, 1*time.Second, 50*time.Millisecond)
 
 					// Make sure enough ingesters were queried
 					assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
@@ -4992,8 +5064,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
-	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
-	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
+	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH}
+	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS}
 
 	type testCase struct {
 		name              string
@@ -5675,7 +5747,6 @@ func prepareIngesters(t testing.TB, cfg prepConfig) []*mockIngester {
 		ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 	}
 	return ingesters
-
 }
 
 func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
@@ -5919,17 +5990,15 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			distributorCfg.HATrackerConfig = HATrackerConfig{
 				EnableHATracker: true,
 				KVStore:         kv.Config{Mock: mock},
-				UpdateTimeout:   100 * time.Millisecond,
-				FailoverTimeout: time.Second,
 			}
+			cfg.limits.HATrackerUpdateTimeout = model.Duration(100 * time.Millisecond)
+			cfg.limits.HATrackerFailoverTimeout = model.Duration(time.Second)
 			if cfg.limits.HAMaxClusters == 0 {
 				cfg.limits.HAMaxClusters = 100
 			}
 		}
 
-		overrides, err := validation.NewOverrides(*cfg.limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(*cfg.limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -6590,7 +6659,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{
-						Labels: ts.Labels,
+						Labels: slices.Clone(ts.Labels), // Clone labels to avoid data races between reading label values in this mock ingester and cloning them in receiveResponse().
 						Chunks: wireChunks,
 					},
 				},
@@ -7119,8 +7188,8 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// PushToStorage implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
 }
@@ -7215,7 +7284,7 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata
@@ -7473,20 +7542,22 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
-		requestsIn        int
-		samplesIn         int
-		exemplarsIn       int
-		metadataIn        int
-		receivedRequests  int
-		receivedSamples   int
-		receivedExemplars int
-		receivedMetadata  int
+		requestsIn                     int
+		samplesIn                      int
+		exemplarsIn                    int
+		metadataIn                     int
+		receivedRequests               int
+		receivedSamples                int
+		receivedExemplars              int
+		receivedMetadata               int
+		receivedNativeHistogramSamples int
+		receivedNativeHistogramBuckets int
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		return fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
-				cortex_distributor_requests_in_total{user="%s"} %d
+				cortex_distributor_requests_in_total{user="%s",version="1.0"} %d
 				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 				# TYPE cortex_distributor_samples_in_total counter
 				cortex_distributor_samples_in_total{user="%s"} %d
@@ -7499,7 +7570,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected and deduped requests.
 				# TYPE cortex_distributor_received_requests_total counter
 				cortex_distributor_received_requests_total{user="%s"} %d
-				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+				# HELP cortex_distributor_received_samples_total The total number of received samples, including native histogram samples, excluding rejected and deduped samples.
 				# TYPE cortex_distributor_received_samples_total counter
 				cortex_distributor_received_samples_total{user="%s"} %d
 				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
@@ -7508,7 +7579,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 				# TYPE cortex_distributor_received_metadata_total counter
 				cortex_distributor_received_metadata_total{user="%s"} %d
-	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
+				# HELP cortex_distributor_received_native_histogram_samples_total The total number of received native histogram samples, excluding rejected and deduped samples.
+				# TYPE cortex_distributor_received_native_histogram_samples_total counter
+				cortex_distributor_received_native_histogram_samples_total{user="%s"} %d
+				# HELP cortex_distributor_received_native_histogram_buckets_total The total number of received native histogram buckets, excluding rejected and deduped samples.
+				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
+				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
@@ -7517,6 +7594,8 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_native_histogram_samples_total",
+				"cortex_distributor_received_native_histogram_buckets_total",
 			}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
@@ -7542,14 +7621,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 10,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              10,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7572,14 +7653,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 5,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              5,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 5,
+			receivedNativeHistogramBuckets: 40})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7597,14 +7680,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   0,
-			receivedExemplars: 0,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                0,
+			receivedExemplars:              0,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 0,
+			receivedNativeHistogramBuckets: 0})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7640,14 +7725,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        4,
-			samplesIn:         80,
-			exemplarsIn:       40,
-			metadataIn:        40,
-			receivedRequests:  2,
-			receivedSamples:   40,
-			receivedExemplars: 20,
-			receivedMetadata:  20})
+			requestsIn:                     4,
+			samplesIn:                      80,
+			exemplarsIn:                    40,
+			metadataIn:                     40,
+			receivedRequests:               2,
+			receivedSamples:                40,
+			receivedExemplars:              20,
+			receivedMetadata:               20,
+			receivedNativeHistogramSamples: 20,
+			receivedNativeHistogramBuckets: 160})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7666,14 +7753,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 0,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              0,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7703,14 +7792,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 5,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              5,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 5,
+			receivedNativeHistogramBuckets: 40})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7762,14 +7853,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       0,
-			metadataIn:        0,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 0,
-			receivedMetadata:  0})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    0,
+			metadataIn:                     0,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              0,
+			receivedMetadata:               0,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 20})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7785,14 +7878,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist, reg := getDistributor(cfg)
 
 		metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
-			if metricIdx%3 == 0 {
+			switch metricIdx % 3 {
+			case 0:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: metricName,
 					Help:             strings.Repeat("a", metadataLengthLimit+1),
 					Unit:             "unknown",
 				}
-			} else if metricIdx%3 == 1 {
+			case 1:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: strings.Repeat("a", metadataLengthLimit+1),
@@ -7813,14 +7907,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 10,
-			receivedMetadata:  4})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              10,
+			receivedMetadata:               4,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -8144,6 +8240,7 @@ func TestStartFinishRequest(t *testing.T) {
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
 		addIngestionRateBeforePush     int64
+		skipDecompress                 bool
 
 		expectedStartError error
 		expectedPushError  error
@@ -8204,13 +8301,23 @@ func TestStartFinishRequest(t *testing.T) {
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
+		// initial httpgrpcRequestSize check passes, decompressed request exceeds estimated size + limit size and the push fails
 		"too many inflight bytes requests, external with httpgrpc size within limit": {
 			externalCheck:                  true,
-			httpgrpcRequestSize:            500,
-			inflightRequestsBeforePush:     1,
-			inflightRequestsSizeBeforePush: inflightBytesLimit - 500,
+			httpgrpcRequestSize:            10,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - (decompressionEstMultiplier+1)*10 - 1,
 			expectedStartError:             nil, // httpgrpc request size fits into inflight request size limit.
 			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		// initial httpgrpcRequestSize check fails, skip decompression
+		"too many inflight bytes requests, external with httpgrpc size estimate above limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            50,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - 50,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+			skipDecompress:                 true,
 		},
 
 		"too many inflight bytes requests, external with httpgrpc size outside limit": {
@@ -8268,6 +8375,10 @@ func TestStartFinishRequest(t *testing.T) {
 			ctx = context.WithValue(ctx, distributorKey, ds[0])
 			ctx = context.WithValue(ctx, expectedInflightRequestsKey, int64(tc.inflightRequestsBeforePush)+1)
 			ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize+int64(pushReq.Size()))
+
+			if tc.skipDecompress {
+				ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize)
+			}
 
 			if tc.externalCheck {
 				var err error
@@ -8603,9 +8714,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 		return &noopIngester{}, nil
 	})
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
+	overrides := validation.NewOverrides(limits, nil)
 	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -8683,8 +8792,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 					IngestionArtificialDelay: model.Duration(tc.delay),
 				},
 			})
-			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(*prepareDefaultLimits(), limits)
 
 			// Mock to capture sleep and advance time.
 			timeSource := &MockTimeSource{CurrentTime: time.Now()}
@@ -8707,7 +8815,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 				ctx = user.InjectOrgID(ctx, tc.userID)
 			}
 			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
-			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
 			require.NoError(t, err)
 
 			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.

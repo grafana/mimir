@@ -8,23 +8,21 @@ package ruler
 import (
 	"context"
 	"errors"
-	"flag"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/crypto/tls"
-	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 
-	"github.com/grafana/mimir/pkg/util"
+	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -32,45 +30,6 @@ var (
 	errRulerNotifierStopped               = cancellation.NewErrorf("rulerNotifier stopped")
 	errRulerSimultaneousBasicAuthAndOAuth = errors.New("cannot use both Basic Auth and OAuth2 simultaneously")
 )
-
-type NotifierConfig struct {
-	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
-	TLS        tls.ClientConfig `yaml:",inline"`
-	BasicAuth  util.BasicAuth   `yaml:",inline"`
-	OAuth2     OAuth2Config     `yaml:"oauth2"`
-	ProxyURL   string           `yaml:"proxy_url" category:"advanced"`
-}
-
-func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.TLSEnabled, "ruler.alertmanager-client.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
-	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
-	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
-	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
-	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
-}
-
-type OAuth2Config struct {
-	ClientID       string                    `yaml:"client_id"`
-	ClientSecret   flagext.Secret            `yaml:"client_secret"`
-	TokenURL       string                    `yaml:"token_url"`
-	Scopes         flagext.StringSliceCSV    `yaml:"scopes,omitempty"`
-	EndpointParams flagext.LimitsMap[string] `yaml:"endpoint_params" category:"advanced"`
-}
-
-func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.ClientID, prefix+"client_id", "", "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.")
-	f.Var(&cfg.ClientSecret, prefix+"client_secret", "OAuth2 client secret.")
-	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
-	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
-	if !cfg.EndpointParams.IsInitialized() {
-		cfg.EndpointParams = flagext.NewLimitsMap[string](nil)
-	}
-	f.Var(&cfg.EndpointParams, prefix+"endpoint-params", "Optional additional URL parameters to send to the token URL.")
-}
-
-func (cfg *OAuth2Config) IsEnabled() bool {
-	return cfg.ClientID != "" || cfg.TokenURL != ""
-}
 
 // rulerNotifier bundles a notifier.Manager together with an associated
 // Alertmanager service discovery manager and handles the lifecycle
@@ -84,11 +43,12 @@ type rulerNotifier struct {
 }
 
 func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
-	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
 	if err != nil {
 		return nil, err
 	}
+
+	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	sl := util_log.SlogFromGoKit(l)
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, sl),
@@ -141,13 +101,13 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
-	if rulerConfig.AlertmanagerURL == "" {
+func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+	if amURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
 	}
 
-	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
+	amURLs := strings.Split(amURL, ",")
 	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
 
 	for _, rawURL := range amURLs {
@@ -158,12 +118,12 @@ func buildNotifierConfig(rulerConfig *Config, resolver AddressProvider, rmi disc
 
 		var sdConfig discovery.Config
 		if isSD {
-			sdConfig = dnsSD(rulerConfig, resolver, qType, url, rmi)
+			sdConfig = dnsSD(refreshInterval, resolver, qType, url, rmi)
 		} else {
 			sdConfig = staticTarget(url)
 		}
 
-		amCfgWithSD, err := amConfigWithSD(rulerConfig, url, sdConfig)
+		amCfgWithSD, err := amConfigWithSD(notifierCfg, notificationTimeout, url, sdConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -179,12 +139,12 @@ func buildNotifierConfig(rulerConfig *Config, resolver AddressProvider, rmi disc
 	return promConfig, nil
 }
 
-func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
+func amConfigWithSD(notifierCfg mimirnotifier.Config, notificationTimeout time.Duration, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,
 		PathPrefix:              url.Path,
-		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
+		Timeout:                 model.Duration(notificationTimeout),
 		ServiceDiscoveryConfigs: discovery.Configs{sdConfig},
 		HTTPClientConfig:        config_util.HTTPClientConfig{},
 	}
@@ -201,16 +161,16 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 	}
 
 	// Override URL basic authentication configs with hard coded config values if present
-	if rulerConfig.Notifier.BasicAuth.IsEnabled() {
+	if notifierCfg.BasicAuth.IsEnabled() {
 		amConfig.HTTPClientConfig.BasicAuth = &config_util.BasicAuth{
-			Username: rulerConfig.Notifier.BasicAuth.Username,
-			Password: config_util.Secret(rulerConfig.Notifier.BasicAuth.Password.String()),
+			Username: notifierCfg.BasicAuth.Username,
+			Password: config_util.Secret(notifierCfg.BasicAuth.Password.String()),
 		}
 	}
 
 	// Whether to use an optional HTTP, HTTP+CONNECT, or SOCKS5 proxy.
-	if rulerConfig.Notifier.ProxyURL != "" {
-		url, err := url.Parse(rulerConfig.Notifier.ProxyURL)
+	if notifierCfg.ProxyURL != "" {
+		url, err := url.Parse(notifierCfg.ProxyURL)
 		if err != nil {
 			return nil, err
 		}
@@ -218,24 +178,24 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 	}
 
 	// Whether to use OAuth2 or not.
-	if rulerConfig.Notifier.OAuth2.IsEnabled() {
+	if notifierCfg.OAuth2.IsEnabled() {
 		if amConfig.HTTPClientConfig.BasicAuth != nil {
 			return nil, errRulerSimultaneousBasicAuthAndOAuth
 		}
 
 		amConfig.HTTPClientConfig.OAuth2 = &config_util.OAuth2{
-			ClientID:     rulerConfig.Notifier.OAuth2.ClientID,
-			ClientSecret: config_util.Secret(rulerConfig.Notifier.OAuth2.ClientSecret.String()),
-			TokenURL:     rulerConfig.Notifier.OAuth2.TokenURL,
-			Scopes:       rulerConfig.Notifier.OAuth2.Scopes,
+			ClientID:     notifierCfg.OAuth2.ClientID,
+			ClientSecret: config_util.Secret(notifierCfg.OAuth2.ClientSecret.String()),
+			TokenURL:     notifierCfg.OAuth2.TokenURL,
+			Scopes:       notifierCfg.OAuth2.Scopes,
 		}
 
-		if rulerConfig.Notifier.OAuth2.EndpointParams.IsInitialized() {
-			amConfig.HTTPClientConfig.OAuth2.EndpointParams = rulerConfig.Notifier.OAuth2.EndpointParams.Read()
+		if notifierCfg.OAuth2.EndpointParams.IsInitialized() {
+			amConfig.HTTPClientConfig.OAuth2.EndpointParams = notifierCfg.OAuth2.EndpointParams.Read()
 		}
 
-		if rulerConfig.Notifier.ProxyURL != "" {
-			url, err := url.Parse(rulerConfig.Notifier.ProxyURL)
+		if notifierCfg.ProxyURL != "" {
+			url, err := url.Parse(notifierCfg.ProxyURL)
 			if err != nil {
 				return nil, err
 			}
@@ -244,29 +204,29 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 	}
 
 	// Whether to use TLS or not.
-	if rulerConfig.Notifier.TLSEnabled {
-		if rulerConfig.Notifier.TLS.Reader == nil {
+	if notifierCfg.TLSEnabled {
+		if notifierCfg.TLS.Reader == nil {
 			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
-				CAFile:             rulerConfig.Notifier.TLS.CAPath,
-				CertFile:           rulerConfig.Notifier.TLS.CertPath,
-				KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
-				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
-				ServerName:         rulerConfig.Notifier.TLS.ServerName,
+				CAFile:             notifierCfg.TLS.CAPath,
+				CertFile:           notifierCfg.TLS.CertPath,
+				KeyFile:            notifierCfg.TLS.KeyPath,
+				InsecureSkipVerify: notifierCfg.TLS.InsecureSkipVerify,
+				ServerName:         notifierCfg.TLS.ServerName,
 			}
 		} else {
-			cert, err := rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.CertPath)
+			cert, err := notifierCfg.TLS.Reader.ReadSecret(notifierCfg.TLS.CertPath)
 			if err != nil {
 				return nil, err
 			}
 
-			key, err := rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.KeyPath)
+			key, err := notifierCfg.TLS.Reader.ReadSecret(notifierCfg.TLS.KeyPath)
 			if err != nil {
 				return nil, err
 			}
 
 			var ca []byte
-			if rulerConfig.Notifier.TLS.CAPath != "" {
-				ca, err = rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.CAPath)
+			if notifierCfg.TLS.CAPath != "" {
+				ca, err = notifierCfg.TLS.Reader.ReadSecret(notifierCfg.TLS.CAPath)
 				if err != nil {
 					return nil, err
 				}
@@ -276,8 +236,8 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 				CA:                 string(ca),
 				Cert:               string(cert),
 				Key:                config_util.Secret(key),
-				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
-				ServerName:         rulerConfig.Notifier.TLS.ServerName,
+				InsecureSkipVerify: notifierCfg.TLS.InsecureSkipVerify,
+				ServerName:         notifierCfg.TLS.ServerName,
 			}
 		}
 	}

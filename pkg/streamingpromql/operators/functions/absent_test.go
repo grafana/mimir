@@ -8,12 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
-	memTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	ctx := context.Background()
+	memTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 	a := &Absent{
 		TimeRange: types.QueryTimeRange{
@@ -23,21 +24,16 @@ func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
 		presence:                 []bool{false}, // Single false value to generate one point
 	}
 
-	t.Run("first call should return data", func(t *testing.T) {
-		result1, err := a.NextSeries(context.Background())
-		require.NoError(t, err)
-		require.NotNil(t, result1.Floats)
-		require.Len(t, result1.Floats, 1)
+	// First call should return data.
+	result1, err := a.NextSeries(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result1.Floats)
+	require.Len(t, result1.Floats, 1)
+	types.FPointSlicePool.Put(&result1.Floats, memTracker)
 
-		if result1.Floats != nil {
-			types.FPointSlicePool.Put(result1.Floats, memTracker)
-		}
-	})
-
-	t.Run("second call should return EOS", func(t *testing.T) {
-		result2, err := a.NextSeries(context.Background())
-		require.Equal(t, types.EOS, err)
-		require.Empty(t, result2.Floats)
-		require.True(t, a.exhausted)
-	})
+	// Second call should return EOS.
+	result2, err := a.NextSeries(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Empty(t, result2.Floats)
+	require.True(t, a.exhausted)
 }

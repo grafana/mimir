@@ -8,6 +8,8 @@ title: Planning Grafana Mimir capacity
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Planning Grafana Mimir capacity
 
 The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale.
@@ -154,6 +156,8 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Disk: 300GB
 
 For more information about disk requirements, refer to [Compactor disk utilization](../../../references/architecture/components/compactor/#compactor-disk-utilization).
+
+For more information about how to scale the compactor for large tenants, refer to [Manage capacity for large tenants](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/run-production-environment/production-tips/#manage-capacity-for-large-tenants).
 
 **To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 

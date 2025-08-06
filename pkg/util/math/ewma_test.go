@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEWMA_AddAndValue(t *testing.T) {
@@ -49,4 +50,16 @@ func TestEWMA_AddAndValue(t *testing.T) {
 			assert.Equal(t, tc.expected, math.Round(ma.Value()))
 		})
 	}
+}
+
+func TestEWMA_Reset(t *testing.T) {
+	ma := NewEwma(10, 0)
+
+	require.Equal(t, 0.0, ma.Value())
+	ma.Add(10)
+	ma.Add(0)
+	require.NotEqual(t, 0.0, ma.Value())
+
+	ma.Reset()
+	require.Equal(t, 0.0, ma.Value())
 }

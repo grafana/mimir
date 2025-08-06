@@ -4,7 +4,7 @@ aliases:
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: Versioning
 title: About Grafana Mimir versioning
-weight: 50
+weight: 35
 ---
 
 # About Grafana Mimir versioning
@@ -48,10 +48,9 @@ The following features are currently experimental:
 
 - Cost attribution
   - Configure labels for cost attribution
-    - `-validation.cost-attribution-labels`
-  - Configure cost attribution limits, such as label cardinality and the maximum number of cost attribution labels
-    - `-validation.max-cost-attribution-labels-per-user`
-    - `-validation.max-cost-attribution-cardinality-per-user`
+    - `-validation.cost-attribution-labels-structured`
+  - Configure cost attribution limits, such as cardinality:
+    - `-validation.max-cost-attribution-cardinality`
   - Configure cooldown periods and eviction intervals for cost attribution
     - `-validation.cost-attribution-cooldown`
     - `-cost-attribution.eviction-interval`
@@ -88,6 +87,9 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
+  - `-ruler.min-rule-evaluation-interval`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -106,11 +108,21 @@ The following features are currently experimental:
   - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
   - Promote a certain set of OTel resource attributes to labels
-    - `-distributor.promote-otel-resource-attributes`
+    - `-distributor.otel-promote-resource-attributes`
   - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
     - `-distributor.ha-tracker.kvstore.store`
   - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
     - `-distributor.otel-keep-identifying-resource-attributes`
+  - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
+    - `-distributor.otel-convert-histograms-to-nhcb`
+  - Enable promotion of OTel scope metadata to metric labels
+    - `-distributor.otel-promote-scope-metadata`
+  - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative values and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
+    - `distributor.otel-native-delta-ingestion`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
+  - Configure metric and label name translation strategy in OTLP endpoint
+    - `-distributor.otel-translation-strategy`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -201,19 +213,24 @@ The following features are currently experimental:
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
+  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
-  - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
-  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.instant-queries-with-subquery-spin-off` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
+  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
+  - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
+    Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
+  - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
+  - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
+  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
+  - Labels query optimizer (`-query-frontend.labels-query-optimizer-enabled`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -237,12 +254,6 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-burst-size`
-- Memcached client
-  - Customise write and read buffer size
-    - `-<prefix>.memcached.write-buffer-size-bytes`
-    - `-<prefix>.memcached.read-buffer-size-bytes`
-  - Alternate DNS service discovery backend
-    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -253,15 +264,19 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
-  - Cross-cluster validation support for gRPC communication
+  - Cross-cluster validation support for gRPC and HTTP communication
     - `-server.cluster-validation.label`
     - `-server.cluster-validation.grpc.enabled`
     - `-server.cluster-validation.grpc.soft-validation`
+    - `-server.cluster-validation.http.enabled`
+    - `-server.cluster-validation.http.soft-validation`
+    - `-server.cluster-validation.http.excluded-paths`
+    - Requests with invalid cluster validation labels are tracked via the `cortex_server_invalid_cluster_validation_label_requests_total` metric.
 - gRPC clients
   - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
-    - Invalid cluster validations are tracked via the `cortex_client_request_invalid_cluster_validation_labels_total` metrics.
+    - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Kafka-based ingest storage
   - `-ingest-storage.*`
   - `-ingester.partition-ring.*`
@@ -273,6 +288,10 @@ For details about what _deprecated_ means, see [Parameter lifecycle](../configur
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
+- Distributor's HA tracker timeouts can now be configured on a per-tenant basis. To support this, their configuration has moved from [`distributor.ha_tracker`](../configuration-parameters/#distributor) to [`limits`](../configuration-parameters/#limits) (deprecated since Mimir 2.17)
+- Tracing configuration through Jaeger `JAEGER_*` environment variables and Jaeger tracing exposition protocol (deprecated since Mimir 2.17)
+  - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- Support for Redis-based caching
+- The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
+- The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.

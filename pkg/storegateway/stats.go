@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -90,16 +91,26 @@ func newQueryStats() *queryStats {
 // was created from out-or-order samples
 type blockQueriedMeta struct {
 	source     block.SourceType
-	level      int
+	level      string
 	outOfOrder bool
 }
 
 func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
-	return blockQueriedMeta{
+	m := blockQueriedMeta{
 		source:     meta.Thanos.Source,
-		level:      meta.Compaction.Level,
+		level:      strconv.Itoa(meta.Compaction.Level),
 		outOfOrder: meta.Compaction.FromOutOfOrder(),
 	}
+
+	if m.source == "" {
+		m.source = "unknown/old_block"
+	}
+
+	// Newly shipped blocks get level 1. Level 0 means that the meta of this block was included in the bucket index before we started adding compaction level in the bucket index.
+	if meta.Compaction.Level == 0 {
+		m.level = "unknown/old_block"
+	}
+	return m
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {

@@ -44,6 +44,11 @@ func (c *ConsumerGroupCommand) Register(app *kingpin.Application, getKafkaClient
 	copyOffsetCmd.Flag("to-group", "Consumer group to which the offset should be copied.").Required().StringVar(&c.copyToGroup)
 	copyOffsetCmd.Flag("topic", "Topic.").Required().StringVar(&c.topic)
 	copyOffsetCmd.Flag("partition", "Partition ID.").Required().Int32Var(&c.partitionID)
+
+	deleteOffsetCmd := cmd.Command("delete-offset", "Deletes the offset for a given topic and partition.").Action(c.deleteOffset)
+	deleteOffsetCmd.Flag("group", "Consumer group name.").Required().StringVar(&c.group)
+	deleteOffsetCmd.Flag("topic", "Topic.").Required().StringVar(&c.topic)
+	deleteOffsetCmd.Flag("partition", "Partition ID.").Required().Int32Var(&c.partitionID)
 }
 
 func (c *ConsumerGroupCommand) listOffsets(_ *kingpin.ParseContext) error {
@@ -57,7 +62,7 @@ func (c *ConsumerGroupCommand) listOffsets(_ *kingpin.ParseContext) error {
 
 	// Sort topic and partitions to get a stable output.
 	for _, entry := range offsets.Sorted() {
-		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.Offset.At))
+		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.At))
 	}
 
 	return nil
@@ -88,6 +93,32 @@ func (c *ConsumerGroupCommand) copyOffset(_ *kingpin.ParseContext) error {
 
 	// Commit the offset.
 	return commitConsumerGroupOffset(adm, c.copyToGroup, c.topic, c.partitionID, offset.At, c.printer)
+}
+
+func (c *ConsumerGroupCommand) deleteOffset(_ *kingpin.ParseContext) error {
+	client := c.getKafkaClient()
+	adm := kadm.NewClient(client)
+
+	return deleteConsumerGroupOffset(adm, c.group, c.topic, c.partitionID, c.printer)
+}
+
+func deleteConsumerGroupOffset(adm *kadm.Client, group, topic string, partitionID int32, printer Printer) error {
+	toDelete := kadm.TopicsSet{}
+	toDelete.Add(topic, partitionID)
+
+	results, err := adm.DeleteOffsets(context.Background(), group, toDelete)
+	if err != nil {
+		return err
+	}
+
+	err, ok := results.Lookup(topic, partitionID)
+	if ok && err != nil {
+		return fmt.Errorf("unable to delete committed offset for consumer group %s, topic %s and partition %d: %w", group, topic, partitionID, err)
+	}
+
+	printer.PrintLine(fmt.Sprintf("successfully deleted committed offset for consumer group %s, topic %s and partition %d", group, topic, partitionID))
+
+	return nil
 }
 
 func fetchConsumerGroupOffsets(adm *kadm.Client, group string) (kadm.OffsetResponses, error) {

@@ -33,11 +33,12 @@ type BenchCase struct {
 func (c BenchCase) Name() string {
 	name := c.Expr
 
-	if c.Steps == 0 {
+	switch c.Steps {
+	case 0:
 		name += ", instant query"
-	} else if c.Steps == 1 {
+	case 1:
 		name += fmt.Sprintf(", range query with %d step", c.Steps)
-	} else {
+	default:
 		name += fmt.Sprintf(", range query with %d steps", c.Steps)
 	}
 
@@ -133,6 +134,19 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
+		// Histogram functions that are eligible to skip native histogram buckets.
+		{
+			Expr: `histogram_count(sum(rate(nh_X[2m])))`,
+		},
+		{
+			Expr: `histogram_count(sum(rate(nh_X[20m])))`,
+		},
+		{
+			Expr: `histogram_sum(sum(rate(nh_X[2m])))`,
+		},
+		{
+			Expr: `histogram_sum(sum(rate(nh_X[20m])))`,
+		},
 		// Subqueries.
 		{
 			Expr: "sum_over_time(a_X[10m:3m])",
@@ -322,6 +336,31 @@ func TestCases(metricSizes []int) []BenchCase {
 		// Test when no samples present
 		{
 			Expr: "absent(a_X > Inf)",
+		},
+		// Common subexpression elimination cases
+		{
+			Expr: "a_X + a_X",
+		},
+		{
+			Expr: "sum(a_X) + sum(a_X)",
+		},
+		{
+			Expr: "max(a_X) - min(a_X)",
+		},
+		{
+			Expr: "a_X / (a_X + b_X)",
+		},
+		{
+			Expr: "sum(a_X) / (sum(a_X) + sum(b_X))",
+		},
+		{
+			Expr: "min(a_X) / (max(a_X) + max(b_X))",
+		},
+		{
+			Expr: "sum(sum_over_time(a_X[1m])) / sum(count_over_time(a_X[1m]))",
+		},
+		{
+			Expr: "sum(sum_over_time(a_X[1d])) / sum(count_over_time(a_X[1d]))",
 		},
 	}
 

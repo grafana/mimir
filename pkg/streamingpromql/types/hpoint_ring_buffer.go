@@ -5,9 +5,10 @@ package types
 import (
 	"fmt"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -19,14 +20,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type HPointRingBuffer struct {
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	points                   []promql.HPoint
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
 
-func NewHPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *HPointRingBuffer {
+func NewHPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *HPointRingBuffer {
 	return &HPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
@@ -138,7 +139,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		// those instances instead of creating new FloatHistograms.
 		clear(b.points)
 
-		putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+		putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
 		b.pointsIndexMask = cap(newSlice) - 1
@@ -175,7 +176,7 @@ func (b *HPointRingBuffer) Reset() {
 // The buffer can be used again and will acquire a new slice when required.
 func (b *HPointRingBuffer) Release() {
 	b.Reset()
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -191,7 +192,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 		return fmt.Errorf("slice capacity must be a power of two, but is %v", cap(s))
 	}
 
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
@@ -202,7 +203,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 
 // Close releases any resources associated with this buffer.
 func (b *HPointRingBuffer) Close() {
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -253,14 +254,19 @@ func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 		return nil, err
 	}
 
-	combine := func(p []promql.HPoint) {
-		for i := range p {
-			combined = append(combined,
-				promql.HPoint{
-					T: p[i].T,
-					H: p[i].H.Copy(),
-				},
-			)
+	combined = combined[:len(head)+len(tail)]
+	i := 0
+
+	combine := func(points []promql.HPoint) {
+		for pointIdx := range points {
+			combined[i].T = points[pointIdx].T
+
+			if combined[i].H == nil {
+				combined[i].H = &histogram.FloatHistogram{}
+			}
+
+			points[pointIdx].H.CopyTo(combined[i].H)
+			i++
 		}
 	}
 
@@ -331,6 +337,32 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 	}
 
 	return v.buffer.pointAt(i)
+}
+
+// Clone returns a clone of this view and its underlying ring buffer.
+// All histogram.FloatHistogram instances in the underlying buffer are cloned.
+// The caller is responsible for closing the returned ring buffer when it is no longer needed.
+func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
+	if v.size == 0 {
+		return &HPointRingBufferView{}, nil, nil
+	}
+
+	points, err := v.CopyPoints()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buffer := NewHPointRingBuffer(v.buffer.memoryConsumptionTracker)
+	if err := buffer.Use(points); err != nil {
+		return nil, nil, err
+	}
+
+	view := &HPointRingBufferView{
+		buffer: buffer,
+		size:   v.size,
+	}
+
+	return view, buffer, nil
 }
 
 // These hooks exist so we can override them during unit tests.

@@ -25,7 +25,7 @@ func TestOOOIngestion(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -37,6 +37,7 @@ func TestOOOIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-ingester.out-of-order-time-window":            "10m",
 			"-ingester.native-histograms-ingestion-enabled": "true",

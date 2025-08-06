@@ -85,6 +85,7 @@ func New(cfg Config) (*MimirClient, error) {
 			"tls-cert": cfg.TLS.CertPath,
 			"tls-key":  cfg.TLS.KeyPath,
 		}).Errorf("error loading TLS files")
+		//nolint:staticcheck
 		return nil, fmt.Errorf("Mimir client initialization unsuccessful")
 	}
 
@@ -117,10 +118,10 @@ func New(cfg Config) (*MimirClient, error) {
 }
 
 // Query executes a PromQL query against the Mimir cluster.
-func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
+func (c *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
 	req := fmt.Sprintf("/prometheus/api/v1/query?query=%s&time=%d", url.QueryEscape(query), time.Now().Unix())
 
-	res, err := r.doRequest(ctx, req, "GET", nil, -1)
+	res, err := c.doRequest(ctx, req, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -128,14 +129,14 @@ func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 	return res, nil
 }
 
-func (r *MimirClient) doRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, err := buildRequest(ctx, path, method, *r.endpoint, payload, contentLength)
+func (c *MimirClient) doRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
+	req, err := buildRequest(ctx, path, method, *c.endpoint, payload, contentLength)
 	if err != nil {
 		return nil, err
 	}
 
 	switch {
-	case (r.user != "" || r.key != "") && r.authToken != "":
+	case (c.user != "" || c.key != "") && c.authToken != "":
 		err := errors.New("at most one of basic auth or auth token should be configured")
 		log.WithFields(log.Fields{
 			"url":    req.URL.String(),
@@ -144,28 +145,28 @@ func (r *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 		}).Errorln("error during setting up request to mimir api")
 		return nil, err
 
-	case r.user != "":
-		req.SetBasicAuth(r.user, r.key)
+	case c.user != "":
+		req.SetBasicAuth(c.user, c.key)
 
-	case r.key != "":
-		req.SetBasicAuth(r.id, r.key)
+	case c.key != "":
+		req.SetBasicAuth(c.id, c.key)
 
-	case r.authToken != "":
-		req.Header.Add("Authorization", "Bearer "+r.authToken)
+	case c.authToken != "":
+		req.Header.Add("Authorization", "Bearer "+c.authToken)
 	}
 
-	for k, v := range r.extraHeaders {
+	for k, v := range c.extraHeaders {
 		req.Header.Add(k, v)
 	}
 
-	req.Header.Add(user.OrgIDHeaderName, r.id)
+	req.Header.Add(user.OrgIDHeaderName, c.id)
 
 	log.WithFields(log.Fields{
 		"url":    req.URL.String(),
 		"method": req.Method,
 	}).Debugln("sending request to Grafana Mimir API")
 
-	resp, err := r.Client.Do(req)
+	resp, err := c.Client.Do(req)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"url":    req.URL.String(),

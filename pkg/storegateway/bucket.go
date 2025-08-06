@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -38,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -714,7 +714,7 @@ func mapSeriesError(err error) error {
 	switch {
 	case errors.As(err, &stGwErr):
 		switch cause := stGwErr.errorCause(); cause {
-		case mimirpb.INSTANCE_LIMIT:
+		case mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		default:
 			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause}).Err()
@@ -1211,7 +1211,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
 	for m, count := range stats.blocksQueriedByBlockMeta {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), m.level, strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
@@ -1232,7 +1232,7 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordStreamingSeriesStats(stats)
 
 	for m, count := range stats.blocksQueriedByBlockMeta {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), m.level, strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 }
 
@@ -1301,8 +1301,8 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
-	defer span.Finish()
+	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.End()
 
 	var (
 		blocks       []*bucketBlock
@@ -1570,7 +1570,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
 
-			b.ensureIndexHeaderLoaded(ctx, stats)
+			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
@@ -1809,11 +1809,11 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.blocks = append(s.blocks, b)
 
 	// Always sort blocks by min time, then max time.
-	sort.Slice(s.blocks, func(j, k int) bool {
-		if s.blocks[j].meta.MinTime == s.blocks[k].meta.MinTime {
-			return s.blocks[j].meta.MaxTime < s.blocks[k].meta.MaxTime
+	slices.SortFunc(s.blocks, func(a, b *bucketBlock) int {
+		if a.meta.MinTime == b.meta.MinTime {
+			return cmp.Compare(a.meta.MaxTime, b.meta.MaxTime)
 		}
-		return s.blocks[j].meta.MinTime < s.blocks[k].meta.MinTime
+		return cmp.Compare(a.meta.MinTime, b.meta.MinTime)
 	})
 	return nil
 }
@@ -2107,9 +2107,9 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.ensureIndexHeaderLoaded")
-	defer span.Finish()
-	span.SetTag("blockID", b.meta.ULID)
+	_, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	defer span.End()
+	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.

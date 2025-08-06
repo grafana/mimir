@@ -29,9 +29,14 @@ ingester:
 
 block_builder:
   scheduler_config:
-    address: mimir-block-builder-scheduler-1:9095
+    address: mimir-block-builder-scheduler-0:9095
     update_interval: 5s
     max_update_age: 30m
+
+block_builder_scheduler:
+  scheduling_interval: 30s
+  job_size: 1m
+  startup_observe_time: 5s
 
 blocks_storage:
   s3:
@@ -61,12 +66,12 @@ blocks_storage:
 memberlist:
   # Use write replicas as seed nodes.
   join_members:
+    - mimir-write-zone-a-0
+    - mimir-write-zone-b-0
     - mimir-write-zone-a-1
     - mimir-write-zone-b-1
     - mimir-write-zone-a-2
     - mimir-write-zone-b-2
-    - mimir-write-zone-a-3
-    - mimir-write-zone-b-3
 
 ruler:
   rule_path: /data/ruler
@@ -76,7 +81,7 @@ ruler:
   for_grace_period: 1s
   # Evaluate rules via query-frontend (remote rule evaluation).
   query_frontend:
-    address: dns:///mimir-read-1:9095
+    address: dns:///mimir-read-0:9095
 
 ruler_storage:
   s3:
@@ -114,3 +119,4 @@ runtime_config:
 
 server:
   log_level: debug
+  trace_request_headers: true

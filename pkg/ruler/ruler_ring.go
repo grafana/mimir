@@ -16,13 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const (
-	// If a ruler is unable to heartbeat the ring, its better to quickly remove it and resume
-	// the evaluation of all rules since the worst case scenario is that some rulers will
-	// receive duplicate/out-of-order sample errors.
-	ringAutoForgetUnhealthyPeriods = 2
-)
-
 var (
 	// RuleEvalRingOp is the operation used for distributing rule groups between rulers.
 	RuleEvalRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {
@@ -43,6 +36,8 @@ var (
 type RingConfig struct {
 	Common util.CommonRingConfig `yaml:",inline"`
 
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
+
 	NumTokens int `yaml:"num_tokens" category:"advanced"`
 
 	// Used for testing
@@ -55,6 +50,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const kvStorePrefix = "rulers/"
 	const componentPlural = "rulers"
 	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 2, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
 
 	f.IntVar(&cfg.NumTokens, flagNamePrefix+"num-tokens", 128, "Number of tokens for each ruler.")
 }

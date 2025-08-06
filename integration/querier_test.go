@@ -229,11 +229,14 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
 
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
+			switch backend := testCfg.indexCacheBackend; backend {
+			case tsdb.IndexCacheBackendInMemory:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
+			case tsdb.IndexCacheBackendMemcached:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2), "thanos_cache_operations_total")) // one set for each get
+			default:
+				require.Fail(t, fmt.Sprintf("unrecognized indexCacheBackend: %q", backend))
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
@@ -246,10 +249,11 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+2), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
+			switch testCfg.indexCacheBackend {
+			case tsdb.IndexCacheBackendInMemory:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // as before
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
+			case tsdb.IndexCacheBackendMemcached:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2+2), "thanos_cache_operations_total")) // as before + 2 gets (expanded postings and series)
 			}
 
@@ -329,7 +333,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, blocksBucketName)
+			minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -338,9 +342,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// blocks is stable and easy to assert on.
 			const seriesReplicationFactor = 2
 
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+			// Configure the blocks storage to frequently compact TSDB head and ship blocks to the storage.
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), RulerStorageS3Flags(), map[string]string{
 				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
 				"-blocks-storage.tsdb.ship-interval":                           "1s",
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
@@ -364,6 +367,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
+				// Ruler.
+				"-ruler.ring.store":           "consul",
+				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -380,6 +386,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance++          // Distributors ring
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
+				numTokensPerInstance += 128     // Ruler ring.
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -466,10 +473,11 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Check the in-memory index cache metrics (in the store-gateway).
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"), "expected %v requests", expectedCacheRequests)
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheHits)), "thanos_store_index_cache_hits_total"), "expected %v hits", expectedCacheHits)
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
+			switch testCfg.indexCacheBackend {
+			case tsdb.IndexCacheBackendInMemory:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
+			case tsdb.IndexCacheBackendMemcached:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_cache_operations_total"), "expected %v operations", expectedMemcachedOps)
 			}
 
@@ -488,10 +496,11 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"), "expected %v requests", expectedCacheRequests)
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheHits)), "thanos_store_index_cache_hits_total"), "expected %v hits", expectedCacheHits) // this time has used the index cache
 
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
+			switch testCfg.indexCacheBackend {
+			case tsdb.IndexCacheBackendInMemory:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // as before
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
+			case tsdb.IndexCacheBackendMemcached:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_cache_operations_total"), "expected %v operations", expectedMemcachedOps)
 			}
 
@@ -968,7 +977,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	)
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))

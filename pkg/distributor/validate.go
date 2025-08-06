@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -119,6 +120,7 @@ var (
 		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 		validation.MaxMetadataLengthFlag,
 	)
+	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
 
 // sampleValidationConfig helps with getting required config to validate sample.
@@ -236,7 +238,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 }
 
 // validateSample returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
@@ -257,7 +259,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 }
 
 // validateSampleHistogram returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
@@ -274,18 +276,20 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
-	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
+	// Check if schema is either a valid exponential schema or NHCB.
+	if (s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema) && s.Schema != mimirpb.NativeHistogramsWithCustomBucketsSchema {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidNativeHistogramSchema, now.Time())
 		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
 		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
-		var bucketCount int
-		if s.IsFloatHistogram() {
-			bucketCount = len(s.GetNegativeCounts()) + len(s.GetPositiveCounts())
-		} else {
-			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
+		bucketCount := s.BucketCount()
+		if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
+			// Custom buckets cannot be scaled down.
+			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+			return false, fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 		}
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
@@ -314,7 +318,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 }
 
 // validateExemplar returns an error if the exemplar is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
@@ -376,6 +380,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -398,7 +403,7 @@ func removeNonASCIIChars(in string) (out string) {
 }
 
 // validateLabels returns an err if the labels are invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
@@ -407,7 +412,9 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
+	validationScheme := cfg.NameValidationScheme(userID)
+
+	if !labels.IsValidMetricName(unsafeMetricName, validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
@@ -433,7 +440,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelValidation && !model.LabelName(l.Name).IsValid() {
+		if !skipLabelValidation && !labels.IsValidLabelName(l.Name, validationScheme) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))

@@ -171,6 +171,8 @@ Until deprecation is complete, we need to ensure that a user who is still settin
    }
    ```
 
+   Note this must be added prior to any checks for `t.Cfg.RuntimeConfig.LoadPath` or early exit paths within `initRuntimeConfig`. It's possible to configure Mimir with purely static config and disable runtime config; the mapping needs to happen in either case.
+
 ## Updating Mimir Docs
 
 1. Update the Mimir Config file docs.

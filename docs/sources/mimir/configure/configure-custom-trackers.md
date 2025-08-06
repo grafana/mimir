@@ -6,7 +6,7 @@ aliases:
 description: Use the custom tracker to count the number of active series on an ingester.
 menuTitle: Custom active series trackers
 title: Configure custom active series trackers
-weight: 100
+weight: 200
 ---
 
 # Configure custom active series trackers
@@ -23,7 +23,7 @@ active_series_custom_trackers:
   prod: '{namespace=~"prod-.*"}'
 ```
 
-If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](../../references/http-api/#metrics).
+If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](/docs/mimir/<MIMIR_VERSION>/references/http-api/#metrics).
 
 Each custom tracker counts the active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as `# of tenants` series with metric name `cortex_ingester_active_series_custom_tracker`. To reduce the cardinality of this metric, only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become `0`.
 

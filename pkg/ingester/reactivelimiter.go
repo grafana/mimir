@@ -35,9 +35,13 @@ type ingesterReactiveLimiter struct {
 // Returns an ingesterReactiveLimiter that uses reactivelimiter.PriorityLimiters with a Prioritizer when push and read
 // limiting is enabled, else that uses reactivelimiter.BlockingLimiter if only one of these is enabled.
 func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrioritizerConfig, pushConfig *reactivelimiter.Config, readConfig *reactivelimiter.Config, logger log.Logger, registerer prometheus.Registerer) *ingesterReactiveLimiter {
+	var prioritizer *rejectionPrioritizer
+	var pushLimiter reactivelimiter.BlockingLimiter
+	var readLimiter reactivelimiter.BlockingLimiter
+
 	if pushConfig.Enabled && readConfig.Enabled {
 		// Create prioritizer to prioritize the rejection threshold between push and read limiters
-		prioritizer := &rejectionPrioritizer{
+		prioritizer = &rejectionPrioritizer{
 			cfg:         prioritizerConfig,
 			Prioritizer: reactivelimiter.NewPrioritizer(logger),
 		}
@@ -57,19 +61,24 @@ func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrio
 		})
 
 		// Create limiters that use prioritizer
-		limiter := &ingesterReactiveLimiter{
-			prioritizer: prioritizer,
-			push:        newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer),
-			read:        newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer),
-		}
-		limiter.service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
-		return limiter
+		pushLimiter = newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer)
+		readLimiter = newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer)
+	} else {
+		pushLimiter = newBlockingLimiter(pushConfig, "push", logger, registerer)
+		readLimiter = newBlockingLimiter(readConfig, "read", logger, registerer)
 	}
 
-	return &ingesterReactiveLimiter{
-		push: newBlockingLimiter(pushConfig, "push", logger, registerer),
-		read: newBlockingLimiter(readConfig, "read", logger, registerer),
+	limiter := &ingesterReactiveLimiter{
+		prioritizer: prioritizer,
+		push:        pushLimiter,
+		read:        readLimiter,
 	}
+
+	if prioritizer != nil {
+		limiter.service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
+	}
+
+	return limiter
 }
 
 func (l *ingesterReactiveLimiter) update(_ context.Context) error {

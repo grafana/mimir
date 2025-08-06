@@ -10,70 +10,86 @@ aliases:
 
 # Manage the configuration of Grafana Mimir with Helm
 
-The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
+The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) and to customize how to deploy Grafana Mimir on a Kubernetes cluster.
 
 ## Overview
 
-The Grafana Mimir configuration can be managed through the Helm chart or supplied via a user-managed object.
+You can either manage the configuration of Grafana Mimir through the Helm chart or supply the configuration through a user-managed object.
 
-If you want to manage the configuration via the Helm chart, see [Manage the configuration with Helm](#manage-the-configuration-with-helm).
+If you want to manage the configuration through the Helm chart, refer to [Manage the configuration with Helm](#manage-the-configuration-with-helm).
 
-If you want to manage the configuration externally yourself, see [Manage the configuration externally](#manage-the-configuration-externally).
+If you want to manage the configuration externally, refer to [Manage the configuration externally](#manage-the-configuration-externally).
 
-Handling sensitive information, such as credentials, is common between the two methods, see [Injecting credentials](#injecting-credentials).
+Handling sensitive information, such as credentials, is common between the two methods. Refer to [Inject credentials](#injecting-credentials).
 
 ## Manage the configuration with Helm
 
-There are three ways configuration parameters can be modified:
+There are three ways that you can modify configuration parameters:
 
-1. Setting parameters via the `mimir.structuredConfig` value (recommended)
-1. Copying the whole `mimir.config` value and modifying the configuration as text (discouraged, unless you want to prevent upgrades of the chart from automatically updating the configuration)
-1. Setting extra CLI flags for components individually (discouraged, except for setting availability zone)
+1. Setting parameters via the `mimir.structuredConfig` value (recommended).
+1. Copying the entire `mimir.config` value and modifying the configuration as text (discouraged, unless you want to prevent upgrades of the chart from automatically updating the configuration).
+1. Setting extra CLI flags for components individually (discouraged, except for setting availability zones).
 
-See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
+Refer to the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
-> **Limitation:** it is not possible to delete configuration parameters via `mimir.structuredConfig` that were set in `mimir.config`. Set the configuration parameter to its default or to some other value instead.
+> **Limitation:** It's not possible to delete configuration parameters that were set in `mimir.config` through `mimir.structuredConfig`. Instead, set the configuration parameter to its default or to some other value.
 
-### How the configuration is applied
+### How Grafana Mimir applies the configuration
 
-Grafana Mimir components are run with a configuration calculcated by the following process:
+Grafana Mimir components run with a configuration calculated by the following process:
 
 1. The configuration YAML in `mimir.config` is evaluated as a Helm template. This step ensures that the configuration applies to the Kubernetes cluster where it will be installed. For example, setting up cluster-specific addresses.
 1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step applies user-specific customizations. For example, S3 storage details.
-1. The resulting YAML configuration is then sorted alphabetically and stored in a `ConfigMap` (or `Secret` depending on the value of `configStorageType`) and provided to all Grafana Mimir components.
-1. The configuration file as well as any extra CLI flags are provided to the Mimir pods.
+1. The resulting YAML configuration is then sorted alphabetically and stored in a `ConfigMap` (or `Secret`, depending on the value of `configStorageType`) and provided to all Grafana Mimir components.
+1. The configuration file, as well as any extra CLI flags, are provided to the Mimir pods.
 1. Each component evaluates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
 
-> **Note:** CLI flags are component-specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutely necessary.
+> **Note:** CLI flags are component-specific, and therefore, don't show up in the generated `ConfigMap` (or `Secret`). This makes it less obvious which configuration is running. Use these flags only when necessary.
 
 ### Inspect changes to the configuration before upgrade
 
-Follow these steps to inspect what change will be applied to the configuration.
+Follow these steps to inspect which change apply to the configuration.
 
 Preparation:
 
 1. Install the [helm diff](https://github.com/databus23/helm-diff) plugin.
 1. Set `configStorageType` value to `ConfigMap`.
-
-Inspecting changes with the `helm diff` sub command:
+1. Inspect changes using the `helm diff` sub command:
 
 ```bash
 helm -n mimir-test diff upgrade grafana/mimir-distributed -f custom.yaml
 ```
 
-This command shows the differences between the running installation and the installation that would result from executing the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings. See [Example output of helm diff command](#example-output-of-helm-diff-command) for a concrete example.
+This command shows the differences between the running installation and the installation that would result from running the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings. Refer to [Example output of helm diff command](#example-output-of-helm-diff-command) for a concrete example.
 
-> **Note:** CLI flags and their difference are found in the `Deployment` and `StatefulSet` objects.
+> **Note:** You can find CLI flags and their differences in the `Deployment` and `StatefulSet` objects.
+
+### Manage runtime configuration
+
+You can also use the Helm chart to manage runtime configuration files. Runtime configuration files contain configuration parameters and are periodically reloaded while Mimir is running. This process allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
+
+To manage runtime configuration with the Helm chart, add the following stanza to your Helm values file:
+
+```yaml
+runtimeConfig:
+  overrides:
+    tenant-1: # limits for tenant-1 that the whole cluster enforces
+      ingestion_tenant_shard_size: _`<SAMPLE_VALUE>`_
+      max_global_series_per_user: _`<SAMPLE_VALUE>`_
+      max_fetched_series_per_query: _`<SAMPLE_VALUE>`_
+```
+
+For more information about runtime configuration in Grafana Mimir, refer to [About Grafana Mimir runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
 
 ## Manage the configuration externally
 
-Prepare the configuration as text. It cannot include Helm template functions or value evaluations. The configuration may include references to environment variables as explained in [Injecting credentials](#injecting-credentials).
+Prepare the configuration as text, without including Helm template functions or value evaluations. You can include references to environment variables, as explained in [Injecting credentials](#injecting-credentials).
 
-Decide whether you want to use a `ConfigMap` or `Secret` to store the configuration. Handling `ConfigMap` is a little bit simpler, but beware of sensitive information.
+Decide whether you want to use a `ConfigMap` or `Secret` to store the configuration. Handling `ConfigMap` is simpler, but beware of sensitive information.
 
 ### Use external ConfigMap
 
-Prepare a `ConfigMap` object where the configuration is placed under the `mimir.yaml` data key.
+Prepare a `ConfigMap` object that places the configuration under the `mimir.yaml` data key.
 
 ```yaml
 apiVersion: v1
@@ -85,9 +101,9 @@ data:
     <configuration>
 ```
 
-Replace `<configuration>` with the configuration as multiline text, be mindful of indentation. The name `my-mimir-config` is just an example.
+Replace `<configuration>` with the configuration as multi-line text, being mindful of indentation. The name `my-mimir-config` is just an example.
 
-Set the following values in your custom values file (or on the Helm command line):
+Set the following values in your custom values file, or on the Helm command line:
 
 ```yaml
 useExternalConfig: true
@@ -97,7 +113,7 @@ externalConfigVersion: "0"
 
 ### Use external Secret
 
-Prepare a `Secret` object where the configuration is base64-encoded and placed under the `mimir.yaml` data key.
+Prepare a `Secret` object, where the configuration is base64-encoded and placed under the `mimir.yaml` data key.
 
 ```yaml
 apiVersion: v1
@@ -110,7 +126,7 @@ data:
 
 Replace `<configuration-base64>` with the configuration encoded as base64 format string. The name `my-mimir-config` is just an example.
 
-Set the following values in your custom values file (or on the Helm command line):
+Set the following values in your custom values file, or on the Helm command line:
 
 ```yaml
 useExternalConfig: true
@@ -121,25 +137,25 @@ externalConfigVersion: "0"
 
 ### Update the configuration
 
-To make components aware of configuration changes, either:
+To make components aware of configuration changes, choose one of the following options:
 
-- Update the value in `externalConfigVersion` and run `helm update`
-- or restart components affected by the configuration change manually.
+- Update the value in `externalConfigVersion` and run `helm update`.
+- Manually restart components affected by the configuration change.
 
-## Injecting credentials
+## Inject credentials
 
-You can use the Helm chart value `global.extraEnvFrom` to inject credentials into the runtime environment variables of the Grafana Mimir components. The data keys will become environment variables and usable in the Grafana Mimir configuration. For example, `AWS_SECRET_ACCESS_KEY` can be referenced as `${AWS_SECRET_ACCESS_KEY}` in the configuration. See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
+You can use the Helm chart value `global.extraEnvFrom` to inject credentials into the runtime environment variables of Grafana Mimir components. The data keys become environment variables and usable in the Grafana Mimir configuration. For example, you can reference `AWS_SECRET_ACCESS_KEY` as `${AWS_SECRET_ACCESS_KEY}` in the configuration. Refer to the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
 To avoid complications, make sure that the key names in the secret contain only ASCII letters, numbers, and underscores.
 Prefer `AWS_SECRET_ACCESS_KEY` over `secret-access-key.aws`.
 
-Grafana Mimir does not track changes to the credentials. If the credentials change, Grafana Mimir pods should be restarted to use the new value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation` which will be applied to all Grafana Mimir pods. Changing the value of the global annotation will make Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
+Grafana Mimir does not track changes to the credentials. If you update the credentials, restart Grafana Mimir pods to use the updated value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation`, which is applied to all Grafana Mimir pods. Changing the value of the global annotation makes Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
 
-## Example of configuration managed with Helm
+## Example configuration managed with Helm
 
-This example shows how to set up the configuration to use an S3 bucket for blocks storage. We assume that the namespace in use is called `mimir-test`.
+This example shows how to set up the configuration to use an S3 bucket for blocks storage in a namespace called `mimir-test`.
 
-1. Set up the external blocks storage, in this case S3 with buckets named for example `my-blocks-bucket`, `my-ruler-bucket` and in case of Grafana Enterprise Metrics `my-admin-bucket`.
+1. Set up the external blocks storage, in this case S3 with buckets named, for example, `my-blocks-bucket`, `my-ruler-bucket` and in case of Grafana Enterprise Metrics, `my-admin-bucket`.
 
 1. Create an external secret with the S3 credentials by writing the following to a `mysecret.yaml` file:
 
@@ -533,4 +549,4 @@ The example is generated with the following steps:
     #... cut for size ...
    ```
 
-   Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
+   Lines starting with "`-`" are removed and lines starting with "`+`" are added. The change to the annotation `checksum/config` means the pods are restarted when this change is applied.

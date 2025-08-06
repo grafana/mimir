@@ -19,9 +19,9 @@ import (
 	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Aggregation struct {
@@ -29,7 +29,7 @@ type Aggregation struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	aggregationGroupFactory AggregationGroupFactory
 
@@ -58,7 +58,7 @@ func NewAggregation(
 	grouping []string,
 	without bool,
 	op parser.ItemType,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
@@ -124,7 +124,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.MemoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -160,11 +160,18 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
-		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		if err != nil {
+			return nil, err
+		}
 		a.remainingGroups = append(a.remainingGroups, g.group)
 	}
 
@@ -236,6 +243,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
+	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
 	return seriesData, nil
 }
@@ -268,10 +276,21 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
+func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
+}
+
 func (a *Aggregation) Close() {
 	// The wrapping operator is responsible for returning any a.ParamData slice
 	// since it is responsible for setting them up.
 	a.Inner.Close()
+
+	for _, g := range a.remainingGroups {
+		g.aggregation.Close(a.MemoryConsumptionTracker)
+		groupPool.Put(g)
+	}
+
+	a.remainingGroups = nil
 }
 
 type groupSorter struct {

@@ -255,7 +255,7 @@ func comparePostings(t *testing.T, p1, p2 index.Postings) {
 func matchPostings(t testing.TB, ix tsdb.IndexReader, m *labels.Matcher) index.Postings {
 	ctx := context.Background()
 
-	vals, err := ix.LabelValues(ctx, m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name, nil)
 	assert.NoError(t, err)
 
 	matching := []string(nil)

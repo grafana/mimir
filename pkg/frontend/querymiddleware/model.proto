@@ -8,12 +8,12 @@ syntax = "proto3";
 // Uses queryrange package to offer backwards compatibility with cached extents.
 package queryrange;
 
-option go_package = "querymiddleware";
-
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
+option go_package = "querymiddleware";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
@@ -34,13 +34,26 @@ message PrometheusResponse {
 
 message PrometheusData {
   string ResultType = 1 [(gogoproto.jsontag) = "resultType"];
-  repeated SampleStream Result = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "result"];
+  repeated SampleStream Result = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "result"
+  ];
 }
 
 message SampleStream {
-  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
-  repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
-  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "metric",
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+  repeated cortexpb.Sample samples = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "values"
+  ];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "histograms"
+  ];
 }
 
 message CachedError {
@@ -49,14 +62,17 @@ message CachedError {
   string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
 }
 
-message CachedResponse  {
+message CachedResponse {
   string key = 1 [(gogoproto.jsontag) = "key"];
 
   // List of cached responses; non-overlapping and in order.
-  repeated Extent extents = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "extents"];
+  repeated Extent extents = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "extents"
+  ];
 }
 
-message Extent  {
+message Extent {
   int64 start = 1 [(gogoproto.jsontag) = "start"];
   int64 end = 2 [(gogoproto.jsontag) = "end"];
   // reserved the previous key to ensure cache transition
@@ -67,23 +83,25 @@ message Extent  {
   // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
   int64 query_timestamp_ms = 6;
+  // Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
+  repeated stats.StepStat samples_processed_per_step = 7 [(gogoproto.nullable) = false];
 }
 
 message Options {
   bool CacheDisabled = 1;
   bool ShardingDisabled = 2;
   int32 TotalShards = 3;
-  bool InstantSplitDisabled = 4;
-  // Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
-  int64 InstantSplitInterval = 5;
+
+  reserved 4, 5; // Fields previously used by instant query splitting.
 }
 
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
+  string UserID = 2;
 }
 
 // CachedHTTPResponse holds a generic HTTP response in the query results cache.
-message CachedHTTPResponse  {
+message CachedHTTPResponse {
   // cacheKey contains the non-hashed cache key, used to guarantee there haven't
   // been any hashed cache key collision.
   string cache_key = 1;

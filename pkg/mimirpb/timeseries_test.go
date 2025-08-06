@@ -6,11 +6,12 @@
 package mimirpb
 
 import (
+	"cmp"
 	"crypto/rand"
 	"fmt"
 	"reflect"
 	"slices"
-	"sort"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -302,13 +303,13 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		TimeseriesUnmarshalCachingEnabled = false
 
-		require.NoError(t, msg.Unmarshal(data))
+		require.NoError(t, msg.Unmarshal(data, nil, nil))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.Nil(t, msg.marshalledData)
 
 		TimeseriesUnmarshalCachingEnabled = true
 
-		require.NoError(t, msg.Unmarshal(data))
+		require.NoError(t, msg.Unmarshal(data, nil, nil))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
 	}
@@ -411,8 +412,8 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 
 		unsorted.SortLabelsIfNeeded()
 
-		require.True(t, sort.SliceIsSorted(unsorted.Labels, func(i, j int) bool {
-			return unsorted.Labels[i].Name < unsorted.Labels[j].Name
+		require.True(t, slices.IsSortedFunc(unsorted.Labels, func(a, b LabelAdapter) int {
+			return cmp.Compare(a.Name, b.Name)
 		}))
 		require.Nil(t, unsorted.marshalledData)
 	})
@@ -539,14 +540,7 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
 			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) int {
-				switch {
-				case a.Name < b.Name:
-					return -1
-				case a.Name > b.Name:
-					return 1
-				default:
-					return 0
-				}
+				return strings.Compare(a.Name, b.Name)
 			})
 			b.Run("ordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 		})
@@ -625,4 +619,48 @@ func TestSortExemplars(t *testing.T) {
 		assert.Equal(t, int64(3), p.Exemplars[1].TimestampMs)
 		assert.Nil(t, p.marshalledData)
 	})
+}
+
+func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
+	const (
+		origLabelName  = "name"
+		origLabelValue = "value"
+	)
+	labelNameBytes := []byte(origLabelName)
+	labelValueBytes := []byte(origLabelValue)
+	ts := TimeSeries{
+		Labels: []LabelAdapter{
+			{
+				Name:  yoloString(labelNameBytes),
+				Value: yoloString(labelValueBytes),
+			},
+		},
+		Exemplars: []Exemplar{
+			{
+				Labels: []LabelAdapter{
+					{
+						Name:  yoloString(labelNameBytes),
+						Value: yoloString(labelValueBytes),
+					},
+				},
+			},
+		},
+	}
+
+	ts.MakeReferencesSafeToRetain()
+
+	// Modify the referenced byte slices, to test whether ts retains them (it shouldn't).
+	labelNameBytes[len(labelNameBytes)-1] = 'x'
+	labelValueBytes[len(labelValueBytes)-1] = 'x'
+
+	for _, l := range ts.Labels {
+		require.Equal(t, origLabelName, l.Name)
+		require.Equal(t, origLabelValue, l.Value)
+	}
+	for _, ex := range ts.Exemplars {
+		for _, l := range ex.Labels {
+			require.Equal(t, origLabelName, l.Name)
+			require.Equal(t, origLabelValue, l.Value)
+		}
+	}
 }

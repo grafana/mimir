@@ -12,6 +12,7 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
+    $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
 
@@ -29,6 +30,10 @@
       'server.grpc.keepalive.max-connection-age': '%ds' % max_connection_age_seconds,
     } + $.mimirRuntimeConfigFile,
 
+  // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
+  // Values take precedence over query_frontend_args.
+  query_frontend_only_args:: {},
+
   query_frontend_ports:: $.util.defaultPorts,
 
   newQueryFrontendContainer(name, args, envmap={})::
@@ -36,19 +41,17 @@
     container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
-    $.jaeger_mixin +
+    $.tracing_env_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
 
-  query_frontend_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-  },
+  query_frontend_env_map:: {},
 
   query_frontend_node_affinity_matchers:: [],
 
   query_frontend_container::
-    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args, $.query_frontend_env_map),
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args + $.query_frontend_only_args, $.query_frontend_env_map),
 
   local deployment = $.apps.v1.deployment,
 
@@ -64,19 +67,12 @@
     // Leave enough time to finish serving a 5m query after the shutdown delay expired.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(shutdown_delay_seconds + 300),
 
-  query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_deployment:
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),
 
-  query_frontend_service: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
-  query_frontend_discovery_service: if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
-    // Make sure that query frontend worker, running in the querier, do resolve
-    // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
-    // use the service cluster IP so that when the service DNS is resolved it
-    // returns the set of query-frontend IPs.
-    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
-
-  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_pdb:
     $.newMimirPdb('query-frontend'),
 }

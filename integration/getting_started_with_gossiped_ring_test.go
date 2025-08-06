@@ -7,7 +7,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -27,7 +26,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -35,19 +34,18 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
 
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
-	flags := map[string]string{
+	baseFlags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
 		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
 		"-compactor.cleanup-interval":                       "1s", // update bucket index continuously
 		"-blocks-storage.bucket-store.ignore-blocks-within": "0",
-		"-blocks-storage.backend":                           "s3",
-		"-blocks-storage.s3.bucket-name":                    blocksBucketName,
-		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
-		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":                       "true",
 	}
+	flags := mergeFlags(
+		baseFlags,
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+	)
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
 	mimir1 := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(flags, map[string]string{

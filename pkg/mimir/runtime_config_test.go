@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -68,9 +69,9 @@ overrides:
 		cmpopts.IgnoreFields(validation.Limits{}, "activeSeriesMergedCustomTrackersConfig"),
 	}
 
-	require.True(t, cmp.Equal(expected, *loadedLimits["1234"], compareOptions...))
-	require.True(t, cmp.Equal(expected, *loadedLimits["1235"], compareOptions...))
-	require.True(t, cmp.Equal(expected, *loadedLimits["1236"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1234"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1235"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1236"], compareOptions...))
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
@@ -141,12 +142,12 @@ overrides:
 func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		validate func(limits validation.Limits) error
+		validate func(limits *validation.Limits) error
 		hasError bool
 	}{
 		{
 			name: "successful validate doesn't return error",
-			validate: func(validation.Limits) error {
+			validate: func(*validation.Limits) error {
 				return nil
 			},
 		},
@@ -155,7 +156,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 		},
 		{
 			name: "unsuccessful validate returns error",
-			validate: func(validation.Limits) error {
+			validate: func(*validation.Limits) error {
 				return errors.New("validation failed")
 			},
 			hasError: true,
@@ -238,8 +239,7 @@ overrides:
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager))
 	})
 
-	overrides, err := validation.NewOverrides(cfg.LimitsConfig, newTenantLimits(manager))
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(cfg.LimitsConfig, newTenantLimits(manager))
 
 	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-1").String())
 	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-2").String())
@@ -253,5 +253,6 @@ overrides:
 func getDefaultLimits() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
+	limits.OTelTranslationStrategy = validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 	return limits
 }

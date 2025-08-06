@@ -9,10 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
@@ -33,6 +35,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -98,7 +101,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	now := time.Now()
 
@@ -183,7 +187,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -534,7 +539,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()
@@ -543,8 +549,8 @@ route:
 		result := []alertingmodels.Receiver{}
 		err = json.Unmarshal(rr.Body.Bytes(), &result)
 		assert.NoError(t, err)
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].Name < result[j].Name
+		slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+			return strings.Compare(a.Name, b.Name)
 		})
 		return result
 	}
@@ -623,10 +629,15 @@ route:
 }
 
 func TestGrafanaAlertmanager(t *testing.T) {
+	limits := mockAlertManagerLimits{
+		emailNotificationRateLimit: rate.Inf,
+	}
+
+	suffix := "-grafana"
 	am, err := New(&Config{
-		UserID:            "test",
+		UserID:            "test" + suffix,
 		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
+		Limits:            &limits,
 		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},
@@ -635,7 +646,8 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
+		GrafanaAlertmanagerCompatibility: true,
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -679,15 +691,17 @@ func TestGrafanaAlertmanager(t *testing.T) {
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	expMessage := "This is a test template"
+	expMessage := `{"field":"value"}`
 	testTemplate := alertingTemplates.TemplateDefinition{
 		Name:     "test",
-		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
+		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
 
 	expectedImageURL := "http://example.com/image.png"
 
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
 
 	now := time.Now()
 	alert := types.Alert{
@@ -704,8 +718,10 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		},
 		UpdatedAt: now,
 	}
+	expected := testTemplate
+	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], testTemplate)
+	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
@@ -714,4 +730,65 @@ func TestGrafanaAlertmanager(t *testing.T) {
 			return false
 		}
 	}, 5*time.Second, 100*time.Millisecond)
+
+	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
+	cfgRaw = `{
+            "route": {
+                "receiver": "empty_receiver",
+                "group_by": ["alertname"]
+            },
+            "receivers": [{
+                "name": "empty_receiver"
+            }],
+        }`
+
+	cfg, err = definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
+
+	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
+	testTemplate = alertingTemplates.TemplateDefinition{
+		Name:     "test",
+		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
+	}
+	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
+}
+
+func TestGetFullStateHandler(t *testing.T) {
+	am, err := New(&Config{
+		UserID:            "test",
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// Get the state from the Alertmanager.
+	{
+		rec := httptest.NewRecorder()
+		am.GetFullStateHandler(rec, nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		require.NoError(t, err)
+		json := `
+		{
+			"data": {
+				"state": "CgoKCG5mbDp0ZXN0CgoKCHNpbDp0ZXN0"
+			},
+			"status": "success"
+		}
+		`
+		require.JSONEq(t, json, string(body))
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	}
 }

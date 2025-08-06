@@ -64,9 +64,10 @@ type PostingOffsetTableV1 struct {
 }
 
 func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
-	if indexVersion == index.FormatV1 {
+	switch indexVersion {
+	case index.FormatV1:
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
-	} else if indexVersion == index.FormatV2 {
+	case index.FormatV2:
 		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
 	}
 
@@ -335,8 +336,8 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 			values = append(values, PostingListOffset{LabelValue: k, Off: r})
 		}
 	}
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].LabelValue < values[j].LabelValue
+	slices.SortFunc(values, func(a, b PostingListOffset) int {
+		return strings.Compare(a.LabelValue, b.LabelValue)
 	})
 	return values, nil
 }

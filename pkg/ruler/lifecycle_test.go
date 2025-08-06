@@ -6,8 +6,9 @@
 package ruler
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -53,6 +54,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 	cfg.Ring.Common.HeartbeatPeriod = 100 * time.Millisecond
 	cfg.Ring.Common.HeartbeatTimeout = heartbeatTimeout
+	cfg.Ring.AutoForgetUnhealthyPeriods = 10
 
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRules))
 
@@ -66,7 +68,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
 
 		instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(cfg.Ring.NumTokens), ring.ACTIVE, time.Now(), false, time.Time{})
-		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
+		instance.Timestamp = time.Now().Add(-time.Duration(cfg.Ring.AutoForgetUnhealthyPeriods+1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
 		return ringDesc, true, nil
@@ -88,8 +90,8 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 
 	return tokens

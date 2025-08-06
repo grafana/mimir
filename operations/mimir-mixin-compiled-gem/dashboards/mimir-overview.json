@@ -82,7 +82,7 @@
                            "uid": "$datasource"
                         },
                         "exemplar": false,
-                        "expr": "((\n    # gRPC errors are not tracked as 5xx but \"error\".\n    sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\",status_code=~\"5.*|error\"}[$__rate_interval])))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "((\n    # gRPC errors are not tracked as 5xx but \"error\".\n    sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\",status_code=~\"5.*|error\"}[$__rate_interval])))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "instant": false,
                         "legendFormat": "Writes",
                         "range": true
@@ -92,7 +92,7 @@
                            "uid": "$datasource"
                         },
                         "exemplar": false,
-                        "expr": "((\n    # gRPC errors are not tracked as 5xx but \"error\".\n    sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\",status_code=~\"5.*|error\"}[$__rate_interval]))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "((\n    # gRPC errors are not tracked as 5xx but \"error\".\n    sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\",status_code=~\"5.*|error\"}[$__rate_interval]))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "instant": false,
                         "legendFormat": "Writes",
                         "range": true
@@ -122,7 +122,7 @@
                            "uid": "$datasource"
                         },
                         "exemplar": false,
-                        "expr": "(\n  (\n      sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n      +\n      # Consider missed evaluations as failures.\n      sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  )\n  or\n  # Handle the case no failure has been tracked yet.\n  vector(0)\n)\n/\nsum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "(\n  (\n      sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n      +\n      # Consider missed evaluations as failures.\n      sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n  )\n  or\n  # Handle the case no failure has been tracked yet.\n  vector(0)\n)\n/\nsum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n",
                         "instant": false,
                         "legendFormat": "Rule evaluations",
                         "range": true
@@ -132,7 +132,7 @@
                            "uid": "$datasource"
                         },
                         "exemplar": false,
-                        "expr": "(\n  # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n) or vector(0))\n)\n/\n(\n  # Total notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Total notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n) or vector(0))\n)\n",
+                        "expr": "(\n  # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\"}) or vector(0)\n) or vector(0))\n)\n/\n(\n  # Total notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Total notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\"}) or vector(0)\n) or vector(0))\n)\n",
                         "instant": false,
                         "legendFormat": "Alerting notifications",
                         "range": true
@@ -519,13 +519,13 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -574,37 +574,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_native"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_native"
                      },
                      {
-                        "expr": "(1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics|api_v1_push_influx_write\"}))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_native"
@@ -652,13 +652,13 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "samples / sec",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "exemplars / sec",
                         "legendLink": null
@@ -1358,23 +1358,23 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(sum by (route) (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (route) (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "other",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "other",
                         "legendLink": null
@@ -1476,19 +1476,19 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n-\nsum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "success",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "missed",
                         "legendLink": null
@@ -1536,7 +1536,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n  /\nsum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "average",
                         "legendLink": null
@@ -1615,13 +1615,13 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  -\nsum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n  -\nsum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
@@ -1855,7 +1855,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(max by(user) (max_over_time(cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[15m])))",
+                        "expr": "sum(max by(user) (max_over_time(cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[15m])))",
                         "format": "time_series",
                         "legendFormat": "blocks",
                         "legendLink": null

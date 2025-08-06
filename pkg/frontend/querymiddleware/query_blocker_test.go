@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -34,7 +35,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks single line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -44,7 +45,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "not blocks single line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -53,7 +54,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks multiple line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `rate(metric_counter[5m]) / rate(other_counter[5m])`, Regex: false},
 				},
 			},
@@ -67,7 +68,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "not blocks multiple line query non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
@@ -80,7 +81,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks single line query regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*metric_counter.*", Regex: true},
 				},
 			},
@@ -90,7 +91,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "blocks multiple line query regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					// We need to turn on the s flag to allow dot matches newlines.
 					{Pattern: "(?s).*metric_counter.*", Regex: true},
 				},
@@ -105,7 +106,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "invalid regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "[a-9}", Regex: true},
 				},
 			},
@@ -119,7 +120,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 				"range query": &PrometheusRangeQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
 				},
-				"instant query": &PrometheusRangeQueryRequest{
+				"instant query": &PrometheusInstantQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
 				},
 			}
@@ -127,8 +128,12 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					reg := prometheus.NewPedanticRegistry()
+					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+						Name: "cortex_query_frontend_rejected_queries_total",
+						Help: "Number of queries that were rejected by the cluster administrator.",
+					}, []string{"user", "reason"})
 					logger := log.NewNopLogger()
-					mw := newQueryBlockerMiddleware(tt.limits, logger, reg)
+					mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
 					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 					if tt.expectedBlocked {
@@ -170,7 +175,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `{__name__="metric_counter",pod=~"app-.*"}`, Regex: false},
 				},
 			},
@@ -179,7 +184,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "not blocks query via non regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: `{__name__="another_metric",pod=~"app-.*"}`, Regex: false},
 				},
 			},
@@ -187,7 +192,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*metric_counter.*", Regex: true},
 				},
 			},
@@ -196,7 +201,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "blocks query via regex pattern, with begin/end curly brackets used as a trick to match only remote read requests",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "\\{.*metric_counter.*\\}", Regex: true},
 				},
 			},
@@ -205,7 +210,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "not blocks query via regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: ".*another_metric.*", Regex: true},
 				},
 			},
@@ -213,7 +218,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "invalid regex pattern",
 			limits: mockLimits{
-				blockedQueries: []*validation.BlockedQuery{
+				blockedQueries: []validation.BlockedQuery{
 					{Pattern: "[a-9}", Regex: true},
 				},
 			},
@@ -226,8 +231,12 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 			require.NoError(t, err)
 
 			reg := prometheus.NewPedanticRegistry()
+			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+				Name: "cortex_query_frontend_rejected_queries_total",
+				Help: "Number of queries that were rejected by the cluster administrator.",
+			}, []string{"user", "reason"})
 			logger := log.NewNopLogger()
-			mw := newQueryBlockerMiddleware(tt.limits, logger, reg)
+			mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
 			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 			if tt.expectedBlocked {

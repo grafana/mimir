@@ -5,6 +5,7 @@ package testutils
 import (
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -20,6 +21,13 @@ import (
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
 	require.Equal(t, expected.Err, actual.Err)
+
+	if expected.Err != nil {
+		require.Nil(t, expected.Value)
+		require.Nil(t, actual.Value)
+		return
+	}
+
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
 	if !skipAnnotationComparison {
@@ -175,4 +183,41 @@ func LabelsToSeriesMetadata(lbls []labels.Labels) []types.SeriesMetadata {
 	}
 
 	return m
+}
+
+func TrimIndent(s string) string {
+	lines := strings.Split(s, "\n")
+
+	// Remove leading empty lines
+	for len(lines) > 0 && isEmpty(lines[0]) {
+		lines = lines[1:]
+	}
+
+	// Remove trailing empty lines
+	for len(lines) > 0 && isEmpty(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	// Identify the indentation applied to the first line, and remove it from all lines.
+	indentation := ""
+	for _, char := range lines[0] {
+		if char != '\t' {
+			break
+		}
+		indentation += string(char)
+	}
+
+	for i, line := range lines {
+		lines[i] = strings.TrimPrefix(line, indentation)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func isEmpty(s string) bool {
+	return strings.TrimSpace(s) == ""
 }

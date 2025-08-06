@@ -9,6 +9,8 @@ title: Grafana Mimirtool
 weight: 40
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimirtool
 
 Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
@@ -310,9 +312,10 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag           | Description                                        |
-| -------------- | -------------------------------------------------- |
-| `--auth-token` | Authentication token for bearer token or JWT auth. |
+| Flag                              | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| `--auth-token`                    | Authentication token for bearer token or JWT authentication. |
+| `--enable-experimental-functions` | If set, enables parsing experimental PromQL functions.       |
 
 #### List rules
 
@@ -682,6 +685,12 @@ X-Prom-Label-Policy: 1234:%7Bnamespace=%22A%22%7D
 ### Analyze
 
 You can analyze your Grafana or Hosted Grafana instance to determine which metrics are used and exported. You can also extract metrics from dashboard JSON files and rules YAML files.
+
+Configuration options relevant to analyze commands:
+
+| Environment variable | Flag                              | Description                                                       |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| -                    | `--enable-experimental-functions` | Enables parsing PromQL queries containing experimental functions. |
 
 #### Grafana
 

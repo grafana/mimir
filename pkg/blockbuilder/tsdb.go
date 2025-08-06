@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -48,10 +49,12 @@ type TSDBBuilder struct {
 // We use this only to identify the soft errors.
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
-	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
+	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(string, int64, []mimirpb.LabelAdapter) {},
 	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {},
 )
 
 type tsdbTenant struct {
@@ -72,12 +75,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 }
 
 // Process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
-// It returns false if at least one sample was skipped to process later, true otherwise. true also includes the cases
-// where the sample was not put in the TSDB because it was discarded or was already processed before.
-// lastBlockMax: max time of the block in the previous block building cycle.
-// blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
-// recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
-func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed, processEverything bool) (_ bool, err error) {
+func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record) (err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.PreallocWriteRequest{
@@ -85,14 +83,18 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
-	// TODO(codesome): see if we can skip parsing exemplars. They are not persisted in the block so we can save some parsing here.
-	err = req.Unmarshal(rec.Value)
+	version := ingest.ParseRecordVersion(rec)
+	if version > ingest.LatestRecordVersion {
+		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion)
+	}
+
+	err = ingest.DeserializeRecordContent(rec.Value, &req, version)
 	if err != nil {
-		return false, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
+		return fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
 	}
 
 	if len(req.Timeseries) == 0 {
-		return true, nil
+		return nil
 	}
 
 	tenant := tsdbTenant{
@@ -101,7 +103,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}
 	db, err := b.getOrCreateTSDB(tenant)
 	if err != nil {
-		return false, fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
+		return fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
 	}
 
 	app := db.Appender(ctx).(extendedAppender)
@@ -115,14 +117,13 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 	}()
 
+	nativeHistogramsIngestionEnabled := b.limits.NativeHistogramsIngestionEnabled(userID)
+
 	var (
 		labelsBuilder   labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
 
-		allSamplesProcessed = true
-		discardedSamples    = 0
-
-		nativeHistogramsIngestionEnabled = b.limits.NativeHistogramsIngestionEnabled(userID)
+		discardedSamples = 0
 	)
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
@@ -131,16 +132,26 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+
 		for _, s := range ts.Samples {
-			if !processEverything && s.TimestampMs >= blockMax {
-				// We will process this sample in the next cycle.
-				allSamplesProcessed = false
-				continue
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
+				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					// If the cached reference exists, we try to use it.
+					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because TSDB may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				}
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", userID, "err", err)
+					discardedSamples++
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
-			if !processEverything && recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
-				// This sample was already processed in the previous cycle.
-				continue
-			}
+
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
 				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -158,7 +169,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			if err != nil {
 				// Only abort the processing on a terminal error.
 				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
-					return false, err
+					return err
 				}
 				discardedSamples++
 			}
@@ -169,14 +180,30 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 
 		for _, h := range ts.Histograms {
-			if !processEverything && h.Timestamp >= blockMax {
-				// We will process this sample in the next cycle.
-				allSamplesProcessed = false
-				continue
-			}
-			if !processEverything && recordAlreadyProcessed && h.Timestamp < lastBlockMax {
-				// This sample was already processed in the previous cycle.
-				continue
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+				var (
+					ih *histogram.Histogram
+					fh *histogram.FloatHistogram
+				)
+				// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
+				// just uses it to decide the type, so don't convert the input, use dummy histograms.
+				if h.IsFloatHistogram() {
+					fh = zeroFloatHistogram
+				} else {
+					ih = zeroHistogram
+				}
+				if ref != 0 {
+					_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+				}
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", userID, "err", err)
+					discardedSamples++
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 			var (
 				ih *histogram.Histogram
@@ -206,7 +233,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			if err != nil {
 				// Only abort the processing on a terminal error.
 				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
-					return false, err
+					return err
 				}
 				discardedSamples++
 			}
@@ -220,8 +247,13 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		b.metrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
 	}
 
-	return allSamplesProcessed, app.Commit()
+	return app.Commit()
 }
+
+var (
+	zeroHistogram      = &histogram.Histogram{}
+	zeroFloatHistogram = &histogram.FloatHistogram{}
+)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
@@ -357,12 +389,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
 					return
 				}
-				partitionStr := fmt.Sprintf("%d", tenant.partitionID)
+				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
 					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
 				}
 				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
+				b.metrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
 			if err := db.compactEverything(ctx); err != nil {

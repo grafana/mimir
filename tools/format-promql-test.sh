@@ -24,3 +24,7 @@ sed -E "${EDIT_IN_PLACE[@]}" 's/[[:space:]]+$//g' "$@"
 # Strip multiple consecutive blank lines
 # https://unix.stackexchange.com/a/216550/22142 explains the incantation below
 sed -E "${EDIT_IN_PLACE[@]}" '$!N;/^\n$/!P;D' "$@"
+
+# Prefer new syntax for annotation assertions introduced in https://github.com/prometheus/prometheus/pull/15995
+sed -E "${EDIT_IN_PLACE[@]}" 's/^eval_info (.*)/eval \1\n  expect info\n  expect no_warn/g' "$@"
+sed -E "${EDIT_IN_PLACE[@]}" 's/^eval_warn (.*)/eval \1\n  expect no_info\n  expect warn/g' "$@"

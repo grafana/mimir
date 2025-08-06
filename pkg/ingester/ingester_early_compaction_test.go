@@ -119,9 +119,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 	// Push 10 series.
 	for seriesID := 0; seriesID < 10; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{
-			{labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)), 0, sampleTimestamp},
-		}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
+		}}))
 	}
 
 	// TSDB head early compaction should not trigger because there are no inactive series yet.
@@ -138,9 +139,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{
-			{labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)), 0, sampleTimestamp},
-		}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
+		}}))
 	}
 
 	// The last 20 series are active so since only 33% of series are inactive we expect the early compaction to not trigger yet.
@@ -202,7 +204,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		// Push a series with a sample.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 1.0, sampleTime.UnixMilli()}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+		}}))
 
 		// Advance time and then check if TSDB head early compaction is triggered.
 		// We expect no block to be created because there's no sample before "now - active series idle timeout".
@@ -237,7 +242,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		// Advance time and push another sample to the same series.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 2.0, sampleTime.UnixMilli()}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 2.0}},
+		}}))
 
 		// Advance time, trigger the TSDB head early compaction, and then check the compacted block.
 		now = now.Add(20 * time.Minute)
@@ -265,13 +273,19 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		// Push a sample with the timestamp BEFORE the next TSDB block range boundary.
 		firstSampleTime := now
 		sampleTimes = append(sampleTimes, firstSampleTime)
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 3.0, firstSampleTime.UnixMilli()}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: firstSampleTime.UnixMilli(), Val: 3.0}},
+		}}))
 
 		// Push a sample with the timestamp AFTER the next TSDB block range boundary.
 		now = now.Add(4 * time.Hour)
 		secondSampleTime := now
 		sampleTimes = append(sampleTimes, secondSampleTime)
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 4.0, secondSampleTime.UnixMilli()}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: secondSampleTime.UnixMilli(), Val: 4.0}},
+		}}))
 
 		// Trigger a normal TSDB head compaction.
 		ingester.compactBlocks(ctx, false, 0, nil)
@@ -353,7 +367,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	require.NoError(t, err)
 
 	for i := 0; i < 5; i++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, float64(i), startTime.Add(time.Duration(i) * time.Hour).UnixMilli()}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Hour).UnixMilli(), Val: float64(i)}},
+		}}))
 	}
 
 	// TSDB Head early compaction.
@@ -423,8 +440,14 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
 	require.NoError(t, err)
 
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 1.0, startTime.UnixMilli()}}))
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
+	}}))
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
+	}}))
 
 	// TSDB Head early compaction.
 	ingester.compactBlocksToReduceInMemorySeries(ctx, startTime.Add(30*time.Minute))
@@ -442,9 +465,18 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, listBlocksInDir(t, userBlocksDir)[0].String()), "metric_1"))
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
-	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 1.0, startTime.UnixMilli()}}), "the sample has been rejected because its timestamp is too old")
-	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
-	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 3.0, startTime.Add(30 * time.Minute).UnixMilli()}}))
+	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
+	}}), "the sample has been rejected because its timestamp is too old")
+	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
+	}}))
+	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Samples: []util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
+	}}))
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) {
@@ -516,12 +548,11 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						timestamp := startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli()
 
 						// Prepare the series to write.
-						seriesToWrite := make([]series, 0, toSeriesID-fromSeriesID+1)
+						seriesToWrite := make([]util_test.Series, 0, toSeriesID-fromSeriesID+1)
 						for seriesIdx := fromSeriesID; seriesIdx <= toSeriesID; seriesIdx++ {
-							seriesToWrite = append(seriesToWrite, series{
-								lbls:      labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
-								value:     float64(sampleIdx),
-								timestamp: timestamp,
+							seriesToWrite = append(seriesToWrite, util_test.Series{
+								Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
+								Samples: []util_test.Sample{{TS: timestamp, Val: float64(sampleIdx)}},
 							})
 						}
 

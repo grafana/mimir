@@ -13,16 +13,16 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Absent is an operator that implements the absent() function.
 type Absent struct {
 	TimeRange                types.QueryTimeRange
-	ArgExpressions           parser.Expr
+	Labels                   labels.Labels
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -32,11 +32,11 @@ type Absent struct {
 var _ types.InstantVectorOperator = &Absent{}
 
 // NewAbsent creates a new Absent.
-func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
+func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
 	return &Absent{
 		TimeRange:                timeRange,
 		Inner:                    inner,
-		ArgExpressions:           innerExpr,
+		Labels:                   labels,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
@@ -47,7 +47,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	if err != nil {
 		return nil, err
 	}
-	defer types.PutSeriesMetadataSlice(innerMetadata)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
@@ -57,10 +57,15 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	// Initialize presence slice
 	a.presence = a.presence[:a.TimeRange.StepCount]
 
-	metadata := types.GetSeriesMetadataSlice(1)
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
-	})
+	metadata, err := types.SeriesMetadataSlicePool.Get(1, a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: a.Labels})
+	if err != nil {
+		return nil, err
+	}
 
 	for range innerMetadata {
 		series, err := a.Inner.NextSeries(ctx)
@@ -108,15 +113,20 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *Absent) Close() {
-	a.Inner.Close()
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
+func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
 }
 
-// createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
-// in a given expression. It is used in the absent functions.
-// This function is copied from Prometheus
-func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
+func (a *Absent) Close() {
+	a.Inner.Close()
+
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
+}
+
+// CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
+// in a given expression. It is used for the absent and absent_over_time functions.
+// This function is copied from Prometheus.
+func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	b := labels.NewBuilder(labels.EmptyLabels())
 
 	var lm []*labels.Matcher

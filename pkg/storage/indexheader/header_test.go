@@ -206,8 +206,15 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			tmpDir := t.TempDir()
 			test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
-			bkt, err := filesystem.NewBucket(tmpDir)
+			ubkt, err := filesystem.NewBucket(tmpDir)
 			require.NoError(t, err)
+
+			bkt := objstore.WithNoopInstr(ubkt)
+
+			t.Cleanup(func() {
+				require.NoError(t, ubkt.Close())
+				require.NoError(t, bkt.Close())
+			})
 
 			ctx := context.Background()
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
@@ -341,7 +348,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	require.NoError(t, err)
 
 	for _, lname := range expLabelNames {
-		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
+		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname, nil)
 		require.NoError(t, err)
 
 		valOffsets, err := headerReader.LabelValuesOffsets(ctx, lname, "", nil)

@@ -8,6 +8,8 @@ title: Scaling out Grafana Mimir
 weight: 30
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Scaling out Grafana Mimir
 
 Grafana Mimir can horizontally scale every component.
@@ -84,21 +86,21 @@ Complete the following steps to scale down ingesters in any zone.
 
 1. Set each ingester to read-only mode:
 
-   a. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on the ingester to place it into read-only mode.
+   1. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on the ingester to place it into read-only mode.
 
 1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
 
-- The configured `-querier.query-store-after` setting
-- Two times the configured `-blocks-storage.bucket-store.sync-interval` setting
-- Two times the configured `-compactor.cleanup-interval` setting
+   - The configured `-querier.query-store-after` setting
+   - Two times the configured `-blocks-storage.bucket-store.sync-interval` setting
+   - Two times the configured `-compactor.cleanup-interval` setting
 
 1. Scale down each ingester:
 
-   a. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate it.
+   1. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate it.
 
-   b. Wait until the API endpoint call has successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
+   1. Wait until the API endpoint call has successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
 
-   c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
+   1. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
 
 ### Scaling down store-gateways
 

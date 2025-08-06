@@ -45,11 +45,11 @@ type config struct {
 
 func (cfg *config) registerFlags(f *flag.FlagSet) {
 	cfg.bucket.RegisterFlags(f)
-	f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
 	f.StringVar(&cfg.markType, "mark-type", "", "Mark type to create or remove, valid options: deletion, no-compact. Required.")
+	f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block(s). If empty then each block is assumed to be of the form tenantID/blockID, blockID otherwise.")
 	f.StringVar(&cfg.details, "details", "", "Details to include in an added mark.")
-	f.Var(&cfg.blocks, "blocks", "Comma separated list of block IDs. If non-empty, blocks-file is ignored.")
-	f.StringVar(&cfg.blocksFile, "blocks-file", "-", "File containing a block ID per-line. Defaults to standard input. Ignored if blocks is non-empty")
+	f.Var(&cfg.blocks, "blocks", "Comma separated list of blocks. If non-empty, blocks-file is ignored.")
+	f.StringVar(&cfg.blocksFile, "blocks-file", "-", "File containing a block per-line. Defaults to standard input. Ignored if blocks is non-empty")
 	f.IntVar(&cfg.resumeIndex, "resume-index", 0, "The index of the block to resume from")
 	f.BoolVar(&cfg.remove, "remove", false, "If marks should be removed rather than uploaded.")
 	f.StringVar(&cfg.metaPresencePolicy, "meta-presence-policy", "skip-block", "Policy on presence of block meta.json files: \"none\", \"skip-block\", or \"require\".")
@@ -58,14 +58,13 @@ func (cfg *config) registerFlags(f *flag.FlagSet) {
 }
 
 func (cfg *config) validate() error {
-	if cfg.tenantID == "" {
-		return errors.New("-tenant is required")
-	}
-	if err := tenant.ValidTenantID(cfg.tenantID); err != nil {
-		return fmt.Errorf("-tenant is invalid: %w", err)
-	}
 	if cfg.markType == "" {
 		return errors.New("-mark-type is required")
+	}
+	if cfg.tenantID != "" {
+		if err := tenant.ValidTenantID(cfg.tenantID); err != nil {
+			return fmt.Errorf("-tenant is invalid: %w", err)
+		}
 	}
 	if cfg.blocksFile == "" && len(cfg.blocks) == 0 {
 		return errors.New("one of -blocks or -blocks-file must be specified")
@@ -77,6 +76,11 @@ func (cfg *config) validate() error {
 		return errors.New("-resume-index must be non-negative")
 	}
 	return nil
+}
+
+type inputBlock struct {
+	tenantID string
+	blockID  ulid.ULID
 }
 
 func main() {
@@ -97,7 +101,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	blocks, err := getBlocks(cfg.blocks, cfg.blocksFile)
+	blocks, err := getBlocks(cfg.blocks, cfg.blocksFile, cfg.tenantID)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to read blocks to mark", "err", err)
 		os.Exit(1)
@@ -123,7 +127,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	mpf, err := metaPresenceFunc(cfg.tenantID, bkt, cfg.metaPresencePolicy)
+	mpf, err := metaPresenceFunc(bkt, cfg.metaPresencePolicy)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to handle meta validation policy", "err", err)
 		os.Exit(1)
@@ -137,9 +141,9 @@ func main() {
 
 	var f func(context.Context, int) error
 	if cfg.remove {
-		f = removeMarksFunc(cfg, bkt, blocks, mpf, suffix, logger)
+		f = removeMarksFunc(bkt, blocks, mpf, suffix, logger, cfg.dryRun)
 	} else {
-		f = addMarksFunc(cfg, bkt, blocks, mpf, mbf, suffix, logger)
+		f = addMarksFunc(bkt, blocks, mpf, mbf, suffix, logger, cfg.dryRun)
 	}
 
 	if successUntil, err := forEachJobSuccessUntil(ctx, len(blocks), cfg.concurrency, f); err != nil {
@@ -170,23 +174,24 @@ func forEachJobSuccessUntil(ctx context.Context, numJobs int, jobConcurrency int
 }
 
 // removeMarksFunc returns a function that removes block markers for a given block index
-func removeMarksFunc(cfg config, bkt objstore.Bucket, blocks []ulid.ULID, mpf metaPresence, suffix string, logger log.Logger) func(context.Context, int) error {
+func removeMarksFunc(bkt objstore.Bucket, blocks []inputBlock, mpf metaPresence, suffix string, logger log.Logger, dryRun bool) func(context.Context, int) error {
 	return func(ctx context.Context, idx int) error {
-		block := blocks[idx].String()
+		tenantID := blocks[idx].tenantID
+		blockID := blocks[idx].blockID.String()
 
-		skip, err := mpf(ctx, block)
+		skip, err := mpf(ctx, tenantID, blockID)
 		if err != nil {
 			return err
 		}
 		if skip {
-			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", block))
+			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s/%s", tenantID, blockID))
 			return nil
 		}
 
-		localMarkPath := localMarkPath(cfg.tenantID, block, suffix)
-		globalMarkPath := globalMarkPath(cfg.tenantID, block, suffix)
+		localMarkPath := localMarkPath(tenantID, blockID, suffix)
+		globalMarkPath := globalMarkPath(tenantID, blockID, suffix)
 
-		if cfg.dryRun {
+		if dryRun {
 			level.Info(logger).Log("msg", fmt.Sprintf("would delete global mark at %s", globalMarkPath))
 			level.Info(logger).Log("msg", fmt.Sprintf("would delete mark at %s", localMarkPath))
 			return nil
@@ -209,24 +214,25 @@ func removeMarksFunc(cfg config, bkt objstore.Bucket, blocks []ulid.ULID, mpf me
 
 // addMarksFunc returns a function that uploads block markers for a given block index
 func addMarksFunc(
-	cfg config,
 	bkt objstore.Bucket,
-	blocks []ulid.ULID,
+	blocks []inputBlock,
 	mpf metaPresence,
 	mbf markerBytes,
 	suffix string,
-	logger log.Logger) func(context.Context, int) error {
+	logger log.Logger,
+	dryRun bool) func(context.Context, int) error {
 
 	return func(ctx context.Context, idx int) error {
-		block := blocks[idx]
+		tenantID := blocks[idx].tenantID
+		block := blocks[idx].blockID
 		blockStr := block.String()
 
-		skip, err := mpf(ctx, blockStr)
+		skip, err := mpf(ctx, tenantID, blockStr)
 		if err != nil {
 			return err
 		}
 		if skip {
-			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", blockStr))
+			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s/%s", tenantID, blockStr))
 			return nil
 		}
 
@@ -235,10 +241,10 @@ func addMarksFunc(
 			return err
 		}
 
-		localMarkPath := localMarkPath(cfg.tenantID, blockStr, suffix)
-		globalMarkPath := globalMarkPath(cfg.tenantID, blockStr, suffix)
+		localMarkPath := localMarkPath(tenantID, blockStr, suffix)
+		globalMarkPath := globalMarkPath(tenantID, blockStr, suffix)
 
-		if cfg.dryRun {
+		if dryRun {
 			level.Info(logger).Log("msg", fmt.Sprintf("would upload mark to %s", localMarkPath))
 			level.Info(logger).Log("msg", fmt.Sprintf("would upload global mark to %s", globalMarkPath))
 			return nil
@@ -297,25 +303,25 @@ func markerBytesFunc(markType, details string) (markerBytes, string, error) {
 	}
 }
 
-type metaPresence func(ctx context.Context, blk string) (bool, error)
+type metaPresence func(ctx context.Context, tenantID string, blk string) (bool, error)
 
-func metaPresenceFunc(tenantID string, bkt objstore.Bucket, policy string) (metaPresence, error) {
+func metaPresenceFunc(bkt objstore.Bucket, policy string) (metaPresence, error) {
 	switch policy {
 	case "none":
 		// The meta is not checked at all
-		return func(_ context.Context, _ string) (bool, error) {
+		return func(_ context.Context, _, _ string) (bool, error) {
 			return false, nil
 		}, nil
 	case "skip-block":
 		// If the meta is not present, skip this block
-		return func(ctx context.Context, blk string) (bool, error) {
-			exists, err := bkt.Exists(ctx, metaPath(tenantID, blk))
+		return func(ctx context.Context, tenantID, blockID string) (bool, error) {
+			exists, err := bkt.Exists(ctx, metaPath(tenantID, blockID))
 			return !exists, err
 		}, nil
 	case "require":
 		// If the meta is not present an error is returned
-		return func(ctx context.Context, blk string) (bool, error) {
-			metaName := metaPath(tenantID, blk)
+		return func(ctx context.Context, tenantID, blockID string) (bool, error) {
+			metaName := metaPath(tenantID, blockID)
 			exists, err := bkt.Exists(ctx, metaName)
 			if err != nil {
 				return false, err
@@ -326,15 +332,15 @@ func metaPresenceFunc(tenantID string, bkt objstore.Bucket, policy string) (meta
 			return false, nil
 		}, nil
 	default:
-		return nil, fmt.Errorf("unrecognized meta-validation-policy: %q", policy)
+		return nil, fmt.Errorf("unrecognized meta-presence-policy: %q", policy)
 	}
 
 }
 
-func getBlocks(blocks flagext.StringSliceCSV, filePath string) ([]ulid.ULID, error) {
+func getBlocks(blocks flagext.StringSliceCSV, filePath string, tenantID string) ([]inputBlock, error) {
 	if len(blocks) > 0 {
 		r := strings.NewReader(strings.Join(blocks, "\n"))
-		return readBlocks(r)
+		return readBlocks(r, tenantID)
 	}
 
 	input, err := getInputFile(filePath)
@@ -343,7 +349,7 @@ func getBlocks(blocks flagext.StringSliceCSV, filePath string) ([]ulid.ULID, err
 	}
 	defer input.Close()
 
-	return readBlocks(input)
+	return readBlocks(input, tenantID)
 
 }
 
@@ -354,17 +360,51 @@ func getInputFile(filePath string) (*os.File, error) {
 	return os.Open(filePath)
 }
 
-// readBlocks reads lines of blockIDs
-func readBlocks(r io.Reader) ([]ulid.ULID, error) {
-	var blocks []ulid.ULID
+// readBlocks reads lines of blockIDs if tenant is non-empty or tenantID/blockIDs otherwise
+func readBlocks(r io.Reader, tenant string) ([]inputBlock, error) {
+	var blocks []inputBlock
 	scanner := bufio.NewScanner(r)
+	var parser func(string) (inputBlock, error)
+	if tenant == "" {
+		parser = parseTenantBlockLine
+	} else {
+		parser = func(block string) (inputBlock, error) {
+			return parseBlock(tenant, block)
+		}
+	}
 	for scanner.Scan() {
 		line := scanner.Text()
-		u, err := ulid.Parse(line)
+		block, err := parser(line)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse a ULID from: %q", line)
+			return nil, err
 		}
-		blocks = append(blocks, u)
+		blocks = append(blocks, block)
 	}
 	return blocks, nil
+}
+
+func parseTenantBlockLine(line string) (inputBlock, error) {
+	tenantID, blockString, found := strings.Cut(line, "/")
+	if !found {
+		return inputBlock{}, fmt.Errorf("invalid block format. when --tenant is empty each block must look like tenantID/blockID, found: %s", line)
+	}
+	if err := tenant.ValidTenantID(tenantID); err != nil {
+		return inputBlock{}, fmt.Errorf("tenantID parsed from %s is invalid: %w", line, err)
+	}
+	blockString = strings.TrimSuffix(blockString, "/") // tolerate a trailing slash
+	return parseBlock(
+		tenantID,
+		blockString,
+	)
+}
+
+func parseBlock(tenant, block string) (inputBlock, error) {
+	u, err := ulid.Parse(block)
+	if err != nil {
+		return inputBlock{}, fmt.Errorf("failed to parse a ULID from: %q", block)
+	}
+	return inputBlock{
+		tenantID: tenant,
+		blockID:  u,
+	}, nil
 }

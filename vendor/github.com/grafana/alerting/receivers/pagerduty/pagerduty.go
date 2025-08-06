@@ -8,14 +8,16 @@ import (
 	"strings"
 
 	"github.com/alecthomas/units"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -41,17 +43,15 @@ var (
 type Notifier struct {
 	*receivers.Base
 	tmpl     *templates.Template
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	settings Config
 }
 
 // New is the constructor for the PagerDuty notifier
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -61,13 +61,14 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends an alert notification to PagerDuty
 func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := pn.GetLogger(ctx)
 	alerts := types.Alerts(as...)
 	if alerts.Status() == model.AlertResolved && !pn.SendResolved() {
-		pn.log.Debug("not sending a trigger to Pagerduty", "status", alerts.Status(), "auto resolve", pn.SendResolved())
+		level.Debug(l).Log("msg", "not sending a trigger to Pagerduty", "status", alerts.Status(), "auto resolve", pn.SendResolved())
 		return true, nil
 	}
 
-	msg, eventType, err := pn.buildPagerdutyMessage(ctx, alerts, as)
+	msg, eventType, err := pn.buildPagerdutyMessage(ctx, alerts, as, l)
 	if err != nil {
 		return false, fmt.Errorf("build pagerduty message: %w", err)
 	}
@@ -84,7 +85,7 @@ func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		maxEventSize := units.MetricBytes(pagerDutyMaxEventSize).String()
 		truncatedMsg := fmt.Sprintf("Custom details have been removed because the original event exceeds the maximum size of %s", maxEventSize)
 		msg.Payload.CustomDetails = map[string]string{"error": truncatedMsg}
-		pn.log.Warn("Truncated details", "maxSize", maxEventSize, "actualSize", bufSize)
+		level.Warn(l).Log("msg", "Truncated details", "maxSize", maxEventSize, "actualSize", bufSize)
 
 		buf.Reset()
 		if err := json.NewEncoder(&buf).Encode(msg); err != nil {
@@ -92,7 +93,7 @@ func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		}
 	}
 
-	pn.log.Info("notifying Pagerduty", "event_type", eventType)
+	level.Info(l).Log("msg", "notifying Pagerduty", "event_type", eventType)
 	cmd := &receivers.SendWebhookSettings{
 		URL:        pn.settings.URL,
 		Body:       buf.String(),
@@ -101,14 +102,14 @@ func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			"Content-Type": "application/json",
 		},
 	}
-	if err := pn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := pn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, fmt.Errorf("send notification to Pagerduty: %w", err)
 	}
 
 	return true, nil
 }
 
-func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Alerts, as []*types.Alert) (*pagerDutyMessage, string, error) {
+func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Alerts, as []*types.Alert, l log.Logger) (*pagerDutyMessage, string, error) {
 	key, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return nil, "", err
@@ -120,7 +121,7 @@ func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Aler
 	}
 
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, pn.tmpl, as, pn.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, pn.tmpl, as, l, &tmplErr)
 
 	details := make(map[string]string, len(pn.settings.Details))
 	for k, v := range pn.settings.Details {
@@ -133,7 +134,7 @@ func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Aler
 
 	severity := strings.ToLower(tmpl(pn.settings.Severity))
 	if _, ok := knownSeverity[severity]; !ok {
-		pn.log.Warn("Severity is not in the list of known values - using default severity", "actualSeverity", severity, "defaultSeverity", DefaultSeverity)
+		level.Warn(l).Log("msg", "Severity is not in the list of known values - using default severity", "actualSeverity", severity, "defaultSeverity", DefaultSeverity)
 		severity = DefaultSeverity
 	}
 
@@ -158,7 +159,7 @@ func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Aler
 		},
 	}
 
-	_ = images.WithStoredImages(ctx, pn.log, pn.images,
+	_ = images.WithStoredImages(ctx, l, pn.images,
 		func(_ int, image images.Image) error {
 			if len(image.URL) != 0 {
 				msg.Images = append(msg.Images, pagerDutyImage{Src: image.URL})
@@ -170,12 +171,12 @@ func (pn *Notifier) buildPagerdutyMessage(ctx context.Context, alerts model.Aler
 
 	summary, truncated := receivers.TruncateInRunes(msg.Payload.Summary, pagerDutyMaxV2SummaryLenRunes)
 	if truncated {
-		pn.log.Warn("Truncated summary", "key", key, "runes", pagerDutyMaxV2SummaryLenRunes)
+		level.Warn(l).Log("msg", "Truncated summary", "key", key, "runes", pagerDutyMaxV2SummaryLenRunes)
 	}
 	msg.Payload.Summary = summary
 
 	if tmplErr != nil {
-		pn.log.Warn("failed to template PagerDuty message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template PagerDuty message", "err", tmplErr.Error())
 	}
 
 	return msg, eventType, nil

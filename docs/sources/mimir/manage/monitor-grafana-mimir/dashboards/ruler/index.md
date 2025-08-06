@@ -9,9 +9,18 @@ title: Grafana Mimir Ruler dashboard
 weight: 130
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Ruler dashboard
 
 The Ruler dashboard shows health and activity metrics for the ruler and object storage metrics for operations triggered by the ruler.
+
+Use this dashboard for the following use cases:
+
+- Monitor rule evaluation performance.
+- Track the operational status of the ruler component.
+- Monitor the ruler's interactions with object storage.
+- Track the operational status of the ruler component, ensuring it's functioning correctly and evaluating rules as expected.
 
 ## Example
 

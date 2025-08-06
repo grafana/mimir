@@ -7,7 +7,6 @@ package distributor
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -29,17 +28,16 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-)
-
-var (
-	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
-	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+	mimirsync "github.com/grafana/mimir/pkg/util/sync"
 )
 
 type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
+	// HATrackerTimeouts returns timeouts that may be specific for the user.
+	HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
+	DefaultHATrackerUpdateTimeout() time.Duration
 }
 
 type haTracker interface {
@@ -140,29 +138,18 @@ func (r *ReplicaDesc) Clone() memberlist.Mergeable {
 // create an HA Tracker.
 type HATrackerConfig struct {
 	EnableHATracker bool `yaml:"enable_ha_tracker"`
-	// We should only update the timestamp if the difference
-	// between the stored timestamp and the time we received a sample at
-	// is more than this duration.
-	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
-	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
-	// We should only failover to accepting samples from a replica
-	// other than the replica written in the KVStore if the difference
-	// between the stored timestamp and the time we received a sample is
-	// more than this duration
-	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. Note that etcd is deprecated."`
+
+	DeprecatedHATrackerTimeoutsConfig `yaml:",inline"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableHATracker, "distributor.ha-tracker.enable", false, "Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).")
-	f.DurationVar(&cfg.UpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
-	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
-	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
 	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
 
 	// We want the ability to use different instances for the ring and
@@ -172,18 +159,14 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
-// Validate config and returns error on failure
-func (cfg *HATrackerConfig) Validate() error {
-	if cfg.UpdateTimeoutJitterMax < 0 {
-		return errNegativeUpdateTimeoutJitterMax
-	}
-
-	minFailureTimeout := cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
-	if cfg.FailoverTimeout < minFailureTimeout {
-		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
-	}
-
-	return nil
+// DeprecatedHATrackerTimeoutsConfig is kept for backwards-compatibility in the
+// YAML config files. Values are copied to limits config, and must be accesed
+// through haTrackerLimits.HATrackerTimeouts.
+// TODO: Remove in Mimir 2.18.0
+type DeprecatedHATrackerTimeoutsConfig struct {
+	DeprecatedUpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout."`
+	DeprecatedUpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout_jitter_max."`
+	DeprecatedFailoverTimeout        time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_failover_timeout."`
 }
 
 func GetReplicaDescCodec() codec.Proto {
@@ -195,11 +178,10 @@ func GetReplicaDescCodec() codec.Proto {
 type defaultHaTracker struct {
 	services.Service
 
-	logger              log.Logger
-	cfg                 HATrackerConfig
-	client              kv.Client
-	updateTimeoutJitter time.Duration
-	limits              haTrackerLimits
+	logger log.Logger
+	cfg    HATrackerConfig
+	client kv.Client
+	limits haTrackerLimits
 
 	electedLock sync.RWMutex                         // protects clusters maps
 	clusters    map[string]map[string]*haClusterInfo // Known clusters with elected replicas per user. First key = user, second key = cluster name.
@@ -212,10 +194,15 @@ type defaultHaTracker struct {
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
-	cleanupRuns               prometheus.Counter
-	replicasMarkedForDeletion prometheus.Counter
-	deletedReplicas           prometheus.Counter
-	markingForDeletionsFailed prometheus.Counter
+	cleanupRuns                      prometheus.Counter
+	replicasMarkedForDeletion        prometheus.Counter
+	deletedReplicas                  prometheus.Counter
+	markingForDeletionsFailed        prometheus.Counter
+	replicasDescFailedTypeAssertions prometheus.Counter
+
+	// computeUpdateTimeoutJitter overrides the computeUpdateTimeoutJitter function
+	// for deterministic tests.
+	computeUpdateTimeoutJitter func(maxJitter time.Duration) time.Duration
 }
 
 // For one cluster, the information we need to do ha-tracking.
@@ -229,17 +216,11 @@ type haClusterInfo struct {
 // newHaTracker returns a new HA cluster tracker using either Consul,
 // etcd, or an in-memory KV store. Tracker must be started via StartAsync().
 func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*defaultHaTracker, error) {
-	var jitter time.Duration
-	if cfg.UpdateTimeoutJitterMax > 0 {
-		jitter = time.Duration(rand.Int63n(int64(2*cfg.UpdateTimeoutJitterMax))) - cfg.UpdateTimeoutJitterMax
-	}
-
 	t := &defaultHaTracker{
-		logger:              log.With(logger, "component", "ha-tracker"),
-		cfg:                 cfg,
-		updateTimeoutJitter: jitter,
-		limits:              limits,
-		clusters:            map[string]map[string]*haClusterInfo{},
+		logger:   log.With(logger, "component", "ha-tracker"),
+		cfg:      cfg,
+		limits:   limits,
+		clusters: map[string]map[string]*haClusterInfo{},
 
 		electedReplicaStatus: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_elected_replica_status",
@@ -290,6 +271,10 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Name: "cortex_ha_tracker_replicas_cleanup_delete_failed_total",
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
 		}),
+		replicasDescFailedTypeAssertions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_replica_desc_failed_type_assertions_total",
+			Help: "Number of failed replicaDesc type assertions in the HA tracker.",
+		}),
 	}
 	client, err := kv.NewClient(
 		cfg.KVStore,
@@ -304,6 +289,13 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 
 	t.Service = services.NewBasicService(t.syncHATrackerStateOnStart, t.loop, nil)
 	return t, nil
+}
+
+func computeUpdateTimeoutJitter(maxJitter time.Duration) time.Duration {
+	if maxJitter > 0 {
+		return time.Duration(rand.Int63n(int64(2*maxJitter))) - maxJitter
+	}
+	return 0
 }
 
 func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error {
@@ -354,16 +346,25 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
+	// WatchPrefix blocks until ctx is done or the function provided returns false.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
-			return false
+			// Always return true to ensure WatchPrefix() is never interrupted, otherwise the HA tracker stops to receive updates.
+			level.Error(h.logger).Log("msg", "unexpected data type receive when watching for HA tracker updates", "return type", fmt.Sprintf("%T", value), "key", key)
+			h.replicasDescFailedTypeAssertions.Inc()
+			return true
 		}
 		h.processKVStoreEntry(key, replica)
 		return true
 	})
 
-	wg.Wait()
+	const waitTimeout = 10 * time.Second
+	if err := mimirsync.WaitWithTimeout(&wg, waitTimeout); err != nil {
+		level.Error(h.logger).Log("msg", "wait group was not done after a long timeout but we expected it to be done in a few milliseconds", "timeout", waitTimeout, "err", err)
+		return fmt.Errorf("waiting for updateKVLoop to be done: %w", err)
+	}
+
 	return nil
 }
 
@@ -420,7 +421,8 @@ const (
 func (h *defaultHaTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()
-	tick := time.NewTicker(h.cfg.UpdateTimeout)
+	updateTimeout := h.limits.DefaultHATrackerUpdateTimeout()
+	tick := time.NewTicker(updateTimeout)
 	defer tick.Stop()
 
 	for {
@@ -444,17 +446,18 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 	// Note the maps may change when we release the lock while talking to KVStore;
 	// the Go language allows this: https://golang.org/ref/spec#For_range note 3.
 	for userID, clusters := range h.clusters {
+		uh := h.forUser(userID)
 		for cluster, entry := range clusters {
-			if h.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
+			if uh.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
 				continue // Some other process updated it recently; nothing to do.
 			}
 			var replica string
 			var receivedAt int64
-			if h.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
+			if uh.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
 				// We have seen the elected replica recently; carry on with that choice.
 				replica = entry.elected.Replica
 				receivedAt = entry.electedLastSeenTimestamp
-			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
+			} else if uh.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
 				receivedAt = entry.nonElectedLastSeenTimestamp
@@ -463,7 +466,7 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			h.electedLock.RUnlock()
-			err := h.updateKVStore(ctx, userID, cluster, replica, now, receivedAt)
+			err := uh.updateKVStore(ctx, cluster, replica, now, receivedAt)
 			h.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -578,7 +581,8 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 		return newTooManyClustersError(limit)
 	}
 
-	err := h.updateKVStore(ctx, userID, cluster, replica, now, now.UnixMilli())
+	uh := h.forUser(userID)
+	err := uh.updateKVStore(ctx, cluster, replica, now, now.UnixMilli())
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
@@ -587,8 +591,34 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 	return h.checkReplica(ctx, userID, cluster, replica, now)
 }
 
-func (h *defaultHaTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
-	return now.Sub(timestamp.Time(receivedAt)) < h.cfg.UpdateTimeout+h.updateTimeoutJitter
+type defaultHaTrackerForUser struct {
+	*defaultHaTracker
+	userID              string
+	updateTimeout       time.Duration
+	updateTimeoutJitter time.Duration
+	failoverTimeout     time.Duration
+}
+
+func (h *defaultHaTracker) forUser(userID string) defaultHaTrackerForUser {
+	uh := defaultHaTrackerForUser{
+		defaultHaTracker: h,
+		userID:           userID,
+	}
+
+	var updateJitterMax time.Duration
+	uh.updateTimeout, updateJitterMax, uh.failoverTimeout = h.limits.HATrackerTimeouts(userID)
+
+	computeJitter := h.computeUpdateTimeoutJitter
+	if computeJitter == nil {
+		computeJitter = computeUpdateTimeoutJitter
+	}
+	uh.updateTimeoutJitter = computeJitter(updateJitterMax)
+
+	return uh
+}
+
+func (h *defaultHaTrackerForUser) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
+	return now.Sub(timestamp.Time(receivedAt)) < h.updateTimeout+h.updateTimeoutJitter
 }
 
 // Must be called with electedLock held.
@@ -623,8 +653,8 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time, receivedAt int64) error {
-	key := fmt.Sprintf("%s/%s", userID, cluster)
+func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, replica string, now time.Time, receivedAt int64) error {
+	key := fmt.Sprintf("%s/%s", h.userID, cluster)
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
 	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -636,24 +666,30 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 			}
 			electedAtTime = desc.ElectedAt
 			electedChanges = desc.ElectedChanges
+
+			// In the past we had a bug that caused ElectedAt timestamp to not be set (so it was the default zero value).
+			// The bug is fixed now, but we may still have very old entries around with a zero ElectedAt timestamp.
+			// To avoid misunderstandings, we proactively fix it by setting the ElectedAt to now.
+			if electedAtTime == 0 {
+				electedAtTime = timestamp.FromTime(now)
+			}
+
 			// If our replica is different, wait until the failover time
 			if desc.Replica != replica {
-				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
-					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.failoverTimeout {
+					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 					return nil, false, nil
 				}
-				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 				electedAtTime = timestamp.FromTime(now)
 				electedChanges = desc.ElectedChanges + 1
 			}
 		} else {
-			if desc == nil || (desc.DeletedAt > 0) {
-				// if there is no desc in the kvStore , or if the entry in kvStore is marked as deleted but not yet removed,
-				// set the electedAtTime to avoid being zero
-				// The second part, (desc.DeletedAt > 0), ensures the replica is elected to "revive" the cluster entry after the previous one was deleted.
-				electedAtTime = timestamp.FromTime(now)
-			}
+			// The replica doesn't exist in the KV store yet, or it's marked for deletion. We have to re-create it,
+			// making sure the ElectedAt timestamp is set.
+			electedAtTime = timestamp.FromTime(now)
 		}
+
 		// Attempt to update KVStore to our timestamp and replica.
 		desc = &ReplicaDesc{
 			Replica:        replica,
@@ -664,11 +700,11 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 		}
 		return desc, true, nil
 	})
-	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
+	h.kvCASCalls.WithLabelValues(h.userID, cluster).Inc()
 	// Add data stored or received from KVStore, if available.
 	if err == nil && desc != nil {
 		h.electedLock.Lock()
-		h.updateCache(userID, cluster, desc)
+		h.updateCache(h.userID, cluster, desc)
 		h.electedLock.Unlock()
 	}
 	return err

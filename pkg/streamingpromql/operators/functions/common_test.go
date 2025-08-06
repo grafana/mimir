@@ -3,6 +3,7 @@
 package functions
 
 import (
+	"context"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -10,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestDropSeriesName(t *testing.T) {
@@ -25,7 +26,12 @@ func TestDropSeriesName(t *testing.T) {
 		{Labels: labels.FromStrings("label2", "value2")},
 	}
 
-	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, limiting.NewMemoryConsumptionTracker(0, nil))
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	for _, metadata := range seriesMetadata {
+		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
+		require.NoError(t, err)
+	}
+	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
 }
@@ -33,7 +39,7 @@ func TestDropSeriesName(t *testing.T) {
 func TestFloatTransformationFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := floatTransformationFunc(transform)
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -45,7 +51,8 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -60,13 +67,13 @@ func TestFloatTransformationFunc(t *testing.T) {
 	modifiedSeriesData, err := transformFunc(seriesData, nil, types.QueryTimeRange{}, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
-	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := FloatTransformationDropHistogramsFunc(transform)
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -78,7 +85,8 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -92,5 +100,5 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 	// We expect the dropped histogram to be returned to the pool
-	require.Equal(t, types.FPointSize*2, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, types.FPointSize*2, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

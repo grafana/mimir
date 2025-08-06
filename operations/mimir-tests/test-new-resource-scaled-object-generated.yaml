@@ -466,9 +466,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -550,6 +548,7 @@ spec:
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -563,9 +562,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -643,10 +640,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -718,7 +712,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -798,7 +792,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -895,6 +889,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -907,9 +902,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1002,12 +995,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.1
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1055,12 +1054,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.1
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1108,12 +1113,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.1
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1161,12 +1172,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.1
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1226,6 +1243,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -1244,9 +1262,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.1
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1352,14 +1368,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7___cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_0.7___cpu_hpa_default
@@ -1367,8 +1383,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7___memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_0.7__",namespace="default"})
@@ -1386,6 +1402,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_0.7___memory_hpa_default
@@ -1415,14 +1432,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7__pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_0.7__pod_zone_a.*_cpu_hpa_default
@@ -1430,8 +1447,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7__pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -1449,6 +1466,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_0.7__pod_zone_a.*_memory_hpa_default
@@ -1478,14 +1496,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7_test_container__cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_0.7_test_container__cpu_hpa_default
@@ -1493,8 +1511,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7_test_container__memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -1512,6 +1530,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_0.7_test_container__memory_hpa_default
@@ -1541,14 +1560,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_0.7_test_container_pod_zone_a.*_cpu_hpa_default
@@ -1556,8 +1575,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_0.7_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -1575,6 +1594,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_0.7_test_container_pod_zone_a.*_memory_hpa_default
@@ -1604,14 +1624,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5___cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1.5___cpu_hpa_default
@@ -1619,8 +1639,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5___memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1.5__",namespace="default"})
@@ -1638,6 +1658,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_1.5___memory_hpa_default
@@ -1667,14 +1688,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5__pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1.5__pod_zone_a.*_cpu_hpa_default
@@ -1682,8 +1703,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5__pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -1701,6 +1722,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_1.5__pod_zone_a.*_memory_hpa_default
@@ -1730,14 +1752,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5_test_container__cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1.5_test_container__cpu_hpa_default
@@ -1745,8 +1767,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5_test_container__memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -1764,6 +1786,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_1.5_test_container__memory_hpa_default
@@ -1793,14 +1816,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1.5_test_container_pod_zone_a.*_cpu_hpa_default
@@ -1808,8 +1831,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_false_1.5_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -1827,6 +1850,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_false_1.5_test_container_pod_zone_a.*_memory_hpa_default
@@ -2104,14 +2128,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7___cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_0.7___cpu_hpa_default
@@ -2119,8 +2143,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7___memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_0.7__",namespace="default"})
@@ -2138,6 +2162,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_0.7___memory_hpa_default
@@ -2167,14 +2192,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7__pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_0.7__pod_zone_a.*_cpu_hpa_default
@@ -2182,8 +2207,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7__pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -2201,6 +2226,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_0.7__pod_zone_a.*_memory_hpa_default
@@ -2230,14 +2256,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7_test_container__cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_0.7_test_container__cpu_hpa_default
@@ -2245,8 +2271,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7_test_container__memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -2264,6 +2290,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_0.7_test_container__memory_hpa_default
@@ -2293,14 +2320,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_0.7_test_container_pod_zone_a.*_cpu_hpa_default
@@ -2308,8 +2335,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_0.7_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -2327,6 +2354,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_0.7_test_container_pod_zone_a.*_memory_hpa_default
@@ -2356,14 +2384,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5___cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1.5___cpu_hpa_default
@@ -2371,8 +2399,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5___memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1.5__",namespace="default"})
@@ -2390,6 +2418,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_1.5___memory_hpa_default
@@ -2419,14 +2448,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5__pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1.5__pod_zone_a.*_cpu_hpa_default
@@ -2434,8 +2463,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5__pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -2453,6 +2482,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_1.5__pod_zone_a.*_memory_hpa_default
@@ -2482,14 +2512,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5_test_container__cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1.5_test_container__cpu_hpa_default
@@ -2497,8 +2527,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5_test_container__memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -2516,6 +2546,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_1.5_test_container__memory_hpa_default
@@ -2545,14 +2576,14 @@ spec:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1.5_test_container_pod_zone_a.*_cpu_hpa_default
@@ -2560,8 +2591,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: test_false_true_1.5_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -2579,6 +2610,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: test_false_true_1.5_test_container_pod_zone_a.*_memory_hpa_default
@@ -2856,14 +2888,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7___cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_0.7___cpu_hpa_default
@@ -2871,8 +2903,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7___memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_0.7__",namespace="default"})
@@ -2890,6 +2922,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_0.7___memory_hpa_default
@@ -2919,14 +2952,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7__pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_0.7__pod_zone_a.*_cpu_hpa_default
@@ -2934,8 +2967,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7__pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -2953,6 +2986,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_0.7__pod_zone_a.*_memory_hpa_default
@@ -2982,14 +3016,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7_test_container__cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_0.7_test_container__cpu_hpa_default
@@ -2997,8 +3031,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7_test_container__memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -3016,6 +3050,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_0.7_test_container__memory_hpa_default
@@ -3045,14 +3080,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_0.7_test_container_pod_zone_a.*_cpu_hpa_default
@@ -3060,8 +3095,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_0.7_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -3079,6 +3114,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_0.7_test_container_pod_zone_a.*_memory_hpa_default
@@ -3108,14 +3144,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5___cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1.5___cpu_hpa_default
@@ -3123,8 +3159,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5___memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1.5__",namespace="default"})
@@ -3142,6 +3178,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_1.5___memory_hpa_default
@@ -3171,14 +3208,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5__pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1.5__pod_zone_a.*_cpu_hpa_default
@@ -3186,8 +3223,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5__pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -3205,6 +3242,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_1.5__pod_zone_a.*_memory_hpa_default
@@ -3234,14 +3272,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5_test_container__cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1.5_test_container__cpu_hpa_default
@@ -3249,8 +3287,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5_test_container__memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -3268,6 +3306,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_1.5_test_container__memory_hpa_default
@@ -3297,14 +3336,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        max_over_time(
+        (max_over_time(
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1.5_test_container_pod_zone_a.*_cpu_hpa_default
@@ -3312,8 +3351,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_false_1.5_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -3331,6 +3370,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_false_1.5_test_container_pod_zone_a.*_memory_hpa_default
@@ -3608,14 +3648,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7___cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_0.7___cpu_hpa_default
@@ -3623,8 +3663,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7___memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_0.7__",namespace="default"})
@@ -3642,6 +3682,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_0.7___memory_hpa_default
@@ -3671,14 +3712,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7__pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_0.7__pod_zone_a.*_cpu_hpa_default
@@ -3686,8 +3727,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7__pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -3705,6 +3746,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_0.7__pod_zone_a.*_memory_hpa_default
@@ -3734,14 +3776,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7_test_container__cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_0.7_test_container__cpu_hpa_default
@@ -3749,8 +3791,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7_test_container__memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -3768,6 +3810,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_0.7_test_container__memory_hpa_default
@@ -3797,14 +3840,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 0.70
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_0.7_test_container_pod_zone_a.*_cpu_hpa_default
@@ -3812,8 +3855,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_0.7_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -3831,6 +3874,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_0.7_test_container_pod_zone_a.*_memory_hpa_default
@@ -3860,14 +3904,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5___cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1.5___cpu_hpa_default
@@ -3875,8 +3919,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5___memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1.5__",namespace="default"})
@@ -3894,6 +3938,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_1.5___memory_hpa_default
@@ -3923,14 +3968,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5__pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1.5__pod_zone_a.*_cpu_hpa_default
@@ -3938,8 +3983,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5__pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
@@ -3957,6 +4002,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_1.5__pod_zone_a.*_memory_hpa_default
@@ -3986,14 +4032,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5_test_container__cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1.5_test_container__cpu_hpa_default
@@ -4001,8 +4047,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5_test_container__memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
@@ -4020,6 +4066,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_1.5_test_container__memory_hpa_default
@@ -4049,14 +4096,14 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5_test_container_pod_zone_a.*_cpu_hpa_default
       query: |-
-        quantile_over_time(0.95,
+        (quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-         * 1.50
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1.5_test_container_pod_zone_a.*_cpu_hpa_default
@@ -4064,8 +4111,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_test_true_true_1.5_test_container_pod_zone_a.*_memory_hpa_default
-      query: |
-        quantile_over_time(0.95,
+      query: |-
+        (quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
@@ -4083,6 +4130,7 @@ spec:
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
         )
+        ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
     name: cortex_test_true_true_1.5_test_container_pod_zone_a.*_memory_hpa_default

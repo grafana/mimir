@@ -43,7 +43,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
@@ -95,7 +95,9 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
+	queryMetrics := stats.NewQueryMetrics(nil)
+	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -122,7 +124,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -234,8 +236,7 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = true
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, false, nil, logger)
 	require.NoError(t, err)

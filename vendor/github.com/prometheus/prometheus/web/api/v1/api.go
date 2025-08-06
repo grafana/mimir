@@ -186,6 +186,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
+	BlockMetas() ([]tsdb.BlockMeta, error)
 }
 
 type QueryOpts interface {
@@ -262,9 +263,11 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
-	otlpEnabled, otlpDeltaToCumulative bool,
+	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
 	validIntervalCTZeroIngestion time.Duration,
+	lookbackDelta time.Duration,
+	enableTypeAndUnitLabels bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -311,7 +314,12 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, ctZeroIngestionEnabled, validIntervalCTZeroIngestion, remote.OTLPOptions{ConvertDelta: otlpDeltaToCumulative})
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, ctZeroIngestionEnabled, validIntervalCTZeroIngestion, remote.OTLPOptions{
+			ConvertDelta:            otlpDeltaToCumulative,
+			NativeDelta:             otlpNativeDeltaIngestion,
+			LookbackDelta:           lookbackDelta,
+			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		})
 	}
 
 	return a
@@ -405,6 +413,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
+	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
@@ -1739,6 +1748,19 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) serveTSDBBlocks(_ *http.Request) apiFuncResult {
+	blockMetas, err := api.db.BlockMetas()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error getting block metadata: %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{
+		data: map[string][]tsdb.BlockMeta{
+			"blocks": blockMetas,
+		},
+	}
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {

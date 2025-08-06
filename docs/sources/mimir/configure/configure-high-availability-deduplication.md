@@ -6,7 +6,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to handle HA Prometheus server deduplication.
 menuTitle: High-availability deduplication
 title: Configure Grafana Mimir high-availability deduplication
-weight: 70
+weight: 50
 ---
 
 # Configure Grafana Mimir high-availability deduplication
@@ -36,7 +36,7 @@ For example, with the default scrape period of 15 seconds, use a rate time-inter
 
 ## Distributor high-availability (HA) tracker
 
-The [distributor](../../references/architecture/components/distributor/) includes a high-availability (HA) tracker.
+The [distributor](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/) includes a high-availability (HA) tracker.
 
 The HA tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.

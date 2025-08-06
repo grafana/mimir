@@ -5,7 +5,10 @@
 
 package validation
 
-import "github.com/grafana/dskit/flagext"
+import (
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/otlptranslator"
+)
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
 type mockTenantLimits struct {
@@ -31,30 +34,20 @@ func (l *mockTenantLimits) AllByUserID() map[string]*Limits {
 func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Limits)) *Overrides {
 	defaults := MockDefaultLimits()
 	tenantLimits := map[string]*Limits{}
-	customize(defaults, tenantLimits)
-
-	overrides, err := NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
-	if err != nil {
-		// This function is expected to be used only in tests, so we're not afraid of panicking.
-		panic(err)
+	if customize != nil {
+		customize(defaults, tenantLimits)
 	}
 
-	return overrides
+	return NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
 }
 
 func MockDefaultLimits() *Limits {
 	defaults := Limits{}
 	flagext.DefaultValues(&defaults)
+	defaults.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 	return &defaults
 }
 
 func MockDefaultOverrides() *Overrides {
-	defaults := MockDefaultLimits()
-	overrides, err := NewOverrides(*defaults, nil)
-	if err != nil {
-		// This function is expected to be used only in tests, so we're not afraid of panicking.
-		panic(err)
-	}
-
-	return overrides
+	return NewOverrides(*MockDefaultLimits(), nil)
 }

@@ -146,7 +146,7 @@ func NewOverridesExporter(
 	log log.Logger,
 	registerer prometheus.Registerer,
 ) (*OverridesExporter, error) {
-	enabledMetrics := util.NewAllowedTenants(config.EnabledMetrics, nil)
+	enabledMetrics := util.NewAllowList(config.EnabledMetrics, nil)
 
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
@@ -180,7 +180,7 @@ func NewOverridesExporter(
 	return exporter, nil
 }
 
-func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []ExportedMetric) []ExportedMetric {
+func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []ExportedMetric) []ExportedMetric {
 	var exportedMetrics []ExportedMetric
 
 	// Write path limits
@@ -285,6 +285,12 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
 		for _, em := range oe.exportedMetrics {
+			if em.Get(limits) == em.Get(oe.defaultLimits) {
+				// Skip exporting tenant limits that are the same as the default limits.
+				// Note: this comes with an expected tradeoff where metrics, passed via Config.ExtraMetrics, and whose getter
+				// doesn't depend on the passed limit cannot be exposed in the per-tenant limit overrides.
+				continue
+			}
 			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.Get(limits), em.Name, tenant)
 		}
 	}
@@ -321,7 +327,7 @@ func (oe *OverridesExporter) isLeader() bool {
 		// If the ring is not enabled, export all metrics
 		return true
 	}
-	if oe.Service.State() != services.Running {
+	if oe.State() != services.Running {
 		// We haven't finished startup yet, likely waiting for ring stability.
 		return false
 	}

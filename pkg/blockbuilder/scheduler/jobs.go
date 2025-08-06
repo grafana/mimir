@@ -3,7 +3,7 @@
 package scheduler
 
 import (
-	"container/heap"
+	"container/list"
 	"errors"
 	"sync"
 	"time"
@@ -13,36 +13,37 @@ import (
 )
 
 var (
-	errNoJobAvailable = errors.New("no job available")
-	errJobNotFound    = errors.New("job not found")
-	errJobNotAssigned = errors.New("job not assigned to given worker")
-	errBadEpoch       = errors.New("bad epoch")
+	errNoJobAvailable        = errors.New("no job available")
+	errJobNotFound           = errors.New("job not found")
+	errJobNotAssigned        = errors.New("job not assigned to given worker")
+	errBadEpoch              = errors.New("bad epoch")
+	errJobAlreadyExists      = errors.New("job already exists")
+	errJobCreationDisallowed = errors.New("job creation policy disallowed job")
 )
 
 type jobQueue[T any] struct {
-	leaseExpiry time.Duration
-	logger      log.Logger
+	leaseExpiry        time.Duration
+	creationPolicy     jobCreationPolicy[T]
+	jobFailuresAllowed int
+	metrics            schedulerMetrics
+	logger             log.Logger
 
 	mu         sync.Mutex
 	epoch      int64
 	jobs       map[string]*job[T]
-	unassigned jobHeap[*job[T]]
+	unassigned *list.List
 }
 
-func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, lessFunc func(T, T) bool) *jobQueue[T] {
+func newJobQueue[T any](leaseExpiry time.Duration, jobCreationPolicy jobCreationPolicy[T], jobFailuresAllowed int, metrics schedulerMetrics, logger log.Logger) *jobQueue[T] {
 	return &jobQueue[T]{
-		leaseExpiry: leaseExpiry,
-		logger:      logger,
+		leaseExpiry:        leaseExpiry,
+		creationPolicy:     jobCreationPolicy,
+		jobFailuresAllowed: jobFailuresAllowed,
+		metrics:            metrics,
+		logger:             logger,
 
-		jobs: make(map[string]*job[T]),
-
-		unassigned: jobHeap[*job[T]]{
-			h: make([]*job[T], 0),
-			less: func(a, b *job[T]) bool {
-				// Call into the provided lessFunc to compare the job specs.
-				return lessFunc(a.spec, b.spec)
-			},
-		},
+		jobs:       make(map[string]*job[T]),
+		unassigned: list.New(),
 	}
 }
 
@@ -56,15 +57,19 @@ func (s *jobQueue[T]) assign(workerID string) (jobKey, T, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.unassigned.Len() == 0 {
+	next := s.unassigned.Front()
+	if next == nil {
 		return jobKey{}, empty, errNoJobAvailable
 	}
+	j := s.unassigned.Remove(next).(*job[T])
 
-	j := heap.Pop(&s.unassigned).(*job[T])
 	j.key.epoch = s.epoch
 	s.epoch++
 	j.assignee = workerID
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
+
+	level.Info(s.logger).Log("msg", "assigned job", "job_id", j.key.id, "epoch", j.key.epoch, "worker_id", workerID)
+
 	return j.key, j.spec, nil
 }
 
@@ -112,21 +117,25 @@ func (s *jobQueue[T]) importJob(key jobKey, workerID string, spec T) error {
 	return nil
 }
 
-// addOrUpdate adds a new job or updates an existing job with the given spec.
-func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
+// add adds a new job with the given spec.
+func (s *jobQueue[T]) add(id string, spec T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if j, ok := s.jobs[id]; ok {
-		// We can only update an unassigned job.
-		if j.assignee == "" {
-			level.Info(s.logger).Log("msg", "updated job", "job_id", id)
-			j.spec = spec
-		}
-		return
+	if _, ok := s.jobs[id]; ok {
+		return errJobAlreadyExists
 	}
 
-	// Otherwise, add a new job.
+	// See if the creation policy would allow it.
+
+	existingJobs := make([]*T, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		existingJobs = append(existingJobs, &j.spec)
+	}
+	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
+		return errJobCreationDisallowed
+	}
+
 	j := &job[T]{
 		key: jobKey{
 			id:    id,
@@ -138,9 +147,11 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 		spec:        spec,
 	}
 	s.jobs[id] = j
-	heap.Push(&s.unassigned, j)
+
+	s.unassigned.PushBack(j)
 
 	level.Info(s.logger).Log("msg", "created job", "job_id", id)
+	return nil
 }
 
 // renewLease renews the lease of the job with the given ID for the given
@@ -160,17 +171,16 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
 
-	level.Info(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
-
+	level.Debug(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
 	return nil
 }
 
@@ -191,11 +201,11 @@ func (s *jobQueue[T]) completeJob(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	delete(s.jobs, key.id)
@@ -214,13 +224,76 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 
 	for _, j := range s.jobs {
 		if j.assignee != "" && now.After(j.leaseExpiry) {
+			priorAssignee := j.assignee
 			j.assignee = ""
 			j.failCount++
-			heap.Push(&s.unassigned, j)
 
-			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", j.assignee)
+			// An expired job gets to go to the front of the unassigned list.
+			s.unassigned.PushFront(j)
+
+			if j.failCount > s.jobFailuresAllowed {
+				s.metrics.persistentJobFailures.Inc()
+				level.Error(s.logger).Log("msg", "job failed in a persistent manner", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee, "fail_count", j.failCount)
+			} else {
+				level.Info(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
+			}
 		}
 	}
+}
+
+// removeJob removes a job from both the jobs map and unassigned list.
+func (s *jobQueue[T]) removeJob(key jobKey) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	j, ok := s.jobs[key.id]
+	if !ok {
+		return
+	}
+
+	// Remove from jobs map
+	delete(s.jobs, key.id)
+
+	// If the job is in the unassigned list, remove it
+	if j.assignee == "" {
+		// Find and remove the job from the unassigned list
+		for e := s.unassigned.Front(); e != nil; e = e.Next() {
+			if e.Value.(*job[T]).key.id == key.id {
+				s.unassigned.Remove(e)
+				break
+			}
+		}
+	}
+
+	level.Debug(s.logger).Log("msg", "removed job", "job_id", key.id, "epoch", key.epoch)
+}
+
+// count returns the number of jobs in the jobQueue.
+func (s *jobQueue[T]) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.jobs)
+}
+
+// assigned returns the number of assigned jobs in the jobQueue.
+func (s *jobQueue[T]) assigned() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, j := range s.jobs {
+		if j.assignee != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *jobQueue[T]) setEpoch(epoch int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch = epoch
 }
 
 type job[T any] struct {
@@ -241,26 +314,14 @@ type jobKey struct {
 	epoch int64
 }
 
-type jobHeap[T any] struct {
-	h    []T
-	less func(T, T) bool
+type jobCreationPolicy[T any] interface {
+	canCreateJob(jobKey, *T, []*T) bool
 }
 
-// Implement the heap.Interface for jobHeap's `h` field.
-func (h jobHeap[T]) Len() int           { return len(h.h) }
-func (h jobHeap[T]) Less(i, j int) bool { return h.less(h.h[i], h.h[j]) }
-func (h jobHeap[T]) Swap(i, j int)      { h.h[i], h.h[j] = h.h[j], h.h[i] }
+type noOpJobCreationPolicy[T any] struct{}
 
-func (h *jobHeap[T]) Push(x any) {
-	h.h = append(h.h, x.(T))
+func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
+	return true
 }
 
-func (h *jobHeap[T]) Pop() any {
-	old := h.h
-	n := len(old)
-	x := old[n-1]
-	h.h = old[0 : n-1]
-	return x
-}
-
-var _ heap.Interface = (*jobHeap[int])(nil)
+var _ jobCreationPolicy[any] = (*noOpJobCreationPolicy[any])(nil)

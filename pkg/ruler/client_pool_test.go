@@ -128,9 +128,9 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
 			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`),
 			expectedMetrics: `
-				# HELP cortex_client_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
-        	    # TYPE cortex_client_request_invalid_cluster_validation_labels_total counter
-        	    cortex_client_request_invalid_cluster_validation_labels_total{client="ruler",method="/ruler.Ruler/Rules",protocol="grpc"} 1
+				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
+        	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
+        	    cortex_client_invalid_cluster_validation_label_requests_total{client="ruler",method="/ruler.Ruler/Rules",protocol="grpc"} 1
 			`,
 		},
 		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
@@ -160,8 +160,12 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			var grpcOptions []grpc.ServerOption
 			if testCase.serverClusterValidation.GRPC.Enabled {
+				reg := prometheus.NewPedanticRegistry()
 				grpcOptions = []grpc.ServerOption{
-					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation, log.NewNopLogger())),
+					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
+						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
+						middleware.NewInvalidClusterRequests(reg, "cortex"), log.NewNopLogger(),
+					)),
 				}
 			}
 
@@ -202,7 +206,7 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 				require.Equal(t, testCase.expectedError.Message(), stat.Message())
 			}
 			// Check tracked Prometheus metrics
-			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_request_invalid_cluster_validation_labels_total")
+			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_invalid_cluster_validation_label_requests_total")
 			assert.NoError(t, err)
 		})
 	}

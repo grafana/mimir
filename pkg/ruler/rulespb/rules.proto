@@ -7,13 +7,12 @@ syntax = "proto3";
 
 package rules;
 
-option go_package = "rulespb";
-
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
-import "google/protobuf/any.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
 
+option go_package = "rulespb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
@@ -22,7 +21,10 @@ message RuleGroupDesc {
   reserved 5, 7, 8;
   string name = 1;
   string namespace = 2;
-  google.protobuf.Duration interval = 3 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  google.protobuf.Duration interval = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
   repeated RuleDesc rules = 4;
   string user = 6;
   // The options field can be used to extend Mimir Ruler functionality without
@@ -33,8 +35,14 @@ message RuleGroupDesc {
   repeated string sourceTenants = 10;
 
   // Deprecated: use queryOffset instead.
-  google.protobuf.Duration evaluationDelay = 11 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  google.protobuf.Duration queryOffset = 13 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  google.protobuf.Duration evaluationDelay = 11 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
+  google.protobuf.Duration queryOffset = 13 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
 
   bool align_evaluation_time_on_interval = 12;
 }
@@ -45,8 +53,14 @@ message RuleDesc {
   string expr = 1;
   string record = 2;
   string alert = 3;
-  google.protobuf.Duration for = 4 [(gogoproto.nullable) = false,(gogoproto.stdduration) = true];
-  google.protobuf.Duration keep_firing_for = 13 [(gogoproto.nullable) = false,(gogoproto.stdduration) = true];
+  google.protobuf.Duration for = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
+  google.protobuf.Duration keep_firing_for = 13 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
   repeated cortexpb.LabelPair labels = 5 [
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"

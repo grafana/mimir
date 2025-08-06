@@ -36,6 +36,9 @@ import (
 const (
 	defaultDeleteBlocksConcurrency       = 16
 	defaultGetDeletionMarkersConcurrency = 16
+	defaultUpdateBlocksConcurrency       = 1
+	cleanUsersServiceStarting            = "clean_up_users_during_startup"
+	cleanUsersServiceTick                = "clean_up_users"
 )
 
 type BlocksCleanerConfig struct {
@@ -45,6 +48,7 @@ type BlocksCleanerConfig struct {
 	TenantCleanupDelay            time.Duration // Delay before removing tenant deletion mark and "debug".
 	DeleteBlocksConcurrency       int
 	GetDeletionMarkersConcurrency int
+	UpdateBlocksConcurrency       int
 	NoBlocksFileCleanupEnabled    bool
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
@@ -57,7 +61,6 @@ type BlocksCleaner struct {
 	logger       log.Logger
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
-	ownUser      func(userID string) (bool, error)
 	singleFlight *concurrency.LimitedConcurrencySingleFlight
 
 	// Keep track of the last owned users.
@@ -85,7 +88,6 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		cfg:          cfg,
 		bucketClient: bucketClient,
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
-		ownUser:      ownUser,
 		cfgProvider:  cfgProvider,
 		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:       log.With(logger, "component", "cleaner"),
@@ -164,39 +166,52 @@ func (c *BlocksCleaner) stopping(error) error {
 	return nil
 }
 
+type ownedUsers struct {
+	all     []string
+	deleted map[string]bool
+}
+
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	c.instrumentBucketIndexUpdate(ctx)
+
+	logger := log.With(c.logger, "task", cleanUsersServiceStarting)
+	c.instrumentStartedCleanupRun(logger)
+
+	// Use a stable set of tenants for each BlocksCleaner run. BlockCleaner will always
+	// update bucket-index.json for a tenant discovered in the initial refreshOwnedUsers call.
+	users, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		c.instrumentFinishedCleanupRun(err, logger)
+		return nil
+	}
+
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
-	c.runCleanup(ctx, false)
-
+	c.instrumentBucketIndexUpdate(ctx, users.all)
+	c.runCleanup(ctx, users, logger, false)
 	return nil
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
-	c.runCleanup(ctx, true)
 
+	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
+	// at least differentiate the logs in this function for each run.
+	logger := log.With(c.logger, "run_id", strconv.FormatInt(time.Now().Unix(), 10), "task", cleanUsersServiceTick)
+	c.instrumentStartedCleanupRun(logger)
+
+	users, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		c.instrumentFinishedCleanupRun(err, logger)
+		return nil
+	}
+	c.runCleanup(ctx, users, logger, true)
 	return nil
 }
 
-func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
-	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
-	// at least differentiate the logs in this function for each run.
-	logger := log.With(c.logger,
-		"run_id", strconv.FormatInt(time.Now().Unix(), 10),
-		"task", "clean_up_users",
-	)
-
-	c.instrumentStartedCleanupRun(logger)
-
-	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
-	if err != nil {
-		c.instrumentFinishedCleanupRun(err, logger)
-		return
-	}
-
+func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, logger log.Logger, async bool) {
 	doCleanup := func() {
-		err := c.cleanUsers(ctx, allUsers, isDeleted, logger)
+		err := c.cleanUsers(ctx, users, logger)
 		c.instrumentFinishedCleanupRun(err, logger)
 	}
 
@@ -207,13 +222,8 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 }
 
-func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
-	allUsers, _, err := c.refreshOwnedUsers(ctx)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
-		return
-	}
-	for _, userID := range allUsers {
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users []string) {
+	for _, userID := range users {
 		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
 		if err != nil {
 			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
@@ -244,10 +254,10 @@ func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logge
 
 // refreshOwnedUsers is not required to be concurrency safe, but a single instance of this function
 // could run concurrently with the cleanup job for any tenant.
-func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[string]bool, error) {
+func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, error) {
 	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
+		return nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
 
 	rand.Shuffle(len(users), func(i, j int) {
@@ -272,20 +282,14 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 		}
 	}
 	c.lastOwnedUsers = allUsers
-	return allUsers, isDeleted, nil
+	return &ownedUsers{all: allUsers, deleted: isDeleted}, nil
 }
 
 // cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.
-func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool, logger log.Logger) error {
-	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
-		own, err := c.ownUser(userID)
-		if err != nil || !own {
-			// This returns error only if err != nil. ForEachUser keeps working for other users.
-			return errors.Wrap(err, "check own user")
-		}
-
+func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logger log.Logger) error {
+	return c.singleFlight.ForEachNotInFlight(ctx, users.all, func(ctx context.Context, userID string) error {
 		userLogger := util_log.WithUserID(userID, logger)
-		if isDeleted[userID] {
+		if users.deleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
 		}
 		return errors.Wrapf(c.cleanUser(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
@@ -456,7 +460,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, userLogger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err

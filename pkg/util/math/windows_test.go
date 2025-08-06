@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRollingSum(t *testing.T) {
@@ -152,6 +153,9 @@ func TestCorrelationWindow(t *testing.T) {
 
 			assert.InDelta(t, tc.expectedCorrelation, correlation, 0.0001)
 			assert.Equal(t, tc.expectedSize, w.xSamples.size)
+
+			w.Reset()
+			require.Equal(t, 0.0, w.corrSumXY)
 		})
 	}
 }

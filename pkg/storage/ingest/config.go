@@ -39,6 +39,8 @@ var (
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
+	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
+	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 
@@ -107,12 +109,15 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
+	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
-	FetchConcurrencyMax               int  `yaml:"fetch_concurrency_max"`
-	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
-	MaxBufferedBytes                  int  `yaml:"max_buffered_bytes"`
+	FetchMaxWait                      time.Duration `yaml:"fetch_max_wait"`
+	FetchConcurrencyMax               int           `yaml:"fetch_concurrency_max"`
+	UseCompressedBytesAsFetchMaxBytes bool          `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
+	MaxBufferedBytes                  int           `yaml:"max_buffered_bytes"`
 
 	IngestionConcurrencyMax       int `yaml:"ingestion_concurrency_max"`
 	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
@@ -136,6 +141,9 @@ type KafkaConfig struct {
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
+
+	// Disable producer linger. This setting is just used in tests.
+	disableLinger bool `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -176,6 +184,9 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
+
+	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+"use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
@@ -220,6 +231,14 @@ func (cfg *KafkaConfig) Validate() error {
 		return ErrInvalidMaxConsumerLagAtStartup
 	}
 
+	if err := ValidateRecordVersion(cfg.ProducerRecordVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
+	}
+
+	if cfg.FetchMaxWait < 5*time.Second || cfg.FetchMaxWait > 30*time.Second {
+		return ErrInvalidFetchMaxWait
+	}
+
 	if cfg.FetchConcurrencyMax < 0 {
 		return fmt.Errorf("ingest-storage.kafka.fetch-concurrency-max must be greater than or equal to 0")
 	}
@@ -261,7 +280,9 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be
 // set for any other reason.
 type MigrationConfig struct {
-	DistributorSendToIngestersEnabled bool `yaml:"distributor_send_to_ingesters_enabled"`
+	DistributorSendToIngestersEnabled bool          `yaml:"distributor_send_to_ingesters_enabled"`
+	IgnoreIngestStorageErrors         bool          `yaml:"ignore_ingest_storage_errors"`
+	IngestStorageMaxWaitTime          time.Duration `yaml:"ingest_storage_max_wait_time"`
 }
 
 func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
@@ -270,4 +291,6 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
+	f.BoolVar(&cfg.IgnoreIngestStorageErrors, prefix+"ignore-ingest-storage-errors", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.")
+	f.DurationVar(&cfg.IngestStorageMaxWaitTime, prefix+"ingest-storage-max-wait-time", 0, "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.")
 }

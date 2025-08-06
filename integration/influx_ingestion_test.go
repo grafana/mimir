@@ -28,7 +28,7 @@ func TestInfluxIngestion(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -40,6 +40,7 @@ func TestInfluxIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.influx-endpoint-enabled": "true",
 		},
@@ -95,6 +96,6 @@ func TestInfluxIngestion(t *testing.T) {
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// No metadata to query, but we do the query anyway.
-	_, err = c.GetPrometheusMetadata()
+	_, err = c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 }

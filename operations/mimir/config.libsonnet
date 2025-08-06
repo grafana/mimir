@@ -10,14 +10,6 @@
 
     aws_region: error 'must specify AWS region',
 
-    // The deployment mode to use. Supported values are:
-    // `microservices`: Provides only the k8s objects for each component as microservices.
-    // `read-write`: Provides only mimir-read, mimir-write, and mimir-backend k8s objects.
-    // `migration`: Provides both the microservices and read-write services.
-    deployment_mode: 'microservices',
-    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'migration',
-    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write' || $._config.deployment_mode == 'migration',
-
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:
@@ -70,7 +62,11 @@
     storage_azure_account_name: error 'must specify Azure account name',
     storage_azure_account_key: error 'must specify Azure account key',
 
-    jaeger_agent_host: null,
+    // Configure tracing library to add HTTP request headers as span attributes.
+    trace_request_headers: false,
+    // List of HTTP request headers to exclude from tracing when trace_request_headers is enabled.
+    // Thew following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
+    trace_request_exclude_headers_list: [],
 
     // Allow to configure the alertmanager disk.
     alertmanager_data_disk_size: '100Gi',
@@ -108,6 +104,9 @@
     // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
     // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
     store_gateway_lazy_loading_enabled: true,
+
+    // Control the maximum size of a response from the store-gateway. Used by store-gateways and queriers to set send and receive limits, respectively.
+    store_gateway_grpc_max_query_response_size_bytes: 200 * 1024 * 1024,
 
     // Number of memcached replicas for each memcached statefulset
     memcached_frontend_replicas: 3,
@@ -168,7 +167,10 @@
     query_tee_node_port: null,
 
     // Common configuration parameters
-    commonConfig:: {},
+    commonConfig:: if !$._config.trace_request_headers then {} else {
+      'server.trace-request-headers': true,
+      [if std.length($._config.trace_request_exclude_headers_list) > 0 then 'server.trace-request-headers-exclude-list']: std.join(',', std.sort($._config.trace_request_exclude_headers_list)),
+    },
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
@@ -389,9 +391,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 1400 rules
+        // 1700 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 70,
+        ruler_max_rule_groups_per_tenant: 85,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -405,9 +407,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 2000 rules
+        // 2400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 100,
+        ruler_max_rule_groups_per_tenant: 120,
       },
 
       small_user:: {
@@ -418,9 +420,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 2800 rules
+        // 3000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 140,
+        ruler_max_rule_groups_per_tenant: 150,
       },
 
       medium_user:: {
@@ -524,9 +526,8 @@
 
     enable_pod_priorities: true,
 
-    // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
-    query_scheduler_enabled: true,
-    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+    // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
+    query_scheduler_service_discovery_mode: 'dns',
 
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
@@ -534,11 +535,6 @@
     // 2. Remove the setting `query_scheduler_service_discovery_ring_read_path_enabled: false`, so that queriers and query-frontends
     //    will discover the query-schedulers via ring.
     query_scheduler_service_discovery_ring_read_path_enabled: true,
-
-    // Enables streaming of chunks from ingesters using blocks.
-    // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.
-    // Default value is true, left here for backwards compatibility until the flag is removed completely.
-    ingester_stream_chunks_when_using_blocks: true,
 
     // Ingester limits are put directly into runtime config, if not null. Available limits:
     //    ingester_instance_limits: {
@@ -575,12 +571,6 @@
     service_ignored_labels:: [self.gossip_member_label],
   },
 
-  // Check configured deployment mode to ensure configuration is correct and consistent.
-  assert std.member(['microservices', 'read-write', 'migration'], $._config.deployment_mode)
-         : 'unsupported deployment mode "%s"' % $._config.deployment_mode,
-  assert $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode)
-         : 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
-
   local configMap = $.core.v1.configMap,
 
   overrides_config:
@@ -593,7 +583,6 @@
           overrides: $.util.removeNulls($._config.overrides),
         }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
-        + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
         + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
@@ -733,6 +722,7 @@
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
         'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'ruler-storage.cache.memcached.max-async-concurrency': 50,
+        'ruler-storage.cache.memcached.timeout': '500ms',
       } + if $._config.memcached_metadata_mtls_enabled then {
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
         'ruler-storage.cache.memcached.connect-timeout': '1s',

@@ -24,9 +24,9 @@ import (
 	"github.com/thanos-io/objstore/providers/s3"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -247,6 +247,11 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			continue
 		}
 
+		fieldType, err := getFieldType(field.Type)
+		if err != nil {
+			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
+		}
+
 		var (
 			element *ConfigBlock
 			kind    = KindField
@@ -268,11 +273,23 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 					return nil, errors.Wrapf(err, "couldn't inspect slice, element_type=%s", field.Type.Elem())
 				}
 			}
-		}
+			isMapOfStructs := field.Type.Kind() == reflect.Map && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Ptr)
+			if !isCustomType && isMapOfStructs {
+				element = &ConfigBlock{
+					Name: fieldName,
+					Desc: getFieldDescription(cfg, field, ""),
+				}
+				kind = KindMap
+				fieldType, err = getFieldType(field.Type.Key())
+				if err != nil {
+					return nil, errors.Wrapf(err, "couldn't inspect map, key_type=%s", field.Type.Key())
+				}
 
-		fieldType, err := getFieldType(field.Type)
-		if err != nil {
-			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
+				_, err = config(element, reflect.New(field.Type.Elem()).Interface(), flags, rootBlocks)
+				if err != nil {
+					return nil, errors.Wrapf(err, "couldn't inspect map, element_type=%s", field.Type.Elem())
+				}
+			}
 		}
 
 		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
@@ -365,10 +382,6 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
-		return "blocked_queries_config...", true
-	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
-		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -455,10 +468,6 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
-		return "blocked_queries_config...", true
-	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
-		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -490,10 +499,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]string{})
 	case "relabel_config...":
 		return reflect.TypeOf([]*relabel.Config{})
-	case "blocked_queries_config...":
-		return reflect.TypeOf([]*validation.BlockedQuery{})
-	case "blocked_requests_config...":
-		return reflect.TypeOf([]*validation.BlockedRequest{})
+	case "ruler_alertmanager_client_config...":
+		return reflect.TypeOf(notifier.AlertmanagerClientConfig{})
 	case "map of string to float64":
 		return reflect.TypeOf(flagext.LimitsMap[float64]{})
 	case "map of string to int":

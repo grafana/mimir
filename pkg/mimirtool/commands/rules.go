@@ -19,7 +19,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -125,6 +127,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
+	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
 	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
@@ -295,14 +298,12 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
 	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_timestamp_seconds",
-		Help:      "The timestamp of the last rule load.",
+		Name: "cortex_last_rule_load_timestamp_seconds",
+		Help: "The timestamp of the last rule load.",
 	})
 	r.ruleLoadSuccessTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_success_timestamp_seconds",
-		Help:      "The timestamp of the last successful rule load.",
+		Name: "cortex_last_rule_load_success_timestamp_seconds",
+		Help: "The timestamp of the last successful rule load.",
 	})
 
 	cli, err := client.New(r.ClientConfig)
@@ -475,7 +476,8 @@ func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -544,7 +546,8 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "diff operation unsuccessful, invalid arguments")
 	}
 
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -612,7 +615,8 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, invalid arguments")
 	}
 
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -720,7 +724,8 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -758,7 +763,8 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -792,7 +798,8 @@ func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, invalid arguments")
 	}
 
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
+	// TODO: Get scheme from CLI flag.
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}

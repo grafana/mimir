@@ -9,15 +9,15 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain metrics with the same labelset")
 
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -30,7 +30,7 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DeduplicateAndMerge {
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
@@ -50,16 +50,19 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	}
 
 	// We might have duplicates (or HasDuplicateSeries hit a hash collision). Determine the merged output series.
-	groups, outputMetadata := d.computeOutputSeriesGroups(innerMetadata)
-	d.groups = groups
-	types.PutSeriesMetadataSlice(innerMetadata)
+	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata)
+	if err != nil {
+		return nil, err
+	}
 
-	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, d.MemoryConsumptionTracker)
+	d.groups = groups
+	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&innerMetadata, d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
 }
 
-func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata) {
+func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata, error) {
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
 	outputGroupMap := map[string][]int{}
 
@@ -91,13 +94,19 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	})
 
 	// Now that we know which series we'll return, and in what order, create the list of output series.
-	outputMetadata := types.GetSeriesMetadataSlice(len(outputGroups))
-
-	for _, group := range outputGroups {
-		outputMetadata = append(outputMetadata, innerMetadata[group[0]])
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputGroups), d.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return outputGroups, outputMetadata
+	for _, group := range outputGroups {
+		outputMetadata, err = types.AppendSeriesMetadata(d.MemoryConsumptionTracker, outputMetadata, innerMetadata[group[0]])
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return outputGroups, outputMetadata, nil
 }
 
 func (d *DeduplicateAndMerge) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -134,10 +143,15 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
+func (d *DeduplicateAndMerge) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return d.Inner.Prepare(ctx, params)
+}
+
 func (d *DeduplicateAndMerge) Close() {
 	d.Inner.Close()
 
 	if d.buffer != nil {
 		d.buffer.Close()
+		d.buffer = nil
 	}
 }

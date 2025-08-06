@@ -12,18 +12,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestSampleTracker_hasSameLabels(t *testing.T) {
-	st := newTestManager().SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
+	manager, _, _ := newTestManager()
+	st := manager.SampleTracker("user1")
+	assert.True(t, st.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
-	tManager := newTestManager()
-	st := tManager.SampleTracker("user4")
+	manager, _, costAttributionReg := newTestManager()
+	st := manager.SampleTracker("user4")
 	t.Run("One Single Series in Request", func(t *testing.T) {
 		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
 
@@ -32,7 +34,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	# TYPE cortex_distributor_received_attributed_samples_total counter
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 3
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 	t.Run("Multiple Different Series in Request", func(t *testing.T) {
 		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
@@ -46,7 +48,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 6
 	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 
 	t.Run("Multiple Series in Request with Same Labels", func(t *testing.T) {
@@ -61,12 +63,13 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 14
 	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 }
 
 func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
-	st := newTestManager().SampleTracker("user3")
+	manager, _, _ := newTestManager()
+	st := manager.SampleTracker("user3")
 	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
 	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
@@ -90,7 +93,8 @@ func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 
 func TestSampleTracker_inactiveObservations(t *testing.T) {
 	// Setup the test environment: create a st for user1 with a "team" label and max cardinality of 5.
-	st := newTestManager().SampleTracker("user1")
+	manager, _, _ := newTestManager()
+	st := manager.SampleTracker("user1")
 
 	// Create two observations with different last update timestamps.
 	observations := [][]mimirpb.LabelAdapter{
@@ -125,7 +129,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	// Disabled due to spurious failures. See https://github.com/grafana/mimir/issues/10482
 	t.Skip()
 
-	m := newTestManager()
+	m, _, costAttributionReg := newTestManager()
 	st := m.SampleTracker("user1")
 
 	var wg sync.WaitGroup
@@ -154,5 +158,5 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
 
 `
-	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
+	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }

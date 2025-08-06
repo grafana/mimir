@@ -1,0 +1,85 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-emptydir-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-oss-emptydir-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-oss-emptydir-values
+  template:
+    metadata:
+      name: test-oss-emptydir-values-minio
+      labels:
+        app: minio
+        release: test-oss-emptydir-values
+      annotations:
+        checksum/secrets: eaefbb2edb125352d20acb771ff5ca0ae50451ec9faaf7947991357f7e8b05eb
+        checksum/config: cdb573a00d10481717e2f39e26efabb8ed93ac42f4237de59eacb1dc5fd9106c
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-emptydir-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-emptydir-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-oss-emptydir-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-oss-emptydir-values-minio

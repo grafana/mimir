@@ -93,12 +93,14 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds    *prometheus.CounterVec
-	querySeries     *prometheus.CounterVec
-	queryChunkBytes *prometheus.CounterVec
-	queryChunks     *prometheus.CounterVec
-	queryIndexBytes *prometheus.CounterVec
-	activeUsers     *util.ActiveUsersCleanupService
+	querySeconds                       *prometheus.CounterVec
+	querySeries                        *prometheus.CounterVec
+	queryChunkBytes                    *prometheus.CounterVec
+	queryChunks                        *prometheus.CounterVec
+	queryIndexBytes                    *prometheus.CounterVec
+	querySamplesProcessed              *prometheus.CounterVec
+	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
+	activeUsers                        *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -143,6 +145,16 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
 		}, []string{"user"})
 
+		h.querySamplesProcessed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_total",
+			Help: "Number of samples processed to execute a query.",
+		}, []string{"user"})
+		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_cache_adjusted_total",
+			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
+				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
@@ -150,6 +162,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunkBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
+			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -230,8 +244,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
 			return
 		}
-		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
 			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		defer cancel()
 		r = r.WithContext(ctx)
 	}
 
@@ -283,7 +298,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.cfg.QueryStatsEnabled {
 		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
-
 }
 
 // reportSlowQuery reports slow queries.
@@ -316,17 +330,19 @@ func (f *Handler) reportQueryStats(
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
-	var stats *querier_stats.Stats
+	var stats *querier_stats.SafeStats
+	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
+		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
-	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-
+	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
+	samplesProcessed := stats.LoadSamplesProcessed()
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -334,7 +350,9 @@ func (f *Handler) reportQueryStats(
 		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
+		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -356,10 +374,11 @@ func (f *Handler) reportQueryStats(
 		shardedQueries, stats.LoadShardedQueries(),
 		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		estimatedSeriesCount, stats.GetEstimatedSeriesCount(),
+		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
-		"samples_processed", stats.LoadSamplesProcessed(),
+		"samples_processed", samplesProcessed,
+		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {

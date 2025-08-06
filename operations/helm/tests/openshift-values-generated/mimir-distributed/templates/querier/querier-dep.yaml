@@ -48,6 +48,7 @@ spec:
             - "-target=querier"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -89,8 +90,6 @@ spec:
           env:
             - name: "GOMAXPROCS"
               value: "5"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "5000"
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

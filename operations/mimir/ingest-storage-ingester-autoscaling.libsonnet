@@ -10,8 +10,12 @@
     ingest_storage_ingester_autoscaling_min_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_min_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
     ingest_storage_ingester_autoscaling_max_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_max_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
 
-    // The target number of active series per ingester.
-    ingest_storage_ingester_autoscaling_active_series_threshold: 1500000,
+    // The target max of owned series across all ingesters.
+    // Our ideal max series per ingester is 2/3 of the instance limit, but we target 90% of that to account for scaling delays and the 10% HPA tolerance.
+    ingest_storage_ingester_autoscaling_max_owned_series_threshold: if 'ingester_instance_limits.max_series' in $._config then
+      0.9 * $._config.ingester_instance_limits.max_series * (2 / 3)
+    else
+      1800000,
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
     ingest_storage_ingester_downscale_delay: if 'querier.query-ingesters-within' in $.querier_args then
@@ -31,30 +35,37 @@
     // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
     ingest_storage_ingester_autoscaling_triggers: [
       {
-        // Target ingesters in primary zone, ignoring read-write mode ingesters.
-        local sum_series_from_ready_pods = |||
-          sum(
-              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-              and
-              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-          )
-        |||,
+        // We want to target a maximum number of owned series per ingester pod.
+        // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
+        // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
+        // To do this, we fake a "total owned series" value by multiplying the max owned series per pod by the number of active partitions.
+        // The HPA then calculates the desired replica count as this total value / threshold.
 
-        local ratio_of_ready_pods_vs_all_replicas = |||
+        // Calculate the "total owned series" as the owned series on the worst pod multiplied by the number of active partitions.
+        local max_owned_series_x_active_partitions = |||
           (
-              sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
-              /
-              scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
+              max(
+                  sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
+                  and
+                  sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
+              )
+              *
+              max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="ingester-partitions"})
           )
         |||,
 
-        query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
-                + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
+        // Our compaction cycles are 2h long, but the max stabilizationWindowSeconds is only 1h. This means that we'll react to a scale-down
+        // after compaction half-way through a cycle, when the series counts in ingesters are still growing, resulting in partitions being put into read-only
+        // mode only to be taken back out of it a short time later. To artificially increase our stabilization window to 3h, we use a `max_over_time`
+        // of 2h. However, because this query uses both the max-owned-series-per-pod and the partition count, and the max-owned-series-per-pod doesn't decrease
+        // until some time after the partition count increases, we see brief spikes in the artificial "total series" we calculate after a scale-up. To
+        // mitigate this, we first use a `min_over_time` of 5m.
+        query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
           cluster: $._config.cluster,
           namespace: $._config.namespace,
           primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
         },
-        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_active_series_threshold),
+        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
         metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
       },
     ],
@@ -69,6 +80,9 @@
     // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#stabilization-window
     ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds: $.util.parseDuration('30m'),
     ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds: $.util.parseDuration('1h'),
+
+    // Optional overrides to the HPA behavior.
+    ingest_storage_ingester_hpa_behavior: {},
   },
 
   // Validate the configuration.
@@ -77,6 +91,7 @@
   assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || !$._config.ingester_automated_downscale_enabled : 'partitions ingester autoscaling and ingester automated downscale config are mutually exclusive in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || !$._config.ingester_automated_downscale_v2_enabled : 'partitions ingester autoscaling and ingester automated downscale v2 config are mutually exclusive in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $.rollout_operator_deployment != null : 'partitions ingester autoscaling requires rollout-operator in namespace %s' % $._config.namespace,
+  assert !$._config.ingest_storage_ingester_autoscaling_enabled || std.length($._config.ingest_storage_ingester_autoscaling_triggers) > 0 : 'partitions ingester autoscaling requires at least one trigger to be enabled in namespace %s' % $._config.namespace,
 
   // Create resource that will be targetted by ScaledObject.
   ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector=$._config.ingest_storage_replica_template_label_selector),
@@ -159,17 +174,17 @@
                 selectPolicy: 'Min',  // This would only have effect if there were multiple policies.
                 stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds,
               },
-              // Allow 10% downscaling of pods every 30 minutes to the max value of desired replicas over the stabilization window.
+              // Allow 15% downscaling of pods every 30 minutes to the max value of desired replicas over the stabilization window.
               scaleDown: {
                 policies: [{
                   type: 'Percent',
-                  value: 10,
+                  value: 15,
                   periodSeconds: $.util.parseDuration('30m'),
                 }],
                 selectPolicy: 'Max',  // This would only have effect if there were multiple policies.
                 stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds,
               },
-            },
+            } + $._config.ingest_storage_ingester_hpa_behavior,
           },
         },
       },
@@ -184,6 +199,14 @@
       $.ingester_primary_zone_replica_template,
       $._config.ingest_storage_ingester_autoscaling_index_metrics,
     ),
+
+  // Ensure that the min and max replicas set on the ScaledObject are greater than 0, otherwise Keda fails to create
+  // HPA and it could cause outages during migrations if it gets unnoticed. We check min/max replicas on the manifest
+  // instead of the configuration field, to ensure it doesn't get manipulated by overrides.
+  assert $.ingest_storage_ingester_primary_zone_scaling == null || $.ingest_storage_ingester_primary_zone_scaling.spec.minReplicaCount > 0 :
+         'the %s ScaledObject must have minReplicaCount > 0' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
+  assert $.ingest_storage_ingester_primary_zone_scaling == null || $.ingest_storage_ingester_primary_zone_scaling.spec.maxReplicaCount > 0 :
+         'the %s ScaledObject must have maxReplicaCount > 0' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else

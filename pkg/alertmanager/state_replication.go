@@ -255,11 +255,28 @@ func (s *state) starting(ctx context.Context) error {
 
 // WaitReady is needed for the pipeline builder to know whenever we've settled and the state is up to date.
 func (s *state) WaitReady(ctx context.Context) error {
-	return s.Service.AwaitRunning(ctx)
+	return s.AwaitRunning(ctx)
 }
 
 func (s *state) Ready() bool {
-	return s.Service.State() == services.Running
+	return s.State() == services.Running
+}
+
+func (s *state) MergeGrafanaState(fs []*clusterpb.FullState) error {
+	if err := s.MergeFullStates(fs); err != nil {
+		return err
+	}
+
+	for _, fs := range fs {
+		for _, p := range fs.Parts {
+			if cluster.OversizedMessage(p.Data) {
+				// When merging state, upstream Alertmanager code drops oversized messages.
+				// Manually broadcast oversized Grafana states to avoid missing silences/nflog entries.
+				s.broadcast(p.Key, p.Data)
+			}
+		}
+	}
+	return nil
 }
 
 // MergeFullStates attempts to merge all full states received from peers during settling.

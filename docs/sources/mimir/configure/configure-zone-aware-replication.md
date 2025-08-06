@@ -6,7 +6,7 @@ aliases:
 description: Learn how to replicate data across failure domains.
 menuTitle: Zone-aware replication
 title: Configure Grafana Mimir zone-aware replication
-weight: 110
+weight: 240
 ---
 
 # Configure Grafana Mimir zone-aware replication
@@ -62,7 +62,7 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 
 ## Configuring store-gateway blocks replication
 
-To enable zone-aware replication for the store-gateways, refer to [Zone awareness](../../references/architecture/components/store-gateway/#zone-awareness).
+To enable zone-aware replication for the store-gateways, refer to [Zone awareness](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/#zone-awareness).
 
 ## Minimum number of zones
 

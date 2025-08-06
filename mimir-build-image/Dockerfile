@@ -3,9 +3,9 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
-FROM alpine/helm:3.14.4 as helm
-FROM golang:1.23.7-bookworm
+FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
+FROM alpine/helm:3.17.2 AS helm
+FROM golang:1.24.5-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -39,7 +39,7 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.60.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.0.2
 
 ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
@@ -48,10 +48,10 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.12.0 && \
+	go install github.com/fatih/faillint@v1.15.0 && \
 	go install github.com/campoy/embedmd@v1.0.0 && \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
@@ -61,6 +61,7 @@ RUN GO111MODULE=on \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
 	go install github.com/open-policy-agent/conftest@v0.42.1 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
+	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm

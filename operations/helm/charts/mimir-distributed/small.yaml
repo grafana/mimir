@@ -1,5 +1,6 @@
 # These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster
-# for a more production-ready setup. The setup targets 70% CPU and memory utilization
+# for higher scale than the default values, but not for high-availability production use.
+# The setup targets 70% CPU and memory utilization
 # so that the cluster has room to grow. The resource requests reflect 70% utilization
 # and the limits reflect 100% utilization. The values do not set CPU limits,
 # because CPU limits have caused severe issues elsewhere, so we don't apply any in our helm chart:

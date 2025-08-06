@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -356,7 +357,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(), limits, ClientConfig{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -426,7 +427,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(), limits, ClientConfig{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck

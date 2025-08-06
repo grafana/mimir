@@ -8,6 +8,8 @@ title: Before you begin using exemplars with Grafana Mimir
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Before you begin using exemplars with Grafana Mimir
 
 Follow the checklist to ensure that your application is generating metrics, traces, and exemplars.

@@ -6,22 +6,18 @@
 syntax = "proto3";
 package thanos;
 
-import "types.proto";
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
+import "types.proto";
 
 option go_package = "storepb";
-
-option (gogoproto.sizer_all) = true;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.goproto_getters_all) = false;
-
-// Do not generate XXX fields to reduce memory footprint and opening a door
-// for zero-copy casts to/from prometheus data types.
-option (gogoproto.goproto_unkeyed_all) = false;
-option (gogoproto.goproto_unrecognized_all) = false;
-option (gogoproto.goproto_sizecache_all) = false;
+option (gogoproto.goproto_sizecache_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
+option (gogoproto.goproto_unkeyed_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
+option (gogoproto.goproto_unrecognized_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
 
 message SeriesRequest {
   int64 min_time = 1;

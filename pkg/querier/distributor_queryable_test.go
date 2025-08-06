@@ -311,6 +311,60 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 	require.NoError(t, seriesSet.Err())
 }
 
+func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
+	const (
+		mint = 0
+		maxt = 10000
+	)
+
+	s1 := []mimirpb.Sample{
+		{TimestampMs: 1000, Value: 1},
+	}
+	s2 := []mimirpb.Sample{
+		{TimestampMs: 1000, Value: 1},
+	}
+
+	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
+		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s1), false)},
+		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s2), false)},
+	})
+
+	d := &mockDistributor{}
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		client.CombinedQueryStreamResponse{
+			StreamingSeries: []client.StreamingSeries{
+				{
+					Labels: labels.FromStrings(labels.MetricName, "four"),
+					Sources: []client.StreamingSeriesSource{
+						{SeriesIndex: 0, StreamReader: streamReader},
+					},
+				},
+				{
+					Labels: labels.FromStrings(labels.MetricName, "two"),
+					Sources: []client.StreamingSeriesSource{
+						{SeriesIndex: 1, StreamReader: streamReader},
+					},
+				},
+			},
+		},
+		nil)
+
+	ctx := user.InjectOrgID(context.Background(), "0")
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	querier, err := queryable.Querier(mint, maxt)
+	require.NoError(t, err)
+
+	// For simplicity, we close the querier before issuing the Select call, but in the real world,
+	// this would likely happen while the Select call is still in progress (eg. because the query was cancelled).
+	require.NoError(t, querier.Close())
+
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	require.EqualError(t, seriesSet.Err(), "querier already closed")
+
+	// We also expect that the background goroutine launched by the stream reader is either never started or stopped correctly, and this should be
+	// caught by VerifyNoLeak in TestMain().
+}
+
 func genTestHistogram(timestamp int64, value int) mimirpb.Histogram {
 	return mimirpb.FromHistogramToHistogramProto(timestamp, test.GenerateTestHistogram(value))
 }

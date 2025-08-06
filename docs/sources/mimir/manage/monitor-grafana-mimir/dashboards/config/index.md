@@ -9,9 +9,16 @@ title: Grafana Mimir Config dashboard
 weight: 50
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Config dashboard
 
 The Config dashboard shows details about the runtime configuration currently loaded by each Grafana Mimir instance.
+
+Use this dashboard for the following use cases:
+
+- Ensure that all instances in a Mimir cluster are running with the correct configuration settings.
+- Compare configurations across instances to identify discrepancies that might lead to unexpected behavior.
 
 ## Example
 

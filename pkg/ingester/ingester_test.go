@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -30,10 +31,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
-	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -71,6 +70,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -387,6 +387,18 @@ func TestIngester_Push(t *testing.T) {
 
 	histogramWithSpansBucketsMismatch := util_test.GenerateTestHistogram(1)
 	histogramWithSpansBucketsMismatch.PositiveSpans[1].Length++
+
+	histogramWithCustomBuckets := util_test.GenerateTestCustomBucketsHistogram(1)
+
+	histogramWithCustomBucketsMismatch := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsMismatch.CustomValues = histogramWithCustomBucketsMismatch.CustomValues[:1]
+
+	histogramWithCustomBucketsInvalid := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsInvalid.CustomValues[0] = 100.0
+	histogramWithCustomBucketsInvalid.CustomValues[1] = 50.0
+
+	histogramWithCustomBucketsInfinite := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsInfinite.CustomValues[len(histogramWithCustomBucketsInfinite.CustomValues)-1] = math.Inf(1)
 
 	tests := map[string]struct {
 		reqs                      []*mimirpb.WriteRequest
@@ -1932,6 +1944,180 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
+		"should succeed on valid histogram with custom buckets": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBuckets)},
+					nil,
+				),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestCustomBucketsHistogram(1)), Timestamp: 10}},
+				},
+			},
+			expectedMetrics: `
+                # HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+                # TYPE cortex_ingester_active_native_histogram_buckets gauge
+                cortex_ingester_active_native_histogram_buckets{user="test"} 4
+                # HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+                # TYPE cortex_ingester_active_native_histogram_series gauge
+                cortex_ingester_active_native_histogram_series{user="test"} 1
+                # HELP cortex_ingester_active_series Number of currently active series per user.
+                # TYPE cortex_ingester_active_series gauge
+                cortex_ingester_active_series{user="test"} 1
+                # HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+                # TYPE cortex_ingester_ingested_samples_failures_total counter
+                cortex_ingester_ingested_samples_failures_total{user="test"} 0
+                # HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+                # TYPE cortex_ingester_ingested_samples_total counter
+                cortex_ingester_ingested_samples_total{user="test"} 1
+                # HELP cortex_ingester_memory_series The current number of series in memory.
+                # TYPE cortex_ingester_memory_series gauge
+                cortex_ingester_memory_series 1
+                # HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+                # TYPE cortex_ingester_memory_series_created_total counter
+                cortex_ingester_memory_series_created_total{user="test"} 1
+                # HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+                # TYPE cortex_ingester_memory_series_removed_total counter
+                cortex_ingester_memory_series_removed_total{user="test"} 0
+                # HELP cortex_ingester_memory_users The current number of users in memory.
+                # TYPE cortex_ingester_memory_users gauge
+                cortex_ingester_memory_users 1
+                # HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+                # TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+                cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+                # HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+                # TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+                cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has too few custom values": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsMismatch)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has invalid custom values": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInvalid)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: histogram custom bounds must be in strictly increasing order"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has explicit infinite boundary": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInfinite)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
 		"should soft fail if OOO native histograms are received and OOO is disabled": {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -2931,7 +3117,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -3306,6 +3492,718 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
 		},
+		"should ingest created timestamp with correct type": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 600},
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+								},
+								CreatedTimestamp: 700,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 0, Timestamp: model.Time(500)},
+						{Value: 1, Timestamp: model.Time(600)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: &model.SampleHistogram{Buckets: model.HistogramBuckets{}}, Timestamp: model.Time(700)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 4
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.5
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ignore created timestamp in the future": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 600},
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(600)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.6
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ignore created timestamp equal to sample timestamp": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 600},
+								},
+								CreatedTimestamp: 600,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+								},
+								CreatedTimestamp: 800,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(600)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.6
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ingest created timestamp with correct type among other samples and not fail duplicates": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(600, util_test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(700, util_test.GenerateTestHistogram(3)),
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(4)),
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 1400},
+									{Value: 2, TimestampMs: 1600},
+									{Value: 3, TimestampMs: 1700},
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 4, TimestampMs: 1800},
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(1400)},
+						{Value: 0, Timestamp: model.Time(1500)},
+						{Value: 2, Timestamp: model.Time(1600)},
+						{Value: 3, Timestamp: model.Time(1700)},
+						{Value: 4, Timestamp: model.Time(1800)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(400)},
+						{Histogram: &model.SampleHistogram{Buckets: model.HistogramBuckets{}}, Timestamp: model.Time(500)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: model.Time(600)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(3)), Timestamp: model.Time(700)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(4)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 10
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ingest created timestamp with correct type among other samples and not fail duplicates if out-of-order is disabled": {
+			allowOOO:         false,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(600, util_test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(700, util_test.GenerateTestHistogram(3)),
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(4)),
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 1400},
+									{Value: 2, TimestampMs: 1600},
+									{Value: 3, TimestampMs: 1700},
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 4, TimestampMs: 1800},
+								},
+								CreatedTimestamp: 1500,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(1400)},
+						{Value: 0, Timestamp: model.Time(1500)},
+						{Value: 2, Timestamp: model.Time(1600)},
+						{Value: 3, Timestamp: model.Time(1700)},
+						{Value: 4, Timestamp: model.Time(1800)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(400)},
+						{Histogram: &model.SampleHistogram{Buckets: model.HistogramBuckets{}}, Timestamp: model.Time(500)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: model.Time(600)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(3)), Timestamp: model.Time(700)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(4)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 10
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ignore created timestamp if no samples": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					// Initialize the user TSDB.
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 400},
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:           []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(400)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should soft error on created timestamp causing an error": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 400},
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: 500},
+								},
+								CreatedTimestamp: 400,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 400; overrides not allowed: existing 1, new value 0", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(400)},
+						{Value: 2, Timestamp: model.Time(500)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.5
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should soft error with histograms on created timestamp causing an error": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(500, util_test.GenerateTestHistogram(2)),
+								},
+								CreatedTimestamp: 400,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(400)},
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: model.Time(500)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.5
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -3351,8 +4249,10 @@ func TestIngester_Push(t *testing.T) {
 
 			// Push timeseries
 			for idx, req := range testData.reqs {
-				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
-				err := i.PushWithCleanup(ctx, req, func() {})
+				// Push metrics to the ingester.
+				err := i.PushWithCleanup(ctx, req, func() {
+					req.FreeBuffer()
+				})
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
@@ -3665,7 +4565,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					return
 				}
 				limits.CostAttributionLabels = []string{"cpu"}
-				limits.MaxCostAttributionCardinalityPerUser = 100
+				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
 		},
@@ -3698,12 +4598,12 @@ func BenchmarkIngesterPush(b *testing.B) {
 					limitCfg := t.limitsCfg()
 					caCase.limitsCfg(&limitCfg)
 
-					overrides, err := validation.NewOverrides(limitCfg, nil)
-					require.NoError(b, err)
+					overrides := validation.NewOverrides(limitCfg, nil)
 
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
-						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						var err error
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, caCase.customRegistry)
 						require.NoError(b, err)
 					}
 
@@ -4259,10 +5159,19 @@ func l2m(lbls labels.Labels) model.Metric {
 }
 
 func Test_Ingester_Query(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+	series := []util_test.Series{
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
+		},
 	}
 
 	tests := map[string]struct {
@@ -4286,8 +5195,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -4297,7 +5206,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -4307,8 +5216,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -4318,7 +5227,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -4329,7 +5238,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -4339,7 +5248,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -4359,7 +5268,7 @@ func Test_Ingester_Query(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		req, _, _, _ := mockWriteRequest(t, series.Labels, series.Samples[0].F(), series.Samples[0].T())
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -4393,11 +5302,23 @@ func Test_Ingester_Query(t *testing.T) {
 }
 
 func TestIngester_LabelNamesAndValues(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "500"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "200"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"), 2, 200000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"), 3, 200000},
+	series := []util_test.Series{
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 3}},
+		},
 	}
 
 	tests := []struct {
@@ -4445,26 +5366,22 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
-	series := []series{
+	series := []util_test.Series{
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
-			value:     1.5,
-			timestamp: 100000,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
-			value:     1.5,
-			timestamp: 110030,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
-			value:     1.5,
-			timestamp: 100060,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
-			value:     1.5,
-			timestamp: 100090,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
 	}
 	tests := map[string]struct {
@@ -4549,15 +5466,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
-type series struct {
-	lbls      labels.Labels
-	value     float64
-	timestamp int64
-}
-
-func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []series) error {
-	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []util_test.Series) error {
+	for _, s := range series {
+		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		_, err := i.Push(ctx, req)
 		if err != nil {
 			return err
@@ -5680,7 +6591,7 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 		IsEndOfSeriesStream: true,
 	}
 
-	require.Equal(t, seriesLabelsMsg, *resp)
+	require.EqualExportedValues(t, seriesLabelsMsg, *resp)
 
 	recvMsgs := 0
 	series := 0
@@ -5900,8 +6811,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -5954,7 +6864,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]util_test.Sample) {
 		s, err := c.QueryStream(ctx, &client.QueryRequest{
 			StartTimestampMs: 0,
 			EndTimestampMs:   5,
@@ -5985,22 +6895,22 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 		require.Equal(t, recvMsgs, 1)
 		// Sort chunks by time
-		sort.Slice(chunks, func(i, j int) bool {
-			return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+		slices.SortFunc(chunks, func(a, b client.Chunk) int {
+			return cmp.Compare(a.StartTimestampMs, b.StartTimestampMs)
 		})
 
 		headers := []chunkenc.CounterResetHeader{}
-		var samples [][]sample
+		var samples [][]util_test.Sample
 		for _, c := range chunks {
 			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
 			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
 			require.NoError(t, err)
 
-			s := []sample{}
+			s := []util_test.Sample{}
 			it := chk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				s = append(s, sample{t: ts, h: h})
+				s = append(s, util_test.Sample{TS: ts, Hist: h})
 			}
 			samples = append(samples, s)
 			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
@@ -6011,17 +6921,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
 	actHeaders, actSamples := runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
 		},
 		{
-			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 
@@ -6035,15 +6945,15 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 	actHeaders, actSamples = runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 }
@@ -6052,11 +6962,6 @@ func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Hist
 	h := util_test.GenerateTestHistogram(idx)
 	h.CounterResetHint = hint
 	return h
-}
-
-type sample struct {
-	t int64
-	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
@@ -6358,10 +7263,7 @@ func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, ingester
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, ingestersRing ring.ReadRing, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
-	overrides, err := validation.NewOverrides(limits, nil)
-	if err != nil {
-		return nil, err
-	}
+	overrides := validation.NewOverrides(limits, nil)
 	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, ingestersRing, dataDir, "", registerer)
 }
 
@@ -6585,8 +7487,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			// Create a temporary directory for TSDB
 			tempDir := t.TempDir()
@@ -7736,8 +8637,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 	limits := defaultLimitsTestConfig()
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
@@ -8414,8 +9314,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	t.Run("with ingest storage enabled", func(t *testing.T) {
 		limits := InstanceLimits{MaxInflightPushRequests: 1}
 
-		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 		cfg := defaultIngesterTestConfig(t)
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
@@ -9531,8 +10430,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 			limits.NativeHistogramsIngestionEnabled = true
-			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, activeSeriesTenantOverride)
 
 			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
 			require.NoError(t, err)
@@ -9666,8 +10564,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				ingester.limits = override
 				currentTime = time.Now()
 				// First update reloads the config
@@ -9797,8 +10694,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, nil)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -9921,8 +10817,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -10023,8 +10918,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Remove all configs
 				limits := defaultLimitsTestConfig()
-				override, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, nil)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -10054,14 +10948,11 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			limits.ActiveSeriesBaseCustomTrackersConfig = testData.activeSeriesConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
-			var err error
 			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
 			if testData.tenantLimits != nil {
-				overrides, err = validation.NewOverrides(limits, testData.tenantLimits)
-				require.NoError(t, err)
+				overrides = validation.NewOverrides(limits, testData.tenantLimits)
 			} else {
-				overrides, err = validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				overrides = validation.NewOverrides(limits, nil)
 			}
 
 			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
@@ -10121,8 +11012,7 @@ func testIngesterOutOfOrder(t *testing.T,
 	l.NativeHistogramsIngestionEnabled = true
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", "test").Return(nil)
-	override, err := validation.NewOverrides(l, tenantOverride)
-	require.NoError(t, err)
+	override := validation.NewOverrides(l, tenantOverride)
 
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
@@ -10386,8 +11276,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -10474,8 +11363,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -10551,8 +11439,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				},
 			}
 
-			override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
-			require.NoError(t, err)
+			override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 
 			tmpDir := t.TempDir()
 			bucketDir := t.TempDir()
@@ -10661,8 +11548,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	userID := "1"
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", userID).Return(nil)
-	override, err := validation.NewOverrides(limits, tenantOverride)
-	require.NoError(t, err)
+	override := validation.NewOverrides(limits, tenantOverride)
 
 	setNativeHistogramsIngestionEnabled := func(enabled bool) {
 		tenantOverride.ExpectedCalls = nil
@@ -10709,7 +11595,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
+	_, err := ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
 		AddFloatSeries([][]mimirpb.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil).
 		AddHistogramSeries([][]mimirpb.LabelAdapter{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
@@ -10736,7 +11622,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		}
 
 		s := stream{ctx: ctx}
-		err = ing.QueryStream(req, &s)
+		err := ing.QueryStream(req, &s)
 		require.NoError(t, err, msg)
 
 		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -11123,8 +12009,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -11480,10 +12366,7 @@ type loggerWithBuffer struct {
 }
 
 func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
-	var lvl dslog.Level
-	require.NoError(t, lvl.Set("info"))
-	logger := dslog.NewGoKitWithWriter(dslog.LogfmtFormat, buf)
-	level.NewFilter(logger, lvl.Option)
+	logger := util_log.MakeLeveledLogger(buf, "info")
 	return &loggerWithBuffer{
 		logger: logger,
 		buf:    buf,
@@ -11538,8 +12421,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 	l := defaultLimitsTestConfig()
 	l.CreationGracePeriod = model.Duration(time.Hour) * 24 * 365 * 15 // 15 years in the future
-	override, err := validation.NewOverrides(l, nil)
-	require.NoError(t, err)
+	override := validation.NewOverrides(l, nil)
 
 	// Create ingester
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
@@ -11657,8 +12539,7 @@ func TestIngester_Starting(t *testing.T) {
 func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	ctx := context.Background()
 
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	type testCase struct {
 		name                     string
@@ -11817,7 +12698,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 func (i *failingIngester) shutDownWaitAndCheck(ctx context.Context, t *testing.T) {
 	// We properly shut down ingester, and ensure that it lifecycler is terminated.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
-	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
+	require.Equal(t, services.Terminated, i.lifecycler.State())
 }
 
 func (i *failingIngester) starting(parentCtx context.Context) error {

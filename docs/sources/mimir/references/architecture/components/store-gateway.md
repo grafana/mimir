@@ -7,6 +7,8 @@ title: Grafana Mimir store-gateway
 weight: 70
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir store-gateway
 
 The store-gateway component, which is stateful, queries blocks from [long-term storage](../../../../get-started/about-grafana-mimir-architecture/#long-term-storage).

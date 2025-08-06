@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -32,7 +33,7 @@ type SampleTracker struct {
 	discardedSampleAttribution *prometheus.Desc
 	logger                     log.Logger
 
-	labels         []string
+	labels         []costattributionmodel.Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -45,7 +46,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -66,8 +67,12 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		overflowCounter:  observation{},
 	}
 
-	variableLabels := slices.Clone(trackedLabels)
+	variableLabels := make([]string, 0, len(trackedLabels)+2)
+	for _, label := range trackedLabels {
+		variableLabels = append(variableLabels, label.OutputLabel())
+	}
 	variableLabels = append(variableLabels, tenantLabel, "reason")
+
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
@@ -80,7 +85,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 	return tracker
 }
 
-func (st *SampleTracker) hasSameLabels(labels []string) bool {
+func (st *SampleTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
 	return slices.Equal(st.labels, labels)
 }
 
@@ -90,7 +95,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
+func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()
@@ -145,7 +150,7 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
 		st.fillKeyFromLabelAdapters(ts.Labels, buf)
-		dict[string(buf.Bytes())] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
+		dict[string(buf.Bytes())] += len(ts.Samples) + len(ts.Histograms)
 	}
 
 	// Update the observations for each label set and update the state per request,
@@ -167,7 +172,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal {
+			if l.Name == cal.Input {
 				exists = true
 				buf.WriteString(l.Value)
 				break
@@ -317,4 +322,10 @@ func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
 		delete(st.observed, key)
 	}
 	st.observedMtx.Unlock()
+}
+
+func (st *SampleTracker) cardinality() (cardinality int, overflown bool) {
+	st.observedMtx.RLock()
+	defer st.observedMtx.RUnlock()
+	return len(st.observed), !st.overflowSince.IsZero()
 }

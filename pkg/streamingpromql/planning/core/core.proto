@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package core;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functions.proto";
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message PositionRange {
+  int64 start = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
+  int64 end = 2 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
+}
+
+message AggregateExpressionDetails {
+  AggregationOperation op = 1;
+  repeated string grouping = 2;
+  bool without = 3;
+  PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+}
+
+// Why don't we just use the parser.ItemType values?
+// There's no guarantee these values remain stable, so relying on them could introduce backwards compatibility issues
+// if a value changes.
+enum AggregationOperation {
+  // Please keep these names the same as the corresponding ItemType.
+
+  AGGREGATION_UNKNOWN = 0;
+  AGGREGATION_SUM = 1;
+  AGGREGATION_AVG = 2;
+  AGGREGATION_COUNT = 3;
+  AGGREGATION_MIN = 4;
+  AGGREGATION_MAX = 5;
+  AGGREGATION_GROUP = 6;
+  AGGREGATION_STDDEV = 7;
+  AGGREGATION_STDVAR = 8;
+  AGGREGATION_TOPK = 9;
+  AGGREGATION_BOTTOMK = 10;
+  AGGREGATION_COUNT_VALUES = 11;
+  AGGREGATION_QUANTILE = 12;
+}
+
+message BinaryExpressionDetails {
+  BinaryOperation op = 1;
+  VectorMatching vectorMatching = 2;
+  bool returnBool = 3;
+  PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+}
+
+// Why don't we just use the parser.ItemType values?
+// There's no guarantee these values remain stable, so relying on them could introduce backwards compatibility issues
+// if a value changes.
+enum BinaryOperation {
+  // Please keep these names the same as the corresponding ItemType.
+
+  BINARY_UNKNOWN = 0;
+  BINARY_LAND = 1;
+  BINARY_LOR = 2;
+  BINARY_LUNLESS = 3;
+  BINARY_ATAN2 = 4;
+  BINARY_SUB = 5;
+  BINARY_ADD = 6;
+  BINARY_MUL = 7;
+  BINARY_MOD = 8;
+  BINARY_DIV = 9;
+  BINARY_POW = 10;
+  BINARY_EQLC = 11; // ==
+  BINARY_NEQ = 12; // !=
+  BINARY_LTE = 13; // <=
+  BINARY_LSS = 14; // <
+  BINARY_GTE = 15; // >=
+  BINARY_GTR = 16; // >
+}
+
+message VectorMatching {
+  int64 card = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser.VectorMatchCardinality"];
+  repeated string matchingLabels = 2;
+  bool on = 3;
+  repeated string include = 4;
+}
+
+message FunctionCallDetails {
+  functions.Function function = 1;
+
+  // Labels used by absent() or absent_over_time(). Only populated if this instance is for either of these two functions.
+  repeated cortexpb.LabelPair absentLabels = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+
+  PositionRange expressionPosition = 3 [(gogoproto.nullable) = false];
+}
+
+message NumberLiteralDetails {
+  double value = 1;
+  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
+}
+
+message StringLiteralDetails {
+  string value = 1;
+  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
+}
+
+message UnaryExpressionDetails {
+  UnaryOperation op = 1;
+  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
+}
+
+// Why don't we just use the parser.ItemType values?
+// There's no guarantee these values remain stable, so relying on them could introduce backwards compatibility issues
+// if a value changes.
+enum UnaryOperation {
+  // Please keep these names the same as the corresponding ItemType.
+
+  UNARY_UNKNOWN = 0;
+  UNARY_SUB = 1;
+}
+
+message VectorSelectorDetails {
+  repeated LabelMatcher matchers = 1;
+  google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+  bool returnSampleTimestamps = 5;
+  bool skipHistogramBuckets = 6;
+}
+
+message MatrixSelectorDetails {
+  repeated LabelMatcher matchers = 1;
+  google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
+  bool skipHistogramBuckets = 6;
+}
+
+message SubqueryDetails {
+  google.protobuf.Timestamp timestamp = 1 [(gogoproto.stdtime) = true];
+  google.protobuf.Duration offset = 2 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration step = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
+}
+
+message LabelMatcher {
+  int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
+  string name = 2;
+  string value = 3;
+}

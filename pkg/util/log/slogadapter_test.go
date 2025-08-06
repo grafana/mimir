@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
 	"github.com/stretchr/testify/assert"
@@ -61,6 +62,7 @@ func TestSlogFromGoKit(t *testing.T) {
 
 	t.Run("enabled for the right slog levels when go-kit level not configured", func(t *testing.T) {
 		mLogger := &mockLogger{}
+		mLogger.On("Log", "probe", mock.AnythingOfType("*log.privateLevelDetector")).Return(nil) // Probing call from SlogFromGoKit.
 		slogger := SlogFromGoKit(mLogger)
 
 		for _, sl := range slogLevels {
@@ -70,6 +72,7 @@ func TestSlogFromGoKit(t *testing.T) {
 
 	t.Run("wraps go-kit logger", func(*testing.T) {
 		mLogger := &mockLogger{}
+		mLogger.On("Log", "probe", mock.AnythingOfType("*log.privateLevelDetector")).Return(nil) // Probing call from SlogFromGoKit.
 		slogger := SlogFromGoKit(mLogger)
 
 		for _, l := range levels {
@@ -90,3 +93,29 @@ func TestSlogFromGoKit(t *testing.T) {
 		}
 	})
 }
+
+func BenchmarkSlogFromGoKit(b *testing.B) {
+	// Set up a logger with a stack of wrappers, similar to what tsdb gets.
+	var lvl dslog.Level
+	_ = lvl.Set("info")
+	var logger log.Logger
+	logger = noopLogger{}
+	logger = newFilter(logger, lvl)
+	logger = WithUserID("userID", logger)
+
+	sl := SlogFromGoKit(logger)
+	b.Run("log", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sl.Info("msg", "foo", "bar", "more", "data")
+		}
+	})
+	b.Run("debuglog", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sl.Debug("msg", "foo", "bar", "more", "data")
+		}
+	})
+}
+
+type noopLogger struct{}
+
+func (noopLogger) Log(...interface{}) error { return nil }

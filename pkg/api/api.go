@@ -187,7 +187,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
-		{Desc: "Status", Path: "/multitenant_alertmanager/configs"},
+		{Desc: "Config", Path: "/multitenant_alertmanager/configs"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
@@ -215,12 +215,14 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
+			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
 
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.GetUserGrafanaState), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
 
 			// These APIs are handled by the per-tenant Alertmanager, so they are handled by the distributor.
+			a.RegisterRoute("/api/v1/grafana/full_state", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
@@ -470,6 +472,10 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
+}
+
+func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
+	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
 }
 
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the

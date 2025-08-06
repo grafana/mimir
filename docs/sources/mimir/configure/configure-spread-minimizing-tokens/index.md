@@ -2,7 +2,7 @@
 aliases:
   - ../operators-guide/configure/configure-spread-minimizing-tokens/
 description: Learn how to migrate ingesters to spread-minimizing tokens.
-weight: 115
+weight: 150
 menuTitle: Spread-minimizing tokens
 title: Migrate ingesters to spread-minimizing tokens
 ---
@@ -13,12 +13,12 @@ Using this guide, you can configure Mimir's ingesters to use the _spread-minimiz
 
 ## Before you begin
 
-The ingester time series replication should be [configured with enabled zone-awareness](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/#configuring-ingester-time-series-replication).
+The ingester time series replication should be [configured with enabled zone-awareness](/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/#configuring-ingester-time-series-replication).
 
-{{% admonition type="note" %}}Spread-mimizing tokens are recommended if [shuffle-sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) is disabled on the [write path](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-write-path) of your ingesters, or, if it is enabled, but most of the tenants of your system use all available ingesters.
+{{% admonition type="note" %}}Spread-mimizing tokens are recommended if [shuffle-sharding](/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) is disabled on the write path of your ingesters, or, if it is enabled, but most of the tenants of your system use all available ingesters.
 {{% /admonition %}}
 
-{{% admonition type="note" %}}In order to prevent incorrect query results, [shuffle-sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) on the [read path](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-read-path) of your ingesters must be disabled before migrating ingesters to the spread-minimizing tokens. Shuffle-sharding on ingester's read path can be re-enabled at least `-querier.query-store-after` time after the last ingester zone was migrated to the spread-minimizing tokens.
+{{% admonition type="note" %}}In order to prevent incorrect query results, [shuffle-sharding](/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) on the read path of your ingesters must be disabled before migrating ingesters to the spread-minimizing tokens. Shuffle-sharding on ingester's read path can be re-enabled at least `-querier.query-store-after` time after the last ingester zone was migrated to the spread-minimizing tokens.
 {{% /admonition %}}
 
 If ingesters are configured with a non-empty value of `-ingester.ring.tokens-file-path`, this is the file where ingesters store the tokens at shutdown and restore them at startup. Keep track of this value, because you need it in the last step.

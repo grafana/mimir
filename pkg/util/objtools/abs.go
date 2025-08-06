@@ -192,7 +192,7 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	if response.ContentLength == nil {
 		return errors.New("source object from Azure did not contain a content length")
 	}
-	body := response.DownloadResponse.Body
+	body := response.Body
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), body, *response.ContentLength); err != nil {
 		_ = body.Close()
 		return errors.New("failed uploading source object from Azure to destination")

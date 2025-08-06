@@ -7,7 +7,7 @@ services:
       - 8510:8500
 
   minio:
-    image: minio/minio
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
     command: [ "server", "--console-address", ":9101", "/data" ]
     environment:
       - MINIO_ROOT_USER=mimir
@@ -21,7 +21,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -31,18 +31,18 @@ services:
   prometheusRW2:
     profiles:
       - prometheusRW2
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheusRW2.yaml", "--enable-feature=metadata-wal-records,native-histograms"]
     volumes:
       - ./config:/etc/prometheus
     ports:
-      - 9190:9090
+      - 9192:9090
 
   grafana:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:11.5.2
+    image: grafana/grafana:11.6.4
     ports:
       - 3000:3000
     volumes:
@@ -53,7 +53,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.44.2
+    image: grafana/agent:v0.44.3
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
@@ -63,7 +63,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.7.4
+    image: grafana/alloy:v1.9.2
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -92,7 +92,6 @@ services:
       - JAEGER_TAGS=app=mimir-1
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
-      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8101:8001
     volumes:
@@ -114,7 +113,6 @@ services:
       - JAEGER_TAGS=app=mimir-2
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
-      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8102:8002
     volumes:
@@ -122,7 +120,8 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.121.0
+    image: otel/opentelemetry-collector-contrib:0.130.1
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -137,7 +136,8 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.121.0
+    image: otel/opentelemetry-collector-contrib:0.130.1
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
     profiles:
       - otel-collector-otlp-push
     volumes:

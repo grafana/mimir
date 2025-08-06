@@ -29,6 +29,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
@@ -93,7 +94,8 @@ type Head struct {
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
-	// These pools are used during WAL/WBL replay.
+	// These pools are only used during WAL/WBL replay and are reset at the end.
+	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.
 	wlReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
 	wlReplaySamplesPool         zeropool.Pool[[]record.RefSample]
 	wlReplaytStonesPool         zeropool.Pool[[]tombstones.Stone]
@@ -190,6 +192,9 @@ type HeadOptions struct {
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
+	// IndexLookupPlanner can be optionally used when querying the index of the Head.
+	IndexLookupPlanner index.LookupPlanner
+
 	// Timely compaction allows head compaction to happen when min block range can no longer be appended,
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyCompaction bool
@@ -230,6 +235,7 @@ func DefaultHeadOptions() *HeadOptions {
 		PostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
 		PostingsForMatchersCacheMetrics:  NewPostingsForMatchersCacheMetrics(nil),
 		WALReplayConcurrency:             defaultWALReplayConcurrency,
+		IndexLookupPlanner:               &index.ScanEmptyMatchersLookupPlanner{},
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -303,7 +309,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:             stats,
 		reg:               r,
 		secondaryHashFunc: shf,
-		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics),
+		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics, []attribute.KeyValue{attribute.String("block", headULID.String())}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -376,6 +382,17 @@ func (h *Head) resetInMemoryState() error {
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.lastMemoryTruncationTime.Store(math.MinInt64)
 	return nil
+}
+
+func (h *Head) resetWLReplayResources() {
+	h.wlReplaySeriesPool = zeropool.Pool[[]record.RefSeries]{}
+	h.wlReplaySamplesPool = zeropool.Pool[[]record.RefSample]{}
+	h.wlReplaytStonesPool = zeropool.Pool[[]tombstones.Stone]{}
+	h.wlReplayExemplarsPool = zeropool.Pool[[]record.RefExemplar]{}
+	h.wlReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
+	h.wlReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
+	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
+	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
 }
 
 type headMetrics struct {
@@ -663,6 +680,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
+	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
 	}()
@@ -789,6 +807,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -802,7 +821,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, endAt); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, endAt); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -818,6 +837,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= endAt; i++ {
+		walSegmentStart := time.Now()
 		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
 		if err != nil {
 			return fmt.Errorf("open WAL segment: %d: %w", i, err)
@@ -835,14 +855,14 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, endAt)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, endAt)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
 		if err != nil {
 			return err
 		}
-		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt)
+		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt, "duration", time.Since(walSegmentStart))
 		h.updateWALReplayStatusRead(i)
 	}
 	walReplayDuration := time.Since(walReplayStart)
@@ -1760,7 +1780,7 @@ func (h *Head) String() string {
 	return "head"
 }
 
-func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
+func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations
 	// and makes our series IDs rather random and harder to compress in postings.
@@ -1772,17 +1792,17 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 	// Optimistically assume that we are the first one to create the series.
 	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
 
-	return h.getOrCreateWithID(id, hash, lset)
+	return h.getOrCreateWithID(id, hash, lset, pendingCommit)
 }
 
-func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
+func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
 		shardHash := uint64(0)
 		if h.opts.EnableSharding {
 			shardHash = labels.StableHash(lset)
 		}
 
-		return newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled, pendingCommit)
 	})
 	if err != nil {
 		return nil, false, err
@@ -2230,7 +2250,7 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, secondaryHash uint32, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, secondaryHash uint32, chunkEndTimeVariance float64, isolationDisabled, pendingCommit bool) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
@@ -2238,6 +2258,7 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
 		shardHash:            shardHash,
 		secondaryHash:        secondaryHash,
+		pendingCommit:        pendingCommit,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(0)

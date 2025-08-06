@@ -9,8 +9,8 @@ package functions
 import (
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var Timestamp = FunctionOverInstantVectorDefinition{
@@ -18,13 +18,13 @@ var Timestamp = FunctionOverInstantVectorDefinition{
 	SeriesDataFunc:         timestamp,
 }
 
-func timestamp(data types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func timestamp(data types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
 
-	defer types.HPointSlicePool.Put(data.Histograms, memoryConsumptionTracker)
+	defer types.HPointSlicePool.Put(&data.Histograms, memoryConsumptionTracker)
 
 	if len(data.Histograms) > 0 {
-		defer types.FPointSlicePool.Put(data.Floats, memoryConsumptionTracker)
+		defer types.FPointSlicePool.Put(&data.Floats, memoryConsumptionTracker)
 
 		var err error
 		output.Floats, err = types.FPointSlicePool.Get(len(data.Floats)+len(data.Histograms), memoryConsumptionTracker)

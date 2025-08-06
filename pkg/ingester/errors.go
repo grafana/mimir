@@ -93,7 +93,7 @@ func (e sampleError) Error() string {
 }
 
 func (e sampleError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
 func (e sampleError) soft() {}
@@ -129,8 +129,8 @@ func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapte
 	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+func newSampleDuplicateTimestampError(errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+	return newSampleError(globalerror.SampleDuplicateTimestamp, errMsg, timestamp, labels)
 }
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.
@@ -153,7 +153,7 @@ func (e exemplarError) Error() string {
 }
 
 func (e exemplarError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
 func (e exemplarError) soft() {}
@@ -203,7 +203,7 @@ func (e tsdbIngestExemplarErr) Error() string {
 }
 
 func (e tsdbIngestExemplarErr) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
 func (e tsdbIngestExemplarErr) soft() {}
@@ -243,7 +243,7 @@ func (e perUserSeriesLimitReachedError) Error() string {
 }
 
 func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TENANT_LIMIT
+	return mimirpb.ERROR_CAUSE_TENANT_LIMIT
 }
 
 func (e perUserSeriesLimitReachedError) soft() {}
@@ -274,7 +274,7 @@ func (e perUserMetadataLimitReachedError) Error() string {
 }
 
 func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TENANT_LIMIT
+	return mimirpb.ERROR_CAUSE_TENANT_LIMIT
 }
 
 func (e perUserMetadataLimitReachedError) soft() {}
@@ -310,7 +310,7 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 }
 
 func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TENANT_LIMIT
+	return mimirpb.ERROR_CAUSE_TENANT_LIMIT
 }
 
 func (e perMetricSeriesLimitReachedError) soft() {}
@@ -346,7 +346,7 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 }
 
 func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TENANT_LIMIT
+	return mimirpb.ERROR_CAUSE_TENANT_LIMIT
 }
 
 func (e perMetricMetadataLimitReachedError) soft() {}
@@ -383,7 +383,7 @@ func (e nativeHistogramValidationError) Error() string {
 }
 
 func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
 func (e nativeHistogramValidationError) soft() {}
@@ -404,7 +404,7 @@ func (e unavailableError) Error() string {
 }
 
 func (e unavailableError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.SERVICE_UNAVAILABLE
+	return mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE
 }
 
 // Ensure that unavailableError is an ingesterError.
@@ -427,7 +427,7 @@ func (e instanceLimitReachedError) Error() string {
 }
 
 func (e instanceLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.INSTANCE_LIMIT
+	return mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
 }
 
 // Ensure that instanceLimitReachedError is an ingesterError.
@@ -447,7 +447,7 @@ func (e tsdbUnavailableError) Error() string {
 }
 
 func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TSDB_UNAVAILABLE
+	return mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE
 }
 
 // Ensure that tsdbUnavailableError is an ingesterError.
@@ -460,7 +460,7 @@ func (e ingesterTooBusyError) Error() string {
 }
 
 func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.TOO_BUSY
+	return mimirpb.ERROR_CAUSE_TOO_BUSY
 }
 
 // Ensure that ingesterTooBusyError is an ingesterError.
@@ -473,7 +473,7 @@ func (e ingesterPushGrpcDisabledError) Error() string {
 }
 
 func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.METHOD_NOT_ALLOWED
+	return mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED
 }
 
 // Ensure that ingesterPushGrpcDisabledError is an ingesterError.
@@ -493,7 +493,7 @@ func (e circuitBreakerOpenError) Error() string {
 }
 
 func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.CIRCUIT_BREAKER_OPEN
+	return mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN
 }
 
 var _ ingesterError = circuitBreakerOpenError{}
@@ -507,7 +507,7 @@ func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
 }
 
 func (e reactiveLimiterExceededError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.REQUEST_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
 }
 
 var _ ingesterError = reactiveLimiterExceededError{}
@@ -549,20 +549,20 @@ func mapPushErrorToErrorWithStatus(err error) error {
 	)
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
-		case mimirpb.BAD_DATA:
+		case mimirpb.ERROR_CAUSE_BAD_DATA:
 			errCode = codes.InvalidArgument
-		case mimirpb.TENANT_LIMIT:
+		case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 			errCode = codes.FailedPrecondition
-		case mimirpb.SERVICE_UNAVAILABLE:
+		case mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
-		case mimirpb.INSTANCE_LIMIT:
+		case mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 			errCode = codes.Unavailable
 			wrappedErr = middleware.DoNotLogError{Err: err}
-		case mimirpb.TSDB_UNAVAILABLE:
+		case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 			errCode = codes.Internal
-		case mimirpb.METHOD_NOT_ALLOWED:
+		case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 			errCode = codes.Unimplemented
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
+		case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
 			errCode = codes.Unavailable
 		}
 	}
@@ -577,13 +577,13 @@ func mapReadErrorToErrorWithStatus(err error) error {
 	)
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
-		case mimirpb.TOO_BUSY:
+		case mimirpb.ERROR_CAUSE_TOO_BUSY:
 			errCode = codes.ResourceExhausted
-		case mimirpb.SERVICE_UNAVAILABLE:
+		case mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
-		case mimirpb.METHOD_NOT_ALLOWED:
+		case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
+		case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
 			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}

@@ -21,8 +21,8 @@ type tenantsPageContents struct {
 	Tenants []string  `json:"tenants,omitempty"`
 }
 
-func (s *StoreGateway) TenantsHandler(w http.ResponseWriter, req *http.Request) {
-	tenantIDs, err := s.stores.scanUsers(req.Context())
+func (g *StoreGateway) TenantsHandler(w http.ResponseWriter, req *http.Request) {
+	tenantIDs, err := g.stores.scanUsers(req.Context())
 	if err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Can't read tenants: %s", err))
 		return

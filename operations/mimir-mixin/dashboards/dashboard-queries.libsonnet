@@ -94,6 +94,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       rulerQueryFrontendMatcher: $.jobMatcher($._config.job_names.ruler_query_frontend),
       writePromHTTPRoutesRegex: $.queries.write_prom_http_routes_regex,
       writeOTLPHTTPRoutesRegex: $.queries.write_otlp_http_routes_regex,
+      writeInfluxHTTPRoutesRegex: $.queries.write_influx_http_routes_regex,
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
       writeDistributorRoutesRegex: std.join('|', [$.queries.write_grpc_distributor_routes_regex, $.queries.write_http_routes_regex]),
       writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
@@ -108,9 +109,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     requests_per_second_metric: 'cortex_request_duration_seconds',
+    request_added_latency_metric: 'cortex_request_added_latency_seconds',
     write_prom_http_routes_regex: 'api_(v1|prom)_push',
     write_otlp_http_routes_regex: 'otlp_v1_metrics',
-    write_http_routes_regex: self.write_prom_http_routes_regex + '|' + self.write_otlp_http_routes_regex,
+    write_influx_http_routes_regex: 'api_v1_push_influx_write',
+    write_http_routes_regex: self.write_prom_http_routes_regex + '|' + self.write_otlp_http_routes_regex + '|' + self.write_influx_http_routes_regex,
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
@@ -128,6 +131,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
       promWriteRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writePromHTTPRoutesRegex)s"' % variables,
       otlpWriteRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeOTLPHTTPRoutesRegex)s"' % variables,
+      influxWriteRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeInfluxHTTPRoutesRegex)s"' % variables,
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
@@ -261,19 +265,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       notifications: {
         // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
         totalPerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s}) or vector(0)
         ||| % variables,
 
         // Notifications / sec successfully delivered by the Alertmanager to the receivers.
         successPerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          (sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s}) or vector(0))
           -
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          (sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s}) or vector(0))
         ||| % variables,
 
         // Notifications / sec failed to be delivered by the Alertmanager to the receivers.
         failurePerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s}) or vector(0)
         ||| % variables,
       },
     },

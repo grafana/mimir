@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type MinMaxAggregationGroup struct {
@@ -51,7 +51,7 @@ func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
 	}
 }
 
-func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	// Native histograms are ignored for min and max.
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
@@ -90,7 +90,7 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	return nil
 }
 
-func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, p := range g.floatPresent {
 		if p {
@@ -114,8 +114,10 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRan
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *MinMaxAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(&g.floatValues, memoryConsumptionTracker)
+	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 }

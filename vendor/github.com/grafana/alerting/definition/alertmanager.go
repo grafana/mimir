@@ -118,6 +118,30 @@ func AsGrafanaRoute(r *config.Route) *Route {
 	return gRoute
 }
 
+// AllMatchers returns concatenated Match, MatchRE, Matchers and ObjectMatchers in a format of config.Matchers.
+func (r *Route) AllMatchers() (config.Matchers, error) {
+	matchers := make(config.Matchers, 0, len(r.Matchers)+len(r.ObjectMatchers)+len(r.Match)+len(r.MatchRE))
+
+	for ln, lv := range r.Match {
+		matcher, err := labels.NewMatcher(labels.MatchEqual, ln, lv)
+		if err != nil {
+			return nil, err
+		}
+		matchers = append(matchers, matcher)
+	}
+
+	for ln, lv := range r.MatchRE {
+		matcher, err := labels.NewMatcher(labels.MatchRegexp, ln, lv.String())
+		if err != nil {
+			return nil, err
+		}
+		matchers = append(matchers, matcher)
+	}
+
+	matchers = append(matchers, append(r.Matchers, r.ObjectMatchers...)...)
+	return matchers, nil
+}
+
 func (r *Route) ResourceType() string {
 	return "route"
 }
@@ -257,21 +281,8 @@ func (c *PostableApiAlertingConfig) UnmarshalYAML(unmarshal func(interface{}) er
 func (c *PostableApiAlertingConfig) Validate() error {
 	receivers := make(map[string]struct{}, len(c.Receivers))
 
-	var hasGrafReceivers, hasAMReceivers bool
 	for _, r := range c.Receivers {
 		receivers[r.Name] = struct{}{}
-		switch r.Type() {
-		case GrafanaReceiverType:
-			hasGrafReceivers = true
-		case AlertmanagerReceiverType:
-			hasAMReceivers = true
-		default:
-			continue
-		}
-	}
-
-	if hasGrafReceivers && hasAMReceivers {
-		return fmt.Errorf("cannot mix Alertmanager & Grafana receiver types")
 	}
 
 	// Taken from https://github.com/prometheus/alertmanager/blob/14cbe6301c732658d6fe877ec55ad5b738abcf06/config/config.go#L171-L192
@@ -555,34 +566,6 @@ func (r *PostableApiReceiver) UnmarshalYAML(unmarshal func(interface{}) error) e
 		return err
 	}
 
-	hasGrafanaReceivers := len(r.PostableGrafanaReceivers.GrafanaManagedReceivers) > 0
-
-	if hasGrafanaReceivers {
-		if len(r.EmailConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager EmailConfigs & Grafana receivers together")
-		}
-		if len(r.PagerdutyConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager PagerdutyConfigs & Grafana receivers together")
-		}
-		if len(r.SlackConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager SlackConfigs & Grafana receivers together")
-		}
-		if len(r.WebhookConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager WebhookConfigs & Grafana receivers together")
-		}
-		if len(r.OpsGenieConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager OpsGenieConfigs & Grafana receivers together")
-		}
-		if len(r.WechatConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager WechatConfigs & Grafana receivers together")
-		}
-		if len(r.PushoverConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager PushoverConfigs & Grafana receivers together")
-		}
-		if len(r.VictorOpsConfigs) > 0 {
-			return fmt.Errorf("cannot have both Alertmanager VictorOpsConfigs & Grafana receivers together")
-		}
-	}
 	return nil
 }
 
@@ -626,3 +609,32 @@ func (pgr *PostableGrafanaReceiver) DecryptSecureSettings(decryptFn func(payload
 	}
 	return decrypted, nil
 }
+
+// nolint:revive
+type PostableApiTemplate struct {
+	Name    string       `yaml:"name" json:"name"`
+	Content string       `yaml:"content" json:"content"`
+	Kind    TemplateKind `yaml:"kind" json:"kind"`
+}
+
+func (t *PostableApiTemplate) Validate() error {
+	if t.Name == "" {
+		return fmt.Errorf("template name is required")
+	}
+	if t.Content == "" {
+		return fmt.Errorf("template content is required")
+	}
+	if t.Kind == "" {
+		return fmt.Errorf("template kind is required")
+	}
+	k := strings.ToLower(string(t.Kind))
+	if k != string(GrafanaTemplateKind) && k != string(MimirTemplateKind) {
+		return fmt.Errorf("invalid template kind, must be either '%s' or '%s'", GrafanaTemplateKind, MimirTemplateKind)
+	}
+	return nil
+}
+
+type TemplateKind string
+
+const GrafanaTemplateKind TemplateKind = "grafana"
+const MimirTemplateKind TemplateKind = "mimir"

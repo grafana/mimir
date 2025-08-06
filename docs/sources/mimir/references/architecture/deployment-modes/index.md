@@ -1,20 +1,21 @@
 ---
 aliases:
   - ../../operators-guide/architecture/deployment-modes/
-description:
-  You can deploy Grafana Mimir in either monolithic mode or microservices
-  mode.
+description: You can deploy Grafana Mimir in either monolithic mode or microservices mode.
 menuTitle: Deployment modes
 title: Grafana Mimir deployment modes
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir deployment modes
 
-You can deploy Grafana Mimir in one of two modes:
+You can deploy Grafana Mimir in three modes:
 
 - Monolithic mode
 - Microservices mode
+- Read-Write mode (experimental)
 
 The deployment mode is determined by the `-target` parameter, which you can set via CLI flag or YAML configuration.
 
@@ -35,6 +36,10 @@ Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mim
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_20"
 
 ![Mimir's horizontally scaled monolithic mode](scaled-monolithic-mode.svg)
+
+{{< admonition type="note" >}}
+Because monolithic mode requires scaling all Grafana Mimir components together, this deployment mode isn't recommended for large-scale deployments.
+{{< /admonition >}}
 
 ## Microservices mode
 

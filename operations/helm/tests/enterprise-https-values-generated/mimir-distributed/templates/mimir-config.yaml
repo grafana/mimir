@@ -57,21 +57,21 @@ data:
         chunks_cache:
           backend: memcached
           memcached:
-            addresses: dns+enterprise-https-values-mimir-chunks-cache.citestns.svc.cluster.local.:11211
+            addresses: dnssrvnoa+enterprise-https-values-mimir-chunks-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 1048576
             timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
-            addresses: dns+enterprise-https-values-mimir-index-cache.citestns.svc.cluster.local.:11211
+            addresses: dnssrvnoa+enterprise-https-values-mimir-index-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 5242880
             timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:
-            addresses: dns+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
+            addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
@@ -116,7 +116,7 @@ data:
       results_cache:
         backend: memcached
         memcached:
-          addresses: dns+enterprise-https-values-mimir-results-cache.citestns.svc.cluster.local.:11211
+          addresses: dnssrvnoa+enterprise-https-values-mimir-results-cache.citestns.svc.cluster.local.:11211
           max_item_size: 5242880
           timeout: 500ms
           tls_cert_path: /certs/tls.crt
@@ -283,8 +283,9 @@ data:
       cache:
         backend: memcached
         memcached:
-          addresses: dns+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
+          addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
+          timeout: 500ms
       s3:
         bucket_name: ruler
     runtime_config:

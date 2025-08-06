@@ -10,8 +10,23 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if (eq $rolloutZone.noDownscale true )}}
+    grafana.com/no-downscale: {{ $rolloutZone.noDownscale | quote }}
+    {{- else }}
+    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
+    grafana.com/min-time-between-zones-downscale: 30m
+    {{- end }}
+    {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if $rolloutZone.prepareDownscale }}
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}
+    {{- end -}}
+    {{- if $rolloutZone.downscaleLeader }}
+    grafana.com/rollout-downscale-leader: {{ $rolloutZone.downscaleLeader }}
+    {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
@@ -112,7 +127,8 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.store_gateway.persistentVolume.enabled }}
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {{- toYaml .Values.store_gateway.persistentVolume.emptyDir | nindent 12 }}
         {{- end }}
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
@@ -141,6 +157,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
             {{- end }}
+            - "-server.grpc-max-send-msg-size-bytes={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
@@ -186,8 +203,7 @@ spec:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
           {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
-          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
-          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request $jaeger_queue_size }}
+          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -204,10 +220,6 @@ spec:
             {{- if $mem_request }}
             - name: "GOMEMLIMIT"
               value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
-            {{- end }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}

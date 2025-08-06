@@ -398,7 +398,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize dynamic replication if enabled
-			var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+			var dynamicReplication DynamicReplication = NewNopDynamicReplication(testData.replicationFactor)
 			if testData.dynamicReplication {
 				dynamicReplication = NewMaxTimeDynamicReplication(Config{
 					ShardingRing: RingConfig{ReplicationFactor: testData.replicationFactor},

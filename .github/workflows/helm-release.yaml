@@ -6,13 +6,21 @@ on:
       - main
       - "mimir-distributed-release-[0-9]+.[0-9]+"
 
+# No default permissions.
+permissions: {}
+
 jobs:
   call-update-helm-repo:
     uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
     with:
       charts_dir: operations/helm/charts
       cr_configfile: operations/helm/cr.yaml
       ct_configfile: operations/helm/ct.yaml
     secrets:
-      github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
-      github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}
+      # "mimir-helm-release" is a GitHub app, that has permissions to push to grafana/helm-charts.
+      # The app's credentials seat in the mimir repo's vault (ref https://github.com/grafana/shared-workflows/tree/main/actions/get-vault-secrets).
+      vault_repo_secret_name: mimir-helm-release

@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# The goal of these tests is not to ensure that common subexpressions are correctly identified
+# (this is tested in the tests for the optimization pass), but to ensure that expressions containing
+# common subexpressions are correctly evaluated.
+
+load 1m
+  float_metric{idx="1"} 1+1x10
+  float_metric{idx="2"} 2+2x10
+  float_metric{idx="3"} 3+3x10
+  float_metric{idx="4"} 4+4x10
+  float_metric{idx="5"} 5+5x10
+  histogram_metric{idx="1"} {{count:1}}+{{count:1}}x10
+  histogram_metric{idx="2"} {{count:2}}+{{count:2}}x10
+  histogram_metric{idx="3"} {{count:3}}+{{count:3}}x10
+  histogram_metric{idx="4"} {{count:4}}+{{count:4}}x10
+  histogram_metric{idx="5"} {{count:5}}+{{count:5}}x10
+
+# Floats
+eval instant at 0 float_metric + float_metric
+  {idx="1"} 2
+  {idx="2"} 4
+  {idx="3"} 6
+  {idx="4"} 8
+  {idx="5"} 10
+
+eval range from 0 to 10m step 1m float_metric + float_metric
+  {idx="1"} 2+2x10
+  {idx="2"} 4+4x10
+  {idx="3"} 6+6x10
+  {idx="4"} 8+8x10
+  {idx="5"} 10+10x10
+
+# Histograms
+eval instant at 0 histogram_metric + histogram_metric
+  {idx="1"} {{count:2}}
+  {idx="2"} {{count:4}}
+  {idx="3"} {{count:6}}
+  {idx="4"} {{count:8}}
+  {idx="5"} {{count:10}}
+
+eval range from 0 to 10m step 1m histogram_metric + histogram_metric
+  {idx="1"} {{count:2}}+{{count:2}}x10
+  {idx="2"} {{count:4}}+{{count:4}}x10
+  {idx="3"} {{count:6}}+{{count:6}}x10
+  {idx="4"} {{count:8}}+{{count:8}}x10
+  {idx="5"} {{count:10}}+{{count:10}}x10
+
+# Function over instant vector
+eval instant at 0 ln(float_metric) + ln(float_metric)
+  {idx="1"} 0
+  {idx="2"} 1.3862943611198906
+  {idx="3"} 2.197224577336219
+  {idx="4"} 2.772588722239781
+  {idx="5"} 3.2188758248682006
+
+eval range from 0 to 10m step 1m ln(float_metric) + ln(float_metric)
+  {idx="1"} 0 1.3862943611198906 2.197224577336219 2.772588722239781 3.2188758248682006 3.58351893845611 3.8918202981106265 4.1588830833596715 4.394449154672439 4.605170185988092 4.795790545596741
+  {idx="2"} 1.3862943611198906 2.772588722239781 3.58351893845611 4.1588830833596715 4.605170185988092 4.969813299576001 5.278114659230518 5.545177444479562 5.780743515792329 5.991464547107982 6.182084906716632
+  {idx="3"} 2.197224577336219 3.58351893845611 4.394449154672439 4.969813299576001 5.41610040220442 5.780743515792329 6.089044875446846 6.3561076606958915 6.591673732008658 6.802394763324311 6.9930151229329605
+  {idx="4"} 2.772588722239781 4.1588830833596715 4.969813299576001 5.545177444479562 5.991464547107982 6.3561076606958915 6.664409020350408 6.931471805599453 7.16703787691222 7.3777589082278725 7.568379267836522
+  {idx="5"} 3.2188758248682006 4.605170185988092 5.41610040220442 5.991464547107982 6.437751649736401 6.802394763324311 7.110696122978827 7.3777589082278725 7.613324979540639 7.824046010856292 8.014666370464942
+
+# Function over range vector
+eval instant at 4m increase(float_metric[3m]) + increase(float_metric[3m])
+  {idx="1"} 6
+  {idx="2"} 12
+  {idx="3"} 18
+  {idx="4"} 24
+  {idx="5"} 30
+
+eval range from 0 to 10m step 1m increase(float_metric[3m]) + increase(float_metric[3m])
+  {idx="1"} _ 3 6 6 6 6 6 6 6 6 6
+  {idx="2"} _ 6 12 12 12 12 12 12 12 12 12
+  {idx="3"} _ 9 18 18 18 18 18 18 18 18 18
+  {idx="4"} _ 12 24 24 24 24 24 24 24 24 24
+  {idx="5"} _ 15 30 30 30 30 30 30 30 30 30
+
+# Subquery where surrounding expression is also common
+eval instant at 4m increase(float_metric[3m:30s]) + increase(float_metric[3m:30s])
+  {idx="1"} 7.199999999999999
+  {idx="2"} 14.399999999999999
+  {idx="3"} 21.599999999999998
+  {idx="4"} 28.799999999999997
+  {idx="5"} 36
+
+eval range from 0 to 10m step 1m increase(float_metric[3m:30s]) + increase(float_metric[3m:30s])
+  {idx="1"} _ 2.5 4.5 7.199999999999999 7.199999999999999 7.199999999999999 7.199999999999999 7.199999999999999 7.199999999999999 7.199999999999999 7.199999999999999
+  {idx="2"} _ 5 9 14.399999999999999 14.399999999999999 14.399999999999999 14.399999999999999 14.399999999999999 14.399999999999999 14.399999999999999 14.399999999999999
+  {idx="3"} _ 7.5 13.5 21.599999999999998 21.599999999999998 21.599999999999998 21.599999999999998 21.599999999999998 21.599999999999998 21.599999999999998 21.599999999999998
+  {idx="4"} _ 10 18 28.799999999999997 28.799999999999997 28.799999999999997 28.799999999999997 28.799999999999997 28.799999999999997 28.799999999999997 28.799999999999997
+  {idx="5"} _ 12.5 22.5 36 36 36 36 36 36 36 36
+
+# Subquery where surrounding expression is not common
+eval instant at 4m increase(float_metric[3m:30s]) + last_over_time(float_metric[3m:30s])
+  {idx="1"} 8.6
+  {idx="2"} 17.2
+  {idx="3"} 25.799999999999997
+  {idx="4"} 34.4
+  {idx="5"} 43
+
+eval range from 0 to 10m step 1m increase(float_metric[3m:30s]) + last_over_time(float_metric[3m:30s])
+  {idx="1"} _ 3.25 5.25 7.6 8.6 9.6 10.6 11.6 12.6 13.6 14.6
+  {idx="2"} _ 6.5 10.5 15.2 17.2 19.2 21.2 23.2 25.2 27.2 29.2
+  {idx="3"} _ 9.75 15.75 22.799999999999997 25.799999999999997 28.799999999999997 31.799999999999997 34.8 37.8 40.8 43.8
+  {idx="4"} _ 13 21 30.4 34.4 38.4 42.4 46.4 50.4 54.4 58.4
+  {idx="5"} _ 16.25 26.25 38 43 48 53 58 63 68 73
+
+# Test case where labels from common expression are modified to ensure that label slices aren't shared
+eval instant at 0 label_replace(float_metric, "lhs", "$1", "idx", "(.*)") or (label_replace(float_metric, "rhs", "$1", "idx", "(.*)"))
+  float_metric{lhs="1", idx="1"} 1
+  float_metric{lhs="2", idx="2"} 2
+  float_metric{lhs="3", idx="3"} 3
+  float_metric{lhs="4", idx="4"} 4
+  float_metric{lhs="5", idx="5"} 5
+  float_metric{rhs="1", idx="1"} 1
+  float_metric{rhs="2", idx="2"} 2
+  float_metric{rhs="3", idx="3"} 3
+  float_metric{rhs="4", idx="4"} 4
+  float_metric{rhs="5", idx="5"} 5
+
+clear
+
+# Test interaction between common subexpression elimination and skipping histogram decoding.
+load 1m
+  some_metric {{count:3 sum:5 buckets:[1 1 1]}} {{count:4 sum:6 buckets:[1 2 1]}} {{count:6 sum:7 buckets:[3 2 1]}}
+
+eval range from 0 to 2m step 1m histogram_count(some_metric) * histogram_quantile(0.5, some_metric)
+  {} 4.24264 5.65685 6
+
+eval range from 0 to 2m step 1m histogram_quantile(0.5, some_metric) * histogram_count(some_metric)
+  {} 4.24264 5.65685 6
+
+eval range from 0 to 2m step 1m histogram_count(some_metric) * histogram_sum(some_metric)
+  {} 15 24 42

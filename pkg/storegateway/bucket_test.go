@@ -10,6 +10,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -19,7 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -862,8 +862,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
@@ -880,8 +880,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("postings selection strategy is respected", func(t *testing.T) {
@@ -1047,10 +1047,13 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(bucketDir)
+	ubkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	tb.Cleanup(func() {
+		assert.NoError(tb, ubkt.Close())
 		assert.NoError(tb, bkt.Close())
 	})
 
@@ -1074,7 +1077,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
+			bkt:               localBucket{Bucket: ubkt, dir: bucketDir},
 			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
@@ -1151,7 +1154,11 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
-	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
+	opts := tsdb.LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    3 * 1024 * 1024,
+		EnableOverlappingCompaction: true,
+	}
+	compactor, err := tsdb.NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, opts)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
@@ -1450,9 +1457,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				expectedSamples = 1
 			}
 			seriesCut := int(p * float64(numOfBlocks*seriesPerBlock))
-			if seriesCut == 0 {
+			switch seriesCut {
+			case 0:
 				seriesCut = 1
-			} else if seriesCut == 1 {
+			case 1:
 				seriesCut = expectedSamples / samplesPerSeriesPerBlock
 			}
 
@@ -1732,9 +1740,14 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{
@@ -2190,7 +2203,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok, err)
 	assert.Len(t, s.Details(), 1, err)
-	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.INSTANCE_LIMIT, err)
+	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, err)
 }
 
 func TestBucketStore_Series_InvalidRequest(t *testing.T) {
@@ -2775,8 +2788,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var namesHints hintspb.LabelNamesResponseHints
 			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &namesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(namesHints.QueriedBlocks, func(i, j int) bool {
-				return namesHints.QueriedBlocks[i].Id < namesHints.QueriedBlocks[j].Id
+			slices.SortFunc(namesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedNamesHints, namesHints)
 
@@ -2787,8 +2800,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var valuesHints hintspb.LabelValuesResponseHints
 			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &valuesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(valuesHints.QueriedBlocks, func(i, j int) bool {
-				return valuesHints.QueriedBlocks[i].Id < valuesHints.QueriedBlocks[j].Id
+			slices.SortFunc(valuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedValuesHints, valuesHints)
 		})
@@ -3039,8 +3052,8 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
-							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
+						slices.SortFunc(seriesSet[0].Chunks, func(a, b storepb.AggrChunk) int {
+							return cmp.Compare(a.MinTime, b.MinTime)
 						})
 					}
 

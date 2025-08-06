@@ -61,7 +61,7 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
 		stat := status.New(codes.Unavailable, "broken!")
-		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
+		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE})
 		require.NoError(t, err)
 		err = stat.Err()
 		require.False(t, cb.tryRecordFailure(err))
@@ -545,7 +545,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 	}
 }
 
-func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
+func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t *testing.T) {
 	pushTimeout := 100 * time.Millisecond
 	tests := map[string]struct {
 		expectedErrorWhenCircuitBreakerClosed error
@@ -613,8 +613,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 					testModeEnabled:            true,
 				}
 
-				overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-				require.NoError(t, err)
+				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry)
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -633,7 +632,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 					nil,
 					mimirpb.API,
 				)
-				err = i.PushToStorage(ctx, req)
+				err := i.PushToStorageAndReleaseRequest(ctx, req)
 				require.NoError(t, err)
 
 				count := 0
@@ -661,7 +660,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 						ctx := user.InjectOrgID(context.Background(), userID)
 						count++
 						i.circuitBreaker.push.testRequestDelay = testCase.pushRequestDelay
-						err = i.PushToStorage(ctx, req)
+						err := i.PushToStorageAndReleaseRequest(ctx, req)
 						if initialDelayEnabled {
 							if testCase.expectedErrorWhenCircuitBreakerClosed != nil {
 								require.ErrorAs(t, err, &testCase.expectedErrorWhenCircuitBreakerClosed)
@@ -974,7 +973,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 			)
 			ctx, err = i.StartPushRequest(ctx, int64(req.Size()))
 			require.NoError(t, err)
-			err = i.PushToStorage(ctx, req)
+			err = i.PushToStorageAndReleaseRequest(ctx, req)
 			require.NoError(t, err)
 			i.FinishPushRequest(ctx)
 

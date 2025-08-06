@@ -6,11 +6,13 @@ import (
 	"net/url"
 	"path"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -24,17 +26,15 @@ var (
 // alert notifications to Threema.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	images   images.Provider
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		images:   images,
 		ns:       sender,
 		tmpl:     template,
@@ -44,14 +44,15 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify send an alert notification to Threema
 func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	tn.log.Debug("sending threema alert notification", "from", tn.settings.GatewayID, "to", tn.settings.RecipientID)
+	l := tn.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending threema alert notification", "from", tn.settings.GatewayID, "to", tn.settings.RecipientID)
 
 	// Set up basic API request data
 	data := url.Values{}
 	data.Set("from", tn.settings.GatewayID)
 	data.Set("to", tn.settings.RecipientID)
 	data.Set("secret", tn.settings.APISecret)
-	data.Set("text", tn.buildMessage(ctx, as...))
+	data.Set("text", tn.buildMessage(ctx, l, as...))
 
 	cmd := &receivers.SendWebhookSettings{
 		URL:        APIURL,
@@ -61,8 +62,8 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			"Content-Type": "application/x-www-form-urlencoded",
 		},
 	}
-	if err := tn.ns.SendWebhook(ctx, cmd); err != nil {
-		tn.log.Error("Failed to send threema notification", "error", err, "webhook", tn.Name)
+	if err := tn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "Failed to send threema notification", "err", err)
 		return false, err
 	}
 
@@ -73,9 +74,9 @@ func (tn *Notifier) SendResolved() bool {
 	return !tn.GetDisableResolveMessage()
 }
 
-func (tn *Notifier) buildMessage(ctx context.Context, as ...*types.Alert) string {
+func (tn *Notifier) buildMessage(ctx context.Context, l log.Logger, as ...*types.Alert) string {
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, tn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, l, &tmplErr)
 
 	message := fmt.Sprintf("%s%s\n\n*Message:*\n%s\n*URL:* %s\n",
 		selectEmoji(as...),
@@ -85,10 +86,10 @@ func (tn *Notifier) buildMessage(ctx context.Context, as ...*types.Alert) string
 	)
 
 	if tmplErr != nil {
-		tn.log.Warn("failed to template Threema message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Threema message", "err", tmplErr.Error())
 	}
 
-	_ = images.WithStoredImages(ctx, tn.log, tn.images,
+	_ = images.WithStoredImages(ctx, l, tn.images,
 		func(_ int, image images.Image) error {
 			if image.URL != "" {
 				message += fmt.Sprintf("*Image:* %s\n", image.URL)

@@ -129,18 +129,6 @@ func Test_rulesEqual(t *testing.T) {
 			},
 			want: false,
 		},
-		{
-			name: "rule_node_yaml_diff",
-			a: &rulefmt.Rule{
-				Record: "one",
-				Expr:   "up",
-			},
-			b: &rulefmt.Rule{
-				Record: "one",
-				Expr:   "up",
-			},
-			want: true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -145,8 +145,8 @@ type ReadClient interface {
 }
 
 // NewReadClient creates a new client for remote read.
-func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
+func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTPClientOption) (ReadClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", optFuncs...)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +384,9 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		_ = httpResp.Body.Close()
 
 		cancel()
-		return nil, fmt.Errorf("remote server %s returned http status %s: %s", c.urlString, httpResp.Status, string(body))
+		errStr := strings.Trim(string(body), "\n")
+		err := errors.New(errStr)
+		return nil, fmt.Errorf("remote server %s returned http status %s: %w", c.urlString, httpResp.Status, err)
 	}
 
 	contentType := httpResp.Header.Get("Content-Type")

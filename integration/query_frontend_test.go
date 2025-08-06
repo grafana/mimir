@@ -270,12 +270,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.max-partial-query-length":                      "30d",
-		"-query-frontend.cache-results":                          "true",
-		"-query-frontend.results-cache.backend":                  "memcached",
-		"-query-frontend.results-cache.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":                    strconv.FormatBool(cfg.queryStatsEnabled),
-		"-query-frontend.instant-queries-with-subquery-spin-off": ".*",
+		"-querier.max-partial-query-length":                 "30d",
+		"-query-frontend.cache-results":                     "true",
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.subquery-spin-off-enabled":         "true",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -368,7 +368,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		// Do a long query to test the split and cache middleware.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
-			end := time.Now()
+			end := now
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
 			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
@@ -439,8 +439,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
-	// +2 because the spun off subquery ends up as additional ingester queries.
-	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 3
+	// +1 because the spun off subquery ends up as additional ingester queries.
+	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
 	if cfg.queryStatsEnabled {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++
@@ -561,6 +561,7 @@ overrides:
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	now := time.Now()
+	nowTruncatedToLastSecond := now.Truncate(time.Second)
 
 	// Push some series.
 	cWrite, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "fake")
@@ -735,20 +736,12 @@ overrides:
 			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
-			name: "max samples limit hit",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
-			},
-			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
-		},
-		{
 			name: "query time range exceeds the limit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
+				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",
@@ -782,7 +775,7 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

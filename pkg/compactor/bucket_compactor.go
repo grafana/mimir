@@ -444,9 +444,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
 			break
 		}
+
+		// instrument filesystem.Bucket to objstore.InstrumentedBucket
+		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 			blockToUpload := blocksToUpload[idx]
-			err := prepareSparseIndexHeader(ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
 			if err != nil {
 				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
@@ -506,7 +509,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
+func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
 	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
@@ -913,10 +916,10 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 	}()
 
+	// Keep this channel outside the compaction loop, because we want the "max compaction time"
+	// to apply on compactions across multiple consecutive loops. This channel is initialised
+	// after the first planning.
 	var maxCompactionTimeChan <-chan time.Time
-	if maxCompactionTime > 0 {
-		maxCompactionTimeChan = time.After(maxCompactionTime)
-	}
 
 	// Loop over bucket and compact until there's no work left.
 	for {
@@ -1074,6 +1077,14 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		level.Info(c.logger).Log("msg", "start of compactions")
+
+		// Start the max compaction timer only after the first planning has been completed. This is important
+		// in case the metas syncing (or planning in general) is slow. If did start the timer before the first
+		// planning we could end up in a situation where the planning takes longer than "max compaction time"
+		// and we would never run compactions at all for a given tenant.
+		if maxCompactionTimeChan == nil && maxCompactionTime > 0 {
+			maxCompactionTimeChan = time.After(maxCompactionTime)
+		}
 
 		maxCompactionTimeReached := false
 		// Send all jobs found during this pass to the compaction workers.

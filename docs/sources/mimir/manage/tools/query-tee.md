@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/tools/query-tee/
-description:
-  Use query-tee to compare query results and performance between two Grafana
-  Mimir clusters.
+description: Use query-tee to compare query results and performance between two Grafana Mimir clusters.
 menuTitle: Query-tee
 title: Grafana Mimir query-tee
 weight: 30
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir query-tee
 

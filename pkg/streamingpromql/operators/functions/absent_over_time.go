@@ -8,20 +8,20 @@ package functions
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// AbsentOverTime performs a rate calculation over a range vector.
+// AbsentOverTime is an operator that implements the absent_over_time() function.
 type AbsentOverTime struct {
 	TimeRange                types.QueryTimeRange
-	ArgExpressions           parser.Expr
+	Labels                   labels.Labels
 	Inner                    types.RangeVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -32,15 +32,15 @@ var _ types.InstantVectorOperator = &AbsentOverTime{}
 
 func NewAbsentOverTime(
 	inner types.RangeVectorOperator,
-	argExpressions parser.Expr,
+	labels labels.Labels,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *AbsentOverTime {
 	return &AbsentOverTime{
 		TimeRange:                timeRange,
 		Inner:                    inner,
-		ArgExpressions:           argExpressions,
+		Labels:                   labels,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
@@ -51,7 +51,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	if err != nil {
 		return nil, err
 	}
-	defer types.PutSeriesMetadataSlice(innerMetadata)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
@@ -61,10 +61,15 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	// Initialize presence slice
 	a.presence = a.presence[:a.TimeRange.StepCount]
 
-	metadata := types.GetSeriesMetadataSlice(1)
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
-	})
+	metadata, err := types.SeriesMetadataSlicePool.Get(1, a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: a.Labels})
+	if err != nil {
+		return nil, err
+	}
 
 	for range innerMetadata {
 		err := a.Inner.NextSeries(ctx)
@@ -114,7 +119,12 @@ func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
+func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
+}
+
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
+
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }

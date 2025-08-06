@@ -3,6 +3,8 @@
 package operators
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -32,6 +34,11 @@ func (s *StringLiteral) GetValue() string {
 
 func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *StringLiteral) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *StringLiteral) Close() {

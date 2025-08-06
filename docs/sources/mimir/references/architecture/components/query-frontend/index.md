@@ -7,6 +7,8 @@ title: Grafana Mimir query-frontend
 weight: 60
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir query-frontend
 
 The query-frontend is a stateless component that provides the same API as the [querier](../querier/) and can be used to accelerate the read path.

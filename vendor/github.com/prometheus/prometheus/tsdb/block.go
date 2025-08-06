@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -68,10 +68,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -125,6 +125,9 @@ type IndexReader interface {
 	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
+
+	// IndexLookupPlanner returns the index lookup planner for this reader.
+	IndexLookupPlanner() index.LookupPlanner
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -206,10 +209,12 @@ type BlockMeta struct {
 
 // BlockStats contains stats about contents of a block.
 type BlockStats struct {
-	NumSamples    uint64 `json:"numSamples,omitempty"`
-	NumSeries     uint64 `json:"numSeries,omitempty"`
-	NumChunks     uint64 `json:"numChunks,omitempty"`
-	NumTombstones uint64 `json:"numTombstones,omitempty"`
+	NumSamples          uint64 `json:"numSamples,omitempty"`
+	NumFloatSamples     uint64 `json:"numFloatSamples,omitempty"`
+	NumHistogramSamples uint64 `json:"numHistogramSamples,omitempty"`
+	NumSeries           uint64 `json:"numSeries,omitempty"`
+	NumChunks           uint64 `json:"numChunks,omitempty"`
+	NumTombstones       uint64 `json:"numTombstones,omitempty"`
 }
 
 // BlockDesc describes a block by ULID and time range.
@@ -343,11 +348,11 @@ type Block struct {
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
-	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{}, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
 }
 
 // OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
-func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (pb *Block, err error) {
+func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (pb *Block, err error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -372,11 +377,11 @@ func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, p
 	if postingsDecoderFactory != nil {
 		decoder = postingsDecoderFactory(meta)
 	}
-	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, cache)
+	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, planner, cache)
 	if err != nil {
 		return nil, err
 	}
-	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics)
+	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics, []attribute.KeyValue{attribute.String("block", meta.ULID.String())})
 	ir := indexReaderWithPostingsForMatchers{indexReader, pfmc}
 	closers = append(closers, ir)
 
@@ -500,14 +505,14 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	var st []string
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(ctx, name)
+		st, err = r.ir.SortedLabelValues(ctx, name, hints)
 	} else {
-		st, err = r.LabelValues(ctx, name, matchers...)
+		st, err = r.LabelValues(ctx, name, hints, matchers...)
 		if err == nil {
 			slices.Sort(st)
 		}
@@ -518,16 +523,16 @@ func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 	return st, nil
 }
 
-func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(ctx, name)
+		st, err := r.ir.LabelValues(ctx, name, hints)
 		if err != nil {
 			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 		}
 		return st, nil
 	}
 
-	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
+	return labelValuesWithMatchers(ctx, r, name, hints, matchers...)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -535,7 +540,7 @@ func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 		return r.b.LabelNames(ctx)
 	}
 
-	return labelNamesWithMatchers(ctx, r.ir, matchers...)
+	return labelNamesWithMatchers(ctx, r, matchers...)
 }
 
 func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
@@ -598,6 +603,11 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 // The names returned are sorted.
 func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
 	return r.ir.LabelNamesFor(ctx, postings)
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (r blockIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return r.ir.IndexLookupPlanner()
 }
 
 type blockTombstoneReader struct {

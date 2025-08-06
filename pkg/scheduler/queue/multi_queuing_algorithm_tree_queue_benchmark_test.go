@@ -217,7 +217,7 @@ func mean(numbers []float64) float64 {
 func stddev(numbers []float64, mean float64) float64 {
 	sumOfSquares := 0.0
 	for _, number := range numbers {
-		sumOfSquares += math.Pow(number-mean, 2)
+		sumOfSquares += (number - mean) * (number - mean)
 	}
 	meanOfSquares := sumOfSquares / float64(len(numbers))
 	return math.Sqrt(meanOfSquares)

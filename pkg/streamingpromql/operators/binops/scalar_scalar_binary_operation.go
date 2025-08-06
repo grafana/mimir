@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type ScalarScalarBinaryOperation struct {
 	Left                     types.ScalarOperator
 	Right                    types.ScalarOperator
 	Op                       parser.ItemType
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	opFunc             binaryOperationFunc
 	expressionPosition posrange.PositionRange
@@ -29,7 +29,7 @@ var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
 func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
 	s := &ScalarScalarBinaryOperation{
@@ -96,13 +96,21 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 		leftValues.Samples[i].F = f
 	}
 
-	types.FPointSlicePool.Put(rightValues.Samples, s.MemoryConsumptionTracker)
+	types.FPointSlicePool.Put(&rightValues.Samples, s.MemoryConsumptionTracker)
 
 	return leftValues, nil
 }
 
 func (s *ScalarScalarBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *ScalarScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := s.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return s.Right.Prepare(ctx, params)
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

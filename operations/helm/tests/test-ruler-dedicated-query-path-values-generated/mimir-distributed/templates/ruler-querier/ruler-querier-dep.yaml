@@ -52,6 +52,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-querier.scheduler-address=test-ruler-dedicated-query-path-values-mimir-ruler-query-scheduler-headless.citestns.svc:9095"
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -92,8 +93,6 @@ spec:
           env:
             - name: "GOMAXPROCS"
               value: "5"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "5000"
           envFrom:
       topologySpreadConstraints:
       - maxSkew: 1

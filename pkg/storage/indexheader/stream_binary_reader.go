@@ -70,8 +70,8 @@ type StreamBinaryReader struct {
 }
 
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
-func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "indexheader.NewStreamBinaryReader")
+func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "indexheader.NewStreamBinaryReader")
 	defer spanLog.Finish()
 
 	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
@@ -95,7 +95,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 }
 
 // newFileStreamBinaryReader loads sparse index-headers from disk, then from the bucket, or constructs it from the index-header if neither of the two available.
-func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, bkt objstore.BucketReader, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, bkt objstore.InstrumentedBucketReader, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	r := &StreamBinaryReader{
@@ -168,7 +168,7 @@ func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 // It prioritizes: 1) Local file 2) Object store 3) Generating from the index-header
 // It returns an error if the sparse header cannot be loaded from any of the sources.
 // If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
-func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.BucketReader, id ulid.ULID) error {
+func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.InstrumentedBucketReader, id ulid.ULID) error {
 	// Only v2 indexes use sparse headers
 	if r.indexVersion != index.FormatV2 {
 		return r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling)
@@ -190,7 +190,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 2. Fall back to the bucket
-	bucketSparseHeaderBytes, err := tryDownloadSparseHeader(ctx, logger, bkt, id)
+	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
@@ -213,15 +213,15 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	return nil
 }
 
-// tryDownloadSparseHeader attempts to download the sparse header from the object store.
+// tryReadBucketSparseHeader attempts to download the sparse header from the object store.
 // It returns the sparse header data if successful, nil + error otherwise.
-func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, id ulid.ULID) ([]byte, error) {
+func tryReadBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) ([]byte, error) {
 	if bkt == nil {
 		return nil, fmt.Errorf("bucket is nil")
 	}
 	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
 
-	reader, err := bkt.Get(ctx, sparseHeaderObjPath)
+	reader, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
 	}

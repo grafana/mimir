@@ -3,8 +3,8 @@
 # The default values specified in this file are enough to deploy all of the
 # Grafana Mimir or Grafana Enterprise Metrics microservices but are not suitable for
 # production load.
-# To configure the resources for production load, refer to the small.yaml or
-# large.yaml values files.
+# To configure the resources for higher scale, refer to the small.yaml file.
+# For production load with high availability, refer to the large.yaml values file.
 
 # Note: The values in this file are not backward compatible. Copying and pasting the values is discouraged, but if you do so,
 # make sure to use the values.yaml from the branch or tag that matches the mimir-distributed Helm chart version that you
@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r334-c301d43
+  tag: r354-d48a2220
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -262,7 +262,7 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+      {{- if not .Values.federation_frontend.disableOtherComponents }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
@@ -272,11 +272,7 @@ mimir:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
-      {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- else }}
-      frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- end }}
 
     {{- if and .Values.enterprise.enabled }}
     gateway:
@@ -394,6 +390,7 @@ mimir:
         memcached:
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
+          timeout: 500ms
       {{- end }}
     {{- end }}
 
@@ -546,8 +543,9 @@ kedaAutoscaling:
   unsafeSsl: false
 
   # If your metrics are stored in a datasource with multiple mimir instances extra labels to filter the data are required to get the right metric.
-  toPromQLLabelSelector: {}
-  #  cluster: "my-cluster-name"
+  toPromQLLabelSelector:
+  #  - cluster!="eu-west"
+  #  - app="foobar"
 
   # --KEDA trigger authentication settings.
   # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
@@ -574,7 +572,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   statefulSet:
     enabled: true
@@ -765,10 +763,6 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
   # -- Options to configure zone-aware replication for alertmanager
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -817,6 +811,13 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -830,6 +831,13 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -843,6 +851,13 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
 
 distributor:
   # -- Whether to render the manifests related to the distributor component.
@@ -852,7 +867,7 @@ distributor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -871,7 +886,11 @@ distributor:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -961,10 +980,6 @@ distributor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
 ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
@@ -973,7 +988,7 @@ ingester:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1113,10 +1128,6 @@ ingester:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -1176,6 +1187,15 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1189,6 +1209,15 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1202,6 +1231,15 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
 
 overrides_exporter:
   enabled: true
@@ -1210,7 +1248,7 @@ overrides_exporter:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
   revisionHistoryLimit: 10
@@ -1297,10 +1335,6 @@ overrides_exporter:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 ruler:
   enabled: true
 
@@ -1308,7 +1342,7 @@ ruler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
   revisionHistoryLimit: 10
@@ -1326,7 +1360,11 @@ ruler:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1424,10 +1462,6 @@ ruler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
   remoteEvaluationDedicatedQueryPath: false
@@ -1438,7 +1472,7 @@ ruler_querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
   revisionHistoryLimit: 10
@@ -1554,17 +1588,13 @@ ruler_querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1583,7 +1613,11 @@ ruler_query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1672,17 +1706,13 @@ ruler_query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
   revisionHistoryLimit: 10
@@ -1767,10 +1797,6 @@ ruler_query_scheduler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 querier:
   # -- Whether to render the manifests related to the querier component.
   enabled: true
@@ -1779,7 +1805,7 @@ querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
   revisionHistoryLimit: 10
@@ -1906,10 +1932,6 @@ querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
@@ -1918,7 +1940,7 @@ query_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1937,7 +1959,11 @@ query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -2026,10 +2052,6 @@ query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_scheduler:
   enabled: true
 
@@ -2037,7 +2059,7 @@ query_scheduler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
   revisionHistoryLimit: 10
@@ -2122,10 +2144,6 @@ query_scheduler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
   enabled: true
@@ -2134,7 +2152,7 @@ store_gateway:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2206,6 +2224,12 @@ store_gateway:
     #
     enabled: true
 
+    # additional settings for emptyDir like medium or sizeLimit
+    #
+    emptyDir: {}
+    #  medium: Memory
+    #  sizeLimit: 1Gi
+
     # Store-gateway data Persistent Volume Claim template name
     #
     name: storage
@@ -2267,6 +2291,9 @@ store_gateway:
 
   terminationGracePeriodSeconds: 120
 
+  # -- The maximum size of a query response in bytes. Sets max send size for store-gateway and receive size for queriers.
+  grpcMaxQueryResponseSizeBytes: "209715200"
+
   tolerations: []
   initContainers: []
   extraContainers: []
@@ -2274,10 +2301,6 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
@@ -2327,6 +2350,15 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2340,6 +2372,15 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2353,6 +2394,15 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
 
 compactor:
   # -- Whether to render the manifests related to the compactor component.
@@ -2362,7 +2412,7 @@ compactor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -2490,16 +2540,12 @@ compactor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 memcached:
   image:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.37-alpine
+    tag: 1.6.39-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2522,12 +2568,15 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.1
+    tag: v0.15.3
     pullPolicy: IfNotPresent
 
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 50m
+      memory: 50Mi
+    limits:
+      memory: 250Mi
 
   # -- The SecurityContext for memcached exporter containers
   containerSecurityContext:
@@ -3045,7 +3094,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.27-alpine
+    tag: 1.28-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -3411,7 +3460,7 @@ gateway:
   # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
   image:
     # repository: grafana/mimir-enterprise
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Number of replicas for the Deployment
   replicas: 1
@@ -3422,7 +3471,11 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
+    # -- Target CPU utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the CPU utilization autoscaling.
     targetCPUUtilizationPercentage: 70
+    # -- Target memory utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the memory utilization autoscaling.
     targetMemoryUtilizationPercentage: 70
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
@@ -3448,9 +3501,6 @@ gateway:
   env: []
   # -- Environment variables from secrets or configmaps to add to the Pods.
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Volumes to add to the Pods
   extraVolumes: []
   # -- Volume mounts to add to the Pods
@@ -3543,6 +3593,8 @@ gateway:
     nameOverride: ""
     # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
     ingressClassName: ""
+    # -- Labels for the Ingress
+    labels: {}
     # -- Annotations for the Ingress
     annotations: {}
     # -- Hosts configuration for the Ingress
@@ -3591,7 +3643,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.27-alpine
+      tag: 1.28-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -4106,7 +4158,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r334-c20f37cd
+    tag: r354-b6fd979a
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4209,6 +4261,8 @@ provisioner:
     pullPolicy: IfNotPresent
   # -- Volume mounts to add to the provisioner pods
   extraVolumeMounts: []
+  # -- Volumes to add to the provisioner pods
+  extraVolumes: []
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
@@ -4220,7 +4274,7 @@ admin_api:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/enterprise-metrics
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
   revisionHistoryLimit: 10
@@ -4301,10 +4355,6 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Cache for admin bucket.
 # If this is disabled, in-memory cache will be set by default.
 # You can use Redis too for cache and set the configuration via structuredConfig.
@@ -4476,9 +4526,6 @@ graphite:
 
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4560,9 +4607,6 @@ graphite:
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4711,7 +4755,7 @@ federation_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
@@ -4800,10 +4844,6 @@ federation_frontend:
   podDisruptionBudget:
     maxUnavailable: 1
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Settings for the smoke-test job. This is meant to run as a Helm test hook
 # (`helm test RELEASE`) after installing the chart. It quickly verifies
 # that writing and reading metrics works. Currently not supported for
@@ -4813,7 +4853,7 @@ smoke_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4837,7 +4877,7 @@ continuous_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir-continuous-test
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   revisionHistoryLimit: 10
@@ -4885,9 +4925,6 @@ continuous_test:
   extraArgs: {}
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Extra volumes for the continuous test container
   extraVolumes: []
   # -- Extra volume mounts for the continuous test container

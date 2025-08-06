@@ -8,6 +8,8 @@ title: Grafana Mimir production tips
 weight: 40
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir production tips
 
 This topic provides tips and techniques for you to consider when setting up a production Grafana Mimir cluster.
@@ -70,7 +72,7 @@ The default values for `-querier.query-store-after`, `-querier.query-ingesters-w
 
 Configure Grafana Mimir so large tenants are parallelized by the compactor:
 
-1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active time series. For more information about configuring the compactor's split and merge shards, refer to [compactor](../../../references/architecture/components/compactor/).
+1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million time series. For more information about configuring the compactor's split and merge shards, refer to [compactor](../../../references/architecture/components/compactor/).
 
 #### How to estimate `-querier.query-store-after`
 
@@ -118,6 +120,21 @@ For these reasons, run the store-gateways on disks such as SSDs that have fast d
 
 The compactor requires a lot of disk space to download source blocks from the long-term storage and temporarily store the compacted block before uploading it to the storage.
 For more information about required disk space, refer to [Compactor disk utilization](../../../references/architecture/components/compactor/#compactor-disk-utilization).
+
+### Manage capacity for large tenants
+
+While working with large tenants, there are two compactor-specific settings to consider for planning or adjusting capacity:
+
+- `-compactor.split-groups`
+- `-compactor.split-and-merge-shards`
+
+As a best practice, use one shard per every 8 million series in a tenant, rounded to the nearest even number. For example, for a tenant with 100 million series, use approximately 12 shards.
+
+Additionally, as a best practice, set the number of split-groups to be the same as the shard count.
+
+Alternatively, if you're using query sharding on the query frontend, use the next power of 2 to avoid extra load on the read path. For example, use 16 shards for a tenant with 100 million series.
+
+For more information about how these settings work, refer to [Compaction algorithm](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/#compaction-algorithm).
 
 ## Caching
 

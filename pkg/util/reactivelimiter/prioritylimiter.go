@@ -48,6 +48,9 @@ type PriorityLimiter interface {
 
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit for the priority.
 	CanAcquirePermit(priority Priority) bool
+
+	// Reset resets the limiter to its initial limit.
+	Reset()
 }
 
 func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {
@@ -82,7 +85,7 @@ func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
 func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 	// Threshold against the limiter's max capacity
 	_, _, _, maxBlocked := l.queueStats()
-	if l.reactiveLimiter.Blocked() >= maxBlocked {
+	if l.Blocked() >= maxBlocked {
 		return false
 	}
 

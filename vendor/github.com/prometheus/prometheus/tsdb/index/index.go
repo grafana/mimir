@@ -1138,6 +1138,12 @@ type Reader struct {
 
 	// Provides a cache mapping series labels hash by series ID.
 	cacheProvider ReaderCacheProvider
+
+	lookupPlanner LookupPlanner
+}
+
+func (r *Reader) IndexLookupPlanner() LookupPlanner {
+	return r.lookupPlanner
 }
 
 type postingOffset struct {
@@ -1168,26 +1174,26 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, nil)
+	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
 }
 
 // NewReaderWithCache is like NewReader but allows to pass a cache provider.
 func NewReaderWithCache(b ByteSlice, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, cacheProvider)
+	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
-	return NewFileReaderWithOptions(path, decoder, nil)
+	return NewFileReaderWithOptions(path, decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
 }
 
 // NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithOptions(path string, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, cacheProvider)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, planner, cacheProvider)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1198,13 +1204,14 @@ func NewFileReaderWithOptions(path string, decoder PostingsDecoder, cacheProvide
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	r := &Reader{
 		b:             b,
 		c:             c,
 		postings:      map[string][]postingOffset{},
 		cacheProvider: cacheProvider,
 		st:            labels.NewSymbolTable(),
+		lookupPlanner: planner,
 	}
 
 	// Verify header.
@@ -1530,8 +1537,8 @@ func (r *Reader) SymbolTableSize() uint64 {
 // SortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := r.LabelValues(ctx, name, matchers...)
+func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := r.LabelValues(ctx, name, hints, matchers...)
 	if err == nil && r.version == FormatV1 {
 		slices.Sort(values)
 	}
@@ -1542,7 +1549,7 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ..
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 // TODO(replay): Support filtering by matchers.
-func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
@@ -1554,6 +1561,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
+			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+				break
+			}
 			values = append(values, k)
 		}
 		return values, nil
@@ -1566,9 +1576,16 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		return nil, nil
 	}
 
-	values := make([]string, 0, len(e)*symbolFactor)
+	valuesLength := len(e) * symbolFactor
+	if hints != nil && hints.Limit > 0 && valuesLength > hints.Limit {
+		valuesLength = hints.Limit
+	}
+	values := make([]string, 0, valuesLength)
 	lastVal := e[len(e)-1].value
 	err := r.traversePostingOffsets(ctx, e[0].off, func(val string, _ uint64) (bool, error) {
+		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+			return false, nil
+		}
 		values = append(values, val)
 		return val != lastVal, nil
 	})

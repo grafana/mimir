@@ -36,6 +36,7 @@ type EntryKind string
 const (
 	KindBlock EntryKind = "block"
 	KindField EntryKind = "field"
+	KindMap   EntryKind = "map"
 )
 
 type InspectedEntry struct {
@@ -281,13 +282,14 @@ func (i *InspectedEntry) decodeValue(decoder decoder) (Value, error) {
 	switch i.FieldType {
 	case "duration":
 		value := decoded.AsInterface().(**duration)
-		return DurationValue(time.Duration(**value)), err
+		if value != nil && *value != nil {
+			return DurationValue(time.Duration(**value)), err
+		}
 	case "list of strings":
 		return InterfaceValue(*decoded.AsInterface().(*stringSlice)), nil
-	default:
-		// return a dereferenced typed value
-		return InterfaceValue(reflect.ValueOf(decoded.AsInterface()).Elem().Interface()), nil
 	}
+	// return a dereferenced typed value
+	return InterfaceValue(reflect.ValueOf(decoded.AsInterface()).Elem().Interface()), nil
 }
 
 func (i *InspectedEntry) decodeSlice(value *yaml.Node) (Value, error) {
@@ -523,6 +525,12 @@ func convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry {
 		e.FieldType = entry.FieldType
 		e.FieldCategory = entry.FieldCategory
 		e.FieldDefaultValue = parseDefaultValue(e, entry.FieldDefault)
+	case parse.KindMap:
+		e.Kind = KindMap
+		e.FieldType = entry.FieldType
+		e.FieldCategory = entry.FieldCategory
+		element := convertBlockToEntry(entry.Element)
+		e.FieldElement = element
 	default:
 		panic(fmt.Sprintf("cannot handle parse kind %q, entry name: %s", entry.Kind, entry.Name))
 	}

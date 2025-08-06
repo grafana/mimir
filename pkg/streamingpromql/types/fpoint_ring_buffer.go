@@ -7,7 +7,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -19,14 +19,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type FPointRingBuffer struct {
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	points                   []promql.FPoint
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
 
-func NewFPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *FPointRingBuffer {
+func NewFPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *FPointRingBuffer {
 	return &FPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
@@ -73,7 +73,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+		putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
 		b.pointsIndexMask = cap(newSlice) - 1
@@ -138,7 +138,7 @@ func (b *FPointRingBuffer) Reset() {
 // The buffer can be used again and will acquire a new slice when required.
 func (b *FPointRingBuffer) Release() {
 	b.Reset()
-	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -154,7 +154,7 @@ func (b *FPointRingBuffer) Use(s []promql.FPoint) error {
 		return fmt.Errorf("slice capacity must be a power of two, but is %v", cap(s))
 	}
 
-	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
@@ -165,7 +165,7 @@ func (b *FPointRingBuffer) Use(s []promql.FPoint) error {
 
 // Close releases any resources associated with this buffer.
 func (b *FPointRingBuffer) Close() {
-	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -267,6 +267,31 @@ func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
 	}
 
 	return v.buffer.pointAt(i)
+}
+
+// Clone returns a clone of this view and its underlying ring buffer.
+// The caller is responsible for closing the returned ring buffer when it is no longer needed.
+func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer, error) {
+	if v.size == 0 {
+		return &FPointRingBufferView{}, nil, nil
+	}
+
+	points, err := v.CopyPoints()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buffer := NewFPointRingBuffer(v.buffer.memoryConsumptionTracker)
+	if err := buffer.Use(points); err != nil {
+		return nil, nil, err
+	}
+
+	view := &FPointRingBufferView{
+		buffer: buffer,
+		size:   v.size,
+	}
+
+	return view, buffer, nil
 }
 
 // These hooks exist so we can override them during unit tests.

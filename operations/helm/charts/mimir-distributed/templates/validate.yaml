@@ -254,11 +254,23 @@
 {{- end -}}
 
 {{- if eq .Values.rbac.type "scc" -}}
-{{- with .Values.rollout_operator.podSecurityContext -}}
-{{- if or (hasKey . "fsGroup") (hasKey . "runAsGroup") (hasKey . "runAsUser") -}}
-{{- fail "You have selected rbac.type=scc, you must set the values fsGroup, runAsGroup, runAsUser to null in rollout_operator.podSecurityContext" -}}
-{{- end -}}
-{{- end -}}
+{{-   with .Values.rollout_operator.podSecurityContext -}}
+{{-     if hasKey . "fsGroup" -}}
+{{-       if ne .fsGroup nil -}}
+{{-         fail "You have selected rbac.type=scc, you must set the value of fsGroup to null in rollout_operator.podSecurityContext" -}}
+{{-       end -}}
+{{-     end -}}
+{{-     if hasKey . "runAsGroup" -}}
+{{-       if ne .runAsGroup nil -}}
+{{-         fail "You have selected rbac.type=scc, you must set the value of runAsGroup to null in rollout_operator.podSecurityContext" -}}
+{{-       end -}}
+{{-     end -}}
+{{-     if hasKey . "runAsUser" -}}
+{{-       if ne .runAsUser nil -}}
+{{-         fail "You have selected rbac.type=scc, you must set the value of runAsUser to null in rollout_operator.podSecurityContext" -}}
+{{-       end -}}
+{{-     end -}}
+{{-   end -}}
 {{- end -}}
 
 {{- if and .Values.ingress.enabled .Values.gateway.ingress.enabled -}}
@@ -268,3 +280,9 @@
 {{- if and (not .Values.enterprise.enabled) .Values.federation_frontend.enabled -}}
 {{- fail "You have federation_frontend.enabled=true, but enterprise.enabled=false. Federation Frontend is an enterprise-only feature and requires enterprise mode to be enabled." }}
 {{- end -}}
+
+{{- range .Values.ingester.zoneAwareReplication.zones }}
+  {{- if and (eq .noDownscale true) (eq .prepareDownscale true) }}
+    {{- fail (printf "For ingester zone '%s': noDownscale and prepareDownscale cannot be used simultaneously." .name) -}}
+  {{- end }}
+{{- end }}

@@ -95,7 +95,7 @@ local filename = 'mimir-alertmanager.json';
               prefix: $.recordingRulePrefix(jobIntegrationSelector),
               selectors: utils.toPrometheusSelector(jobIntegrationSelector),
             },
-            'sum(%(prefix)s:cortex_alertmanager_notifications_failed_total:rate5m%(selectors)s) by(integration)' % {
+            'sum(%(prefix)s:cortex_alertmanager_notifications_failed_total:rate5m%(selectors)s) by(integration) or on () vector(0)' % {
               prefix: $.recordingRulePrefix(jobIntegrationSelector),
               selectors: utils.toPrometheusSelector(jobIntegrationSelector),
             },

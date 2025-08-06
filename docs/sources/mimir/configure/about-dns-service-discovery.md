@@ -1,12 +1,10 @@
 ---
 aliases:
   - ../configuring/about-dns-service-discovery/
-description:
-  DNS service discovery finds addresses of backend services to which Grafana
-  Mimir connects.
+description: DNS service discovery finds addresses of backend services to which Grafana Mimir connects.
 menuTitle: DNS service discovery
 title: About Grafana Mimir DNS service discovery
-weight: 20
+weight: 260
 ---
 
 # About Grafana Mimir DNS service discovery

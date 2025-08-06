@@ -16,9 +16,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -29,7 +29,7 @@ type InstantQuery struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
@@ -115,7 +115,11 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
 	}
 
-	outputSeries := types.GetSeriesMetadataSlice(outputSeriesCount)
+	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	t.values, err = types.Float64SlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -137,6 +141,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
@@ -150,7 +158,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			}
 		}
 
-		instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
 	return outputSeries, nil
@@ -162,9 +170,13 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
+
+	if math.IsNaN(v) {
+		return fmt.Errorf("parameter value is NaN for %v", t.functionName())
+	}
 
 	if !convertibleToInt64(v) {
 		return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
@@ -282,11 +294,18 @@ func (t *InstantQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := t.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return t.Param.Prepare(ctx, params)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
+	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
 }
 
 type instantQueryGroup struct {
@@ -305,8 +324,10 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []instantQuerySeries {
 		return make([]instantQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 

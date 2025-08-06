@@ -29,13 +29,13 @@ func (m *ClientMock) Provider() objstore.ObjProvider {
 }
 
 // Upload mocks objstore.Bucket.Upload()
-func (m *ClientMock) Upload(ctx context.Context, name string, r io.Reader) error {
-	args := m.Called(ctx, name, r)
+func (m *ClientMock) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	args := m.Called(ctx, name, r, opts)
 	return args.Error(0)
 }
 
 func (m *ClientMock) MockUpload(name string, err error) {
-	m.On("Upload", mock.Anything, name, mock.Anything).Return(err)
+	m.On("Upload", mock.Anything, name, mock.Anything, mock.Anything).Return(err)
 }
 
 // Delete mocks objstore.Bucket.Delete()

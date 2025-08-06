@@ -13,18 +13,23 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -64,8 +69,6 @@ const (
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
-	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
-	maxCostAttributionLabelsPerUserFlag       = "validation.max-cost-attribution-labels-per-user"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -74,9 +77,10 @@ const (
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
-	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionLabelsFlag + ": exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
-	errInvalidMaxCostAttributionLabelsPerUser      = errors.New("invalid value for -" + maxCostAttributionLabelsPerUserFlag + ": must be less than or equal to 4")
+	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 )
+
+const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -107,15 +111,25 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate                                 float64             `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	RequestRate          float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize     int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate        float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize   int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples      bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	// We should only update the timestamp if the difference
+	// between the stored timestamp and the time we received a sample at
+	// is more than this duration.
+	HATrackerUpdateTimeout          model.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"flag=description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp."`
+	HATrackerUpdateTimeoutJitterMax model.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"flag=description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time."`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the time we received a sample is
+	// more than this duration
+	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -132,7 +146,13 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
-	IngestionArtificialDelay                    model.Duration      `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
+
+	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
+	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
+	IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries  model.Duration `yaml:"ingestion_artificial_delay_duration_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_duration_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
+	IngestionArtificialDelayConditionForTenantsWithIDGreaterThan     int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_id_greater_than" json:"ingestion_artificial_delay_condition_for_tenants_with_id_greater_than" category:"experimental" doc:"hidden"`
+	IngestionArtificialDelayDurationForTenantsWithIDGreaterThan      model.Duration `yaml:"ingestion_artificial_delay_duration_for_tenants_with_id_greater_than" json:"ingestion_artificial_delay_duration_for_tenants_with_id_greater_than" category:"experimental" doc:"hidden"`
+
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -174,7 +194,6 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
-	SplitInstantQueriesByInterval         model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
@@ -186,37 +205,42 @@ type Limits struct {
 	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
 	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         []*BlockedQuery        `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
-	BlockedRequests                        []*BlockedRequest      `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of http requests to block." category:"experimental"`
+	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
+	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	InstantQueriesWithSubquerySpinOff      flagext.StringSliceCSV `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" category:"experimental"`
+	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
+	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
+	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
-	// Cost attribution and limit.
-	CostAttributionLabels                flagext.StringSliceCSV `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
-	MaxCostAttributionLabelsPerUser      int                    `yaml:"max_cost_attribution_labels_per_user" json:"max_cost_attribution_labels_per_user" category:"experimental"`
-	MaxCostAttributionCardinalityPerUser int                    `yaml:"max_cost_attribution_cardinality_per_user" json:"max_cost_attribution_cardinality_per_user" category:"experimental"`
-	CostAttributionCooldown              model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Cost attribution.
+	CostAttributionLabels           flagext.StringSliceCSV       `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
+	CostAttributionLabelsStructured []costattributionmodel.Label `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	MaxCostAttributionCardinality   int                          `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	CostAttributionCooldown         model.Duration               `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
-	RulerEvaluationDelay                                  model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerTenantShardSize                                  int                    `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
-	RulerMaxRulesPerRuleGroup                             int                    `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
-	RulerMaxRuleGroupsPerTenant                           int                    `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
-	RulerRecordingRulesEvaluationEnabled                  bool                   `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
-	RulerAlertingRulesEvaluationEnabled                   bool                   `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
-	RulerSyncRulesOnChangesEnabled                        bool                   `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
-	RulerMaxRulesPerRuleGroupByNamespace                  flagext.LimitsMap[int] `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
-	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int] `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
-	RulerProtectedNamespaces                              flagext.StringSliceCSV `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
-	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                  `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
+	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
+	RulerTenantShardSize                                  int                               `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
+	RulerMaxRulesPerRuleGroup                             int                               `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
+	RulerMaxRuleGroupsPerTenant                           int                               `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerRecordingRulesEvaluationEnabled                  bool                              `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
+	RulerAlertingRulesEvaluationEnabled                   bool                              `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
+	RulerSyncRulesOnChangesEnabled                        bool                              `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
+	RulerMaxRulesPerRuleGroupByNamespace                  flagext.LimitsMap[int]            `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
+	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int]            `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
+	RulerProtectedNamespaces                              flagext.StringSliceCSV            `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
+	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                             `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
+	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
+	RulerMinRuleEvaluationInterval                        model.Duration                    `yaml:"ruler_min_rule_evaluation_interval" json:"ruler_min_rule_evaluation_interval" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -263,14 +287,21 @@ type Limits struct {
 	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
-	OTelCreatedTimestampZeroIngestionEnabled bool                   `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
-	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
-	OTelKeepIdentifyingResourceAttributes    bool                   `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
+	OTelMetricSuffixesEnabled                bool                         `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelCreatedTimestampZeroIngestionEnabled bool                         `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
+	PromoteOTelResourceAttributes            flagext.StringSliceCSV       `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
+	OTelKeepIdentifyingResourceAttributes    bool                         `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
+	OTelConvertHistogramsToNHCB              bool                         `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
+	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
+	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
 	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
+
+	// NameValidationScheme is the validation scheme for metric and label names.
+	NameValidationScheme ValidationSchemeValue `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
 
 	extensions map[string]interface{}
 }
@@ -286,6 +317,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
+	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
+	f.Var(&l.HATrackerUpdateTimeout, "distributor.ha-tracker.update-timeout", "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
+	l.HATrackerUpdateTimeoutJitterMax = model.Duration(5 * time.Second)
+	f.Var(&l.HATrackerUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
+	l.HATrackerFailoverTimeout = model.Duration(30 * time.Second)
+	f.Var(&l.HATrackerFailoverTimeout, "distributor.ha-tracker.failover-timeout", "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
@@ -306,7 +343,19 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
 	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
-	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
+	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
+	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
+	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
+
+	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
+	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
+	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series", "Target ingestion delay to apply to tenants with configured max global series to a value lower than -distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series.")
+	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than should be applied.")
+	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than", "Target ingestion delay to apply to tenants with a numeric ID whose value is greater than -distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than.")
+
+	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
+	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -322,10 +371,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
-	f.IntVar(&l.MaxCostAttributionLabelsPerUser, maxCostAttributionLabelsPerUserFlag, 2, "Maximum number of cost attribution labels allowed per user, the value is capped at 4.")
-	f.IntVar(&l.MaxCostAttributionCardinalityPerUser, "validation.max-cost-attribution-cardinality-per-user", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
+	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
+
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
@@ -340,6 +388,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
+	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
+
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 
@@ -347,7 +397,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
-	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 
@@ -371,6 +420,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
 	f.Var(&l.RulerProtectedNamespaces, "ruler.protected-namespaces", "List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.")
 	f.Int64Var(&l.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant, "ruler.max-independent-rule-evaluation-concurrency-per-tenant", 4, "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.")
+	if !l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams.IsInitialized() {
+		l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
+	}
+	l.RulerAlertmanagerClientConfig.RegisterFlags(f)
+	_ = l.RulerMinRuleEvaluationInterval.Set("0s")
+	f.Var(&l.RulerMinRuleEvaluationInterval, "ruler.min-rule-evaluation-interval", "Minimum allowable evaluation interval for rule groups.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -401,7 +456,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
-	f.Var(&l.InstantQueriesWithSubquerySpinOff, "query-frontend.instant-queries-with-subquery-spin-off", "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.")
+	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
+	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", false, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -482,7 +538,12 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	return l.validate()
+	if err = l.Validate(); err != nil {
+		return err
+	}
+
+	l.canonicalizeQueries()
+	return nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -502,11 +563,82 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 	return limitsToStructWithExtensionFields(l), nil
 }
 
-func (l *Limits) validate() error {
+// Validate the Limits.
+func (l *Limits) Validate() error {
+	switch model.ValidationScheme(l.NameValidationScheme) {
+	case model.UTF8Validation, model.LegacyValidation:
+	case model.UnsetValidation:
+		l.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+	default:
+		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
+	}
+
+	validationScheme := model.ValidationScheme(l.NameValidationScheme)
+	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
+	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.UnderscoreEscapingWithSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoUTF8EscapingWithSuffixes:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoTranslation:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case "":
+		// Generate translation strategy based on other settings.
+		switch validationScheme {
+		case model.LegacyValidation:
+			if l.OTelMetricSuffixesEnabled {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+			} else {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+			}
+		case model.UTF8Validation:
+			if l.OTelMetricSuffixesEnabled {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+			} else {
+				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
+	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
+		cfg.MetricNameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -517,15 +649,35 @@ func (l *Limits) validate() error {
 		return errInvalidIngestStorageReadConsistency
 	}
 
-	if len(l.CostAttributionLabels) > l.MaxCostAttributionLabelsPerUser {
-		return errCostAttributionLabelsLimitExceeded
+	if l.HATrackerUpdateTimeoutJitterMax < 0 {
+		return errNegativeUpdateTimeoutJitterMax
 	}
 
-	if l.MaxCostAttributionLabelsPerUser > 4 {
-		return errInvalidMaxCostAttributionLabelsPerUser
+	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
+		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
+		if l.HATrackerFailoverTimeout < minFailureTimeout {
+			return fmt.Errorf(errInvalidFailoverTimeout, l.HATrackerFailoverTimeout, minFailureTimeout)
+		}
 	}
 
 	return nil
+}
+
+func (l *Limits) canonicalizeQueries() {
+	for i, q := range l.BlockedQueries {
+		if q.Regex {
+			continue
+		}
+		expr, err := parser.ParseExpr(q.Pattern)
+		if err != nil {
+			continue
+		}
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.BlockedQueries[i].Pattern = newPattern
+	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
@@ -558,11 +710,11 @@ type Overrides struct {
 }
 
 // NewOverrides makes a new Overrides.
-func NewOverrides(defaults Limits, tenantLimits TenantLimits) (*Overrides, error) {
+func NewOverrides(defaults Limits, tenantLimits TenantLimits) *Overrides {
 	return &Overrides{
 		tenantLimits:  tenantLimits,
 		defaultLimits: &defaults,
-	}, nil
+	}
 }
 
 // RequestRate returns the limit on request rate (requests per second).
@@ -745,12 +897,16 @@ func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
 }
 
 // BlockedQueries returns the blocked queries.
-func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
+func (o *Overrides) BlockedQueries(userID string) []BlockedQuery {
 	return o.getOverridesForUser(userID).BlockedQueries
 }
 
+func (o *Overrides) LimitedQueries(userID string) []LimitedQuery {
+	return o.getOverridesForUser(userID).LimitedQueries
+}
+
 // BlockedRequests returns the blocked http requests.
-func (o *Overrides) BlockedRequests(userID string) []*BlockedRequest {
+func (o *Overrides) BlockedRequests(userID string) []BlockedRequest {
 	return o.getOverridesForUser(userID).BlockedRequests
 }
 
@@ -798,12 +954,6 @@ func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 // than this limit, the query will not be sharded. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
-}
-
-// SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query
-// via the query-frontend. 0 to disable limit.
-func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
 }
 
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
@@ -886,16 +1036,16 @@ func (o *Overrides) CostAttributionLabels(userID string) []string {
 	return o.getOverridesForUser(userID).CostAttributionLabels
 }
 
-func (o *Overrides) MaxCostAttributionLabelsPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxCostAttributionLabelsPerUser
+func (o *Overrides) CostAttributionLabelsStructured(userID string) []costattributionmodel.Label {
+	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
 }
 
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
 
-func (o *Overrides) MaxCostAttributionCardinalityPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxCostAttributionCardinalityPerUser
+func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
+	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
@@ -978,7 +1128,12 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
-	return o.getOverridesForUser(userID).MetricRelabelConfigs
+	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
+	validationScheme := o.NameValidationScheme(userID)
+	for i := range relabelConfigs {
+		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+	}
+	return relabelConfigs
 }
 
 func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
@@ -1056,6 +1211,14 @@ func (o *Overrides) RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID
 	return o.getOverridesForUser(userID).RulerMaxIndependentRuleEvaluationConcurrencyPerTenant
 }
 
+func (o *Overrides) RulerAlertmanagerClientConfig(userID string) notifier.AlertmanagerClientConfig {
+	return o.getOverridesForUser(userID).RulerAlertmanagerClientConfig
+}
+
+func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).RulerMinRuleEvaluationInterval)
+}
+
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
@@ -1064,6 +1227,32 @@ func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 // MaxHAClusters returns maximum number of clusters that HA tracker will track for a user.
 func (o *Overrides) MaxHAClusters(user string) int {
 	return o.getOverridesForUser(user).HAMaxClusters
+}
+
+// See distributor.haTrackerLimits.HATrackerTimeouts
+func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+	uo := o.getOverridesForUser(user)
+
+	update = time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
+	if uo.HATrackerUpdateTimeout > 0 {
+		update = time.Duration(uo.HATrackerUpdateTimeout)
+	}
+
+	updateJitterMax = time.Duration(o.defaultLimits.HATrackerUpdateTimeoutJitterMax)
+	if uo.HATrackerUpdateTimeoutJitterMax > 0 {
+		updateJitterMax = time.Duration(uo.HATrackerUpdateTimeoutJitterMax)
+	}
+
+	failover = time.Duration(o.defaultLimits.HATrackerFailoverTimeout)
+	if uo.HATrackerFailoverTimeout > 0 {
+		failover = time.Duration(uo.HATrackerFailoverTimeout)
+	}
+
+	return update, updateJitterMax, failover
+}
+
+func (o *Overrides) DefaultHATrackerUpdateTimeout() time.Duration {
+	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.
@@ -1241,9 +1430,45 @@ func (o *Overrides) OTelKeepIdentifyingResourceAttributes(tenantID string) bool 
 	return o.getOverridesForUser(tenantID).OTelKeepIdentifyingResourceAttributes
 }
 
-// DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given use.
+func (o *Overrides) OTelConvertHistogramsToNHCB(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelConvertHistogramsToNHCB
+}
+
+func (o *Overrides) OTelPromoteScopeMetadata(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelPromoteScopeMetadata
+}
+
+func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
+}
+
+func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
+	return otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+}
+
+// DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.
 func (o *Overrides) DistributorIngestionArtificialDelay(tenantID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(tenantID).IngestionArtificialDelay)
+	overrides := o.getOverridesForUser(tenantID)
+
+	// Default delay to apply to all tenants.
+	delay := overrides.IngestionArtificialDelay
+
+	// Check if the "max series" condition applies to this tenant.
+	maxSeriesCondition := overrides.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries
+	maxSeriesDelay := overrides.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries
+	if maxSeriesCondition > 0 && maxSeriesDelay > delay && o.MaxGlobalSeriesPerUser(tenantID) < maxSeriesCondition {
+		delay = maxSeriesDelay
+	}
+
+	// Check if the "tenant ID" condition applies to this tenant.
+	idCondition := overrides.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan
+	idDelay := overrides.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan
+	idNumber, idNumberErr := strconv.ParseInt(tenantID, 10, 32)
+	if idCondition > 0 && idDelay > delay && idNumberErr == nil && int(idNumber) > idCondition {
+		delay = idDelay
+	}
+
+	return time.Duration(delay)
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {
@@ -1259,8 +1484,24 @@ func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
 }
 
-func (o *Overrides) InstantQueriesWithSubquerySpinOff(userID string) []string {
-	return o.getOverridesForUser(userID).InstantQueriesWithSubquerySpinOff
+func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
+}
+
+// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
+}
+
+// NameValidationScheme returns the name validation scheme to use for a particular tenant.
+func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
+	return model.ValidationScheme(o.getOverridesForUser(userID).NameValidationScheme)
+}
+
+// CardinalityAnalysisMaxResults returns the maximum number of results that
+// can be returned in a single cardinality API request.
+func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
@@ -1333,6 +1574,20 @@ func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string)
 		return 0
 	}
 	return *result
+}
+
+// LargestPositiveNonZeroDurationPerTenant is returning the maximum positive
+// and non-zero value of the supplied limit function for all given tenants. In
+// many limits a value of 0 means unlimited so the method will return 0 only if
+// all inputs have a limit of 0 or an empty tenant list is given.
+func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	result := time.Duration(0)
+	for _, tenantID := range tenantIDs {
+		if v := f(tenantID); v > result {
+			result = v
+		}
+	}
+	return result
 }
 
 // MinDurationPerTenant is returning the minimum duration per tenant. Without

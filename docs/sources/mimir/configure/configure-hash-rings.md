@@ -6,12 +6,12 @@ aliases:
 description: Learn how to configure Grafana Mimir hash rings.
 menuTitle: Hash rings
 title: Configure Grafana Mimir hash rings
-weight: 60
+weight: 160
 ---
 
 # Configure Grafana Mimir hash rings
 
-[Hash rings](../../references/architecture/hash-ring/) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings](/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 
 Each of the following Grafana Mimir components builds an independent hash ring.
 The CLI flags used to configure the hash ring of each component have the following prefixes:
@@ -31,7 +31,7 @@ You can configure each parameter either via the CLI flag or its respective YAML 
 ## Configuring the key-value store
 
 Hash ring data structures need to be shared between Grafana Mimir instances.
-To propagate changes to the hash ring, Grafana Mimir uses a [key-value store](../../references/architecture/key-value-store/).
+To propagate changes to the hash ring, Grafana Mimir uses a [key-value store](/docs/mimir/<MIMIR_VERSION>/references/architecture/key-value-store/).
 The key-value store is required and can be configured independently for the hash rings of different components.
 
 Grafana Mimir supports the following key-value (KV) store backends for hash rings:
@@ -74,7 +74,7 @@ The `memberlist` backend is configured globally, unlike other supported backends
 {{< /admonition >}}
 
 Grafana Mimir supports TLS for memberlist connections between its components.
-For more information about TLS configuration, refer to [secure communications with TLS](../../manage/secure/securing-communications-with-tls/).
+For more information about TLS configuration, refer to [secure communications with TLS](/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
 
 To see all supported configuration parameters, refer to [memberlist](../configuration-parameters/#memberlist).
 
@@ -147,7 +147,7 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 - `<prefix>.etcd.password`: Password used to authenticate to etcd. If etcd authentication is disabled, you can leave the password empty.
 
 Grafana Mimir supports TLS between its components and etcd.
-For more information about TLS configuration, refer to [secure communications with TLS](../../manage/secure/securing-communications-with-tls/).
+For more information about TLS configuration, refer to [secure communications with TLS](/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
 
 To see all supported configuration parameters, refer to [etcd](../configuration-parameters/#etcd).
 

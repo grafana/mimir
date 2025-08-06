@@ -7,6 +7,8 @@ title: (Optional) Grafana Mimir query-scheduler
 weight: 120
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # (Optional) Grafana Mimir query-scheduler
 
 The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers](../querier/).

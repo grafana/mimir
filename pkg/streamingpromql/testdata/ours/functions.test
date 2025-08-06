@@ -118,7 +118,9 @@ eval range from 0 to 7m step 1m present_over_time(some_metric_count[3m1s])
 eval range from 0 to 7m step 1m present_over_time(some_metric_count[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval_info range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 0 0 0 1 2 3 _
 
 eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
@@ -127,7 +129,9 @@ eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval_info range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 1 2 3 3 3 3 _
 
 eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
@@ -136,7 +140,9 @@ eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 2 3 Inf Inf Inf Inf Inf Inf NaN 8 8 8 8 7 6
 
-eval_warn range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m sum_over_time(some_metric_count[3m1s])
@@ -154,7 +160,9 @@ eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m1s])
 eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 3 6 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 21 13 6
 
-eval_warn range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 0.5 1 1.5 2 2.5 _ {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m avg_over_time(some_metric_count[3m1s])
@@ -618,7 +626,9 @@ load 1m
   metric{case="nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval_info range from 0 to 20m step 1m deriv(metric[3m1s])
+eval range from 0 to 20m step 1m deriv(metric[3m1s])
+  expect info
+  expect no_warn
   {case="all Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all floats 1"} _ 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666
@@ -656,7 +666,9 @@ load 1m
   metric{case="all nh"} {{schema:3 sum:0 count:0 buckets:[1 2 1]}} {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
   metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
+eval range from 0 to 8m step 1m idelta(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
   {case="2 floats and nh middle sample"} _ _ 4 4
@@ -677,7 +689,9 @@ eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
   {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
-eval_warn range from 0 to 8m step 1m irate(metric[3m1s])
+eval range from 0 to 8m step 1m irate(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
@@ -910,7 +924,9 @@ eval range from 0 to 2m step 1m timestamp(some_metric * 2)
   {case="histograms only"} 0 60 120
   {case="floats and histograms"} 0 60 120
 
-eval_info range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+eval range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+  expect info
+  expect no_warn
   {case="floats only"} _ 60 120
   {case="histograms only"} _ 60 120
 
@@ -978,6 +994,85 @@ eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
+
+clear
+
+# Test sort_by_label / sort_by_label_desc.
+load 1m
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+
+# With no labels, we sort by all labels in sorted order (i.e. "case" is compared first)
+eval_ordered instant at 1m sort_by_label(test_metric)
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+eval_ordered instant at 1m sort_by_label(test_metric, "test1")
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+eval_ordered instant at 1m sort_by_label(test_metric, "test2", "test1")
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+# sort_by_label doesn't affect range queries, verify that here.
+eval range from 0 to 3m step 1m sort_by_label(test_metric, "test1")
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+
+# With no labels, we sort by all labels in sorted order (i.e. "case" is compared first)
+eval_ordered instant at 1m sort_by_label_desc(test_metric)
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+
+eval_ordered instant at 1m sort_by_label_desc(test_metric, "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+
+eval_ordered instant at 1m sort_by_label_desc(test_metric, "test2", "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+
+# sort_by_label_desc doesn't affect range queries, verify that here.
+eval range from 0 to 3m step 1m sort_by_label_desc(test_metric, "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
 
 clear
 
@@ -1179,5 +1274,62 @@ eval range from 0s to 66m step 6m absent_over_time(histo{case="a"}[10m])
 
 eval range from 0s to 66m step 6m absent_over_time(histo{case=~"(0|a)"}[10m])
   {} 1
+
+clear
+
+# Tests for double_exponential_smoothing to trigger circular buffer boundary wrap around
+
+load 10s
+  http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
+  http_requests{job="api-server", instance="1", group="production"}	0-20x1000
+  http_requests{job="api-server", instance="2", group="production"}	0-20x998 NaN Inf
+  http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+  http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+  http_requests{job="api-server", instance="2", group="canary"}		0-40x1000 NaN NaN Inf Inf 0+40x1000
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], 0.01, 0.1)
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -4774.4112298142 -27650.83746192864 -47620 -63620 -79620
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 -6689.664952482304 10592.070195990285 23960 31960 39960
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 39800
+
+eval range from 0 to 20000s step 2000s holt_winters(http_requests[5000s], 0.01, 0.1)
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -4774.4112298142 -27650.83746192864 -47620 -63620 -79620
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 -6689.664952482304 10592.070195990285 23960 31960 39960
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 39800
+
+# Test with variation of sf and tf
+load 2000s
+  sfUp 0.1+0.1x9
+  tfUp 0.1+0.15x4 0.1+0.15x4
+  sfDown 0.9-0.1x9
+  tfDown 0.9-0.15x4 0.9-0.15x4
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], scalar(sfUp), scalar(tfUp))
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -15620 -31620 -47620 -63620 NaN
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 7960 15960 23960 31960 NaN
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 NaN
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], scalar(sfDown), scalar(tfDown))
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -15620 -31620 -47620 -63620 NaN
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 7960 15960 23960 31960 NaN
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 NaN
+
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0, 0.1)
+  expected_fail_message invalid smoothing factor. Expected: 0 < sf < 1, got: 0.000000
+
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0.01, 0)
+  expected_fail_message invalid trend factor. Expected: 0 < tf < 1, got: 0.000000
 
 clear

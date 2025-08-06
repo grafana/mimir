@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // MergeSeries merges the series in data into a single InstantVectorSeriesData, or returns information about a conflict between series.
@@ -25,7 +25,7 @@ import (
 // series, then sourceSeriesIndices would be [0, 3, 9]. These indices are used to include source series information when a conflict occurs.
 //
 // MergeSeries re-orders both data and sourceSeriesIndices.
-func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *MergeConflict, error) {
+func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *MergeConflict, error) {
 	if len(data) == 1 {
 		// Fast path: if there's only one series on this side, there's no merging required.
 		return data[0], nil, nil
@@ -73,7 +73,7 @@ func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil, nil
 }
 
-func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]promql.FPoint, *MergeConflict, error) {
+func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *MergeConflict, error) {
 	if len(data) == 0 {
 		return nil, nil, nil
 	}
@@ -98,8 +98,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer types.FPointSlicePool.Put(second.Floats, memoryConsumptionTracker)
+		defer types.FPointSlicePool.Put(&second.Floats, memoryConsumptionTracker)
 
 		if len(second.Floats) == 0 {
 			// We've reached the end of all series with floats.
@@ -127,8 +126,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer types.FPointSlicePool.Put(data[0].Floats, memoryConsumptionTracker)
+	defer func(s []promql.FPoint) { types.FPointSlicePool.Put(&s, memoryConsumptionTracker) }(data[0].Floats)
 
 	// Re-slice the data with just the series with floats to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that sourceSeriesIndices remains longer.
@@ -198,7 +196,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 	}
 }
 
-func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]promql.HPoint, *MergeConflict, error) {
+func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, *MergeConflict, error) {
 	if len(data) == 0 {
 		return nil, nil, nil
 	}
@@ -224,7 +222,6 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
 		// We deliberately want this to happen at the end of mergeOneSideHistograms, so calling defer like this in a loop is fine.
-		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer clearAndReturnHPointSlice(second.Histograms, memoryConsumptionTracker) // We're going to retain all the FloatHistogram instances, so don't leave them in the slice to be reused.
 
 		if len(second.Histograms) == 0 {
@@ -252,7 +249,6 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 	defer clearAndReturnHPointSlice(data[0].Histograms, memoryConsumptionTracker) // We're going to retain all the FloatHistogram instances, so don't leave them in the slice to be reused.
 
 	// Re-slice data with just the series with histograms to make the rest of our job easier
@@ -323,9 +319,9 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 	}
 }
 
-func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	clear(s)
-	types.HPointSlicePool.Put(s, memoryConsumptionTracker)
+	types.HPointSlicePool.Put(&s, memoryConsumptionTracker)
 }
 
 type MergeConflict struct {

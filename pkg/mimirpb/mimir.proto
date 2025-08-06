@@ -10,21 +10,28 @@ syntax = "proto3";
 
 package cortexpb;
 
+import "gogoproto/gogo.proto";
+
 option go_package = "mimirpb";
-
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message WriteRequest {
-  repeated TimeSeries timeseries = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocTimeseries"];
+  repeated TimeSeries timeseries = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "PreallocTimeseries"
+  ];
   enum SourceEnum {
     API = 0;
     RULE = 1;
   }
   SourceEnum Source = 2;
   repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];
+
+  // Remote Write 2.0 specific fields. Only used when the extra internal
+  // field UnmarshalFromRW2 is true.
+  repeated string symbolsRW2 = 4;
+  repeated TimeSeriesRW2 timeseriesRW2 = 5 [(gogoproto.nullable) = false];
 
   // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
 
@@ -38,19 +45,19 @@ message WriteRequest {
 message WriteResponse {}
 
 enum ErrorCause {
-  UNKNOWN_CAUSE = 0;
-  REPLICAS_DID_NOT_MATCH = 1;
-  TOO_MANY_CLUSTERS = 2;
-  BAD_DATA = 3;
-  INGESTION_RATE_LIMITED = 4;
-  REQUEST_RATE_LIMITED = 5;
-  INSTANCE_LIMIT = 6;
-  SERVICE_UNAVAILABLE = 7;
-  TSDB_UNAVAILABLE = 8;
-  TOO_BUSY = 9;
-  CIRCUIT_BREAKER_OPEN = 10;
-  METHOD_NOT_ALLOWED = 11;
-  TENANT_LIMIT = 12;
+  ERROR_CAUSE_UNKNOWN = 0;
+  ERROR_CAUSE_REPLICAS_DID_NOT_MATCH = 1;
+  ERROR_CAUSE_TOO_MANY_CLUSTERS = 2;
+  ERROR_CAUSE_BAD_DATA = 3;
+  ERROR_CAUSE_INGESTION_RATE_LIMITED = 4;
+  ERROR_CAUSE_REQUEST_RATE_LIMITED = 5;
+  ERROR_CAUSE_INSTANCE_LIMIT = 6;
+  ERROR_CAUSE_SERVICE_UNAVAILABLE = 7;
+  ERROR_CAUSE_TSDB_UNAVAILABLE = 8;
+  ERROR_CAUSE_TOO_BUSY = 9;
+  ERROR_CAUSE_CIRCUIT_BREAKER_OPEN = 10;
+  ERROR_CAUSE_METHOD_NOT_ALLOWED = 11;
+  ERROR_CAUSE_TENANT_LIMIT = 12;
 }
 
 message ErrorDetails {
@@ -58,34 +65,44 @@ message ErrorDetails {
 }
 
 message TimeSeries {
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "LabelAdapter"
+  ];
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+
+  // Copy from remote write 2.0.
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 created_timestamp = 6;
 }
 
 message LabelPair {
-  bytes name  = 1;
+  bytes name = 1;
   bytes value = 2;
 }
 
 message Sample {
-	// Fields order MUST match promql.FPoint so that we can cast types between them.
+  // Fields order MUST match promql.FPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
-  double value       = 1;
+  double value = 1;
 }
 
 message MetricMetadata {
   enum MetricType {
-    UNKNOWN        = 0;
-    COUNTER        = 1;
-    GAUGE          = 2;
-    HISTOGRAM      = 3;
+    UNKNOWN = 0;
+    COUNTER = 1;
+    GAUGE = 2;
+    HISTOGRAM = 3;
     GAUGEHISTOGRAM = 4;
-    SUMMARY        = 5;
-    INFO           = 6;
-    STATESET       = 7;
+    SUMMARY = 5;
+    INFO = 6;
+    STATESET = 7;
   }
 
   MetricType type = 1;
@@ -95,12 +112,18 @@ message MetricMetadata {
 }
 
 message Metric {
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "LabelAdapter"
+  ];
 }
 
 message Exemplar {
   // Exemplar labels, different than series labels
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "LabelAdapter"
+  ];
   double value = 2;
   int64 timestamp_ms = 3;
 }
@@ -113,13 +136,13 @@ message Histogram {
 
     option (gogoproto.goproto_enum_prefix) = true;
     UNKNOWN = 0; // Need to test for a counter reset explicitly.
-    YES     = 1; // This is the 1st histogram after a counter reset.
-    NO      = 2; // There was no counter reset between this and the previous Histogram.
-    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+    YES = 1; // This is the 1st histogram after a counter reset.
+    NO = 2; // There was no counter reset between this and the previous Histogram.
+    GAUGE = 3; // This is a gauge histogram where counter resets don't happen.
   }
 
   oneof count { // Count of observations in the histogram.
-    uint64 count_int   = 1;
+    uint64 count_int = 1;
     double count_float = 2;
   }
   double sum = 3; // Sum of observations in the histogram.
@@ -130,32 +153,37 @@ message Histogram {
   // bucket boundary is the previous boundary times 2^(2^-n). In the
   // future, more bucket schemas may be added using numbers < -4 or >
   // 8.
-  sint32 schema             = 4;
-  double zero_threshold     = 5; // Breadth of the zero bucket.
+  sint32 schema = 4;
+  double zero_threshold = 5; // Breadth of the zero bucket.
   oneof zero_count { // Count in zero bucket.
-    uint64 zero_count_int     = 6;
-    double zero_count_float   = 7;
+    uint64 zero_count_int = 6;
+    double zero_count_float = 7;
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
-  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
-  repeated double negative_counts    = 10; // Absolute count of each bucket.
+  repeated sint64 negative_deltas = 9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
-  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
-  repeated double positive_counts    = 13; // Absolute count of each bucket.
+  repeated sint64 positive_deltas = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts = 13; // Absolute count of each bucket.
 
-  ResetHint reset_hint               = 14;
+  ResetHint reset_hint = 14;
   // timestamp is in ms format
   int64 timestamp = 15;
+
+  // custom_values are not part of the specification, DO NOT use in remote write clients.
+  // Used only for converting from OpenTelemetry to Prometheus internally and
+  // to unmarshal Remote Write 2.0 messages.
+  repeated double custom_values = 16;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
@@ -194,7 +222,7 @@ message BucketSpan {
 }
 
 message FloatHistogramPair {
-	// Fields order MUST match promql.HPoint so that we can cast types between them.
+  // Fields order MUST match promql.HPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
   FloatHistogram histogram = 1 [(gogoproto.nullable) = true];
 }
@@ -222,30 +250,28 @@ message SampleHistogramPair {
   SampleHistogram histogram = 1;
 }
 
+// These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryStatus {
+  QUERY_STATUS_ERROR = 0;
+  QUERY_STATUS_SUCCESS = 1;
+}
+
+// These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryErrorType {
+  QUERY_ERROR_TYPE_NONE = 0;
+  QUERY_ERROR_TYPE_TIMEOUT = 1;
+  QUERY_ERROR_TYPE_CANCELED = 2;
+  QUERY_ERROR_TYPE_EXECUTION = 3;
+  QUERY_ERROR_TYPE_BAD_DATA = 4;
+  QUERY_ERROR_TYPE_INTERNAL = 5;
+  QUERY_ERROR_TYPE_UNAVAILABLE = 6;
+  QUERY_ERROR_TYPE_NOT_FOUND = 7;
+  QUERY_ERROR_TYPE_NOT_ACCEPTABLE = 8;
+}
+
 message QueryResponse {
-  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum Status {
-    option (gogoproto.goproto_enum_prefix) = true;
-    ERROR = 0;
-    SUCCESS = 1;
-  }
-
-  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum ErrorType {
-    option (gogoproto.goproto_enum_prefix) = true;
-    NONE = 0;
-    TIMEOUT = 1;
-    CANCELED = 2;
-    EXECUTION = 3;
-    BAD_DATA = 4;
-    INTERNAL = 5;
-    UNAVAILABLE = 6;
-    NOT_FOUND = 7;
-    NOT_ACCEPTABLE = 8;
-  }
-
-  Status status = 1;
-  ErrorType error_type = 2;
+  QueryStatus status = 1;
+  QueryErrorType error_type = 2;
   string error = 3;
 
   oneof data {
@@ -300,4 +326,96 @@ message MatrixSeries {
 
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
+}
+
+// Remote write 2.0 support.
+// RW2.0 Copied and modified from:
+// https://github.com/prometheus/prometheus/blob/release-3.1/prompb/io/prometheus/write/v2/types.proto
+// The basic types that do not use symbols are replaced with the ones from
+// RW1.0 above for simpler unmarshalling: Sample, Histogram.
+
+message WriteRequestRW2 {
+  repeated string symbols = 4;
+  repeated TimeSeriesRW2 timeseries = 5 [(gogoproto.nullable) = false];
+}
+
+message TimeSeriesRW2 {
+  // labels_refs is a list of label name-value pair references, encoded
+  // as indices to the Request.symbols array. This list's length is always
+  // a multiple of two, and the underlying labels should be sorted lexicographically.
+  //
+  // Note that there might be multiple TimeSeries objects in the same
+  // Requests with the same labels e.g. for different exemplars, metadata
+  // or created timestamp.
+  repeated uint32 labels_refs = 1;
+
+  // Timeseries messages can either specify samples or (native) histogram samples
+  // (histogram field), but not both. For a typical sender (real-time metric
+  // streaming), in healthy cases, there will be only one sample or histogram.
+  //
+  // Samples and histograms are sorted by timestamp (older first).
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+
+  // exemplars represents an optional set of exemplars attached to this series' samples.
+  repeated ExemplarRW2 exemplars = 4 [(gogoproto.nullable) = false];
+
+  // metadata represents the metadata associated with the given series' samples.
+  MetadataRW2 metadata = 5 [(gogoproto.nullable) = false];
+
+  // created_timestamp represents an optional created timestamp associated with
+  // this series' samples in ms format, typically for counter or histogram type
+  // metrics. Created timestamp represents the time when the counter started
+  // counting (sometimes referred to as start timestamp), which can increase
+  // the accuracy of query results.
+  //
+  // Note that some receivers might require this and in return fail to
+  // ingest such samples within the Request.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  //
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 created_timestamp = 6;
+}
+
+message ExemplarRW2 {
+  // labels_refs is an optional list of label name-value pair references, encoded
+  // as indices to the Request.symbols array. This list's len is always
+  // a multiple of 2, and the underlying labels should be sorted lexicographically.
+  // If the exemplar references a trace it should use the `trace_id` label name, as a best practice.
+  repeated uint32 labels_refs = 1;
+  // value represents an exact example value. This can be useful when the exemplar
+  // is attached to a histogram, which only gives an estimated value through buckets.
+  double value = 2;
+  // timestamp represents the timestamp of the exemplar in ms.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  int64 timestamp = 3;
+}
+
+message MetadataRW2 {
+  enum MetricType {
+    METRIC_TYPE_UNSPECIFIED = 0;
+    METRIC_TYPE_COUNTER = 1;
+    METRIC_TYPE_GAUGE = 2;
+    METRIC_TYPE_HISTOGRAM = 3;
+    METRIC_TYPE_GAUGEHISTOGRAM = 4;
+    METRIC_TYPE_SUMMARY = 5;
+    METRIC_TYPE_INFO = 6;
+    METRIC_TYPE_STATESET = 7;
+  }
+  MetricType type = 1;
+  // help_ref is a reference to the Request.symbols array representing help
+  // text for the metric. Help is optional, reference should point to an empty string in
+  // such a case.
+  uint32 help_ref = 3;
+  // unit_ref is a reference to the Request.symbols array representing a unit
+  // for the metric. Unit is optional, reference should point to an empty string in
+  // such a case.
+  uint32 unit_ref = 4;
 }

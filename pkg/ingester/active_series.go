@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/tracing"
 )
 
 const activeSeriesMaxSizeBytes = 1 * 1024 * 1024
@@ -29,9 +28,8 @@ const activeSeriesMaxSizeBytes = 1 * 1024 * 1024
 func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream client.Ingester_ActiveSeriesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.ActiveSeries")
+	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.ActiveSeries")
 	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

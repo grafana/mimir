@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -87,9 +88,8 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_distributor_clients",
-		Help:      "The current number of alertmanager distributor clients in the pool.",
+		Name: "cortex_alertmanager_distributor_clients",
+		Help: "The current number of alertmanager distributor clients in the pool.",
 	})
 
 	return &alertmanagerClientsPool{pool: client.NewPool("alertmanager", poolCfg, discovery, factory, clientsCount, logger)}
@@ -112,6 +112,8 @@ func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, reque
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {

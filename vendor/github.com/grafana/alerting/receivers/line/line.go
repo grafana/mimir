@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
-	"github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -26,16 +28,14 @@ const lineMaxMessageLenRunes = 1000
 // alert notifications to LINE.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		tmpl:     template,
 		settings: cfg,
@@ -44,9 +44,9 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify send an alert notification to LINE
 func (ln *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	ln.log.Debug("executing line notification", "notification", ln.Name)
-
-	body, err := ln.buildLineMessage(ctx, as...)
+	l := ln.GetLogger(ctx)
+	level.Debug(l).Log("msg", "executing notification")
+	body, err := ln.buildLineMessage(ctx, l, as...)
 	if err != nil {
 		return false, fmt.Errorf("failed to build message: %w", err)
 	}
@@ -64,8 +64,8 @@ func (ln *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		Body: form.Encode(),
 	}
 
-	if err := ln.ns.SendWebhook(ctx, cmd); err != nil {
-		ln.log.Error("failed to send notification to LINE", "error", err, "body", body)
+	if err := ln.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "failed to send notification to LINE", "err", err, "body", body)
 		return false, err
 	}
 
@@ -76,9 +76,9 @@ func (ln *Notifier) SendResolved() bool {
 	return !ln.GetDisableResolveMessage()
 }
 
-func (ln *Notifier) buildLineMessage(ctx context.Context, as ...*types.Alert) (string, error) {
+func (ln *Notifier) buildLineMessage(ctx context.Context, l log.Logger, as ...*types.Alert) (string, error) {
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, ln.tmpl, as, ln.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, ln.tmpl, as, l, &tmplErr)
 
 	body := fmt.Sprintf(
 		"%s\n%s",
@@ -86,7 +86,7 @@ func (ln *Notifier) buildLineMessage(ctx context.Context, as ...*types.Alert) (s
 		tmpl(ln.settings.Description),
 	)
 	if tmplErr != nil {
-		ln.log.Warn("failed to template Line message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Line message", "err", tmplErr.Error())
 	}
 
 	message, truncated := receivers.TruncateInRunes(body, lineMaxMessageLenRunes)
@@ -95,7 +95,7 @@ func (ln *Notifier) buildLineMessage(ctx context.Context, as ...*types.Alert) (s
 		if err != nil {
 			return "", err
 		}
-		ln.log.Warn("Truncated message", "alert", key, "max_runes", lineMaxMessageLenRunes)
+		level.Warn(l).Log("msg", "Truncated message", "alert", key, "max_runes", lineMaxMessageLenRunes)
 	}
 	return message, nil
 }

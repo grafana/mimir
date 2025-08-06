@@ -26,6 +26,7 @@ const (
 	mimirBucketName    = "mimir"
 	blocksBucketName   = "mimir-blocks"
 	alertsBucketName   = "mimir-alerts"
+	rulesBucketName    = "mimir-rules"
 	mimirConfigFile    = "config.yaml"
 	clientCertFile     = "certs/client.crt"
 	clientKeyFile      = "certs/client.key"
@@ -147,6 +148,24 @@ var (
 		return map[string]string{
 			"-ruler.ring.store":           "consul",
 			"-ruler.ring.consul.hostname": consulAddress,
+		}
+	}
+
+	RulerStorageLocalFlags = func() map[string]string {
+		return map[string]string{
+			"-ruler-storage.backend":         "local",
+			"-ruler-storage.local.directory": "./rules",
+		}
+	}
+
+	RulerStorageS3Flags = func() map[string]string {
+		return map[string]string{
+			"-ruler-storage.backend":              "s3",
+			"-ruler-storage.s3.access-key-id":     e2edb.MinioAccessKey,
+			"-ruler-storage.s3.secret-access-key": e2edb.MinioSecretKey,
+			"-ruler-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+			"-ruler-storage.s3.insecure":          "true",
+			"-ruler-storage.s3.bucket-name":       rulesBucketName,
 		}
 	}
 

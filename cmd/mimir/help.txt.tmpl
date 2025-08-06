@@ -146,7 +146,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.chunks-cache.backend string
-    	Backend for chunks cache, if not empty. Supported values: memcached, redis.
+    	Backend for chunks cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
@@ -154,7 +154,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.backend string
-    	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
+    	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
@@ -164,7 +164,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.backend string
-    	Backend for metadata cache, if not empty. Supported values: memcached, redis.
+    	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
@@ -423,6 +423,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+  -ingest-storage.kafka.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
@@ -463,6 +465,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled
     	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
+  -ingest-storage.migration.ignore-ingest-storage-errors
+    	When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.
+  -ingest-storage.migration.ingest-storage-max-wait-time duration
+    	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -508,7 +514,7 @@ Usage of ./cmd/mimir/mimir:
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
   -memberlist.abort-if-join-fails
-    	If this node fails to join memberlist cluster, abort.
+    	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.advertise-addr string
     	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
   -memberlist.advertise-port int
@@ -575,6 +581,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
+  -query-frontend.cache-samples-processed-stats
+    	Cache statistics of processed samples on results cache.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int
@@ -604,7 +612,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
+    	Backend for query-frontend results cache, if not empty. Supported values: memcached.
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
@@ -644,7 +652,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.cache.backend string
-    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration
@@ -777,6 +785,8 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+  -server.grpc-collect-max-streams-by-conn
+    	If true, the max streams by connection gauge will be collected. (default true)
   -server.grpc-listen-address string
     	gRPC server listen address.
   -server.grpc-listen-port int
@@ -805,8 +815,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
-  -store-gateway.sharding-ring.auto-forget-enabled
-    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
+  -server.trace-request-headers
+    	Optionally add request headers to tracing spans.
+  -server.trace-request-headers-exclude-list string
+    	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints string
@@ -843,6 +855,8 @@ Usage of ./cmd/mimir/mimir:
     	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
     	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
+  -tests.client.cluster-validation.label string
+    	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
   -tests.read-endpoint string

@@ -39,9 +39,14 @@ func TestMain(m *testing.M) {
 
 func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
 	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, _ *LazyBinaryReader, err error) {
 		require.Error(t, err)
@@ -176,13 +181,18 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	})
 }
 
-func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.ULID) {
+func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBucketReader, ulid.ULID) {
 	ctx := context.Background()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	// Create block.
 	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -195,7 +205,7 @@ func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.
 	return tmpDir, bkt, blockID
 }
 
-func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
+func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {

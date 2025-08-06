@@ -45,3 +45,13 @@ func (f *MedianFilter) Median() float64 {
 	}
 	return f.sorted[len(f.sorted)/2]
 }
+
+// Reset resets the filter to its initial value.
+func (f *MedianFilter) Reset() {
+	for i := range f.values {
+		f.values[i] = 0
+		f.sorted[i] = 0
+	}
+	f.index = 0
+	f.size = 0
+}

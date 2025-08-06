@@ -1,6 +1,6 @@
-# You can install Jsonnet by running following command outside of Mimir directory:
+# You can install Jsonnet by running:
 #
-#   go get github.com/google/go-jsonnet/cmd/jsonnet
+#   go install github.com/google/go-jsonnet/cmd/jsonnet@latest
 #
 # Or follow instructions on https://github.com/google/go-jsonnet
 

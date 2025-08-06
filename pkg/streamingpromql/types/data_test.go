@@ -3,6 +3,7 @@
 package types
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,7 +12,32 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+func TestInstantVectorSeriesData_Clone(t *testing.T) {
+	original := InstantVectorSeriesData{
+		Floats: []promql.FPoint{
+			{T: 0, F: 0},
+			{T: 1, F: 1},
+		},
+		Histograms: []promql.HPoint{
+			{T: 2, H: &histogram.FloatHistogram{Count: 2}},
+			{T: 3, H: &histogram.FloatHistogram{Count: 3}},
+		},
+	}
+
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	cloned, err := original.Clone(memoryConsumptionTracker)
+
+	require.NoError(t, err)
+	require.Equal(t, original, cloned, "clone should have same data as original")
+	require.NotSame(t, &original.Floats[0], &cloned.Floats[0], "clone should not share float slice with original")
+	require.NotSame(t, &original.Histograms[0], &cloned.Histograms[0], "clone should not share histogram slice with original")
+	require.NotSame(t, original.Histograms[0].H, cloned.Histograms[0].H, "clone should not share first histogram with original")
+	require.NotSame(t, original.Histograms[1].H, cloned.Histograms[1].H, "clone should not share second histogram with original")
+}
 
 func TestInstantVectorSeriesDataIterator(t *testing.T) {
 	type expected struct {
@@ -286,8 +312,10 @@ func TestQueryTimeRange(t *testing.T) {
 
 			if tc.interval == 0 {
 				qtr = NewInstantQueryTimeRange(tc.start)
+				require.True(t, qtr.IsInstant)
 			} else {
 				qtr = NewRangeQueryTimeRange(tc.start, tc.end, tc.interval)
+				require.False(t, qtr.IsInstant)
 			}
 
 			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")

@@ -9,6 +9,8 @@ title: Migrate from Thanos or Prometheus to Grafana Mimir
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Migrate from Thanos or Prometheus to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of Thanos or Prometheus to Grafana Mimir.
@@ -253,6 +255,10 @@ This may cause that incorrect results are returned for the query.
 
    {{< admonition type="tip" >}}
    You can get the external labels in the `meta.json` file of each block from the CSV file that's imported, and build the rewrite configuration accordingly.
+   {{< /admonition >}}
+
+   {{< admonition type="tip" >}}
+   Add the `__tenant_id__` label with the value of your target tenant. This is important for Mimir to successfully query the migrated data when you enable tenant federation and configure the Grafana data source to query multiple tenants.
    {{< /admonition >}}
 
    Create a rewrite configuration that is similar to this:

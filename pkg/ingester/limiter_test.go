@@ -12,7 +12,6 @@ import (
 
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -360,8 +359,7 @@ func runLimiterMaxFunctionTest(
 			limits := validation.Limits{IngestionTenantShardSize: testData.shardSize}
 			applyLimits(&limits, testData.globalLimit)
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled, "zone", overrides.IngestionTenantShardSize)
 			limiter := NewLimiter(overrides, strategy)
@@ -436,8 +434,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 			limits := validation.Limits{IngestionPartitionsTenantShardSize: testData.tenantPartitionsShardSize}
 			applyLimits(&limits, testData.globalLimit)
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			strategy := newPartitionRingLimiterStrategy(h, overrides.IngestionPartitionsTenantShardSize)
 			limiter := NewLimiter(overrides, strategy)
@@ -496,11 +493,9 @@ func TestLimiter_IsWithinMaxSeriesPerMetric(t *testing.T) {
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
-			limits, err := validation.NewOverrides(validation.Limits{
+			limits := validation.NewOverrides(validation.Limits{
 				MaxGlobalSeriesPerMetric: testData.maxGlobalSeriesPerMetric,
 			}, nil)
-			require.NoError(t, err)
-
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
@@ -541,9 +536,7 @@ func TestLimiter_IsWithinMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerMetric: testData.maxGlobalSeriesPerMetric}, nil)
-			require.NoError(t, err)
-
+			limits := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerMetric: testData.maxGlobalSeriesPerMetric}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
@@ -590,11 +583,9 @@ func TestLimiter_IsWithinMaxMetadataPerMetric(t *testing.T) {
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
-			limits, err := validation.NewOverrides(validation.Limits{
+			limits := validation.NewOverrides(validation.Limits{
 				MaxGlobalMetadataPerMetric: testData.maxGlobalMetadataPerMetric,
 			}, nil)
-			require.NoError(t, err)
-
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
@@ -635,9 +626,7 @@ func TestLimiter_IsWithinMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalMetadataPerMetric: testData.maxGlobalMetadataPerMetric}, nil)
-			require.NoError(t, err)
-
+			limits := validation.NewOverrides(validation.Limits{MaxGlobalMetadataPerMetric: testData.maxGlobalMetadataPerMetric}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
@@ -718,12 +707,10 @@ func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
-			limits, err := validation.NewOverrides(validation.Limits{
+			limits := validation.NewOverrides(validation.Limits{
 				MaxGlobalSeriesPerUser:   testData.maxGlobalSeriesPerUser,
 				IngestionTenantShardSize: testData.tenantShardSize,
 			}, nil)
-			require.NoError(t, err)
-
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
@@ -794,9 +781,7 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
-			require.NoError(t, err)
-
+			limits := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionPartitionsTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
@@ -843,11 +828,9 @@ func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser(t *testing.T) {
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
-			limits, err := validation.NewOverrides(validation.Limits{
+			limits := validation.NewOverrides(validation.Limits{
 				MaxGlobalMetricsWithMetadataPerUser: testData.maxGlobalMetadataPerUser,
 			}, nil)
-			require.NoError(t, err)
-
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)
@@ -888,9 +871,7 @@ func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *tes
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalMetricsWithMetadataPerUser: testData.maxGlobalMetadataPerUser}, nil)
-			require.NoError(t, err)
-
+			limits := validation.NewOverrides(validation.Limits{MaxGlobalMetricsWithMetadataPerUser: testData.maxGlobalMetadataPerUser}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)

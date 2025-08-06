@@ -6,4 +6,4 @@ set -euo pipefail
 
 RESULTS_FILE="$1" # Should be the path to a file produced by a command like `go run . -count=6 | tee output.txt`
 
-benchstat -col="/engine@(Prometheus Mimir)" "$RESULTS_FILE"
+benchstat -col="/engine@(Prometheus Mimir MimirWithQueryPlanner)" "$RESULTS_FILE"

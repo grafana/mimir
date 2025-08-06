@@ -105,12 +105,12 @@ func newLimiter(config *Config, logger log.Logger) *reactiveLimiter {
 		semaphore:             mimirsync.NewDynamicSemaphore(int(config.InitialInflightLimit)),
 		limit:                 float64(config.InitialInflightLimit),
 		shortRTT:              &tDigestSample{TDigest: tdigest.NewWithCompression(100)},
+		medianFilter:          mimirmath.NewMedianFilter(smoothedSamples),
+		smoothedShortRTT:      mimirmath.NewEwma(smoothedSamples, warmupSamples),
 		longRTT:               mimirmath.NewEwma(config.LongWindow, warmupSamples),
 		nextUpdateTime:        time.Now(),
 		rttCorrelation:        mimirmath.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
 		throughputCorrelation: mimirmath.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
-		medianFilter:          mimirmath.NewMedianFilter(smoothedSamples),
-		smoothedShortRTT:      mimirmath.NewEwma(smoothedSamples, warmupSamples),
 	}
 }
 
@@ -158,13 +158,12 @@ type reactiveLimiter struct {
 	mu        sync.RWMutex
 
 	// Guarded by mu
-	limit            float64        // The current concurrency limit
-	shortRTT         *tDigestSample // Short term execution times
-	medianFilter     *mimirmath.MedianFilter
-	smoothedShortRTT mimirmath.Ewma
-	longRTT          mimirmath.Ewma // Tracks long term average execution time
-	nextUpdateTime   time.Time      // Tracks when the limit can next be updated
-
+	limit                 float64        // The current concurrency limit
+	shortRTT              *tDigestSample // Short term execution times
+	medianFilter          *mimirmath.MedianFilter
+	smoothedShortRTT      mimirmath.Ewma
+	longRTT               mimirmath.Ewma               // Tracks long term average execution time
+	nextUpdateTime        time.Time                    // Tracks when the limit can next be updated
 	throughputCorrelation *mimirmath.CorrelationWindow // Tracks the correlation between concurrency and throughput
 	rttCorrelation        *mimirmath.CorrelationWindow // Tracks the correlation between concurrency and round trip times (RTT)
 }
@@ -204,6 +203,20 @@ func (l *reactiveLimiter) Blocked() int {
 
 func (l *reactiveLimiter) RejectionRate() float64 {
 	return 0
+}
+
+func (l *reactiveLimiter) Reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.semaphore.SetSize(int(l.config.InitialInflightLimit))
+	l.limit = float64(l.config.InitialInflightLimit)
+	l.shortRTT.Reset()
+	l.medianFilter.Reset()
+	l.smoothedShortRTT.Reset()
+	l.longRTT.Reset()
+	l.nextUpdateTime = time.Now()
+	l.rttCorrelation.Reset()
+	l.throughputCorrelation.Reset()
 }
 
 // Records the duration of a completed execution, updating the concurrency limit if the short shortRTT window is full.

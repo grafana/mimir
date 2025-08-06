@@ -17,6 +17,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -62,7 +63,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
-	c, err := NewClient(cfg, log.NewNopLogger())
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -147,7 +148,7 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
-	c, err := NewClient(cfg, log.NewNopLogger())
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -224,7 +225,7 @@ func TestClient_QueryRange(t *testing.T) {
 	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
-	c, err := NewClient(cfg, log.NewNopLogger())
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -272,7 +273,7 @@ func TestClient_Query(t *testing.T) {
 	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
-	c, err := NewClient(cfg, log.NewNopLogger())
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -408,7 +409,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 				tc.cfgMutator(&cfg)
 			}
 
-			c, err := NewClient(cfg, log.NewNopLogger())
+			c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			ctx := context.Background()

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
-
-	"github.com/grafana/alerting/logging"
 )
 
 type AlertStateType string
@@ -91,7 +91,7 @@ func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
 // Stubbable by tests.
 //
 //nolint:unused, varcheck
-var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logger logging.Logger) ([]byte, error) {
+var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logger log.Logger) ([]byte, error) {
 	var reader io.Reader
 	if len(cfg.Body) > 0 {
 		reader = bytes.NewReader(cfg.Body)
@@ -126,7 +126,7 @@ var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logge
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logger.Warn("failed to close response Body", "error", err)
+			level.Error(logger).Log("msg", "failed to close response Body", "err", err)
 		}
 	}()
 
@@ -136,19 +136,19 @@ var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logge
 	}
 
 	if resp.StatusCode/100 != 2 {
-		logger.Warn("HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "Body",
+		level.Warn(logger).Log("msg", "HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "Body",
 			string(respBody))
 		return nil, fmt.Errorf("failed to send HTTP request - status code %d", resp.StatusCode)
 	}
 
-	logger.Debug("sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
+	level.Debug(logger).Log("msg", "sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
 	return respBody, nil
 }
 
-func JoinURLPath(base, additionalPath string, logger logging.Logger) string {
+func JoinURLPath(base, additionalPath string, logger log.Logger) string {
 	u, err := url.Parse(base)
 	if err != nil {
-		logger.Debug("failed to parse URL while joining URL", "url", base, "error", err.Error())
+		level.Debug(logger).Log("msg", "failed to parse URL while joining URL", "url", base, "err", err.Error())
 		return base
 	}
 

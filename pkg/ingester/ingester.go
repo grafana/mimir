@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -49,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -56,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
@@ -73,9 +76,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/ingester")
 
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
@@ -173,8 +177,8 @@ const (
 )
 
 type requestWithUsersAndCallback struct {
-	users    *util.AllowedTenants // if nil, all tenants are allowed.
-	callback chan<- struct{}      // when compaction/shipping is finished, this channel is closed
+	users    *util.AllowList // if nil, all tenants are allowed.
+	callback chan<- struct{} // when compaction/shipping is finished, this channel is closed
 }
 
 // Config for an Ingester.
@@ -192,7 +196,7 @@ type Config struct {
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
+	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
@@ -336,6 +340,9 @@ type Ingester struct {
 
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
+
+	// Tracks the number of compactions in progress.
+	numCompactionsInProgress atomic.Uint32
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -657,6 +664,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// If the ingester is not read-only, activate the push circuit breaker.
 		i.circuitBreaker.push.activate()
 	}
+
 	return nil
 }
 
@@ -1031,7 +1039,7 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 
 // PreparePushRequest implements pushReceiver.
 func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
-	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
+	if i.reactiveLimiter.push != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
 		if err != nil {
@@ -1094,7 +1102,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
-	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
+	if i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1278,11 +1286,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(errMsg string, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.newValueForTimestampCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonNewValueForTimestamp, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
-					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
+					return newSampleDuplicateTimestampError(errMsg, model.Time(timestamp), labels)
 				})
 			},
 			func(labels []mimirpb.LabelAdapter) {
@@ -1332,6 +1340,27 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, err, model.Time(timestamp), labels)
 				})
 			},
 		)
@@ -1517,6 +1546,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+
 		for _, s := range ts.Samples {
 			var err error
 
@@ -1527,6 +1558,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			} else if s.TimestampMs < minTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
 				continue
+			}
+
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				}
+				if err == nil {
+					stats.succeededSamplesCount++
+				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -1578,6 +1625,22 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
 
+				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					if ref != 0 {
+						_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					}
+					if err == nil {
+						stats.succeededSamplesCount++
+					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					}
+					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				}
+
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
 					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
@@ -1606,13 +1669,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
 				numFloats := len(ts.Samples)
 				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
-					numNativeHistogramBuckets = 0
-					for _, span := range lastNativeHistogram.PositiveSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
-					for _, span := range lastNativeHistogram.NegativeSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
+					numNativeHistogramBuckets = lastNativeHistogram.BucketCount()
 				}
 			}
 		}
@@ -1699,7 +1756,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1724,7 +1781,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+	if i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -1747,9 +1804,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1860,7 +1916,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.LabelNames")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.LabelNames")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -2177,10 +2233,8 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
-	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
-
+	ctx := stream.Context()
+	spanlog := spanlogger.FromContext(ctx, i.logger)
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -2674,6 +2728,17 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
+// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
+// When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
+// which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
+// When disabled, it uses NoopPlanner which performs no optimization.
+func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return &index.ScanEmptyMatchersLookupPlanner{}
+	}
+	return lookupplan.NoopPlanner{}
+}
+
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
@@ -2810,6 +2875,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
+		IndexLookupPlanner:                    i.getIndexLookupPlanner(),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -3117,7 +3183,7 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 }
 
 // shipBlocks runs shipping for all users.
-func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants) {
+func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowList) {
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.ShipConcurrency, func(ctx context.Context, userID string) error {
@@ -3189,7 +3255,11 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	firstInterval, standardInterval := i.compactionServiceInterval()
+	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
+
+	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
+	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
+	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
 	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
@@ -3200,15 +3270,20 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
+			// Count the number of compactions in progress to keep the downscale handler from
+			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+			i.numCompactionsInProgress.Inc()
+			defer i.numCompactionsInProgress.Dec()
+
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
-			// Check if the desired interval has changed. We only compare the standard interval
-			// before the first interval may be random due to jittering.
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(); standardInterval != newStandardInterval {
+			// If the ingester state is no longer "Starting", we switch to a different interval.
+			// We only compare the standard interval because the first interval may be random due to jittering.
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
@@ -3217,6 +3292,12 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			}
 
 		case req := <-i.forceCompactTrigger:
+			// Note:
+			// Prepare compaction is not done here but before the force compaction is triggered.
+			// This is because we want to track the number of compactions accurately before the
+			// downscale handler is called. This ensures that the ingester will never leave the
+			// read-only state. (See [Ingester.FlushHandler])
+
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			i.compactBlocks(ctx, true, math.MaxInt64, req.users)
 			close(req.callback) // Notify back.
@@ -3229,28 +3310,105 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
-// The returned standardInterval is guaranteed to have no jittering applied.
+// The returned standardInterval is guaranteed to have no jittering or staggering per zone applied.
 // The returned intervals may change over time, depending on the ingester service state.
-func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval time.Duration) {
+func (i *Ingester) compactionServiceInterval(now time.Time, zones []string) (firstInterval, standardInterval time.Duration) {
+	startingInterval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting
+	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+
+	// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
+	// if ingest storage is enabled.
 	if i.State() == services.Starting {
-		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
-		// if ingest storage is enabled.
-		standardInterval = min(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
-	} else {
-		standardInterval = i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+		standardInterval = min(startingInterval, interval)
+
+		if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+			firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
+		} else {
+			firstInterval = standardInterval
+		}
+
+		return firstInterval, standardInterval
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
-		firstInterval = util.DurationWithNegativeJitter(standardInterval, 1)
-	} else {
-		firstInterval = standardInterval
+	zoneAwareInterval := i.timeToNextZoneAwareCompaction(now, zones)
+
+	// If we don't have jittering enabled, we return the standard interval as-is.
+	if !i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+		return zoneAwareInterval, interval
 	}
 
-	return
+	// With jittering enabled, we want to apply a positive jitter to the staggered interval.
+	// We estimate that roughly 50% of the interval window is a good enough heuristic than when the 50% jitter is applied,
+	// we get enough variability to not get overlap between zones and ingesters.
+	var jitter time.Duration
+	if len(zones) > 0 {
+		jitter = time.Duration(rand.Int63n((interval.Nanoseconds() / int64(len(zones))) / 2))
+	}
+
+	return zoneAwareInterval + jitter, interval
+}
+
+// timeToNextZoneAwareCompaction calculates when the next compaction should occur,
+// staggering compactions across zones to distribute load over time.
+//
+// With zone awareness enabled, each zone gets a unique offset within the compaction interval.
+// Example with 15min interval and 2 zones:
+// - Zone 'a' compacts at 0:00, 0:15, 0:30, 0:45
+// - Zone 'b' compacts at 0:07, 0:22, 0:37, 0:52
+func (i *Ingester) timeToNextZoneAwareCompaction(now time.Time, zones []string) time.Duration {
+	// To make the computed offset deterministic, zones must be sorted.
+	slices.Sort(zones)
+
+	interval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+
+	// If we don't have zone awareness enabled, we return the configured head compaction interval as-is,
+	// because we don't need to adjust it based on the number of zones.
+	if !i.cfg.IngesterRing.ZoneAwarenessEnabled || i.cfg.IngesterRing.InstanceZone == "" {
+		return interval
+	}
+
+	// No more than 1 zone, we don't need to adjust the interval.
+	if len(zones) <= 1 {
+		return interval
+	}
+
+	// Find the index of the current zone in the zones list to determine its offset
+	current := i.cfg.IngesterRing.InstanceZone
+	zoneIndex := slices.Index(zones, current)
+
+	// Zone not found in the list - this shouldn't happen but handle gracefully
+	if zoneIndex == -1 {
+		level.Warn(i.logger).Log("msg", "could not compute when the next zone-aware TSDB head compaction should occur, current zone not found in zones list, using default interval", "current_zone", current, "available_zones", strings.Join(zones, ","))
+		return interval
+	}
+
+	// Calculate this zone's offset and the next compaction interval.
+	offsetStep := interval / time.Duration(len(zones))
+	zoneOffset := time.Duration(zoneIndex) * offsetStep
+	result := timeUntilCompaction(now, interval, zoneOffset)
+
+	level.Debug(i.logger).Log("msg", "computed timing for the next TSDB head zone-aware compaction",
+		"zone", current,
+		"zone_index", zoneIndex,
+		"total_zones", len(zones),
+		"configured_interval", interval,
+		"zone_offset", zoneOffset,
+		"next_compaction_in", result)
+
+	return result
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
-func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+		}()
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3314,7 +3472,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	})
 }
 
-// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the elegible tenants in order to reduce the in-memory series.
+// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the eligible tenants to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
 	// Skip if disabled.
 	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
@@ -3370,7 +3528,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
-	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
+	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
@@ -3570,13 +3728,18 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 
 	tenants := r.Form[tenantParam]
 
-	allowedUsers := util.NewAllowedTenants(tenants, nil)
+	allowedUsers := util.NewAllowList(tenants, nil)
 	run := func() {
-		ingCtx := i.BasicService.ServiceContext()
+		ingCtx := i.ServiceContext()
 		if ingCtx == nil || ingCtx.Err() != nil {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: ingester not running, ignoring flush request")
 			return
 		}
+
+		// Count the number of compactions in progress to keep the downscale handler from
+		// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
+		i.numCompactionsInProgress.Inc()
+		defer i.numCompactionsInProgress.Dec()
 
 		compactionCallbackCh := make(chan struct{})
 
@@ -3900,6 +4063,17 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OnPartitionRingChanged resets the read reactive limiter when the ingester's partition transitions to active.
+func (i *Ingester) OnPartitionRingChanged(oldRing, newRing *ring.PartitionRingDesc) {
+	if i.reactiveLimiter.read != nil {
+		oldPartition, ok1 := oldRing.Partitions[i.ingestPartitionID]
+		newPartition, ok2 := newRing.Partitions[i.ingestPartitionID]
+		if ok1 && ok2 && oldPartition.State != newPartition.State && newPartition.State == ring.PartitionActive {
+			i.reactiveLimiter.read.Reset()
+		}
+	}
+}
+
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -3936,9 +4110,12 @@ func (i *Ingester) checkAvailableForPush() error {
 	return newUnavailableError(ingesterState)
 }
 
-// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
-func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
-	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+// PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
+	err := i.PushWithCleanup(ctx, req, func() {
+		req.FreeBuffer()
+		mimirpb.ReuseSlice(req.Timeseries)
+	})
 	if err != nil {
 		return mapPushErrorToErrorWithStatus(err)
 	}
@@ -3951,7 +4128,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, errPushGrpcDisabled
 	}
 
-	err := i.PushToStorage(ctx, req)
+	err := i.PushToStorageAndReleaseRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -4228,4 +4405,25 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 	}
 
 	return manager, nil
+}
+
+// timeUntilCompaction calculates the precise time until the next compaction for a specific zone
+// based on the current time, the configured compaction interval, and the computed zone's offset.
+//
+// This creates a predictable, clock-aligned schedule where each zone compacts at fixed times
+// (e.g., zone 'a' at :00, :15, :30, :45 and zone 'b' at :07, :22, :37, :52 for a 15-minute interval).
+//
+// Returns the interval until the next scheduled compaction for the zone as a time.Duration.
+func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Duration) time.Duration {
+	// Calculate how much time has elapsed since the start of the current hour.
+	elapsed := now.Sub(now.Truncate(time.Hour))
+
+	// Calculate how long elapsed since the last time compaction should have run for this zone.
+	// compactionInterval is guaranteed to be more than 0 and less than 15m.
+	timeSinceLastCompaction := (elapsed - zoneOffset) % compactionInterval
+	if timeSinceLastCompaction < 0 {
+		timeSinceLastCompaction += compactionInterval
+	}
+
+	return compactionInterval - timeSinceLastCompaction
 }

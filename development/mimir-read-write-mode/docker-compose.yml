@@ -165,7 +165,7 @@
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
-    "image": "minio/minio"
+    "image": "minio/minio:RELEASE.2025-05-24T17-08-30Z"
     "ports":
       - "9700:9700"
       - "9701:9701"

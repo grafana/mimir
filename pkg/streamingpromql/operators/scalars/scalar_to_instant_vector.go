@@ -9,11 +9,13 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // ScalarToInstantVector is an operator that implements the vector() function.
 type ScalarToInstantVector struct {
-	Scalar types.ScalarOperator
+	Scalar                   types.ScalarOperator
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	consumed           bool
@@ -21,18 +23,24 @@ type ScalarToInstantVector struct {
 
 var _ types.InstantVectorOperator = &ScalarToInstantVector{}
 
-func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange) *ScalarToInstantVector {
+func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *ScalarToInstantVector {
 	return &ScalarToInstantVector{
-		Scalar:             scalar,
-		expressionPosition: expressionPosition,
+		Scalar:                   scalar,
+		expressionPosition:       expressionPosition,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
 func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	metadata := types.GetSeriesMetadataSlice(1)
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: labels.EmptyLabels(),
-	})
+	metadata, err := types.SeriesMetadataSlicePool.Get(1, s.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err = types.AppendSeriesMetadata(s.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: labels.EmptyLabels()})
+	if err != nil {
+		return nil, err
+	}
 
 	return metadata, nil
 }
@@ -56,6 +64,10 @@ func (s *ScalarToInstantVector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (s *ScalarToInstantVector) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *ScalarToInstantVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return s.Scalar.Prepare(ctx, params)
 }
 
 func (s *ScalarToInstantVector) Close() {

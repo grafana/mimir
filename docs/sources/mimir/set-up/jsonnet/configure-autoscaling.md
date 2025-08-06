@@ -30,8 +30,6 @@ Don't use the same Mimir or Grafana Enterprise Metrics cluster for storing and q
 For instance, if the Mimir or GEM cluster becomes unavailable, autoscaling stops working, because it cannot query the metrics. This prevents the cluster from automatically scaling up during high load or recovery. This inability to scale further exacerbates the cluster's unavailability, which might, in turn, prevent the cluster from recovering.
 
 Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
-
-Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
 {{< /admonition >}}
 
 ## How KEDA works

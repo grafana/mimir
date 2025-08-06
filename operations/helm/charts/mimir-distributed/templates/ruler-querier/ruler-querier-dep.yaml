@@ -64,6 +64,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
           {{- end }}
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
           {{- range $key, $value := .Values.ruler_querier.extraArgs }}
             - -{{ $key }}={{ $value }}
           {{- end }}
@@ -118,11 +119,6 @@ spec:
               {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
-            {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.querier }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

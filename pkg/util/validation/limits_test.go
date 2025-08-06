@@ -19,11 +19,14 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
 func TestMain(m *testing.M) {
@@ -38,8 +41,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 	defaults := Limits{
 		MaxLabelNamesPerSeries: 100,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	require.Equal(t, 100, ov.MaxLabelNamesPerSeries("user1"))
 	require.Equal(t, 0, ov.MaxLabelValueLength("user1"))
@@ -61,35 +63,97 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 }
 
 func TestLimitsLoadingFromYaml(t *testing.T) {
-	inp := `ingestion_rate: 0.5`
-
-	l := Limits{}
-	dec := yaml.NewDecoder(strings.NewReader(inp))
-	dec.KnownFields(true)
-	require.NoError(t, dec.Decode(&l))
-
-	assert.Equal(t, 0.5, l.IngestionRate, "from yaml")
-	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
+	testCases := []struct {
+		name     string
+		input    string
+		testFunc func(t *testing.T, l Limits)
+	}{
+		{
+			name:  "defaults",
+			input: `{}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 1024, l.MaxLabelNameLength)
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "ingestion_rate",
+			input: `ingestion_rate: 0.5`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 0.5, l.IngestionRate)
+			},
+		},
+		{
+			name:  "name_validation_scheme: legacy",
+			input: `name_validation_scheme: "legacy"`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "name_validation_scheme: utf8",
+			input: `name_validation_scheme: "utf8"`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := Limits{}
+			dec := yaml.NewDecoder(strings.NewReader(tc.input))
+			dec.KnownFields(true)
+			require.NoError(t, dec.Decode(&l))
+			tc.testFunc(t, l)
+		})
+	}
 }
 
 func TestLimitsLoadingFromJson(t *testing.T) {
-	inp := `{"ingestion_rate": 0.5}`
-
-	l := Limits{}
-	err := json.Unmarshal([]byte(inp), &l)
-	require.NoError(t, err)
-
-	assert.Equal(t, 0.5, l.IngestionRate, "from json")
-	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
+	testCases := []struct {
+		name     string
+		input    string
+		testFunc func(t *testing.T, l Limits)
+	}{
+		{
+			name:  "defaults",
+			input: `{}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 1024, l.MaxLabelNameLength)
+				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "ingestion_rate",
+			input: `{"ingestion_rate": 0.5}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, 0.5, l.IngestionRate)
+			},
+		},
+		{
+			name:  "name_validation_scheme: utf8",
+			input: `{"name_validation_scheme": "utf8"}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := Limits{}
+			err := json.Unmarshal([]byte(tc.input), &l)
+			require.NoError(t, err)
+			tc.testFunc(t, l)
+		})
+	}
 
 	// Unmarshal should fail if input contains unknown struct fields and
 	// the decoder flag `json.Decoder.DisallowUnknownFields()` is set
-	inp = `{"unknown_fields": 100}`
-	l = Limits{}
+	inp := `{"unknown_fields": 100}`
+	l := Limits{}
 	dec := json.NewDecoder(strings.NewReader(inp))
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&l)
-	assert.Error(t, err)
+	assert.Error(t, dec.Decode(&l))
 }
 
 func TestLimitsTagsYamlMatchJson(t *testing.T) {
@@ -162,6 +226,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
+	exp.MetricNameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))
@@ -184,8 +249,7 @@ func TestSmallestPositiveIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueryParallelism: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -216,8 +280,7 @@ func TestSmallestPositiveNonZeroIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueriersPerTenant: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -248,8 +311,7 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxPartialQueryLength: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -267,6 +329,37 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestLargestPositiveNonZeroDurationPerTenant(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxPartialQueryLength: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			MaxPartialQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+
+	defaults := Limits{
+		MaxPartialQueryLength: 0,
+	}
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b", "tenant-c"}, expLimit: 4 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, LargestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
+	}
+}
+
 func TestMinDurationPerTenant(t *testing.T) {
 	defaults := Limits{ResultsCacheTTLForCardinalityQuery: 0}
 	tenantLimits := map[string]*Limits{
@@ -275,8 +368,7 @@ func TestMinDurationPerTenant(t *testing.T) {
 		"tenant-c": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Hour)},
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -303,8 +395,7 @@ func TestMaxTotalQueryLengthWithoutDefault(t *testing.T) {
 	}
 	defaults := Limits{}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -328,8 +419,7 @@ func TestMaxTotalQueryLengthWithDefault(t *testing.T) {
 		MaxTotalQueryLength: model.Duration(3 * time.Hour),
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -353,8 +443,7 @@ func TestMaxPartialQueryLengthWithDefault(t *testing.T) {
 		MaxPartialQueryLength: model.Duration(6 * time.Hour),
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength(""))
 	assert.Equal(t, 1*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
@@ -369,12 +458,99 @@ func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
 	}
 	defaults := Limits{}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength(""))
 	assert.Equal(t, 3*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
 	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength("tenant-b"))
+}
+
+func TestDistributorIngestionArtificialDelay(t *testing.T) {
+	tests := map[string]struct {
+		tenantID      string
+		tenantLimits  func(*Limits)
+		expectedDelay time.Duration
+	}{
+		"should not apply delay by default": {
+			tenantID:      "tenant-a",
+			tenantLimits:  func(*Limits) {},
+			expectedDelay: 0,
+		},
+		"should apply delay if a plain delay has been configured for the tenant": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelay = model.Duration(time.Second)
+			},
+			expectedDelay: time.Second,
+		},
+		"should apply delay based on 'max series less than' condition if tenant max series is < the threshold": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
+				l.MaxGlobalSeriesPerUser = 15000
+			},
+			expectedDelay: time.Second,
+		},
+		"should not apply delay based on 'max series less than' condition if tenant max series is >= the threshold": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
+				l.MaxGlobalSeriesPerUser = 15001
+			},
+			expectedDelay: 0,
+		},
+		"should apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and > the condition": {
+			tenantID: "12346",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: time.Second,
+		},
+		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and <= the condition": {
+			tenantID: "12345",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: 0,
+		},
+		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is not numeric": {
+			tenantID: "tenant-123456",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: 0,
+		},
+		"should apply the highest delay among matching conditions": {
+			tenantID: "12346",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelay = model.Duration(300 * time.Millisecond)
+
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(200 * time.Millisecond)
+				l.MaxGlobalSeriesPerUser = 15000
+
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(100 * time.Millisecond)
+			},
+			expectedDelay: 300 * time.Millisecond,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tenantLimits := &Limits{}
+			flagext.DefaultValues(tenantLimits)
+			testData.tenantLimits(tenantLimits)
+
+			ov := NewOverrides(Limits{}, NewMockTenantLimits(map[string]*Limits{testData.tenantID: tenantLimits}))
+			require.Equal(t, testData.expectedDelay, ov.DistributorIngestionArtificialDelay(testData.tenantID))
+		})
+	}
 }
 
 func TestAlertmanagerNotificationLimits(t *testing.T) {
@@ -433,8 +609,7 @@ alertmanager_notification_rate_limit_per_integration:
 			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("user", "email"))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("user", "email"))
@@ -580,8 +755,7 @@ testuser:
 
 			tl := NewMockTenantLimits(overrides)
 
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("testuser", tc.testedIntegration))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("testuser", tc.testedIntegration))
@@ -629,8 +803,7 @@ ruler_max_rules_per_rule_group_by_namespace:
 			limitsYAML := Limits{}
 			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("user", tt.expectedNamespace))
 		})
@@ -745,8 +918,7 @@ differentuser:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("testuser", tt.inputNamespace))
 		})
@@ -793,8 +965,7 @@ ruler_max_rule_groups_per_tenant_by_namespace:
 			limitsYAML := Limits{}
 			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleGroupsPerTenant("user", tt.expectedNamespace))
 		})
@@ -908,8 +1079,7 @@ differentuser:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleGroupsPerTenant("testuser", tt.inputNamespace))
 		})
@@ -963,8 +1133,7 @@ user1:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(LimitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(LimitsYAML, tl)
 
 			require.Equal(t, tt.expectedNamespaces, ov.RulerProtectedNamespaces("user1"))
 		})
@@ -1018,10 +1187,169 @@ user1:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(LimitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(LimitsYAML, tl)
 
 			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
+		})
+	}
+}
+
+func TestRulerMinRuleEvaluationIntervalPerTenantOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML                         string
+		overrides                         string
+		expectedMinRuleEvaluationInterval time.Duration
+	}{
+		"no user specific minimum": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 15s
+`,
+			expectedMinRuleEvaluationInterval: 15 * time.Second,
+		},
+		"default limit if user not specified": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+randomuser:
+  ruler_min_rule_evaluation_interval: 5m
+`,
+			expectedMinRuleEvaluationInterval: 5 * time.Second,
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+user1:
+  ruler_min_rule_evaluation_interval: 10m
+`,
+			expectedMinRuleEvaluationInterval: 10 * time.Minute,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(LimitsYAML, tl)
+
+			require.Equal(t, tt.expectedMinRuleEvaluationInterval, ov.RulerMinRuleEvaluationInterval("user1"))
+		})
+	}
+}
+
+func TestRulerAlertmanagerClientConfig(t *testing.T) {
+	tc := map[string]struct {
+		baseYAML       string
+		overrides      string
+		expectedConfig notifier.AlertmanagerClientConfig
+	}{
+		"no override provided": {
+			baseYAML:       ``,
+			expectedConfig: notifier.DefaultAlertmanagerClientConfig,
+		},
+		"no user specific client config": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://custom-url:8080
+  proxy_url: http://some-proxy:1234
+  oauth2:
+    client_id: myclient
+    client_secret: mysecret
+    token_url: http://token-url
+    scopes: abc,def
+    endpoint_params:
+      key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+		"overridden config for specific user": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://some-base-url:8080
+`,
+			overrides: `
+user1:
+  ruler_alertmanager_client_config:
+    alertmanager_url: http://custom-url-for-this-tenant:8080
+    proxy_url: http://some-proxy:1234
+    oauth2:
+      client_id: myclient
+      client_secret: mysecret
+      token_url: http://token-url
+      scopes: abc,def
+      endpoint_params:
+        key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url-for-this-tenant:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
+			limitsYAML.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
+			err := yaml.Unmarshal([]byte(tt.baseYAML), &limitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(limitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedConfig, ov.RulerAlertmanagerClientConfig("user1"))
+			require.True(t, tt.expectedConfig.Equal(ov.RulerAlertmanagerClientConfig("user1")))
 		})
 	}
 }
@@ -1083,8 +1411,7 @@ active_series_additional_custom_trackers:
 					}
 					require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
 
-					overrides, err := NewOverrides(limitsYAML, nil)
-					require.NoError(t, err)
+					overrides := NewOverrides(limitsYAML, nil)
 
 					// We expect the pointer holder to be always initialised, either when initializing default values
 					// or by the unmarshalling.
@@ -1118,8 +1445,7 @@ active_series_additional_custom_trackers:
 		limitsYAML := Limits{}
 		require.NoError(t, yaml.Unmarshal([]byte(cfg), &limitsYAML))
 
-		overrides, err := NewOverrides(limitsYAML, nil)
-		require.NoError(t, err)
+		overrides := NewOverrides(limitsYAML, nil)
 
 		start := make(chan struct{})
 		wg := sync.WaitGroup{}
@@ -1176,18 +1502,6 @@ metric_relabel_configs:
 			cfg:         `ingest_storage_read_consistency: xyz`,
 			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
 		},
-		"should fail when cost_attribution_labels exceed max_cost_attribution_labels_per_user": {
-			cfg: `
-cost_attribution_labels: label1, label2, label3,
-max_cost_attribution_labels_per_user: 2`,
-			expectedErr: errCostAttributionLabelsLimitExceeded.Error(),
-		},
-		"should fail when max_cost_attribution_labels_per_user is more than 4": {
-			cfg: `
-cost_attribution_labels: label1, label2,
-max_cost_attribution_labels_per_user: 5`,
-			expectedErr: errInvalidMaxCostAttributionLabelsPerUser.Error(),
-		},
 	}
 
 	for testName, testData := range tests {
@@ -1224,6 +1538,259 @@ func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 				require.ErrorContains(t, err, testData.expectedErr)
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLimits_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg         Limits
+		verify      func(*testing.T, Limits)
+		expectedErr error
+	}{
+		"should fail if max update timeout jitter is negative": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerUpdateTimeoutJitterMax = -1
+
+				return cfg
+			}(),
+			expectedErr: errNegativeUpdateTimeoutJitterMax,
+		},
+		"should fail if failover timeout is < update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(5 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(errInvalidFailoverTimeout, 5*time.Second, 7*time.Second),
+		},
+		"should pass if failover timeout is >= update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(7 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is NoTranslation and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoTranslation), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithoutSuffixes is not allowed unless validation scheme is legacy"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithoutSuffixes is not allowed unless metric suffixes are disabled"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless validation scheme is legacy"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
+		},
+		"should fail if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed unless validation scheme is utf8"),
+		},
+		"should fail if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
+		},
+		"should fail if otel_translation_strategy is NoTranslation and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless validation scheme is utf8"),
+		},
+		"should fail if otel_translation_strategy is NoTranslation and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless metric suffixes are disabled"),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			err := testData.cfg.Validate()
+			if testData.expectedErr != nil {
+				require.EqualError(t, err, testData.expectedErr.Error())
+				return
+			}
+			require.NoError(t, err)
+
+			if testData.verify != nil {
+				testData.verify(t, testData.cfg)
 			}
 		})
 	}
@@ -1502,8 +2069,7 @@ alertmanager_max_grafana_state_size_bytes: "0"
 			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
 			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
@@ -1518,10 +2084,10 @@ user1:
     - path: /api/v1/query
       method: POST
       query_params:
-        foo: 
+        foo:
           value: bar
     - query_params:
-        first: 
+        first:
           value: bar.*
           is_regexp: true
         other:
@@ -1532,12 +2098,11 @@ user1:
 	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
 	require.NoError(t, err)
 	tl := NewMockTenantLimits(overrides)
-	ov, err := NewOverrides(getDefaultLimits(), tl)
-	require.NoError(t, err)
+	ov := NewOverrides(getDefaultLimits(), tl)
 
 	blockedRequests := ov.BlockedRequests("user1")
 	require.Len(t, blockedRequests, 2)
-	require.Equal(t, &BlockedRequest{
+	require.Equal(t, BlockedRequest{
 		Path:   "/api/v1/query",
 		Method: "POST",
 		QueryParams: map[string]BlockedRequestQueryParam{
@@ -1546,7 +2111,7 @@ user1:
 			},
 		},
 	}, blockedRequests[0])
-	require.Equal(t, &BlockedRequest{
+	require.Equal(t, BlockedRequest{
 		QueryParams: map[string]BlockedRequestQueryParam{
 			"first": {
 				Value:    "bar.*",
@@ -1558,6 +2123,47 @@ user1:
 			},
 		},
 	}, blockedRequests[1])
+}
+
+func TestLimitsCanonicalizeQueries(t *testing.T) {
+	testCases := []struct {
+		name            string
+		inputQueries    BlockedQueriesConfig
+		expectedQueries BlockedQueriesConfig
+	}{
+		{
+			name: "mixed queries",
+			inputQueries: BlockedQueriesConfig{
+				// Valid exact queries are canonicalized.
+				{Pattern: `up{pod="test", job="test"}`, Regex: false},
+				// Invalid exact queries are unchanged.
+				{Pattern: `up{pod="test", job="test"`, Regex: false},
+				// Regex queries are unchanged.
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
+			},
+			expectedQueries: BlockedQueriesConfig{
+				// Order is preserved.
+				{Pattern: `up{job="test",pod="test"}`, Regex: false},
+				{Pattern: `up{pod="test", job="test"`, Regex: false},
+				{Pattern: `up{pod="test", job=~".*"}`, Regex: true},
+			},
+		},
+		{
+			name:            "empty blocked queries list",
+			inputQueries:    BlockedQueriesConfig{},
+			expectedQueries: BlockedQueriesConfig{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := Limits{
+				BlockedQueries: tc.inputQueries,
+			}
+			limits.canonicalizeQueries()
+			require.Equal(t, tc.expectedQueries, limits.BlockedQueries)
+		})
+	}
 }
 
 func getDefaultLimits() Limits {

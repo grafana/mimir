@@ -5,6 +5,11 @@ on:
     - cron: '30 1 * * *'
   workflow_dispatch: # Allows manual triggering
 
+permissions:
+  contents: read
+  issues: none
+  pull-requests: write
+
 jobs:
   stale:
     runs-on: ubuntu-latest

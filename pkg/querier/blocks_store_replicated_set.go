@@ -11,6 +11,7 @@ import (
 	"math/rand"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -52,7 +53,7 @@ func newBlocksStoreReplicationSet(
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
 	limits BlocksStoreLimits,
-	clientConfig ClientConfig,
+	clientConfig grpcclient.Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {

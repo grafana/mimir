@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -433,9 +433,59 @@ func TestStateReplication_GetFullState(t *testing.T) {
 			require.NoError(t, err)
 
 			// Key ordering is undefined for the code under test.
-			sort.Slice(result.Parts, func(i, j int) bool { return result.Parts[i].Key < result.Parts[j].Key })
+			slices.SortFunc(result.Parts, func(a, b clusterpb.Part) int {
+				return strings.Compare(a.Key, b.Key)
+			})
 
 			assert.Equal(t, tt.result, result)
 		})
 	}
+}
+
+func TestMergeGrafanaState(t *testing.T) {
+	// Oversized messages should be broadcasted for Grafana state taken from object storage.
+	replicator := newFakeReplicator()
+	replicator.read = readStateResult{res: nil, err: nil}
+
+	store := newFakeAlertStore()
+
+	reg := prometheus.NewPedanticRegistry()
+	s := newReplicatedStates("test", 3, replicator, store, log.NewNopLogger(), reg)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
+	})
+
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		require.NoError(t, s.WaitReady(ctx))
+	}
+
+	// Send the oversized state in a separate goroutine.
+	data := []byte(strings.Repeat("a", 1000))
+	go func() {
+		require.NoError(t, s.MergeGrafanaState([]*clusterpb.FullState{{
+			Parts: []clusterpb.Part{{
+				Key:  "sil:test",
+				Data: data,
+			}},
+		}}))
+	}()
+
+	// Check for broadcasted messages.
+	require.Eventually(t, func() bool {
+		replicator.mtx.Lock()
+		defer replicator.mtx.Unlock()
+		return len(replicator.results) == 1
+	}, time.Second, time.Millisecond)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP alertmanager_state_replication_total Number of times we have tried to replicate a state to other alertmanagers.
+# TYPE alertmanager_state_replication_total counter
+alertmanager_state_replication_total{key="sil:test"} 1
+	`),
+		"alertmanager_state_replication_total",
+	))
 }

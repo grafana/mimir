@@ -112,8 +112,7 @@ spec:
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.distributor }}
-          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request $jaeger_queue_size }}
+          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -122,13 +121,9 @@ spec:
               {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- if $cpu_request }}
-            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $calculated_max_procs := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 2 | ceil }}
             - name: "GOMAXPROCS"
-              value: {{ max $cpu_request_doubled 8 | toString | toYaml }}
-            {{- end }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
+              value: {{ max $calculated_max_procs 8 | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}

@@ -104,3 +104,9 @@ var x identifier
 
 # Due to a limitation of imports modification, you need an additional patch directive
 x
+
+@@
+var x identifier
+@@
+-x.Samples[len(x.Samples)-1].Timestamp
++x.Samples[len(x.Samples)-1].TimestampMs

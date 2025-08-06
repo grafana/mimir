@@ -12,9 +12,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -30,9 +33,15 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	ctx := context.Background()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	// Create block.
 	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -71,9 +80,14 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 			t.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(t *testing.T) {
 				t.Parallel()
 				tmpDir := t.TempDir()
-				bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+				ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 				require.NoError(t, err)
-				t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+				bkt := objstore.WithNoopInstr(ubkt)
+
+				t.Cleanup(func() {
+					require.NoError(t, bkt.Close())
+					require.NoError(t, ubkt.Close())
+				})
 
 				blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 				require.NoError(t, err)
@@ -104,9 +118,14 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	ctx := context.Background()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-stream-binary-reader-cancel")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	seriesCount := streamindex.CheckContextEveryNIterations * 10
 	// Create block.
@@ -131,6 +150,60 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestStreamBinaryReader_FailedSparseHeaderGetOpsAreNotTracked(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-sparse-headers-from-objstore")
+
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("b", "3"),
+	}, 100, 0, 1000, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	ubkt, err := filesystem.NewBucket(tmpDir)
+	require.NoError(t, err)
+
+	bkt := objstore.WrapWithMetrics(ubkt, prometheus.WrapRegistererWithPrefix("thanos_", reg), "")
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
+
+	// Create a new StreamBinaryReader - no sparse index header in object storage to use, will return 4XX on GET.
+	newReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
+	defer newReader.Close()
+
+	// Should not count the failure to get sparse index header in thanos_objstore_bucket_operation_failures_total
+	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP thanos_objstore_bucket_operation_failures_total Total number of operations against a bucket that failed, but were not expected to fail in certain way from caller perspective. Those errors have to be investigated.
+		# TYPE thanos_objstore_bucket_operation_failures_total counter
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="attributes"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="delete"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="exists"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="get"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="get_range"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="iter"} 0
+		thanos_objstore_bucket_operation_failures_total{bucket="",operation="upload"} 0
+		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
+		# TYPE thanos_objstore_bucket_operations_total counter
+		thanos_objstore_bucket_operations_total{bucket="",operation="attributes"} 1
+		thanos_objstore_bucket_operations_total{bucket="",operation="delete"} 0
+		thanos_objstore_bucket_operations_total{bucket="",operation="exists"} 0
+		thanos_objstore_bucket_operations_total{bucket="",operation="get"} 1
+		thanos_objstore_bucket_operations_total{bucket="",operation="get_range"} 4
+		thanos_objstore_bucket_operations_total{bucket="",operation="iter"} 0
+		thanos_objstore_bucket_operations_total{bucket="",operation="upload"} 0
+	`),
+		"thanos_objstore_bucket_operations_total",
+		"thanos_objstore_bucket_operation_failures_total",
+	))
+}
+
 // TestStreamBinaryReader_UsesSparseHeaderFromObjectStore tests if StreamBinaryReader uses
 // a sparse index header that's already present in the object store instead of recreating it.
 func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
@@ -139,9 +212,14 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-sparse-headers-from-objstore")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, bkt.Close())
+		require.NoError(t, ubkt.Close())
+	})
 
 	// Create block with sample data
 	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -180,8 +258,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 
 	// Create a bucket that can track downloads and verify content
 	trackedBkt := &trackedBucket{
-		BucketReader: bkt,
-		expectedPath: sparseHeaderObjPath,
+		InstrumentedBucketReader: bkt,
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
@@ -208,14 +285,17 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 
 // trackedBucket wraps a BucketReader and tracks details about downloaded files
 type trackedBucket struct {
-	objstore.BucketReader
-	expectedPath   string
+	objstore.InstrumentedBucketReader
 	getWasCalled   bool
 	downloadedPath string
+}
+
+func (b *trackedBucket) ReaderWithExpectedErrs(objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
+	return b
 }
 
 func (b *trackedBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	b.getWasCalled = true
 	b.downloadedPath = name
-	return b.BucketReader.Get(ctx, name)
+	return b.InstrumentedBucketReader.Get(ctx, name)
 }

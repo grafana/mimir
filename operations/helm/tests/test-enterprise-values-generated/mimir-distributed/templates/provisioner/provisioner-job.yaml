@@ -37,40 +37,31 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        - name: provisioner-team-a
+        - name: provisioner
           image: "us-docker.pkg.dev/grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner:latest"
           imagePullPolicy: IfNotPresent
           command:
-            - /usr/bin/provisioner
-          args:
-            - -bootstrap-path=/bootstrap
-            - -cluster-name=test-enterprise-values
-            - -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080
-            - -tenant=team-a
-            - -access-policy=write-team-a:team-a:metrics:write
-            - -access-policy=read-team-a:team-a:metrics:read
-            - -token=write-team-a
-            - -token=read-team-a
-          volumeMounts:
-            - name: bootstrap
-              mountPath: /bootstrap
-            - name: admin-token
-              mountPath: /bootstrap/token
-              subPath: token
-        - name: provisioner-team-b
-          image: "us-docker.pkg.dev/grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner:latest"
-          imagePullPolicy: IfNotPresent
-          command:
-            - /usr/bin/provisioner
-          args:
-            - -bootstrap-path=/bootstrap
-            - -cluster-name=test-enterprise-values
-            - -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080
-            - -tenant=team-b
-            - -access-policy=write-team-b:team-b:metrics:write
-            - -access-policy=read-team-b:team-b:metrics:read
-            - -token=write-team-b
-            - -token=read-team-b
+            - /bin/sh
+            - -euc
+            - |
+              /usr/bin/provisioner \
+                -bootstrap-path=/bootstrap \
+                -cluster-name=test-enterprise-values \
+                -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080 \
+                -tenant=team-a \
+                -access-policy=write-team-a:team-a:metrics:write \
+                -access-policy=read-team-a:team-a:metrics:read \
+                -token=write-team-a \
+                -token=read-team-a
+              /usr/bin/provisioner \
+                -bootstrap-path=/bootstrap \
+                -cluster-name=test-enterprise-values \
+                -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080 \
+                -tenant=team-b \
+                -access-policy=write-team-b:team-b:metrics:write \
+                -access-policy=read-team-b:team-b:metrics:read \
+                -token=write-team-b \
+                -token=read-team-b
           volumeMounts:
             - name: bootstrap
               mountPath: /bootstrap

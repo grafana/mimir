@@ -3,12 +3,10 @@ aliases:
   - ../configuring/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/configuring/about-runtime-configuration/
   - ../operators-guide/configure/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configure/about-runtime-configuration/
   - ../operators-guide/configuring/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configuring/about-runtime-configuration/
-description:
-  Runtime configuration enables you to change a subset of configurations
-  without restarting Grafana Mimir.
+description: Runtime configuration enables you to change a subset of configurations without restarting Grafana Mimir.
 menuTitle: Runtime configuration
 title: About Grafana Mimir runtime configuration
-weight: 40
+weight: 30
 ---
 
 # About Grafana Mimir runtime configuration
@@ -107,4 +105,6 @@ By default, `-ingester.stream-chunks-when-using-blocks` is `true` which enables 
 In runtime configuration, the parameter `ingester_stream_chunks_when_using_blocks` overrides the CLI flag `-ingester.stream-chunks-when-using-blocks`.
 
 It's strongly recommended that you keep the transfer of encoded chunks enabled, except in rare cases where you observe rules evaluation slowing down.
+
+Both the parameter and CLI flag are deprecated and will be removed in a future release.
 {{< /admonition >}}

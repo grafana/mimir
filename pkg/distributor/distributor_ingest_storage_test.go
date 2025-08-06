@@ -197,7 +197,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 					# TYPE cortex_distributor_requests_in_total counter
-					cortex_distributor_requests_in_total{user="user"} 1
+					cortex_distributor_requests_in_total{user="user",version="1.0"} 1
 
 					# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected and deduped requests.
 					# TYPE cortex_distributor_received_requests_total counter
@@ -207,7 +207,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# TYPE cortex_distributor_samples_in_total counter
 					cortex_distributor_samples_in_total{user="user"} 5
 
-					# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+					# HELP cortex_distributor_received_samples_total The total number of received samples, including native histogram samples, excluding rejected and deduped samples.
 					# TYPE cortex_distributor_received_samples_total counter
 					cortex_distributor_received_samples_total{user="user"} 5
 
@@ -249,7 +249,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	ctx := user.InjectOrgID(context.Background(), "user")
 	now := time.Now()
 
-	hugeLabelValueLength := 100 * 1024 * 1024
+	hugeLabelValueLength := (1 << 24) - 1 // This is one character less than the maximum label length allowed by Prometheus.
 
 	createWriteRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{
@@ -262,8 +262,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = hugeLabelValueLength
 
-	overrides, err := validation.NewOverrides(*limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(*limits, nil)
 
 	testConfig := prepConfig{
 		numDistributors:         1,
@@ -547,6 +546,115 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	}
 }
 
+func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T) {
+	t.Parallel()
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	tests := map[string]struct {
+		shouldFailIngester       bool
+		shouldFailIngestStorage  bool
+		ignoreIngestStorageError bool
+		expectedErrorContext     string
+		maxWaitTime              time.Duration
+	}{
+		"should give precedence to ingester error when both ingester and ingest storage errors occur and IgnoreIngestStorageError is enabled": {
+			shouldFailIngester:       true,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "send data to ingesters",
+		},
+		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled": {
+			shouldFailIngester:       false,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "",
+		},
+		"should fail with timeout from partitionErrors when ignoreIngestStorageError is disabled and IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       true,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: false,
+			expectedErrorContext:     "timeout",
+			maxWaitTime:              200 * time.Millisecond,
+		},
+		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled with IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       false,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "",
+			maxWaitTime:              200 * time.Millisecond,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			// Setup test configuration
+			testConfig := prepConfig{
+				numDistributors:         1,
+				numIngesters:            1,
+				happyIngesters:          1,
+				replicationFactor:       1,
+				ingesterIngestionType:   ingesterIngestionTypeGRPC,
+				ingestStorageEnabled:    true,
+				ingestStoragePartitions: 1,
+				limits:                  prepareDefaultLimits(),
+				configure: func(cfg *Config) {
+					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+					cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors = testData.ignoreIngestStorageError
+					cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = testData.maxWaitTime
+				},
+			}
+
+			distributors, ingesters, _, kafkaCluster := prepare(t, testConfig)
+
+			require.Len(t, distributors, 1)
+			require.Len(t, ingesters, 1)
+
+			releaseProduceRequest := make(chan struct{})
+
+			// Configure Kafka to return error if specified
+			if testData.shouldFailIngestStorage {
+				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+					kafkaCluster.KeepControl()
+					<-releaseProduceRequest
+					time.Sleep(time.Second)
+
+					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+
+					return res, nil, true
+				})
+			}
+			// Mock Kafka to return a hard error.
+			if testData.shouldFailIngester {
+				ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+					// Release the Kafka produce request once the push to ingester has been received.
+					close(releaseProduceRequest)
+					ingesterError := httpgrpc.Errorf(http.StatusBadRequest, "ingester error")
+					return &mimirpb.WriteResponse{}, ingesterError, true
+				})
+			}
+
+			// Send write request
+			_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+				},
+			})
+
+			if testData.expectedErrorContext != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, testData.expectedErrorContext)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothToIngestersAndPartitions(t *testing.T) {
 	t.Parallel()
 
@@ -572,7 +680,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 	require.Len(t, ingesters, 1)
 	require.Len(t, regs, 1)
 
-	// Mock Kafka to return an hard error.
+	// Mock Kafka to return a hard error.
 	releaseProduceRequest := make(chan struct{})
 	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 		kafkaCluster.KeepControl()
@@ -1495,9 +1603,15 @@ func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartition
 	// Init the client.
 	kafkaClient, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaAddresses...),
+		// Override the default retry backoff to quickly retry Fetches.
+		kgo.RetryBackoffFn(func(_ int) time.Duration { return 10 * time.Millisecond }),
+		// Set a low FetchMaxWait, because we prefer to retry the Fetch rather than hanging on it,
+		// in case the Fetch is stuck on the server side (fake Kafka) for any reason.
+		kgo.FetchMaxWait(timeout/4),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			kafkaTopic: offsets,
 		}))
+
 	require.NoError(t, err)
 	t.Cleanup(kafkaClient.Close)
 
@@ -1510,7 +1624,8 @@ func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartition
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
-		fetches := kafkaClient.PollRecords(ctx, 1000)
+		// Fetch all buffered records.
+		fetches := kafkaClient.PollFetches(ctx)
 		if err := fetches.Err(); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				break
@@ -1548,7 +1663,9 @@ func readAllMetricNamesByPartitionFromKafka(t testing.TB, kafkaAddresses []strin
 	for partitionID, requests := range requestsByPartition {
 		for _, req := range requests {
 			for _, series := range req.Timeseries {
-				metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
+				metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
+				require.NoError(t, err)
+
 				actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName)
 			}
 		}

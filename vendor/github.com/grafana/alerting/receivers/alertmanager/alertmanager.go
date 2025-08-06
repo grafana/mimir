@@ -5,20 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 )
 
-func New(cfg Config, meta receivers.Metadata, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		images:   images,
 		settings: cfg,
-		logger:   logger,
 	}
 }
 
@@ -27,17 +27,17 @@ type Notifier struct {
 	*receivers.Base
 	images   images.Provider
 	settings Config
-	logger   logging.Logger
 }
 
 // Notify sends alert notifications to Alertmanager.
 func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	n.logger.Debug("sending Alertmanager alert", "alertmanager", n.Name)
+	l := n.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending notification")
 	if len(as) == 0 {
 		return true, nil
 	}
 
-	_ = images.WithStoredImages(ctx, n.logger, n.images,
+	_ = images.WithStoredImages(ctx, l, n.images,
 		func(index int, image images.Image) error {
 			// If there is an image for this alert and the image has been uploaded
 			// to a public URL then include it as an annotation
@@ -61,8 +61,8 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 			User:     n.settings.User,
 			Password: n.settings.Password,
 			Body:     body,
-		}, n.logger); err != nil {
-			n.logger.Warn("failed to send to Alertmanager", "error", err, "alertmanager", n.Name, "url", u.String())
+		}, l); err != nil {
+			level.Warn(l).Log("msg", "failed to send to Alertmanager", "err", err, "url", u.String())
 			lastErr = err
 			numErrs++
 		}
@@ -70,7 +70,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 
 	if numErrs == len(n.settings.URLs) {
 		// All attempts to send alerts have failed
-		n.logger.Warn("all attempts to send to Alertmanager failed", "alertmanager", n.Name)
+		level.Warn(l).Log("msg", "all attempts to send to Alertmanager failed")
 		return false, fmt.Errorf("failed to send alert to Alertmanager: %w", lastErr)
 	}
 

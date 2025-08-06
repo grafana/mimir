@@ -98,6 +98,8 @@ type Dispatcher struct {
 	cancel func()
 
 	logger log.Logger
+
+	timerFactory TimerFactory
 }
 
 // Limits describes limits used by Dispatcher.
@@ -118,19 +120,25 @@ func NewDispatcher(
 	lim Limits,
 	l log.Logger,
 	m *DispatcherMetrics,
+	timerFactory TimerFactory,
 ) *Dispatcher {
 	if lim == nil {
 		lim = nilLimits{}
 	}
 
+	if timerFactory == nil {
+		timerFactory = standardTimerFactory
+	}
+
 	disp := &Dispatcher{
-		alerts:  ap,
-		stage:   s,
-		route:   r,
-		timeout: to,
-		logger:  log.With(l, "component", "dispatcher"),
-		metrics: m,
-		limits:  lim,
+		alerts:       ap,
+		stage:        s,
+		route:        r,
+		timeout:      to,
+		logger:       log.With(l, "component", "dispatcher"),
+		metrics:      m,
+		limits:       lim,
+		timerFactory: timerFactory,
 	}
 	return disp
 }
@@ -360,7 +368,7 @@ func (d *Dispatcher) processAlert(dispatchLink trace.Link, alert *types.Alert, r
 		return
 	}
 
-	ag = newAggrGroup(d.ctx, groupLabels, route, d.timeout, d.logger)
+	ag = newAggrGroup(d.ctx, groupLabels, route, d.timeout, d.logger, d.timerFactory)
 	routeGroups[fp] = ag
 	d.aggrGroupsNum++
 	d.metrics.aggrGroups.Inc()
@@ -378,14 +386,19 @@ func (d *Dispatcher) processAlert(dispatchLink trace.Link, alert *types.Alert, r
 		)
 		defer span.End()
 
-		_, _, err := d.stage.Exec(ctx, d.logger, alerts...)
+		pipelineTime, _ := notify.Now(ctx)
+		l := log.With(d.logger, "pipeline_time", pipelineTime)
+
+		_, _, err := d.stage.Exec(ctx, l, alerts...)
 		if err != nil {
-			lvl := level.Error(d.logger)
+			lvl := level.Error(l)
 			if errors.Is(ctx.Err(), context.Canceled) {
 				// It is expected for the context to be canceled on
 				// configuration reload or shutdown. In this case, the
 				// message should only be logged at the debug level.
-				lvl = level.Debug(d.logger)
+				lvl = level.Debug(l)
+			} else {
+				lvl = log.With(lvl, "aggrGroup", ag, "alerts", fmt.Sprintf("%v", alerts))
 			}
 			lvl.Log("msg", "Notify for alerts failed", "num_alerts", len(alerts), "err", err)
 
@@ -420,7 +433,7 @@ type aggrGroup struct {
 	ctx     context.Context
 	cancel  func()
 	done    chan struct{}
-	next    *time.Timer
+	timer   Timer
 	timeout func(time.Duration) time.Duration
 
 	mtx        sync.RWMutex
@@ -428,7 +441,7 @@ type aggrGroup struct {
 }
 
 // newAggrGroup returns a new aggregation group.
-func newAggrGroup(ctx context.Context, labels model.LabelSet, r *Route, to func(time.Duration) time.Duration, logger log.Logger) *aggrGroup {
+func newAggrGroup(ctx context.Context, labels model.LabelSet, r *Route, to func(time.Duration) time.Duration, logger log.Logger, timerFactory TimerFactory) *aggrGroup {
 	if to == nil {
 		to = func(d time.Duration) time.Duration { return d }
 	}
@@ -442,11 +455,16 @@ func newAggrGroup(ctx context.Context, labels model.LabelSet, r *Route, to func(
 	}
 	ag.ctx, ag.cancel = context.WithCancel(ctx)
 
-	ag.logger = log.With(logger, "aggrGroup", ag)
+	ag.logger = log.With(logger, "aggrGroup", ag, "group_fingerprint", ag.fingerprint())
 
 	// Set an initial one-time wait before flushing
 	// the first batch of notifications.
-	ag.next = time.NewTimer(ag.opts.GroupWait)
+	ag.timer = timerFactory(
+		ag.ctx,
+		ag.opts,
+		ag.logger,
+		uint64(ag.fingerprint()),
+	)
 
 	return ag
 }
@@ -465,11 +483,11 @@ func (ag *aggrGroup) String() string {
 
 func (ag *aggrGroup) run(nf notifyFunc) {
 	defer close(ag.done)
-	defer ag.next.Stop()
+	defer ag.timer.Stop()
 
 	for {
 		select {
-		case now := <-ag.next.C:
+		case now := <-ag.timer.C():
 			// Give the notifications time until the next flush to
 			// finish before terminating them.
 			ctx, cancel := context.WithTimeout(ag.ctx, ag.timeout(ag.opts.GroupInterval))
@@ -490,13 +508,11 @@ func (ag *aggrGroup) run(nf notifyFunc) {
 
 			// Wait the configured interval before calling flush again.
 			ag.mtx.Lock()
-			ag.next.Reset(ag.opts.GroupInterval)
+			ag.timer.Reset(now)
 			ag.hasFlushed = true
 			ag.mtx.Unlock()
 
-			ag.flush(func(alerts ...*types.Alert) bool {
-				return nf(ctx, alerts...)
-			})
+			ag.flush(ctx, nf)
 
 			cancel()
 
@@ -524,7 +540,7 @@ func (ag *aggrGroup) insert(alert *types.Alert) {
 	ag.mtx.Lock()
 	defer ag.mtx.Unlock()
 	if !ag.hasFlushed && alert.StartsAt.Add(ag.opts.GroupWait).Before(time.Now()) {
-		ag.next.Reset(0)
+		ag.timer.Flush()
 	}
 }
 
@@ -533,7 +549,7 @@ func (ag *aggrGroup) empty() bool {
 }
 
 // flush sends notifications for all new alerts.
-func (ag *aggrGroup) flush(notify func(...*types.Alert) bool) {
+func (ag *aggrGroup) flush(ctx context.Context, nf notifyFunc) {
 	if ag.empty() {
 		return
 	}
@@ -556,15 +572,18 @@ func (ag *aggrGroup) flush(notify func(...*types.Alert) bool) {
 	}
 	sort.Stable(alertsSlice)
 
-	level.Debug(ag.logger).Log("msg", "flushing", "alerts", fmt.Sprintf("%v", alertsSlice))
+	pipelineTime, _ := notify.Now(ctx)
+	l := log.With(ag.logger, "pipeline_time", pipelineTime)
 
-	if notify(alertsSlice...) {
+	level.Debug(l).Log("msg", "flushing", "alerts", fmt.Sprintf("%v", alertsSlice))
+
+	if nf(ctx, alertsSlice...) {
 		// Delete all resolved alerts as we just sent a notification for them,
 		// and we don't want to send another one. However, we need to make sure
 		// that each resolved alert has not fired again during the flush as then
 		// we would delete an active alert thinking it was resolved.
 		if err := ag.alerts.DeleteIfNotModified(resolvedSlice); err != nil {
-			level.Error(ag.logger).Log("msg", "error on delete alerts", "err", err)
+			level.Error(l).Log("msg", "error on delete alerts", "err", err)
 		}
 	}
 }

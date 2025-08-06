@@ -184,23 +184,23 @@ Alertmanager cluster bind address
 {{- end -}}
 
 {{- define "mimir.chunksCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "chunks-cache").port }}
+dnssrvnoa+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "chunks-cache").port }}
 {{- end -}}
 
 {{- define "mimir.indexCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "index-cache").port }}
+dnssrvnoa+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "index-cache").port }}
 {{- end -}}
 
 {{- define "mimir.metadataCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "metadata-cache").port }}
+dnssrvnoa+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "metadata-cache").port }}
 {{- end -}}
 
 {{- define "mimir.resultsCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "results-cache").port }}
+dnssrvnoa+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "results-cache").port }}
 {{- end -}}
 
 {{- define "mimir.adminCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "admin-cache").port }}
+dnssrvnoa+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "admin-cache").port }}
 {{- end -}}
 
 {{/*
@@ -601,12 +601,37 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 {{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}
 
+{{- /* Collect and sort zone names for dynamic downscaleLeader computation */ -}}
+{{- $zoneNames := list -}}
+{{- range $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
+{{- $zoneNames = append $zoneNames $rolloutZone.name -}}
+{{- end -}}
+{{- $sortedZoneNames := $zoneNames | sortAlpha -}}
+
 {{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
+{{- /* Determine downscaleLeader: prefer values.yaml setting, fallback to dynamic computation */ -}}
+{{- $downscaleLeader := $rolloutZone.downscaleLeader -}}
+{{- if and (not $downscaleLeader) (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) -}}
+{{- $currentZoneIdx := 0 -}}
+{{- range $i, $zoneName := $sortedZoneNames -}}
+{{- if eq $zoneName $rolloutZone.name -}}
+{{- $currentZoneIdx = $i -}}
+{{- end -}}
+{{- end -}}
+{{- if gt $currentZoneIdx 0 -}}
+{{- $previousZone := index $sortedZoneNames (sub $currentZoneIdx 1) -}}
+{{- $downscaleLeader = include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component "rolloutZoneName" $previousZone) -}}
+{{- end -}}
+{{- end -}}
+
 {{- $_ := set $zonesMap $rolloutZone.name (dict
   "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
+  "noDownscale"  $rolloutZone.noDownscale
+  "downscaleLeader" $downscaleLeader
+  "prepareDownscale" $rolloutZone.prepareDownscale
   ) -}}
 {{- end -}}
 {{- if $componentSection.zoneAwareReplication.migration.enabled -}}

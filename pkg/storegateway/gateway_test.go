@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,11 +33,9 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -326,9 +325,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 				gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 				limits.StoreGatewayTenantShardSize = testData.tenantShardSize
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				reg := prometheus.NewPedanticRegistry()
 				g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 				require.NoError(t, err)
@@ -418,9 +415,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		gatewayCfg.ShardingRing.WaitStabilityMinDuration = waitStabilityMin
 		gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 		require.NoError(t, err)
@@ -924,7 +919,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 }
 
 func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
-	runTest := func(t *testing.T, autoForgetEnabled bool) {
+	runTest := func(t *testing.T, autoForgetEnabled bool, autoForgetUnhealthyPeriods int, expectForget bool) {
 		test.VerifyNoLeak(t)
 
 		const unhealthyInstanceID = "unhealthy-id"
@@ -935,6 +930,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		gatewayCfg.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 		gatewayCfg.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 		gatewayCfg.ShardingRing.AutoForgetEnabled = autoForgetEnabled
+		gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods = autoForgetUnhealthyPeriods
 
 		storageCfg := mockStorageConfig(t)
 
@@ -954,7 +950,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
 			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now(), false, time.Time{})
-			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
+			instance.Timestamp = time.Now().Add(-time.Duration(gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods+1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 
 			return ringDesc, true, nil
@@ -963,7 +959,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		// Assert whether the unhealthy instance has been removed.
 		const maxWaitingTime = time.Second
 
-		if autoForgetEnabled {
+		if expectForget {
 			// Ensure the unhealthy instance is removed from the ring.
 			dstest.Poll(t, maxWaitingTime, false, func() interface{} {
 				d, err := ringStore.Get(ctx, RingKey)
@@ -986,12 +982,16 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		}
 	}
 
-	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled", func(t *testing.T) {
-		runTest(t, true)
+	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled, auto-forget-unhealthy-periods=10", func(t *testing.T) {
+		runTest(t, true, 10, true)
 	})
 
-	t.Run("should not auto-forget unhealthy instances in the ring when auto-forget is disabled", func(t *testing.T) {
-		runTest(t, false)
+	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled, auto-forget-unhealthy-periods=0", func(t *testing.T) {
+		runTest(t, true, 0, false)
+	})
+
+	t.Run("should not auto-forget unhealthy instances in the ring when auto-forget is disabled, auto-forget-unhealthy-periods=10", func(t *testing.T) {
+		runTest(t, false, 10, false)
 	})
 }
 
@@ -1084,9 +1084,9 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				// so the same sample is returned twice because in this test we query two identical blocks.
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
-				assert.Equal(t, []sample{
-					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
-					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
+				assert.Equal(t, []test.Sample{
+					{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
+					{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
 				}, samples)
 			}
 		})
@@ -1450,8 +1450,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					// Customise the limits.
 					limits := defaultLimitsConfig()
 					limits.MaxChunksPerQuery = testData.limit
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(t, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Create a store-gateway used to query back the series from the blocks.
 					gatewayCfg := mockGatewayConfig()
@@ -1600,15 +1599,15 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 
 	return tokens
 }
 
-func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
-	var samples []sample
+func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]test.Sample, error) {
+	var samples []test.Sample
 
 	for _, rawChunk := range rawChunks {
 		c, err := chunkenc.FromData(chunkenc.EncXOR, rawChunk.Raw.Data)
@@ -1623,9 +1622,9 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 			}
 
 			ts, v := it.At()
-			samples = append(samples, sample{
-				t: ts,
-				v: v,
+			samples = append(samples, test.Sample{
+				TS:  ts,
+				Val: v,
 			})
 		}
 
@@ -1637,62 +1636,14 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 	return samples, nil
 }
 
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func (s sample) T() int64 {
-	return s.t
-}
-
-func (s sample) F() float64 {
-	return s.v
-}
-
-func (s sample) H() *histogram.Histogram {
-	return s.h
-}
-
-func (s sample) FH() *histogram.FloatHistogram {
-	return s.fh
-}
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
-}
-
 func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
 }
 
-func defaultLimitsOverrides(t *testing.T) *validation.Overrides {
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
-
-	return overrides
+func defaultLimitsOverrides(_ *testing.T) *validation.Overrides {
+	return validation.NewOverrides(defaultLimitsConfig(), nil)
 }
 
 type mockShardingStrategy struct {
@@ -1710,7 +1661,7 @@ func (m *mockShardingStrategy) FilterBlocks(ctx context.Context, userID string, 
 }
 
 func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucketindex.Index {
-	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
+	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, 16, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))

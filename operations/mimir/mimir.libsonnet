@@ -1,7 +1,7 @@
 (import 'ksonnet-util/kausal.libsonnet') +
-(import 'jaeger-agent-mixin/jaeger.libsonnet') +
 (import 'images.libsonnet') +
 (import 'common.libsonnet') +
+(import 'tracing.libsonnet') +
 (import 'config.libsonnet') +
 (import 'consul.libsonnet') +
 
@@ -35,9 +35,6 @@
 
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +
-
-// Read-write deployment mode.
-(import 'read-write-deployment/main.libsonnet') +
 
 // mTLS client configuration for Memcached
 (import 'memcached-client-mtls.libsonnet') +

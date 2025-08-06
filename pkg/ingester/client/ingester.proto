@@ -8,36 +8,35 @@ syntax = "proto3";
 // TODO: Rename to ingesterpb
 package cortex;
 
-option go_package = "client";
-
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
 
+option go_package = "client";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Ingester {
-  rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {};
-  rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {};
-  rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {};
+  rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
+  rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {}
+  rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {}
 
-  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
-  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};
-  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {};
-  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {};
-  rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {};
-  rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse) {};
+  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {}
+  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {}
+  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {}
+  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {}
+  rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {}
+  rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse) {}
 
   // LabelNamesAndValues provides all values for each label that matches the matchers.
   // The order of the labels and values is not guaranteed.
-  rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse) {};
+  rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse) {}
 
   // LabelValuesCardinality returns all values and series total count for label_names labels
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
-  rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+  rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {}
 
-  rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {};
+  rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
@@ -123,7 +122,10 @@ message QueryStreamResponse {
 }
 
 message QueryStreamSeries {
-  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
   int64 chunk_count = 2;
 }
 
@@ -210,7 +212,10 @@ message ActiveSeriesResponse {
 message TimeSeriesChunk {
   string from_ingester_id = 1;
   string user_id = 2;
-  repeated cortexpb.LabelPair labels = 3 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair labels = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
   repeated Chunk chunks = 4 [(gogoproto.nullable) = false];
 }
 
@@ -218,7 +223,10 @@ message Chunk {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   int32 encoding = 3;
-  bytes data = 4 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
+  bytes data = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"
+  ];
 }
 
 message LabelMatchers {

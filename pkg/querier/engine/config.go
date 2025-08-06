@@ -31,7 +31,7 @@ type Config struct {
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
-	MimirQueryEngine streamingpromql.Features `yaml:"mimir_query_engine" category:"experimental"`
+	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -66,12 +66,10 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
+		EnablePerStepStats: true, // Always enable per-step stats, since they are collected only if "stats=all" query parameter is set in addition to engine option.
 	}
 
-	mqeOpts := streamingpromql.EngineOpts{
-		CommonOpts: commonOpts,
-		Features:   cfg.MimirQueryEngine,
-	}
+	cfg.MimirQueryEngine.CommonOpts = commonOpts
 
-	return commonOpts, mqeOpts
+	return commonOpts, cfg.MimirQueryEngine
 }

@@ -319,6 +319,17 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 		# TYPE cortex_alertmanager_state_persist_total counter
 		cortex_alertmanager_state_persist_total 0
+		# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
+		# TYPE cortex_alertmanager_notify_hook_noop_total counter
+		cortex_alertmanager_notify_hook_noop_total 0
+		# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
+		# TYPE cortex_alertmanager_notify_hook_total counter
+		cortex_alertmanager_notify_hook_total 0
+		# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
+		# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
+		cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
+		cortex_alertmanager_notify_hook_duration_seconds_sum 0
+		cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 		# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 		# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -666,6 +677,17 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 						# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 						# TYPE cortex_alertmanager_state_persist_total counter
 						cortex_alertmanager_state_persist_total 0
+						# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
+						# TYPE cortex_alertmanager_notify_hook_noop_total counter
+						cortex_alertmanager_notify_hook_noop_total 0
+						# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
+						# TYPE cortex_alertmanager_notify_hook_total counter
+						cortex_alertmanager_notify_hook_total 0
+						# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
+						# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
+						cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
+						cortex_alertmanager_notify_hook_duration_seconds_sum 0
+						cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 						# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 						# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -954,6 +976,17 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 			# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 			# TYPE cortex_alertmanager_state_persist_total counter
 			cortex_alertmanager_state_persist_total 0
+			# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
+			# TYPE cortex_alertmanager_notify_hook_noop_total counter
+			cortex_alertmanager_notify_hook_noop_total 0
+			# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
+	  		# TYPE cortex_alertmanager_notify_hook_total counter
+			cortex_alertmanager_notify_hook_total 0
+			# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
+			# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
+			cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
+			cortex_alertmanager_notify_hook_duration_seconds_sum 0
+			cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 			# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 			# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -1201,29 +1234,24 @@ type notifyMetrics struct {
 func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 	m := &notifyMetrics{
 		numNotifications: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_total",
-			Help:      "The total number of attempted notifications.",
+			Name: "alertmanager_notifications_total",
+			Help: "The total number of attempted notifications.",
 		}, []string{"integration"}),
 		numTotalFailedNotifications: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_failed_total",
-			Help:      "The total number of failed notifications.",
+			Name: "alertmanager_notifications_failed_total",
+			Help: "The total number of failed notifications.",
 		}, []string{"integration", "reason"}),
 		numNotificationRequestsTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_requests_total",
-			Help:      "The total number of attempted notification requests.",
+			Name: "alertmanager_notification_requests_total",
+			Help: "The total number of attempted notification requests.",
 		}, []string{"integration"}),
 		numNotificationRequestsFailedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_requests_failed_total",
-			Help:      "The total number of failed notification requests.",
+			Name: "alertmanager_notification_requests_failed_total",
+			Help: "The total number of failed notification requests.",
 		}, []string{"integration"}),
 		numNotificationSuppressedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_suppressed_total",
-			Help:      "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
+			Name: "alertmanager_notifications_suppressed_total",
+			Help: "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
 		}, []string{"reason"}),
 		notificationLatencySeconds: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "alertmanager",

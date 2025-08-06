@@ -32,7 +32,7 @@ func TestMetricsQueryRequestValidationRoundTripper(t *testing.T) {
 	)
 	defer srv.Close()
 
-	rt := NewMetricsQueryRequestValidationRoundTripper(newTestPrometheusCodec(), http.DefaultTransport)
+	rt := NewMetricsQueryRequestValidationRoundTripper(newTestCodec(), http.DefaultTransport)
 
 	for i, tc := range []struct {
 		url             string
@@ -69,6 +69,21 @@ func TestMetricsQueryRequestValidationRoundTripper(t *testing.T) {
 		{
 			url:             instantQueryPathSuffix + "?query=up&start=123&end=456&step=60s",
 			expectedErrType: "",
+		},
+		{
+			// accepts utf-8 label names
+			url:             instantQueryPathSuffix + `?query=up{"test.label"="test"}`,
+			expectedErrType: "",
+		},
+		{
+			// accepts utf-8 metric name
+			url:             instantQueryPathSuffix + `?query={"test.label"}`,
+			expectedErrType: "",
+		},
+		{
+			// invalid utf-8 string
+			url:             instantQueryPathSuffix + "?query=up{\"test.label\"=\"\xff\"}",
+			expectedErrType: apierror.TypeBadData,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -109,7 +124,7 @@ func TestLabelsQueryRequestValidationRoundTripper(t *testing.T) {
 	)
 	defer srv.Close()
 
-	rt := NewLabelsQueryRequestValidationRoundTripper(newTestPrometheusCodec(), http.DefaultTransport)
+	rt := NewLabelsQueryRequestValidationRoundTripper(newTestCodec(), http.DefaultTransport)
 
 	for i, tc := range []struct {
 		url             string
@@ -209,8 +224,12 @@ func TestCardinalityQueryRequestValidationRoundTripper(t *testing.T) {
 		},
 		{
 			// non-utf8 label name will be rejected even when we transition to UTF-8 label names
-			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=\\xbd\\xb2\\x3d\\xbc\\x20\\xe2\\x8c\\x98",
+			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=\xbd\xb2\x3d\xbc\x20\xe2\x8c\x98",
 			expectedErrType: apierror.TypeBadData,
+		},
+		{
+			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=some.label",
+			expectedErrType: "",
 		},
 		{
 			url:             cardinalityLabelValuesPathSuffix + "?label_names[]=foo",

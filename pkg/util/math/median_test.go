@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMedianFilter(t *testing.T) {
@@ -42,4 +43,15 @@ func TestMedianFilter(t *testing.T) {
 		median := filter.Add(9.0)
 		assert.Equal(t, 5.0, median)
 	})
+}
+
+func TestMedianFilter_Reset(t *testing.T) {
+	filter := NewMedianFilter(3)
+	filter.Add(5.0)
+	filter.Add(2.0)
+	filter.Add(8.0)
+	require.NotEqual(t, 0.0, filter.Median())
+
+	filter.Reset()
+	require.Equal(t, 0.0, filter.Median())
 }

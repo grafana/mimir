@@ -23,15 +23,6 @@
       "source": {
         "git": {
           "remote": "https://github.com/grafana/jsonnet-libs.git",
-          "subdir": "jaeger-agent-mixin"
-        }
-      },
-      "version": "master"
-    },
-    {
-      "source": {
-        "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "ksonnet-util"
         }
       },

@@ -100,7 +100,7 @@
     $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
@@ -116,7 +116,7 @@
         statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': 'compactor' })
     ),
 
-  compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
+  compactor_statefulset:
     $.newCompactorStatefulSet(
       'compactor',
       $.compactor_container,
@@ -125,12 +125,12 @@
       $._config.cortex_compactor_max_unavailable,
     ),
 
-  compactor_service: if !$._config.is_microservices_deployment_mode then null else
+  compactor_service:
     local service = $.core.v1.service;
 
     $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 
-  compactor_pdb: if !$._config.is_microservices_deployment_mode then null else
+  compactor_pdb:
     $.newMimirPdb('compactor'),
 }

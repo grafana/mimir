@@ -144,6 +144,43 @@ local filename = 'mimir-top-tenants.json';
       ),
     )
 
+    .addRowIf(
+      $._config.gateway_per_tenant_metrics_enabled,
+      ($.row('By gateway read requests rate') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by gateway read requests rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m])))'
+            % [$.queries.read_http_routes_regex, $.namespaceMatcher()],
+          ], {
+            tenant: { alias: 'tenant', unit: 'string' },
+            Value: { alias: 'requests/s' },
+          }
+        )
+      ),
+    )
+
+    .addRowIf(
+      $._config.gateway_per_tenant_metrics_enabled,
+      ($.row('By gateway write requests rate') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by gateway write requests rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m])))'
+            % [$.queries.write_http_routes_regex, $.namespaceMatcher()],
+          ], {
+            tenant: { alias: 'tenant', unit: 'string' },
+            Value: { alias: 'requests/s' },
+          }
+        )
+      ),
+    )
+
+
     .addRow(
       ($.row('By discarded samples rate') + { collapse: true })
       .addPanel(

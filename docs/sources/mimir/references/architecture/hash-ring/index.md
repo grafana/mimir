@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/architecture/hash-ring/
-description:
-  Hash rings distribute sharding and replication work among Grafana Mimir
-  components.
+description: Hash rings distribute sharding and replication work among Grafana Mimir components.
 menuTitle: Hash rings
 title: Grafana Mimir hash rings
 weight: 60
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir hash rings
 
