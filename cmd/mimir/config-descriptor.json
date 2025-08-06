@@ -729,7 +729,7 @@
           "kind": "field",
           "name": "trace_request_exclude_headers_list",
           "required": false,
-          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.trace-request-headers-exclude-list",
@@ -2315,6 +2315,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
+              "required": false,
+              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -4858,17 +4869,6 @@
         },
         {
           "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_ingesters_within",
           "required": false,
           "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",
@@ -6012,6 +6012,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-native-delta-ingestion",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_translation_strategy",
+          "required": false,
+          "desc": "Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: \"\", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "distributor.otel-translation-strategy",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -10521,6 +10532,17 @@
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_enabled",
+              "required": false,
+              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -10729,6 +10751,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 1,
           "fieldFlag": "compactor.max-block-upload-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "update_blocks_concurrency",
+          "required": false,
+          "desc": "Number of Go routines to use when updating blocks metadata during bucket index updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "compactor.update-blocks-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },

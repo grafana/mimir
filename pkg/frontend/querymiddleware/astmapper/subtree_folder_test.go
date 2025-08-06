@@ -6,6 +6,7 @@
 package astmapper
 
 import (
+	"context"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -97,10 +98,11 @@ func TestSubtreeFolder(t *testing.T) {
 	} {
 		t.Run(testName, func(t *testing.T) {
 			mapper := newSubtreeFolder()
+			ctx := context.Background()
 
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
-			res, err := mapper.Map(expr)
+			res, err := mapper.Map(ctx, expr)
 			require.Nil(t, err)
 
 			expected, err := parser.ParseExpr(tc.expected)

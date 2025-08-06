@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: gateway
     app.kubernetes.io/managed-by: Helm
+    foo: bar
   namespace: "citestns"
 spec:
   tls:

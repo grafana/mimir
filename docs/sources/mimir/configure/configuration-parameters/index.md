@@ -772,7 +772,7 @@ grpc_tls_config:
 
 # Comma separated list of headers to exclude from tracing spans. Only used if
 # server.trace-request-headers is true. The following headers are always
-# excluded: Authorization, Cookie, X-Csrf-Token.
+# excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.
 # CLI flag: -server.trace-request-headers-exclude-list
 [trace_request_exclude_headers_list: <string> | default = ""]
 
@@ -1653,6 +1653,12 @@ mimir_query_engine:
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
+
+  # (experimental) Enable common subexpression elimination for range vector
+  # expressions when evaluating instant queries. This has no effect if common
+  # subexpression elimination is disabled.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
+  [enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries: <boolean> | default = true]
 
   # (experimental) Enable skipping decoding native histograms when evaluating
   # queries that do not require full histograms.
@@ -3659,11 +3665,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
-# (experimental) Split instant queries by an interval and execute in parallel. 0
-# to disable it.
-# CLI flag: -query-frontend.split-instant-queries-by-interval
-[split_instant_queries_by_interval: <duration> | default = 0s]
-
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
@@ -4242,6 +4243,15 @@ ruler_alertmanager_client_config:
 # The ingestion and querying process is likely to change over time.
 # CLI flag: -distributor.otel-native-delta-ingestion
 [otel_native_delta_ingestion: <boolean> | default = false]
+
+# (experimental) Translation strategy to apply in OTLP endpoint for metric and
+# label names. If unspecified (the default), the strategy is derived from
+# -validation.name-validation-scheme and
+# -distributor.otel-metric-suffixes-enabled. Supported values: "",
+# UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes,
+# NoUTF8EscapingWithSuffixes, NoTranslation.
+# CLI flag: -distributor.otel-translation-strategy
+[otel_translation_strategy: <string> | default = ""]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
@@ -4957,6 +4967,12 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Controls the collection of statistics and whether to defer
+  # some vector selector matchers to sequential scans. This leads to better
+  # performance.
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
+  [index_lookup_planning_enabled: <boolean> | default = false]
 ```
 
 ### compactor
@@ -5058,6 +5074,11 @@ The `compactor` block configures the compactor component.
 # = no limit.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
+
+# (advanced) Number of Go routines to use when updating blocks metadata during
+# bucket index updates.
+# CLI flag: -compactor.update-blocks-concurrency
+[update_blocks_concurrency: <int> | default = 1]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise

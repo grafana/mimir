@@ -372,7 +372,7 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(nil))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil))
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
 	for name, testCase := range testCases {

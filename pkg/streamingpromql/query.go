@@ -55,7 +55,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		msg := make([]interface{}, 0, 2*(3+4)) // 3 fields for all query types, plus worst case of 4 fields for range queries
 
 		msg = append(msg,
-			"msg", "query stats",
+			"msg", "evaluation stats",
 			"estimatedPeakMemoryConsumption", int64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
 			"expr", q.originalExpression,
 		)

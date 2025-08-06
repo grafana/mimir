@@ -4,7 +4,7 @@ aliases:
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: Versioning
 title: About Grafana Mimir versioning
-weight: 50
+weight: 35
 ---
 
 # About Grafana Mimir versioning
@@ -88,6 +88,8 @@ The following features are currently experimental:
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
   - `-ruler.min-rule-evaluation-interval`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -117,6 +119,10 @@ The following features are currently experimental:
     - `-distributor.otel-promote-scope-metadata`
   - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative values and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
     - `distributor.otel-native-delta-ingestion`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
+  - Configure metric and label name translation strategy in OTLP endpoint
+    - `-distributor.otel-translation-strategy`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -212,7 +218,6 @@ The following features are currently experimental:
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
-  - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
