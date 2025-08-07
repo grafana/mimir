@@ -1,7 +1,7 @@
 {
-  // zpdbTemplate creates new ZoneAwarePodDisruptionBudget resource.
+  // newZPDB creates new ZoneAwarePodDisruptionBudget resource.
   // name is the rollout-group
-  zpdbTemplate(name, rolloutGroup, maxUnavailable, ingestStorageEnabled):: {
+  newZPDB(name, rolloutGroup, maxUnavailable, ingestStorageEnabled):: {
     apiVersion: 'rollout-operator.grafana.com/v1',
     kind: 'ZoneAwarePodDisruptionBudget',
     metadata: {

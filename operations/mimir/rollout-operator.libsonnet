@@ -64,8 +64,7 @@
 
   // Create custom resource template for PodDisruptionZoneBudget
   zpdb_crd:
-    if zpdb_enabled then
-      std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
+    std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
 
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
@@ -126,11 +125,9 @@
         ] else []
       )
       + (
-        if zpdb_enabled then [
-          policyRule.withApiGroups('rollout-operator.grafana.com') +
-          policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
-          policyRule.withVerbs(['get', 'list', 'watch']),
-        ] else []
+        policyRule.withApiGroups('rollout-operator.grafana.com') +
+        policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
+        policyRule.withVerbs(['get', 'list', 'watch'])
       )
     ),
 
@@ -190,7 +187,7 @@
       namespace: $._config.namespace,
     }),
 
-  zpdb_validation_webhook: if !zpdb_enabled then null else
+  zpdb_validation_webhook: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     validatingWebhookConfiguration.new('zpdb-validation-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
