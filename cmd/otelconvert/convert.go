@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"log"
@@ -224,10 +226,20 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 
 	switch outputFormat {
 	case "json":
-		buf, err = protojson.Marshal(md)
+		var jsonBuf []byte
+		jsonBuf, err = protojson.Marshal(md)
 		if err != nil {
 			return chunkCount, fmt.Errorf("marshal json message: %w", err)
 		}
+
+		var b bytes.Buffer
+		w := gzip.NewWriter(&b)
+		if _, err = w.Write(jsonBuf); err != nil {
+			return chunkCount, fmt.Errorf("gzip json message: %w", err)
+		}
+		_ = w.Close()
+
+		buf = b.Bytes()
 	case "protobuf":
 		buf, err = proto.Marshal(md)
 		if err != nil {
