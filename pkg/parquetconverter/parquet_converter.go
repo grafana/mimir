@@ -388,8 +388,10 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			level.Debug(c.logger).Log("msg", "syncing block", "id", m.ULID, "meta", m)
 
 			if m.Compaction.Level < c.Cfg.MinCompactionLevel {
+				level.Debug(c.logger).Log("msg", "skipping block below min compaction level", "id", m.ULID, "meta", m)
 				continue
 			}
 
