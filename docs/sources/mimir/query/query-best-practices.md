@@ -1,6 +1,6 @@
 ---
-description: Learn best practices for querying metric data from Grafana Mimir.
-title: Query best practices
+description: Learn best practices for querying Grafana Mimir.
+title: Best practices for querying Grafana Mimir
 menuTitle: Query best practices
 weight: 1
 keywords:
@@ -11,7 +11,7 @@ keywords:
 
 <!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
-# Query best practices
+# Best practices for querying Grafana Mimir
 
 This topic provides best practices for querying metric data from Grafana Mimir to ensure optimal performance and reliability.
 
