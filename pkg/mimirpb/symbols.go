@@ -68,6 +68,7 @@ func reuseSymbolsSlice(s []string) {
 	for i := range s {
 		s[i] = ""
 	}
+	//nolint:staticcheck
 	symbolsSlicePool.Put(s[:0])
 }
 
