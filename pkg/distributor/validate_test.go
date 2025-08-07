@@ -85,8 +85,8 @@ func TestValidateLabels(t *testing.T) {
 
 	const repeatsPerCase = 100
 
-	defaultUserID := "testUserDefault"
-	utf8UserID := "testUserUTF8"
+	const defaultUserID = "testUserDefault"
+	const utf8UserID = "testUserUTF8"
 
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = 25
@@ -385,6 +385,8 @@ func TestValidateLabels(t *testing.T) {
 								userID = defaultUserID
 							case model.UTF8Validation:
 								userID = utf8UserID
+							default:
+								panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
 							}
 							if discardedSamplesValues[id.LabelValue()][userID] == nil {
 								discardedSamplesValues[id.LabelValue()][userID] = map[string]int{}
@@ -467,6 +469,8 @@ func TestValidateLabels(t *testing.T) {
 						userID = defaultUserID
 					case model.UTF8Validation:
 						userID = utf8UserID
+					default:
+						panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
 					}
 
 					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},

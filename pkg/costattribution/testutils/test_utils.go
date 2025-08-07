@@ -25,10 +25,10 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		// user6 has opted to rename team to eng_team.
 		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "eng_team"}}},
 	}
-	for _, ul := range userLabels {
-		baseLimits[ul[0]] = &validation.Limits{
+	for _, uls := range userLabels {
+		baseLimits[uls[0]] = &validation.Limits{
 			MaxCostAttributionCardinality: 10,
-			CostAttributionLabels:         ul[1:],
+			CostAttributionLabels:         uls[1:],
 		}
 	}
 	for userID, l := range baseLimits {
