@@ -28,6 +28,7 @@ Structure your queries to eliminate unwanted results as early as possible:
 ### Use precise label selectors
 
 - Start with the most selective labels: If you have labels like `namespace` and `app_name` where `app_name` is more specific, lead with `app_name="myapp"` rather than starting with the broader `namespace` selector.
+- Include as many label selectors as possible to reduce the number of series that need to be processed.
 - Prefer exact matches over regular expressions: Use exact label matching (`label="value"`) instead of regular expressions (`label=~"pattern"`) whenever possible. Regular expressions are more computationally expensive.
 
 ### Use appropriate time ranges
@@ -38,33 +39,19 @@ Structure your queries to eliminate unwanted results as early as possible:
 
 ### Optimize PromQL queries
 
-- Use precise label selectors: Include as many label selectors as possible to reduce the number of series that need to be processed.
-- Prefer exact matches over regular expressions: Use exact label matching (`label="value"`) instead of regular expressions (`label=~"pattern"`) whenever possible. Regular expressions are more computationally expensive.
 - Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
-- Use recording rules: Pre-compute expensive queries using recording rules, especially for dashboard queries that run frequently.
+- Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
 
 ## Performance considerations
 
 ### Query complexity
 
-- Minimize regex usage: Regular expressions in label selectors can be expensive. Use exact matches when possible.
 - Limit aggregation scope: When using aggregation functions like `sum()` or `avg()`, group by only the necessary labels.
 - Use rate() for counters: Always use `rate()` or `irate()` functions when querying counter metrics.
-- Apply filters early: Structure your queries to eliminate unwanted series as early as possible in the query expression.
 
 ### Resource optimization
 
 - Use subqueries carefully: Subqueries can be powerful but may significantly increase query cost.
-
-## Use recording rules for complex queries
-
-Some queries are sufficiently complex, or some datasets sufficiently large, that there is a limit as to how much query performance can be optimized. If you're following the tips on this page and are still experiencing slow query times, consider creating [recording rules](../../manage/rule-evaluation/recording-rules/) for them. A recording rule runs a query at a predetermined interval and pre-computes the results of that query, saving those results for faster retrieval later.
-
-Recording rules are particularly beneficial for:
-- Dashboard queries that run frequently
-- Complex aggregations across high-cardinality metrics
-- Queries that span long time ranges
-- Frequently accessed historical data
 
 ## API usage best practices
 
