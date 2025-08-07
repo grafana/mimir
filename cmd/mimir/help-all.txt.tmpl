@@ -1233,6 +1233,8 @@ Usage of ./cmd/mimir/mimir:
     	Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
   -distributor.ha-tracker.update-timeout-jitter-max duration
     	Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. (default 5s)
+  -distributor.ha-tracker.use-sample-time-for-failover
+    	Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
   -distributor.ingestion-burst-factor float

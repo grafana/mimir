@@ -4392,6 +4392,17 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_use_sample_time_for_failover",
+          "required": false,
+          "desc": "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.ha-tracker.use-sample-time-for-failover",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "drop_labels",
           "required": false,
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",

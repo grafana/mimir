@@ -999,7 +999,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 
 			userID, err := tenant.TenantID(ctx)
 			assert.NoError(t, err)
-			err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now())
+			err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now(), time.Now())
 			assert.NoError(t, err)
 
 			request := makeWriteRequestForGenerators(tc.samples, labelSetGenWithReplicaAndCluster(tc.testReplica, tc.cluster), nil, nil)
