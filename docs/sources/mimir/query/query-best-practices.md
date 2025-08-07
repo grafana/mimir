@@ -19,11 +19,16 @@ The way you write queries for Grafana Mimir affects the speed and quality of you
 
 ### Query construction order
 
-Mimir evaluates PromQL queries by first identifying relevant time series, then processing the time range data. Structure your queries to eliminate unwanted results as early as possible:
+Structure your queries to eliminate unwanted results as early as possible:
 
 1. **Start with the most selective label selectors**: Use the most specific labels first to reduce the initial dataset size
 2. **Apply time range constraints**: Narrow down to the shortest feasible time range
 3. **Add functions and aggregations**: Apply PromQL functions after narrowing the series set
+
+### Use precise label selectors
+
+- **Start with the most selective labels**: If you have labels like `namespace` and `app_name` where `app_name` is more specific, lead with `app_name="myapp"` rather than starting with the broader `namespace` selector.
+- **Prefer exact matches over regular expressions**: Use exact label matching (`label="value"`) instead of regular expressions (`label=~"pattern"`) whenever possible. Regular expressions are more computationally expensive.
 
 ### Use appropriate time ranges
 
@@ -33,7 +38,7 @@ Mimir evaluates PromQL queries by first identifying relevant time series, then p
 
 ### Optimize PromQL queries
 
-- **Use precise label selectors**: Start with the most selective labels to reduce the initial series set. If you have labels like `namespace` and `app_name` where `app_name` is more specific, lead with `app_name="myapp"` rather than starting with the broader `namespace` selector.
+- **Use precise label selectors**: Include as many label selectors as possible to reduce the number of series that need to be processed.
 - **Prefer exact matches over regular expressions**: Use exact label matching (`label="value"`) instead of regular expressions (`label=~"pattern"`) whenever possible. Regular expressions are more computationally expensive.
 - **Avoid high cardinality operations**: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
 - **Use recording rules**: Pre-compute expensive queries using recording rules, especially for dashboard queries that run frequently.
@@ -49,9 +54,7 @@ Mimir evaluates PromQL queries by first identifying relevant time series, then p
 
 ### Resource optimization
 
-- **Batch similar queries**: When possible, combine multiple queries into a single, more complex query to reduce overhead.
 - **Use subqueries carefully**: Subqueries can be powerful but may significantly increase query cost.
-- **Monitor query performance**: Use Grafana Mimir's query performance metrics to identify slow or expensive queries.
 
 ## Use recording rules for complex queries
 
@@ -97,27 +100,6 @@ Recording rules are particularly beneficial for:
 
 ## Mimir multi-tenancy considerations
 
-### Tenant isolation and limits
+### Tenant-specific caching
 
-- **Understand tenant-specific limits**: Mimir enforces query limits on a per-tenant basis. Monitor and configure appropriate limits for query concurrency, memory usage, and timeout values.
 - **Configure tenant-specific caching**: Use the `cache_unaligned_requests` parameter to enable caching for unaligned queries on specific tenants that require it.
-- **Plan for tenant scaling**: Different tenants may have vastly different query patterns and resource requirements. Monitor per-tenant metrics to identify scaling needs.
-
-### Cross-tenant query considerations
-
-- **Tenant data isolation**: Queries are automatically scoped to the requesting tenant's data. There's no risk of accidentally accessing another tenant's metrics.
-- **Resource sharing awareness**: High-volume queries from one tenant can impact cluster performance for others. Monitor cluster-wide resource usage alongside per-tenant metrics.
-
-## Configuration optimization
-
-### Query frontend settings
-
-- **Tune caching parameters**: Configure appropriate TTL values for query result caching based on your data freshness requirements and query patterns.
-- **Optimize query splitting**: Adjust query sharding and parallelization settings based on your cluster size and query complexity.
-- **Configure appropriate timeouts**: Set reasonable query timeout values that balance user experience with resource protection.
-
-### Store gateway optimization
-
-- **Block storage considerations**: Ensure your object storage can handle the query load, especially for historical data queries that access many blocks.
-- **Index caching**: Configure appropriate index cache sizes to speed up label and series lookups.
-- **Compaction awareness**: Understand how Mimir's compaction process affects query performance and plan maintenance windows accordingly.
