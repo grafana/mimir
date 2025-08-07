@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/opts"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -41,7 +42,7 @@ func BenchmarkQuery(b *testing.B) {
 	q := createBenchmarkQueryable(b, MetricSizes)
 	cases := TestCases(MetricSizes)
 
-	opts := streamingpromql.NewTestEngineOpts()
+	opts := opts.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(b, err)
@@ -93,7 +94,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
 
-	opts := streamingpromql.NewTestEngineOpts()
+	opts := opts.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
@@ -123,7 +124,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
-	opts := streamingpromql.NewTestEngineOpts()
+	opts := opts.NewTestEngineOpts()
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 

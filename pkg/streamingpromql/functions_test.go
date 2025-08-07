@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/opts"
 )
 
 // This test ensures that all functions correctly merge series after dropping the metric name.
@@ -28,7 +29,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	`
 
 	storage := promqltest.LoadedStorage(t, data)
-	opts := NewTestEngineOpts()
+	opts := opts.NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 

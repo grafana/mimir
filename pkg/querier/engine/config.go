@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
+	"github.com/grafana/mimir/pkg/streamingpromql/opts" //lint:ignore faillint opts is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
 )
@@ -31,7 +31,7 @@ type Config struct {
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
-	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
+	MimirQueryEngine opts.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -53,7 +53,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
-func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts) {
+func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, opts.EngineOpts) {
 	commonOpts := promql.EngineOpts{
 		Logger:               util_log.SlogFromGoKit(logger),
 		Reg:                  reg,

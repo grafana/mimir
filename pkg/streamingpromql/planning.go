@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/opts"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -42,7 +43,7 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+func NewQueryPlanner(opts opts.EngineOpts) *QueryPlanner {
 	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
@@ -67,7 +68,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
+func NewQueryPlannerWithoutOptimizationPasses(opts opts.EngineOpts) *QueryPlanner {
 	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		activeQueryTracker = &NoopQueryTracker{}

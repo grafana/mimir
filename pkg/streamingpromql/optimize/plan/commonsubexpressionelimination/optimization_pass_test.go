@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/opts"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -502,7 +503,7 @@ func TestOptimizationPass(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			opts := streamingpromql.NewTestEngineOpts()
+			opts := opts.NewTestEngineOpts()
 			plannerWithoutOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
