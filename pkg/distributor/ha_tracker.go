@@ -462,7 +462,7 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			h.electedLock.RUnlock()
-			err := uh.updateKVStore(ctx, cluster, replica, now, sampleTime, receivedAt, true)
+			err := uh.updateKVStore(ctx, cluster, replica, now, sampleTime, receivedAt)
 			h.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -579,7 +579,7 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 	}
 
 	uh := h.forUser(userID)
-	err := uh.updateKVStore(ctx, cluster, replica, now, sampleTime, now.UnixMilli(), false)
+	err := uh.updateKVStore(ctx, cluster, replica, now, sampleTime, now.UnixMilli())
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
@@ -651,7 +651,7 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, replica string, now, sampleTime time.Time, receivedAt int64, fromAll bool) error {
+func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, replica string, now, sampleTime time.Time, receivedAt int64) error {
 	key := fmt.Sprintf("%s/%s", h.userID, cluster)
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
@@ -680,11 +680,11 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 				}
 				if h.failoverSampleTimeout > 0 {
 					if sampleTime.Sub(timestamp.Time(desc.ReceivedAt)) < h.failoverSampleTimeout {
-						level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout, "from_all", fromAll)
+						level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout)
 						return nil, false, nil
 					}
 				}
-				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout, "from_all", fromAll)
+				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout)
 				electedAtTime = timestamp.FromTime(now)
 				electedChanges = desc.ElectedChanges + 1
 			}
