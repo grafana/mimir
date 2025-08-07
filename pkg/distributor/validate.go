@@ -319,6 +319,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 
 // validateExemplar returns an error if the exemplar is invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
+func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.UnsafeMutableLabel, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
 		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{}))
