@@ -13,7 +13,7 @@ keywords:
 
 # Best practices for querying Grafana Mimir
 
-This topic provides best practices for querying metric data from Grafana Mimir to ensure optimal performance and reliability.
+The way you write queries for Grafana Mimir affects the speed and quality of your results. Follow these query best practices to ensure optimal performance and reliability.
 
 ## Mimir-specific query optimizations
 
