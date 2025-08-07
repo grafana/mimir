@@ -13,6 +13,7 @@
 * [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306
+* [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
 * [ENHANCEMENT] Compactor: Add `-compactor.update-blocks-concurrency` flag to control concurrency for updating block metadata during bucket index updates, separate from deletion marker concurrency. #12117
 * [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail when experimental ingest storage is enabled. #12090
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094

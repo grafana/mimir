@@ -106,9 +106,12 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 			Help: "Total number of query requests discarded.",
 		}, []string{"user"}),
 		queueDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_query_frontend_queue_duration_seconds",
-			Help:    "Time spent by requests in queue before getting picked up by a querier.",
-			Buckets: prometheus.DefBuckets,
+			Name:                            "cortex_query_frontend_queue_duration_seconds",
+			Help:                            "Time spent by requests in queue before getting picked up by a querier.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
 		}),
 	}
 
