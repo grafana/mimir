@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -129,9 +130,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			res := otelMetricsToMetadata(otelMetrics, conversionOptions{
+			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			})
+			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
@@ -1426,7 +1428,6 @@ func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
 }
 
 func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
-
 	jsonReq := &httpgrpc.HTTPRequest{
 		Method: "POST",
 		Headers: []*httpgrpc.Header{
@@ -1855,7 +1856,13 @@ func (o otlpLimitsMock) OTelPromoteScopeMetadata(string) bool {
 
 func (o otlpLimitsMock) OTelNativeDeltaIngestion(string) bool { return false }
 
-func (o otlpLimitsMock) OTelEnableUnescapedNames(string) bool { return false }
+func (o otlpLimitsMock) OTelTranslationStrategy(string) otlptranslator.TranslationStrategyOption {
+	return otlptranslator.UnderscoreEscapingWithoutSuffixes
+}
+
+func (o otlpLimitsMock) NameValidationScheme(string) model.ValidationScheme {
+	return model.LegacyValidation
+}
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))

@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1542,11 +1543,12 @@ func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 	}
 }
 
-func TestLimits_validate(t *testing.T) {
+func TestLimits_Validate(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
 		cfg         Limits
+		verify      func(*testing.T, Limits)
 		expectedErr error
 	}{
 		"should fail if max update timeout jitter is negative": {
@@ -1583,32 +1585,213 @@ func TestLimits_validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if otel_enable_unescaped_names is true and name_validation_scheme is utf8": {
+		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.OTelEnableUnescapedNames = true
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if otel_enable_unescaped_names is true and name_validation_scheme is legacy": {
+		"should pass if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.OTelEnableUnescapedNames = true
 				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
-			expectedErr: errInvalidNameValidationScheme,
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is NoTranslation and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should pass if otel_translation_strategy is unspecified and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				t.Helper()
+				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoTranslation), cfg.OTelTranslationStrategy)
+			},
+			expectedErr: nil,
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithoutSuffixes is not allowed unless validation scheme is legacy"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithoutSuffixes is not allowed unless metric suffixes are disabled"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless validation scheme is legacy"),
+		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
+		},
+		"should fail if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed unless validation scheme is utf8"),
+		},
+		"should fail if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is utf8 and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
+		},
+		"should fail if otel_translation_strategy is NoTranslation and name_validation_scheme is legacy and metric name suffixes are disabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless validation scheme is utf8"),
+		},
+		"should fail if otel_translation_strategy is NoTranslation and name_validation_scheme is utf8 and metric name suffixes are enabled": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
+				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless metric suffixes are disabled"),
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, testData.expectedErr, testData.cfg.validate())
+			err := testData.cfg.Validate()
+			if testData.expectedErr != nil {
+				require.EqualError(t, err, testData.expectedErr.Error())
+				return
+			}
+			require.NoError(t, err)
+
+			if testData.verify != nil {
+				testData.verify(t, testData.cfg)
+			}
 		})
 	}
 }

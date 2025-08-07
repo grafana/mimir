@@ -4,7 +4,7 @@ aliases:
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: Versioning
 title: About Grafana Mimir versioning
-weight: 50
+weight: 35
 ---
 
 # About Grafana Mimir versioning
@@ -121,8 +121,8 @@ The following features are currently experimental:
     - `distributor.otel-native-delta-ingestion`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
-  - Disable escaping of metric and label names in OTLP endpoint
-    - `-distributor.otel-enable-unescaped-names`
+  - Configure metric and label name translation strategy in OTLP endpoint
+    - `-distributor.otel-translation-strategy`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
