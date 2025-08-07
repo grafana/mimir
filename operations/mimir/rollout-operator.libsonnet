@@ -117,17 +117,15 @@
         policyRule.withApiGroups('') +
         policyRule.withResources(['configmaps']) +
         policyRule.withVerbs(['get', 'update', 'create']),
+        policyRule.withApiGroups('rollout-operator.grafana.com') +
+        policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
+        policyRule.withVerbs(['get', 'list', 'watch'])
       ] + (
         if $._config.rollout_operator_replica_template_access_enabled then [
           policyRule.withApiGroups($.replica_template.spec.group) +
           policyRule.withResources(['%s/scale' % $.replica_template.spec.names.plural, '%s/status' % $.replica_template.spec.names.plural]) +
           policyRule.withVerbs(['get', 'patch']),
         ] else []
-      )
-      + (
-        policyRule.withApiGroups('rollout-operator.grafana.com') +
-        policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
-        policyRule.withVerbs(['get', 'list', 'watch'])
       )
     ),
 
