@@ -21,8 +21,8 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v3.5.0
-    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
+    image: prom/prometheus-linux-amd64:otlp-to-appender
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms", "--web.enable-otlp-receiver"]
     volumes:
       - ./config:/etc/prometheus
     ports:

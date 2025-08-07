@@ -41,7 +41,7 @@ exporters:
   debug:
     verbosity: basic
   otlphttp:
-    endpoint: http://mimir-1:8001/otlp
+    endpoint: http://prometheus:9090/api/v1/otlp
 
 extensions:
   health_check:
