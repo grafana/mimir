@@ -967,7 +967,9 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	}
 
 	for id, meta := range metas {
+		level.Debug(s.logger).Log("msg", "syncing block", "id", id, "meta", meta)
 		if s.blockSet.contains(id) {
+			level.Debug(s.logger).Log("msg", "block already loaded, skipping", "id", id)
 			continue
 		}
 
