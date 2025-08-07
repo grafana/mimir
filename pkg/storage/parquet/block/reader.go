@@ -16,7 +16,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -36,23 +35,6 @@ type Reader interface {
 	BlockID() ulid.ULID
 	storage.ParquetShard
 	io.Closer
-}
-
-type ParquetBucketOpener struct {
-	bkt    objstore.BucketReader
-	prefix string
-}
-
-func NewParquetBucketOpener(bkt objstore.BucketReader, prefix string) *ParquetBucketOpener {
-	return &ParquetBucketOpener{
-		bkt: bkt,
-	}
-}
-
-func (o *ParquetBucketOpener) Open(
-	ctx context.Context, name string, opts ...storage.FileOption,
-) (*storage.ParquetFile, error) {
-	return storage.OpenFromBucket(ctx, o.bkt, filepath.Join(o.prefix, name), opts...)
 }
 
 type ParquetLocalFileOpener struct {
@@ -76,7 +58,7 @@ func (o *ParquetLocalFileOpener) Open(
 // lazy-loading or other lifecycle management can be implemented by wrapping this type.
 type BasicReader struct {
 	blockID                ulid.ULID
-	labelsFile, chunksFile *storage.ParquetFile
+	labelsFile, chunksFile storage.ParquetFileView
 	schema                 *schema.TSDBSchema
 	o                      sync.Once
 }
@@ -121,18 +103,18 @@ func (r *BasicReader) BlockID() ulid.ULID {
 	return r.blockID
 }
 
-func (r *BasicReader) LabelsFile() *storage.ParquetFile {
+func (r *BasicReader) LabelsFile() storage.ParquetFileView {
 	return r.labelsFile
 }
 
-func (r *BasicReader) ChunksFile() *storage.ParquetFile {
+func (r *BasicReader) ChunksFile() storage.ParquetFileView {
 	return r.chunksFile
 }
 
 func (r *BasicReader) TSDBSchema() (*schema.TSDBSchema, error) {
 	var err error
 	r.o.Do(func() {
-		r.schema, err = schema.FromLabelsFile(r.labelsFile.File)
+		r.schema, err = schema.FromLabelsFile(r.labelsFile)
 	})
 	return r.schema, err
 }
