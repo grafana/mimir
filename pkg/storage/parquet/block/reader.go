@@ -14,10 +14,8 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/oklog/ulid/v2"
-	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,43 +35,6 @@ type Reader interface {
 	BlockID() ulid.ULID
 	storage.ParquetShard
 	io.Closer
-}
-
-type ParquetBucketOpener struct {
-	bkt objstore.BucketReader
-	cfg storage.ExtendedFileConfig
-}
-
-func NewParquetBucketOpener(bkt objstore.BucketReader, cfg storage.ExtendedFileConfig) *ParquetBucketOpener {
-	return &ParquetBucketOpener{
-		bkt: bkt,
-		cfg: cfg,
-	}
-}
-
-func (o *ParquetBucketOpener) Open(
-	ctx context.Context, name string, opts ...storage.FileOption,
-) (*storage.ParquetFile, error) {
-	attr, err := o.bkt.Attributes(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-
-	r := storage.NewBucketReadAt(name, o.bkt)
-	return Open(ctx, r, attr.Size, o.cfg)
-}
-
-func Open(ctx context.Context, r storage.ReadAtWithContextCloser, size int64, cfg storage.ExtendedFileConfig) (*storage.ParquetFile, error) {
-	file, err := parquet.OpenFile(r.WithContext(ctx), size, cfg.FileConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return &storage.ParquetFile{
-		File:                    file,
-		ReadAtWithContextCloser: r,
-		ParquetFileConfigView:   cfg,
-	}, nil
 }
 
 type ParquetLocalFileOpener struct {
@@ -133,8 +94,8 @@ func NewBasicReader(
 
 	return &BasicReader{
 		blockID:    blockID,
-		labelsFile: &MultiReaderFile{labelsFile, &sync.WaitGroup{}},
-		chunksFile: &MultiReaderFile{chunksFile, &sync.WaitGroup{}},
+		labelsFile: labelsFile,
+		chunksFile: chunksFile,
 	}, nil
 }
 

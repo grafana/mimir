@@ -57,8 +57,7 @@ type parquetBucketBlock struct {
 	meta              *block.Meta
 	blockLabels       labels.Labels
 	shardReaderCloser ParquetShardReaderCloser
-
-	localDir string
+	localDir          string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
