@@ -153,6 +153,9 @@ std.manifestYamlDoc({
       name: 'parquet-converter',
       target: 'parquet-converter',
       httpPort: 8040,
+      extraArguments: ' -parquet-converter.conversion-interval=30s' +
+                      ' -parquet-converter.discovery-interval=30s' +
+                      '-parquet-converter.min-compaction-level=1',
     }),
   },
 
