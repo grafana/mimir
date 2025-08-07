@@ -123,7 +123,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 					gauge.Gauge.DataPoints = append(gauge.Gauge.DataPoints, &metricsv1.NumberDataPoint{
 						TimeUnixNano: uint64(time.UnixMilli(ts).UnixNano()),
 						Value:        &metricsv1.NumberDataPoint_AsDouble{AsDouble: val},
-						Attributes:   metricAttrs,
+						// Attributes:   metricAttrs,
 					})
 				case chunkenc.ValHistogram:
 					ts, h := chkItr.AtHistogram(nil)
@@ -136,7 +136,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 						ZeroThreshold: h.ZeroThreshold,
 						Positive:      translateToOTELHistogramBuckets(h.PositiveSpans, h.PositiveBucketIterator()),
 						Negative:      translateToOTELHistogramBuckets(h.NegativeSpans, h.NegativeBucketIterator()),
-						Attributes:    metricAttrs,
+						// Attributes:    metricAttrs,
 					})
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chkItr.AtFloatHistogram(nil)
@@ -149,7 +149,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 						ZeroThreshold: fh.ZeroThreshold,
 						Positive:      translateToOTELFloatHistogramBuckets(fh.PositiveSpans, fh.PositiveBucketIterator()),
 						Negative:      translateToOTELFloatHistogramBuckets(fh.NegativeSpans, fh.NegativeBucketIterator()),
-						Attributes:    metricAttrs,
+						// Attributes:    metricAttrs,
 					})
 				default:
 					return fmt.Errorf("unexpected value type: %s", valType)
@@ -168,7 +168,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 					},
 					Metrics: []*metricsv1.Metric{
 						{
-							Name: metricName,
+							Name:     metricName,
+							Metadata: metricAttrs,
 						},
 					},
 				},
