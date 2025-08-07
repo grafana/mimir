@@ -15,30 +15,6 @@ keywords:
 
 The way you write queries for Grafana Mimir affects the speed and quality of your results. Follow these best practices to ensure optimal performance and reliability for queries.
 
-{{% admonition type="tip" %}}
-Before optimizing queries, ensure you've implemented proper [labeling best practices](../../configure/configure-metrics-storage-retention/#labeling-best-practices). Choosing the right labels is the first step toward writing efficient queries.
-{{% /admonition %}}
-
-## Mimir-specific query optimizations
-
-### Leverage Mimir's query caching
-
-- **Align queries for caching**: Ensure your range queries are aligned (both `start` and `end` parameters are multiples of the `step`) to benefit from Mimir's query result caching. Aligned queries are cached by default, significantly improving performance for repeated queries.
-- **Configure unaligned query caching**: If needed, enable caching for unaligned queries on a per-tenant basis using the `cache_unaligned_requests` parameter in your [limits configuration](../../configure/configuration-parameters/#limits).
-- **Understand cache behavior**: Grafana automatically aligns queries for you, but when using the Mimir HTTP API directly, ensure alignment for optimal caching benefits.
-
-### Work with TSDB block boundaries
-
-- **Understand block granularity**: Mimir stores metrics in TSDB blocks with specific time ranges - `2h` for recent metrics and up to `24h` for historical metrics with default configuration.
-- **Align time ranges to block boundaries**: When querying labels or historical data, your `start` and `end` parameters are automatically rounded to TSDB block boundaries, which can affect the actual data range returned.
-- **Optimize for block structure**: Design your queries to work efficiently with Mimir's block structure rather than fighting against it.
-
-### Use Mimir's specialized APIs
-
-- **Choose the right cardinality API**: Use [label cardinality APIs](../query-metric-labels/#querying-label-names) specifically for understanding series cardinality rather than extracting this information from general queries.
-- **Leverage label-specific endpoints**: Use dedicated label querying APIs (`/api/v1/labels`, `/api/v1/label/{name}/values`) rather than extracting labels from series or instant query results.
-- **Understand API trade-offs**: Label cardinality APIs query only in-memory series in ingesters, while other APIs can query historical data from blocks.
-
 ## General query guidelines
 
 ### Query construction order
