@@ -29,6 +29,15 @@ type Builder struct {
 	mint, maxt        int64
 }
 
+// NewBuilder creates a new Builder instance for constructing TSDB schemas.
+// It initializes the builder with time range boundaries and data column duration.
+//
+// Parameters:
+//   - mint: minimum timestamp (inclusive) for the time range
+//   - maxt: maximum timestamp (inclusive) for the time range
+//   - colDuration: duration in milliseconds for each data column
+//
+// Returns a pointer to a new Builder instance with initialized metadata.
 func NewBuilder(mint, maxt, colDuration int64) *Builder {
 	b := &Builder{
 		g:                 make(parquet.Group),
@@ -45,7 +54,11 @@ func NewBuilder(mint, maxt, colDuration int64) *Builder {
 	return b
 }
 
-func FromLabelsFile(lf *parquet.File) (*TSDBSchema, error) {
+// FromLabelsFile creates a TSDBSchema from an existing parquet labels file.
+// It extracts metadata (mint, maxt, dataColDurationMs) from the file's key-value metadata
+// and reconstructs the schema by examining the file's columns to identify label columns.
+// Returns an error if the metadata cannot be parsed or the schema cannot be built.
+func FromLabelsFile(lf parquet.FileView) (*TSDBSchema, error) {
 	md := MetadataToMap(lf.Metadata().KeyValueMetadata)
 	mint, err := strconv.ParseInt(md[MinTMd], 0, 64)
 	if err != nil {
@@ -142,6 +155,16 @@ func (s *TSDBSchema) DataColumIdx(t int64) int {
 	return int((t - s.MinTs) / s.DataColDurationMs)
 }
 
+// LabelsProjection creates a TSDBProjection containing only label columns and column indexes.
+// This projection is used for creating parquet files that contain only the label metadata
+// without the actual time series data columns. The resulting projection includes:
+//   - ColIndexes column for row indexing
+//   - All label columns extracted from the original schema
+//
+// Parameters:
+//   - opts: optional compression options to apply to the projection schema
+//
+// Returns a TSDBProjection configured for labels files, or an error if required columns are missing.
 func (s *TSDBSchema) LabelsProjection(opts ...CompressionOpts) (*TSDBProjection, error) {
 	g := make(parquet.Group)
 
@@ -170,6 +193,16 @@ func (s *TSDBSchema) LabelsProjection(opts ...CompressionOpts) (*TSDBProjection,
 	}, nil
 }
 
+// ChunksProjection creates a TSDBProjection containing only data columns for time series chunks.
+// This projection is used for creating parquet files that contain the actual time series data
+// without the label metadata. The resulting projection includes:
+//   - All data columns (columns that store time series chunk data)
+//   - Page bounds are skipped for all data columns to optimize storage
+//
+// Parameters:
+//   - opts: optional compression options to apply to the projection schema
+//
+// Returns a TSDBProjection configured for chunks files, or an error if required columns are missing.
 func (s *TSDBSchema) ChunksProjection(opts ...CompressionOpts) (*TSDBProjection, error) {
 	g := make(parquet.Group)
 	writeOptions := make([]parquet.WriterOption, 0, len(s.DataColsIndexes))
