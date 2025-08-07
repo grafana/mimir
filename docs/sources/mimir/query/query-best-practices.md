@@ -63,28 +63,6 @@ This topic provides best practices for querying metric data from Grafana Mimir t
 - **Use subqueries carefully**: Subqueries can be powerful but may significantly increase query cost.
 - **Monitor query performance**: Use Grafana Mimir's query performance metrics to identify slow or expensive queries.
 
-## Troubleshooting slow queries
-
-### Diagnosis steps
-
-1. **Check query complexity**: Review the PromQL query for unnecessary complexity or high cardinality operations.
-2. **Verify time range**: Ensure the query time range is appropriate for your use case.
-3. **Examine series cardinality**: Use Mimir's [label cardinality APIs](../query-metric-labels/#querying-label-names) to understand the number of series your query needs to process.
-4. **Review query alignment**: Verify that range queries are properly aligned for caching benefits.
-5. **Check tenant limits**: Verify that the query isn't hitting tenant-specific limits for concurrent queries, memory usage, or query timeout.
-6. **Analyze component health**: Check the health of query frontend, ingesters, and store gateways that serve the query.
-
-### Common issues
-
-- **High cardinality label combinations**: Queries that select series with high cardinality label combinations can be slow.
-- **Long time ranges**: Queries spanning long time periods require more resources and time to execute.
-- **Complex aggregations**: Multiple levels of aggregation or grouping can impact query performance.
-- **Unaligned queries missing cache**: Queries with unaligned time ranges don't benefit from Mimir's caching unless specifically configured per-tenant.
-- **TSDB block boundary effects**: Time range queries may return different data than expected due to automatic rounding to block boundaries.
-- **Ingester vs. block data inconsistency**: Recent data in ingesters may differ from what's available in historical blocks, affecting cardinality API results.
-- **Tenant limit hits**: Queries failing or timing out due to per-tenant concurrency, memory, or timeout limits.
-- **Store gateway bottlenecks**: Slow queries when accessing historical data due to object storage latency or store gateway resource constraints.
-
 ## API usage best practices
 
 ### HTTP API optimization
