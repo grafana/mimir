@@ -143,12 +143,12 @@ func (r *lazyReaderLoader) controlLoop() {
 				loaded.reader, loaded.err = r.loadReader()
 				if loaded.reader != nil {
 					// TODO: this should be necessary but is not currently working
-					// loaded.inUse = &sync.WaitGroup{}
+					loaded.inUse = &sync.WaitGroup{}
 				}
 			}
 			if loaded.reader != nil {
 				// TODO: this should be necessary but is not currently working
-				// loaded.inUse.Add(1)
+				loaded.inUse.Add(1)
 				r.usedAt.Store(time.Now().UnixNano())
 			}
 			readerReq.response <- loaded
@@ -168,7 +168,7 @@ func (r *lazyReaderLoader) controlLoop() {
 
 			// TODO: this should be necessary but is not currently working
 			// Wait until all users finished using current reader.
-			// waitReadersOrPanic(loaded.inUse)
+			waitReadersOrPanic(loaded.inUse)
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
@@ -360,6 +360,7 @@ func (r *LazyReaderBucketLabelsAndChunks) LabelsFile() storage.ParquetFileView {
 		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.LabelsFile()
 }
 
@@ -370,6 +371,7 @@ func (r *LazyReaderBucketLabelsAndChunks) ChunksFile() storage.ParquetFileView {
 		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.ChunksFile()
 }
 
@@ -378,6 +380,7 @@ func (r *LazyReaderBucketLabelsAndChunks) TSDBSchema() (*schema.TSDBSchema, erro
 	if loaded.err != nil {
 		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.TSDBSchema()
 }
 
@@ -596,6 +599,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() storage.ParquetFileView
 		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.LabelsFile()
 }
 
@@ -606,6 +610,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() storage.ParquetFileView
 		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.ChunksFile()
 }
 
@@ -614,7 +619,27 @@ func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, er
 	if loaded.err != nil {
 		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
 	}
+	defer loaded.inUse.Done()
 	return loaded.reader.TSDBSchema()
+}
+
+func waitReadersOrPanic(wg *sync.WaitGroup) {
+	// timeout is long enough for any request to finish.
+	// The idea is that we don't want to wait forever, but surface a bug.
+	const timeout = time.Hour
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-time.After(timeout):
+		// It is illegal to leave the hanging wg.Wait() and later call wg.Add() on the same instance.
+		// So we panic here.
+		panic(fmt.Sprintf("timed out waiting for readers after %s, there is probably a bug keeping readers open, please report this", timeout))
+	}
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) UsedAt() int64 {

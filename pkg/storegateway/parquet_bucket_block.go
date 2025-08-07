@@ -29,11 +29,9 @@ type ParquetShardReaderCloser interface {
 
 // ParquetShardReader implements the storage.ParquetShard and io.Closer interfaces
 // in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
+// The block's pending readers counter is incremented when the reader is created and decremented on Close().
 type parquetBucketShardReader struct {
-	block             *parquetBucketBlock
-	readersMu         sync.Mutex
-	labelsFileReaders int
-	chunksFileReaders int
+	block *parquetBucketBlock
 }
 
 func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
