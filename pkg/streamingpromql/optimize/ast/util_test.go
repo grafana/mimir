@@ -5,7 +5,6 @@ package ast
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {
@@ -27,6 +28,9 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 
 	queryable := promqltest.LoadedStorage(t, data)
 
+	// Use Prometheus's query engine to execute the queries, ensuring that our query rewriting
+	// produces the same results as the original queries without any added optimizations
+	// on the query engine.
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:               promslog.NewNopLogger(),
 		Reg:                  nil,
@@ -49,46 +53,13 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 			require.NoError(t, err)
 			resInput := qInput.Exec(context.Background())
 			require.NoError(t, resInput.Err)
-			matrixInput, ok := resInput.Value.(promql.Matrix)
-			require.True(t, ok)
 
 			qRewritten, err := engine.NewRangeQuery(ctx, queryable, nil, expected, startTime, endTime, step)
 			require.NoError(t, err)
 			resRewritten := qRewritten.Exec(context.Background())
 			require.NoError(t, resRewritten.Err)
-			matrixRewritten, ok := resRewritten.Value.(promql.Matrix)
-			require.True(t, ok)
 
-			approximatelyEqualsMatrix(t, matrixInput, matrixRewritten)
+			testutils.RequireEqualResults(t, "", resInput, resRewritten, true)
 		})
-	}
-}
-
-func approximatelyEqualsMatrix(t *testing.T, a, b promql.Matrix) {
-	require.Equal(t, len(a), len(b), "Matrix lengths do not match")
-
-	// Sort both results by metric string to ensure consistent comparison
-	sortMetrics := func(streams []promql.Series) {
-		sort.Slice(streams, func(i, j int) bool {
-			return streams[i].Metric.String() < streams[j].Metric.String()
-		})
-	}
-	sortMetrics(a)
-	sortMetrics(b)
-
-	for i := range a {
-		require.Equal(t, a[i].Metric, b[i].Metric, "Metric labels do not match for series %d", i)
-
-		require.Equal(t, len(a[i].Floats), len(b[i].Floats), "Samples length does not match for series %d", i)
-		for j := range a[i].Floats {
-			require.Equal(t, a[i].Floats[j].T, b[i].Floats[j].T, "Sample timestamps do not match for series %d at index %d", i, j)
-			require.InDelta(t, a[i].Floats[j].F, b[i].Floats[j].F, 1e-10, "Sample values do not match for series %d at index %d", i, j)
-		}
-
-		require.Equal(t, len(a[i].Histograms), len(b[i].Histograms), "Histograms length does not match for series %d", i)
-		for j := range a[i].Histograms {
-			require.Equal(t, a[i].Histograms[j].T, b[i].Histograms[j].T, "Histogram timestamps do not match for series %d at index %d", i, j)
-			require.Equal(t, a[i].Histograms[j].H, b[i].Histograms[j].H, "Histogram values do not match for series %d at index %d", i, j)
-		}
 	}
 }
