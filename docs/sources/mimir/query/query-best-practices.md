@@ -15,6 +15,10 @@ keywords:
 
 The way you write queries for Grafana Mimir affects the speed and quality of your results. Follow these best practices to ensure optimal performance and reliability for queries.
 
+{{% admonition type="tip" %}}
+Before optimizing queries, ensure you've implemented proper [labeling best practices](../../configure/configure-metrics-storage-retention/#labeling-best-practices). Choosing the right labels is the first step toward writing efficient queries.
+{{% /admonition %}}
+
 ## Mimir-specific query optimizations
 
 ### Leverage Mimir's query caching
@@ -37,6 +41,14 @@ The way you write queries for Grafana Mimir affects the speed and quality of you
 
 ## General query guidelines
 
+### Query construction order
+
+Mimir evaluates PromQL queries by first identifying relevant time series, then processing the time range data. Structure your queries to eliminate unwanted results as early as possible:
+
+1. **Start with the most selective label selectors**: Use the most specific labels first to reduce the initial dataset size
+2. **Apply time range constraints**: Narrow down to the shortest feasible time range
+3. **Add functions and aggregations**: Apply PromQL functions after narrowing the series set
+
 ### Use appropriate time ranges
 
 - **Limit query time ranges**: Query only the time range you need. Larger time ranges require more compute resources and increase query latency.
@@ -45,7 +57,8 @@ The way you write queries for Grafana Mimir affects the speed and quality of you
 
 ### Optimize PromQL queries
 
-- **Use specific label selectors**: Include as many label selectors as possible to reduce the number of series that need to be processed.
+- **Use precise label selectors**: Start with the most selective labels to reduce the initial series set. If you have labels like `namespace` and `app_name` where `app_name` is more specific, lead with `app_name="myapp"` rather than starting with the broader `namespace` selector.
+- **Prefer exact matches over regular expressions**: Use exact label matching (`label="value"`) instead of regular expressions (`label=~"pattern"`) whenever possible. Regular expressions are more computationally expensive.
 - **Avoid high cardinality operations**: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
 - **Use recording rules**: Pre-compute expensive queries using recording rules, especially for dashboard queries that run frequently.
 
@@ -56,12 +69,23 @@ The way you write queries for Grafana Mimir affects the speed and quality of you
 - **Minimize regex usage**: Regular expressions in label selectors can be expensive. Use exact matches when possible.
 - **Limit aggregation scope**: When using aggregation functions like `sum()` or `avg()`, group by only the necessary labels.
 - **Use rate() for counters**: Always use `rate()` or `irate()` functions when querying counter metrics.
+- **Apply filters early**: Structure your queries to eliminate unwanted series as early as possible in the query expression.
 
 ### Resource optimization
 
 - **Batch similar queries**: When possible, combine multiple queries into a single, more complex query to reduce overhead.
 - **Use subqueries carefully**: Subqueries can be powerful but may significantly increase query cost.
 - **Monitor query performance**: Use Grafana Mimir's query performance metrics to identify slow or expensive queries.
+
+## Use recording rules for complex queries
+
+Some queries are sufficiently complex, or some datasets sufficiently large, that there is a limit as to how much query performance can be optimized. If you're following the tips on this page and are still experiencing slow query times, consider creating [recording rules](../../manage/rule-evaluation/recording-rules/) for them. A recording rule runs a query at a predetermined interval and pre-computes the results of that query, saving those results for faster retrieval later.
+
+Recording rules are particularly beneficial for:
+- Dashboard queries that run frequently
+- Complex aggregations across high-cardinality metrics
+- Queries that span long time ranges
+- Frequently accessed historical data
 
 ## API usage best practices
 
