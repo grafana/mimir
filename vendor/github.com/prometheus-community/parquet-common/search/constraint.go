@@ -40,6 +40,10 @@ type Constraint interface {
 	path() string
 }
 
+// MatchersToConstraints converts Prometheus label matchers into parquet search constraints.
+// It supports MatchEqual, MatchNotEqual, MatchRegexp, and MatchNotRegexp matcher types.
+// Returns a slice of constraints that can be used to filter parquet data based on the
+// provided label matchers, or an error if an unsupported matcher type is encountered.
 func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	r := make([]Constraint, 0, len(matchers))
 	for _, matcher := range matchers {
@@ -67,6 +71,16 @@ func MatchersToConstraints(matchers ...*labels.Matcher) ([]Constraint, error) {
 	return r, nil
 }
 
+// Initialize prepares the given constraints for use with the specified parquet file.
+// It calls the init method on each constraint to validate compatibility with the
+// file schema and set up any necessary internal state.
+//
+// Parameters:
+//   - f: The ParquetFile that the constraints will be applied to
+//   - cs: Variable number of constraints to initialize
+//
+// Returns an error if any constraint fails to initialize, wrapping the original
+// error with context about which constraint failed.
 func Initialize(f storage.ParquetFileView, cs ...Constraint) error {
 	for i := range cs {
 		if err := cs[i].init(f); err != nil {
@@ -107,6 +121,18 @@ func sortConstraintsBySortingColumns(cs []Constraint, sc []parquet.SortingColumn
 	})
 }
 
+// Filter applies the given constraints to a parquet row group and returns the row ranges
+// that satisfy all constraints. It optimizes performance by prioritizing constraints on
+// sorting columns, which are cheaper to evaluate.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - s: ParquetShard containing the parquet file to filter
+//   - rgIdx: Index of the row group to filter within the parquet file
+//   - cs: Variable number of constraints to apply for filtering
+//
+// Returns a slice of RowRange that represent the rows satisfying all constraints,
+// or an error if any constraint fails to filter.
 func Filter(ctx context.Context, s storage.ParquetShard, rgIdx int, cs ...Constraint) ([]RowRange, error) {
 	rg := s.LabelsFile().RowGroups()[rgIdx]
 	// Constraints for sorting columns are cheaper to evaluate, so we sort them first.
@@ -146,40 +172,45 @@ type pageToRead struct {
 type symbolTable struct {
 	dict parquet.Dictionary
 	syms []int32
+	defs []byte
 }
 
-func (s *symbolTable) Get(i int) parquet.Value {
-	switch s.syms[i] {
+func (s *symbolTable) Get(r int) parquet.Value {
+	i := s.GetIndex(r)
+	switch i {
 	case -1:
 		return parquet.NullValue()
 	default:
-		return s.dict.Index(s.syms[i])
+		return s.dict.Index(i)
 	}
 }
 
 func (s *symbolTable) GetIndex(i int) int32 {
-	return s.syms[i]
+	switch s.defs[i] {
+	case 1:
+		return s.syms[i]
+	default:
+		return -1
+	}
 }
 
 func (s *symbolTable) Reset(pg parquet.Page) {
 	dict := pg.Dictionary()
 	data := pg.Data()
 	syms := data.Int32()
-	defs := pg.DefinitionLevels()
+	s.defs = pg.DefinitionLevels()
 
 	if s.syms == nil {
-		s.syms = make([]int32, len(defs))
+		s.syms = make([]int32, len(s.defs))
 	} else {
-		s.syms = slices.Grow(s.syms, len(defs))[:len(defs)]
+		s.syms = slices.Grow(s.syms, len(s.defs))[:len(s.defs)]
 	}
 
 	sidx := 0
-	for i := range defs {
-		if defs[i] == 1 {
+	for i := range s.defs {
+		if s.defs[i] == 1 {
 			s.syms[i] = syms[sidx]
 			sidx++
-		} else {
-			s.syms[i] = -1
 		}
 	}
 	s.dict = dict
