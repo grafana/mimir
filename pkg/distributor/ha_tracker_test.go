@@ -1074,11 +1074,11 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *defaultHaTracker, use
 }
 
 type trackerLimits struct {
-	maxClusters              int
-	updateTimeout            time.Duration
-	updateTimeoutJitterMax   time.Duration
-	failoverTimeout          time.Duration
-	useSampleTimeForFailover bool
+	maxClusters            int
+	updateTimeout          time.Duration
+	updateTimeoutJitterMax time.Duration
+	failoverTimeout        time.Duration
+	failoverSampleTimeout  time.Duration
 
 	forUser map[string]trackerLimits
 }
@@ -1090,22 +1090,15 @@ func (l trackerLimits) MaxHAClusters(userID string) int {
 	return l.maxClusters
 }
 
-func (l trackerLimits) HATrackerTimeouts(userID string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+func (l trackerLimits) HATrackerTimeouts(userID string) (update, updateJitterMax, failover, failoverSample time.Duration) {
 	if ul, ok := l.forUser[userID]; ok {
 		l = ul
 	}
-	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout
+	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout, l.failoverSampleTimeout
 }
 
 func (l trackerLimits) DefaultHATrackerUpdateTimeout() time.Duration {
 	return l.updateTimeout
-}
-
-func (l trackerLimits) HATrackerUseSampleTimeForFailover(userID string) bool {
-	if ul, ok := l.forUser[userID]; ok {
-		l = ul
-	}
-	return l.useSampleTimeForFailover
 }
 
 func TestHATracker_MetricsCleanup(t *testing.T) {
@@ -1598,11 +1591,11 @@ func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
 	}, trackerLimits{
-		maxClusters:              100,
-		updateTimeout:            15 * time.Second,
-		updateTimeoutJitterMax:   0,
-		failoverTimeout:          failoverTimeout,
-		useSampleTimeForFailover: true,
+		maxClusters:            100,
+		updateTimeout:          15 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        failoverTimeout,
+		failoverSampleTimeout:  failoverTimeout,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -1666,11 +1659,11 @@ func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
 	}, trackerLimits{
-		maxClusters:              100,
-		updateTimeout:            15 * time.Second,
-		updateTimeoutJitterMax:   0,
-		failoverTimeout:          failoverTimeout,
-		useSampleTimeForFailover: false,
+		maxClusters:            100,
+		updateTimeout:          15 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        failoverTimeout,
+		failoverSampleTimeout:  0,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))

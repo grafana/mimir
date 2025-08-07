@@ -4392,13 +4392,13 @@
         },
         {
           "kind": "field",
-          "name": "ha_tracker_use_sample_time_for_failover",
+          "name": "ha_tracker_sample_failover_timeout",
           "required": false,
-          "desc": "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.",
+          "desc": "Additional timeout to use for failover that uses earliest sample time instead of the current time. Defaults to 0 which is disabled. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "distributor.ha-tracker.use-sample-time-for-failover",
-          "fieldType": "boolean",
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.ha-tracker.failover-sample-timeout",
+          "fieldType": "duration",
           "fieldCategory": "advanced"
         },
         {

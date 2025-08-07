@@ -129,8 +129,15 @@ type Limits struct {
 	// other than the replica written in the KVStore if the difference
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
-	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
-	HATrackerUseSampleTimeForFailover           bool                `yaml:"ha_tracker_use_sample_time_for_failover" json:"ha_tracker_use_sample_time_for_failover" category:"advanced"`
+	HATrackerFailoverTimeout model.Duration `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the earliest sample time in the
+	// batch received is more than this duration
+	// If set, this is an additional check to the HATrackerFailoverTimeout.
+	// If the earliest sample time is the same as the current time, setting
+	// this to the same value as HATrackerFailoverTimeout makes no difference.
+	HATrackerFailoverSampleTimeout              model.Duration      `yaml:"ha_tracker_sample_failover_timeout" json:"ha_tracker_sample_failover_timeout" category:"advanced"`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -324,7 +331,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.HATrackerUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	l.HATrackerFailoverTimeout = model.Duration(30 * time.Second)
 	f.Var(&l.HATrackerFailoverTimeout, "distributor.ha-tracker.failover-timeout", "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.")
-	f.BoolVar(&l.HATrackerUseSampleTimeForFailover, "distributor.ha-tracker.use-sample-time-for-failover", false, "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.")
+	l.HATrackerFailoverSampleTimeout = model.Duration(0)
+	f.Var(&l.HATrackerFailoverSampleTimeout, "distributor.ha-tracker.failover-sample-timeout", "Additional timeout to use for failover that uses earliest sample time instead of the current time. Defaults to 0 which is disabled. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
@@ -1232,7 +1240,7 @@ func (o *Overrides) MaxHAClusters(user string) int {
 }
 
 // See distributor.haTrackerLimits.HATrackerTimeouts
-func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+func (o *Overrides) HATrackerTimeouts(user string) (update, updateJitterMax, failover, failoverSample time.Duration) {
 	uo := o.getOverridesForUser(user)
 
 	update = time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
@@ -1250,16 +1258,19 @@ func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, update
 		failover = time.Duration(uo.HATrackerFailoverTimeout)
 	}
 
-	return update, updateJitterMax, failover
+	if uo.HATrackerFailoverSampleTimeout > 0 {
+		failoverSample = time.Duration(uo.HATrackerFailoverSampleTimeout)
+	}
+
+	return update, updateJitterMax, failover, failoverSample
 }
 
 func (o *Overrides) DefaultHATrackerUpdateTimeout() time.Duration {
 	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
 }
 
-// See distributor.haTrackerLimits.HATrackerUseSampleTimeForFailover
 func (o *Overrides) HATrackerUseSampleTimeForFailover(user string) bool {
-	return o.getOverridesForUser(user).HATrackerUseSampleTimeForFailover
+	return o.getOverridesForUser(user).HATrackerFailoverSampleTimeout > 0
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.
