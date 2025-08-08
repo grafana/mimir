@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Support `GOMEMLIMIT` configuration via `global.goMemLimitPercentage` or per-component `goMemLimitPercentage`, applied to distributor, ingester, querier, query-frontend, store-gateway, and compactor.  
+* [CHANGE] Store-gateway: When no `goMemLimitPercentage` is set, default `GOMEMLIMIT` to `resources.requests.memory` (legacy behavior preserved).
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964

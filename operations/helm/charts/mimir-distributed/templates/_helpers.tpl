@@ -762,6 +762,47 @@ mimir.cpuToMilliCPU takes 1 argument
 {{- end -}}
 
 {{/*
+mimir.gomemlimit:
+- Input: { ctx, component }
+- pct := <component>.goMemLimitPercentage || .Values.global.goMemLimitPercentage
+- If pct > 1, interpret as percent (like 75 -> 0.75)
+- Base mem: prefer limits.memory, else requests.memory (from component section map)
+- Output: "<N>MiB" (floored); empty string if pct unset or base missing
+*/}}
+{{- define "mimir.gomemlimit" -}}
+  {{- $ctx := .ctx -}}
+  {{- $comp := .component -}}
+
+  {{- $section := include "mimir.componentSectionFromName" (dict "ctx" $ctx "component" $comp) | fromYaml -}}
+
+
+  {{- $pctRaw := (get $section "goMemLimitPercentage") -}}
+
+  {{- if not $pctRaw -}}
+    {{- $global := (index $ctx.Values "global" | default dict) -}}
+    {{- if and $global (hasKey $global "goMemLimitPercentage") -}}
+      {{- $pctRaw = get $global "goMemLimitPercentage" -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $pctRaw -}}
+    {{- $pctf := float64 $pctRaw -}}
+    {{- $pct := ternary (divf $pctf 100) $pctf (gt $pctf 1.0) -}}
+
+    {{- $lim := dig "resources" "limits"   "memory" nil $section -}}
+    {{- $req := dig "resources" "requests" "memory" nil $section -}}
+    {{- $base := default $req $lim -}}
+
+    {{- if $base -}}
+      {{- $bytes := include "mimir.siToBytes" (dict "value" $base) | float64 -}}
+      {{- $goml := mulf $bytes $pct -}}
+      {{- printf "%dMiB" (divf $goml 0x1p20 | floor | int64) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+
+
+{{/*
 kubectl image reference
 */}}
 {{- define "mimir.kubectlImage" -}}

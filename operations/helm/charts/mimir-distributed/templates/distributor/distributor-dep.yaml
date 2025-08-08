@@ -111,7 +111,8 @@ spec:
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "distributor") }}
+          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request $goml }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -123,6 +124,10 @@ spec:
             {{- $calculated_max_procs := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 2 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $calculated_max_procs 8 | toString | toYaml }}
+            {{- end }}
+            {{- if $goml }}
+            - name: "GOMEMLIMIT"
+              value: {{ $goml | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}

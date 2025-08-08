@@ -95,13 +95,18 @@ spec:
             {{- toYaml .Values.query_frontend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.query_frontend.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.query_frontend.env }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "query-frontend") }}
+          {{- if or .Values.global.extraEnv .Values.query_frontend.env $goml }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.query_frontend.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if $goml }}
+            - name: "GOMEMLIMIT"
+              value: {{ $goml | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.query_frontend.extraEnvFrom }}
