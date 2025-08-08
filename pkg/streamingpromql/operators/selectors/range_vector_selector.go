@@ -170,3 +170,7 @@ func (m *RangeVectorSelector) Close() {
 	m.histograms.Close()
 	m.chunkIterator = nil
 }
+
+func (m *RangeVectorSelector) CloneForTimeRange(start, end time.Time) RangeVectorSelector {
+	panic("unimplemented")
+}

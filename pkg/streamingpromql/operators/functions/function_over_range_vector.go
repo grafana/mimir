@@ -8,9 +8,11 @@ package functions
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -23,6 +25,13 @@ import (
 // FunctionOverRangeVector performs a rate calculation over a range vector.
 // This struct represents one invocation of a function.
 type FunctionOverRangeVector struct {
+	// Separate out operators for intermediate result caching
+	// should this be moved somewhere else (not sure if FunctionOverRangeVector is the most suitable)
+	InnerHead types.RangeVectorOperator
+	InnerTail types.RangeVectorOperator
+	// TODO: is middle necessary? if we always recompute if missing a block
+	InnerMiddle types.RangeVectorOperator
+
 	Inner                    types.RangeVectorOperator
 	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
@@ -68,6 +77,21 @@ func NewFunctionOverRangeVector(
 		timeRange:                timeRange,
 	}
 
+	// Set up caching for instant query
+	if timeRange.IntervalMilliseconds == 1 { // documentation says this can identify an instant query
+		start := timeRange.StartT - inner.Range().Milliseconds()
+		end := timeRange.StartT
+
+		// Get start/end for possible cached blocks
+		blockLengthMs := intermediateCacheBlockLength.Milliseconds()
+		cachedStart := ((start / blockLengthMs) + 1) * blockLengthMs
+		cachedEnd := (end / blockLengthMs) * blockLengthMs
+
+		o.InnerHead = inner.CloneForTimeRange(time.UnixMilli(start), time.UnixMilli(cachedStart))
+		o.InnerMiddle = inner.CloneForTimeRange(time.UnixMilli(cachedStart), time.UnixMilli(cachedEnd))
+		o.InnerTail = inner.CloneForTimeRange(time.UnixMilli(cachedEnd), time.UnixMilli(end))
+	}
+
 	if f.SeriesValidationFuncFactory != nil {
 		o.seriesValidationFunc = f.SeriesValidationFuncFactory()
 	}
@@ -104,11 +128,25 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		}
 	}
 
-	metadata, err := m.Inner.SeriesMetadata(ctx)
-	if err != nil {
-		return nil, err
+	var metadata []types.SeriesMetadata
+
+	if m.usingIntermediate {
+		var err error
+		metadata, err = m.mergeSeriesMetadataWithIntermediate(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// If we are building intermediate, we /probably/ just need series metadata from inner
+		// In this case we always recompute everything for now
+		var err error
+		metadata, err = m.Inner.SeriesMetadata(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
+	// TODO: what to do with this?
 	if m.metricNames != nil {
 		m.metricNames.CaptureMetricNames(metadata)
 	}
@@ -286,4 +324,59 @@ func (m *FunctionOverRangeVector) Close() {
 	}
 
 	m.scalarArgsData = nil
+}
+
+func (m *FunctionOverRangeVector) mergeSeriesMetadataWithIntermediate(ctx context.Context) ([]types.SeriesMetadata, error) {
+	// merge metadata from start / end + intermediate results
+	startMetadata, err := m.InnerHead.SeriesMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	endMetadata, err := m.InnerTail.SeriesMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metadata := make([][]types.SeriesMetadata, 0, len(m.intermediateResults)+2)
+	metadata = append(metadata, startMetadata, endMetadata)
+	for _, result := range m.intermediateResults {
+		//TODO: is this the right metadata? this is the metadata for the current func, not the inner func
+		metadata = append(metadata, result.Series)
+	}
+	return mergeSeriesMetadata(metadata)
+}
+
+// TODO: best merging algorithm? This is currently copied/based on deduplicate_and_merge.go
+// TODO: can duplicate labelsets be returned by head/tail? is that allowed? and does that need to be persisted?
+func mergeSeriesMetadata(metadataSets [][]types.SeriesMetadata) ([]types.SeriesMetadata, error) {
+	if len(metadataSets) == 0 {
+		return nil, nil
+	}
+	if len(metadataSets) == 1 {
+		return metadataSets[0], nil
+	}
+
+	// TODO: we might want to track the idx of the series like dedupe and merge rather than discarding it? then we have access to the idx for the cache entries when we read the data
+	seriesMap := make(map[string]types.SeriesMetadata)
+
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	labelBytes := make([]byte, 0, 1024)
+
+	for _, metadataSet := range metadataSets {
+		for _, series := range metadataSet {
+			labelBytes = series.Labels.Bytes(labelBytes)
+			// Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+			seriesMap[string(labelBytes)] = series
+		}
+	}
+
+	result := make([]types.SeriesMetadata, 0, len(seriesMap))
+	for _, series := range seriesMap {
+		result = append(result, series)
+	}
+
+	slices.SortFunc(result, func(a, b types.SeriesMetadata) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	return result, nil
 }

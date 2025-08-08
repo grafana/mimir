@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -186,4 +187,8 @@ func (s *Subquery) Close() {
 	s.histograms.Close()
 	s.floats.Close()
 	s.subqueryStats.Close()
+}
+
+func (m *Subquery) CloneForTimeRange(start, end time.Time) selectors.RangeVectorSelector {
+	panic("unimplemented")
 }

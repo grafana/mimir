@@ -73,6 +73,9 @@ type RangeVectorOperator interface {
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	NextStepSamples() (*RangeVectorStepData, error)
+
+	//TODO: probably do this earlier than in rangevectoroperator?
+	CloneForTimeRange(start, end time.Time) RangeVectorOperator
 }
 
 // ScalarOperator represents all operators that produce scalars.
