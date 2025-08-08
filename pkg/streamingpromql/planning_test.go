@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -1082,7 +1083,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			testCase.expectedPlan.OriginalExpression = testCase.expr
 
 			reg := prometheus.NewPedanticRegistry()
-			opts := NewTestEngineOpts()
+			opts := engineopts.NewTestEngineOpts()
 			opts.CommonOpts.NoStepSubqueryIntervalFn = func(_ int64) int64 {
 				return (23 * time.Second).Milliseconds()
 			}
@@ -1132,7 +1133,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 		`label_join(foo, "abc", "-") + label_join(bar, "def", ",")`,
 	}
 
-	opts := NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	planner := NewQueryPlanner(opts)
 	ctx := context.Background()
 
@@ -1184,7 +1185,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 }
 
 func TestQueryPlanner_ActivityTracking(t *testing.T) {
-	opts := NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.CommonOpts.ActiveQueryTracker = tracker
 	planner := NewQueryPlanner(opts)
@@ -1440,7 +1441,7 @@ func TestAnalysisHandler(t *testing.T) {
 		},
 	}
 
-	planner := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
+	planner := NewQueryPlannerWithoutOptimizationPasses(engineopts.NewTestEngineOpts())
 	handler := AnalysisHandler(planner)
 
 	for name, testCase := range testCases {

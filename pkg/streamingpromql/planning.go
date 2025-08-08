@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
@@ -42,15 +43,18 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+func NewQueryPlanner(opts engineopts.EngineOpts) *QueryPlanner {
 	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
+	if opts.EnablePruneToggles {
+		planner.RegisterASTOptimizationPass(ast.NewPruneToggles()) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
+	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
@@ -67,7 +71,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
+func NewQueryPlannerWithoutOptimizationPasses(opts engineopts.EngineOpts) *QueryPlanner {
 	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		activeQueryTracker = &NoopQueryTracker{}

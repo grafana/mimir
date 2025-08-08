@@ -169,6 +169,14 @@ func (em ASTExprMapper) Map(ctx context.Context, expr parser.Expr) (parser.Expr,
 		e.Expr = mapped
 		return e, nil
 
+	case *parser.StepInvariantExpr:
+		mapped, err := em.Map(ctx, e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		e.Expr = mapped
+		return e, nil
+
 	case *parser.MatrixSelector:
 		mapped, err := em.Map(ctx, e.VectorSelector)
 		if err != nil {

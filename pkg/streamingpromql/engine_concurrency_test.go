@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 )
 
 func TestConcurrentQueries(t *testing.T) {
@@ -186,7 +187,7 @@ func TestConcurrentQueries(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, data)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	opts := NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
