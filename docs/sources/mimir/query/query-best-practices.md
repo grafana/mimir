@@ -35,17 +35,12 @@ If you don't specify a time range, consider using the `-store.max-labels-query-l
 
 Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provides higher resolution.
 
-### Query construction order
+## Avoid high cardinality operations
 
-Structure your queries to eliminate unwanted results as early as possible:
+Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
 
-1. Start with the most selective label selectors: Use the most specific labels first to reduce the initial dataset size
-2. Apply time range constraints: Narrow down to the shortest feasible time range
-3. Add functions and aggregations: Apply PromQL functions after narrowing the series set
+## Use recording rules
 
-### Optimize PromQL queries
-
-- Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
-- Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
+Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
 
 
