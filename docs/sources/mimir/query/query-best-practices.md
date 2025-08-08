@@ -42,14 +42,6 @@ Structure your queries to eliminate unwanted results as early as possible:
 - Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
 - Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
 
-## API usage best practices
+## Mimir label querying best practices
 
-### Mimir label querying best practices
-
-- Specify time ranges: Always include `start` and `end` parameters when querying label names or values to limit the scope. Without these, Mimir queries the whole retention period or up to the configured `-store.max-labels-query-length`.
-- Choose the right API for your use case:
-  - Use [Get label names](../../references/http-api/#get-label-names) over [Label names cardinality](../../references/http-api/#label-names-cardinality) unless you specifically need cardinality counts
-  - For multiple label values, issue multiple Get label values requests rather than a single Label values cardinality call with multiple label names
-- Use series selectors judiciously: Including series selectors (`match[]` or `selector` parameters) is computationally more expensive but can significantly reduce result set size when the selector is highly selective.
-- Understand data freshness trade-offs: Cardinality APIs query only in-memory series from ingesters (freshest data), while other APIs can access historical block data.
-- Consider alternatives for small series sets: If querying label values with a highly selective series selector (few thousand series), consider using the [Get series by label matchers](../../references/http-api/#get-series-by-label-matchers) API instead.
+Refer to "Query metric labels"
