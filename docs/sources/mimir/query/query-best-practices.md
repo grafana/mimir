@@ -45,3 +45,7 @@ Structure your queries to eliminate unwanted results as early as possible:
 ## Mimir label querying best practices
 
 Refer to "Query metric labels"
+
+## Recommended values
+
+Use values other than default (find in Helm chart)
