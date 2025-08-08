@@ -21,14 +21,14 @@ import (
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
-			if !model.LabelName(src).IsValid() {
+			if !model.UTF8Validation.IsValidLabelName(src) {
 				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
 			}
 			srcLabels[i] = src
@@ -71,7 +71,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()

@@ -214,7 +214,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// Keep track of the remaining deadline before producing records.
 	// This could be useful for troubleshooting.
 	if deadline, ok := ctx.Deadline(); ok {
-		c.produceRemainingDeadline.Observe(max(0, deadline.Sub(time.Now()).Seconds()))
+		c.produceRemainingDeadline.Observe(max(0, time.Until(deadline).Seconds()))
 	}
 
 	// As a safety mechanism, we want to make sure that the context is not already canceled or its deadline exceeded.
