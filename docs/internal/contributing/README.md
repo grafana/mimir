@@ -105,6 +105,22 @@ You have to commit the changes to `go.mod` and `go.sum` before submitting the pu
 
 Please see the dedicated "[Design patterns and Code conventions](design-patterns-and-conventions.md)" page.
 
+## ⚠️ Unsafe memory tricks
+
+For performance, buffers used for decompressing gRPC requests into are kept in a pool shared between requests.
+
+Also, when unmarshaling those byte buffers into structured Go values, we construct strings that aren't actually references to immutable memory, but to those same shared buffers. The codebase refers to this trick as `yoloString`, and in some places (but not exhaustively), such strings are denoted as type `unsafeMutableString`, which is an alias of `string`.
+
+This means that innocent-looking string values that outlive the window between taking a request buffer from the pool and releasing it back may actually **refer to another request's buffer**. Given Mimir is multi-tenant, it's likely to result in **cross-tenant data leakage**.
+
+Take into account that copying `string`s around actually moves _references_ around. Make sure strings that must outlive the handling window (e. g. for error messages) are deep-copied, e. g. with `strings.Clone` or `strings.Builder`. Note that, if those strings are within a slice, it is **not enough** to clone the slice with `slices.Clone` or similar, as only the references will be cloned, not the underlying bytes in memory. The same applies if there are inside a struct or array.
+
+There are currently no guardrails around this, beyond tests.
+
+Some (but maybe not all) specific critical areas are:
+
+- In the distributor, such strings must not outlive the `PushFunc` passed to `Handler`.
+
 ## Documentation
 
 The Grafana Mimir documentation and the Helm chart _documentation_ for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
