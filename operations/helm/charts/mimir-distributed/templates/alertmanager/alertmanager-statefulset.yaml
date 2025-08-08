@@ -131,10 +131,15 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-        {{- if .Values.alertmanager.fallbackConfig }}
+        {{- if and .Values.alertmanager.fallbackConfig (not .Values.alertmanager.fallbackConfigExistingSecret) }}
         - name: alertmanager-fallback-config
           configMap:
             name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
+        {{- with .Values.alertmanager.fallbackConfigExistingSecret }}
+        - name: alertmanager-fallback-config
+          secret:
+            secretName: {{ . }}
         {{- end }}
         {{- if .Values.alertmanager.extraVolumes }}
         {{ toYaml .Values.alertmanager.extraVolumes | nindent 8 }}
