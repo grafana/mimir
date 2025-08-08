@@ -83,8 +83,8 @@ function runRangeQuery(queryParams) {
 
 function runParquetQueries() {
   // Query time boundaries
-  const startDate = new Date('2025-07-11T00:00:00Z');
-  const endDate = new Date('2025-08-01T23:59:00Z');
+  const startDate = new Date('2025-07-01T00:00:00Z');
+  const endDate = new Date('2025-08-02T23:59:00Z');
 
   const startTime = Math.floor(startDate.getTime() / 1000);
   const endTime = Math.floor(endDate.getTime() / 1000);
@@ -98,7 +98,8 @@ function runParquetQueries() {
   const randomEndTime = randomStartTime + windowDuration;
 
   const queries = [
-    'sum(rate(container_cpu_usage_seconds_total{namespace="mimir-dev-11", pod=~"ingester.*"}[5m]))',
+    // 'sum(rate(container_cpu_usage_seconds_total{namespace="mimir-dev-11", pod=~"ingester.*"}[5m]))',
+    'sum(rate(cortex_request_duration_seconds_bucket{namespace="mimir-dev-11"}[$__rate_interval])) by (le)',
     // 'sum(container_memory_working_set_bytes{namespace="mimir-dev-11", container=~"(gateway|cortex-gw|cortex-gw-internal)"})'
   ];
 
