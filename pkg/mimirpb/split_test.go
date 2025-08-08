@@ -388,7 +388,7 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 				merged.Metadata = append(merged.Metadata, partial.Metadata...)
 			}
 
-			assert.Equal(t, req, merged)
+			require.Equal(t, req, merged)
 		}
 	})
 
@@ -406,14 +406,14 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 			// Remember the original request, to compare against.
 			req := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
 			reqCpy := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
-			assert.Equal(t, req, reqCpy)
+			require.Equal(t, req, reqCpy)
 
 			maxSize := req.Size() / (1 + rnd.Intn(10))
 			partials := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize, 0, nil)
 
 			// Ensure the merge of all partial requests is equal to the original one.
 			merged := mergeRW2s(partials)
-			assert.Equal(t, reqCpy, merged)
+			require.Equal(t, reqCpy, merged)
 		}
 	})
 }
@@ -720,6 +720,11 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 				newLbls[i] = st.Symbolize(strVal)
 			}
 
+			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
+			helpRef := st.Symbolize(helpTxt)
+			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
+			unitRef := st.Symbolize(unitTxt)
+
 			newExemplars := make([]ExemplarRW2, 0, len(ts.Exemplars))
 			for _, ex := range ts.Exemplars {
 				newLbls := make([]uint32, len(ex.LabelsRefs))
@@ -736,11 +741,6 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 			if ts.Exemplars == nil {
 				newExemplars = nil
 			}
-
-			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
-			helpRef := st.Symbolize(helpTxt)
-			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
-			unitRef := st.Symbolize(unitTxt)
 
 			newTS := TimeSeriesRW2{
 				LabelsRefs:       newLbls,

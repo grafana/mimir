@@ -243,30 +243,19 @@ func TestRecordSerializer(t *testing.T) {
 		err = DeserializeRecordContent(record.Value, resultReq, 2)
 		require.NoError(t, err)
 
-		require.Len(t, resultReq.Timeseries, 5)
+		require.Len(t, resultReq.Timeseries, 3)
 		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
 
 		// The only way to carry a metadata in RW2.0 is attached to a timeseries.
 		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
-		// In format V2 we also avoid the metadata-to-series matching operation to avoid ambiguity in the event multiple series share a family name.
 		expMetadataSeries := []mimirpb.PreallocTimeseries{
-			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
-				Samples:   []mimirpb.Sample{},
-				Exemplars: []mimirpb.Exemplar{},
-			}},
-			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2")),
-				Samples:   []mimirpb.Sample{},
-				Exemplars: []mimirpb.Exemplar{},
-			}},
 			{TimeSeries: &mimirpb.TimeSeries{
 				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_3")),
 				Samples:   []mimirpb.Sample{},
 				Exemplars: []mimirpb.Exemplar{},
 			}},
 		}
-		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:5])
+		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:])
 
 		require.Nil(t, resultReq.SymbolsRW2)
 		require.Nil(t, resultReq.TimeseriesRW2)
