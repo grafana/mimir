@@ -134,6 +134,12 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
+//
+// # DO NOT SHALLOW-COPY
+//
+// Data referenced from a PreallocTimeseries may change once the timeseries is
+// returned to the shared pool. This includes usually immutable references, like
+// strings. If needed, use DeepCopyTimeseries instead.
 type PreallocTimeseries struct {
 	*TimeSeries
 
@@ -309,7 +315,9 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
-type LabelAdapter labels.Label
+type LabelAdapter struct {
+	Name, Value unsafeMutableString
+}
 
 // Marshal implements proto.Marshaller.
 func (bs *LabelAdapter) Marshal() ([]byte, error) {
@@ -502,6 +510,25 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 	}
 	return strings.Compare(bs.Value, other.Value)
 }
+
+// UnsafeMutableLabel is an alias of LabelAdapter meant to highlight its unsafety.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When an UnsafeMutableLabel is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type UnsafeMutableLabel = LabelAdapter
+
+// A unsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of unsafeMutableString may
+// later refer to different data than it originally did: it's effectively
+// a []byte with a string-like (and thus read-only) API and implicit capacity.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When a LabelAdapter is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type unsafeMutableString = string
 
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.

@@ -171,7 +171,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 // PostingsForMatchers needs to be overridden so that the right IndexReader
 // implementation gets passed down to the PostingsForMatchers call.
 func (oh *HeadAndOOOIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, ms...)
+	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, oh.head.Meta().ULID, ms...)
 }
 
 // Fake Chunk object to pass a set of Metas inside Meta.Chunk.
