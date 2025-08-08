@@ -34,9 +34,12 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	defer reuseSymbolsTable(symbols)
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
-	metadataMap := make(map[string]*MetricMetadata, len(rw1.Metadata))
-	for _, meta := range rw1.Metadata {
-		metadataMap[meta.MetricFamilyName] = meta
+	var metadataMap map[string]*MetricMetadata
+	if len(rw1.Metadata) > 0 {
+		metadataMap = make(map[string]*MetricMetadata, len(rw1.Metadata))
+		for _, meta := range rw1.Metadata {
+			metadataMap[meta.MetricFamilyName] = meta
+		}
 	}
 
 	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
