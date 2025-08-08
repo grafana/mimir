@@ -62,7 +62,7 @@ func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *
 		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       tenantID,
-		Request: &httpgrpc.HTTPRequest{
+		HttpRequest: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Headers: []*httpgrpc.Header{
 				{Key: "QueryId", Values: []string{"12345678901234567890"}},
@@ -392,13 +392,13 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
 	reqNotShardedToQuerier1 := &SchedulerRequest{
 		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
 	reqNotShardedToQuerier1 = &SchedulerRequest{
 		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
@@ -587,7 +587,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
@@ -676,7 +676,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
@@ -809,7 +809,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	queueDim := randAdditionalQueueDimension("")
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: queueDim,
 	}
 	tr := tenantRequest{

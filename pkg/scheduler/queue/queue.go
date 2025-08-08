@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
 const (
@@ -50,7 +52,8 @@ type SchedulerRequest struct {
 	FrontendAddr              string
 	UserID                    string
 	QueryID                   uint64
-	Request                   *httpgrpc.HTTPRequest
+	HttpRequest               *httpgrpc.HTTPRequest
+	ProtobufRequest           *schedulerpb.ProtobufRequest
 	StatsEnabled              bool
 	AdditionalQueueDimensions []string
 
