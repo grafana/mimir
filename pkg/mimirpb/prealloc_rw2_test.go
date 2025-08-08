@@ -237,7 +237,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
 	})
 
-	t.Run("metadata", func(t *testing.T) {
+	t.Run("metadata matching existing series", func(t *testing.T) {
 		req := &WriteRequest{
 			Timeseries: []PreallocTimeseries{
 				{
@@ -264,9 +264,6 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
-			},
-			{
-				LabelsRefs: []uint32{1, 2},
 				Metadata: MetadataRW2{
 					Type:    METRIC_TYPE_COUNTER,
 					HelpRef: 5,
