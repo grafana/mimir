@@ -23,9 +23,7 @@ To further reduce the number of series that require processing, include as many 
 
 Whenever possible, use an exact label match, such as `label="value"`, instead of a regular expression, such as label=~"pattern". Regular expressions are more computationally expensive.
 
-### Mimir label querying best practices
-
-Refer to "Query metric labels"
+For more information about how to query metric labels, refer to [Query metric labels](https://grafana.com/docs/mimir/<MIMIR_VERSION>/query/query-metric-labels/)
 
 ## Narrow down your time range
 
