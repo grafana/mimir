@@ -42,24 +42,7 @@ Structure your queries to eliminate unwanted results as early as possible:
 - Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
 - Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
 
-## Performance considerations
-
-### Query complexity
-
-- Limit aggregation scope: When using aggregation functions like `sum()` or `avg()`, group by only the necessary labels.
-- Use rate() for counters: Always use `rate()` or `irate()` functions when querying counter metrics.
-
-### Resource optimization
-
-- Use subqueries carefully: Subqueries can be powerful but may significantly increase query cost.
-
 ## API usage best practices
-
-### HTTP API optimization
-
-- Use POST for complex queries: For queries with many parameters or long PromQL expressions, use POST requests instead of GET.
-- Implement client-side timeouts: Set appropriate timeouts for your HTTP clients to handle slow queries gracefully.
-- Handle rate limiting: Implement proper retry logic with exponential backoff for rate-limited requests.
 
 ### Mimir label querying best practices
 
@@ -70,23 +53,3 @@ Structure your queries to eliminate unwanted results as early as possible:
 - Use series selectors judiciously: Including series selectors (`match[]` or `selector` parameters) is computationally more expensive but can significantly reduce result set size when the selector is highly selective.
 - Understand data freshness trade-offs: Cardinality APIs query only in-memory series from ingesters (freshest data), while other APIs can access historical block data.
 - Consider alternatives for small series sets: If querying label values with a highly selective series selector (few thousand series), consider using the [Get series by label matchers](../../references/http-api/#get-series-by-label-matchers) API instead.
-
-## Monitoring and alerting
-
-### Query observability
-
-- Track query latency: Monitor query response times to identify performance degradation.
-- Monitor query success rate: Track the ratio of successful to failed queries.
-- Alert on query timeouts: Set up alerts for queries that consistently timeout or fail.
-
-### Resource monitoring
-
-- Watch query load: Monitor the query load on your Mimir cluster to ensure adequate capacity.
-- Track cache hit rates: Monitor query result cache hit rates to optimize caching configuration.
-- Monitor ingester load: Keep an eye on ingester resource usage during high query loads.
-
-## Mimir multi-tenancy considerations
-
-### Tenant-specific caching
-
-- Configure tenant-specific caching: Use the `cache_unaligned_requests` parameter to enable caching for unaligned queries on specific tenants that require it.
