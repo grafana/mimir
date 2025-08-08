@@ -569,8 +569,8 @@ github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkB
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa h1:MUh6FkgCcJZCXDtEzuuEKTNCc1D0VQbRbqo2A9dr/hI=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250807182523-9ea5cc5e99e1 h1:476O78IlNBKWP1aIrug3EFarj5+DvbIG2FIvNXKtplA=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250807182523-9ea5cc5e99e1/go.mod h1:qdHJobQbYKiDP5irfsNO8EddY4oXzaMk9utxtd5FOs8=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250808114811-2a568259c665 h1:UTDG4pUvCEND9zukr13o+CY8xaPK0FjDqH/z95x9vdQ=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250808114811-2a568259c665/go.mod h1:qdHJobQbYKiDP5irfsNO8EddY4oXzaMk9utxtd5FOs8=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
