@@ -45,6 +45,7 @@ type config struct {
 	resourceAttributeLabels string
 	dedupe                  bool
 	outputFormat            string
+	compressionType         string
 }
 
 func main() {
@@ -65,6 +66,7 @@ func main() {
 	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
 	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
 	flag.StringVar(&cfg.outputFormat, "output-format", defaultOutputFormat, "Format to output chunks in (options: 'json', 'protobuf')")
+	flag.StringVar(&cfg.compressionType, "compression-type", "", "Compression type to use")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")
@@ -104,7 +106,7 @@ func main() {
 			log.Printf("converting block at %s to %s in %s format...\n", cfg.block, cfg.dest, cfg.outputFormat)
 		}
 
-		if err := convertBlock(ctx, cfg.block, cfg.dest, cfg.count, cfg.chunkSize, cfg.resourceAttributeLabels, cfg.dedupe, cfg.outputFormat, logger); err != nil {
+		if err := convertBlock(ctx, cfg, logger); err != nil {
 			log.Fatalln("failed to convert block:", err)
 		}
 	case "analyze":

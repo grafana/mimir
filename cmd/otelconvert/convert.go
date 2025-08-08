@@ -41,8 +41,8 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
-func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize int, resourceAttributeLabelsRaw string, dedupe bool, outputFormat string, logger gokitlog.Logger) error {
-	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), orig, nil, nil)
+func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error {
+	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), cfg.block, nil, nil)
 	if err != nil {
 		return fmt.Errorf("open block: %w", err)
 	}
@@ -70,7 +70,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 	chunkCount := 0
 	postingsCount := 0
 
-	resourceAttributeLabels := commaStringToMap(resourceAttributeLabelsRaw)
+	resourceAttributeLabels := commaStringToMap(cfg.resourceAttributeLabels)
 
 	for p.Next() {
 		if err = p.Err(); err != nil {
@@ -78,8 +78,8 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 		}
 
 		// Flush a chunk to disk.
-		if postingsCount >= chunkSize {
-			chunkCount, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe, outputFormat)
+		if postingsCount >= cfg.chunkSize {
+			chunkCount, err = writeMetricsDataChunkToFile(md, cfg, chunkCount)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
@@ -195,7 +195,7 @@ func convertBlock(ctx context.Context, orig, dest string, count bool, chunkSize 
 
 	// Flush any remaining partial chunk to disk.
 	if proto.Size(md) > 0 {
-		_, err = writeMetricsDataChunkToFile(md, dest, count, chunkCount, dedupe, outputFormat)
+		_, err = writeMetricsDataChunkToFile(md, cfg, chunkCount)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
 		}
@@ -214,10 +214,14 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, countOnly bool, chunkCount int, dedupe bool, outputFormat string) (int, error) {
+func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, cfg config, chunkCount int) (int, error) {
 	sizeBeforeDedupe := proto.Size(md)
-	if dedupe {
+	if cfg.dedupe {
 		deduplicate(md)
+	}
+	sizeAfterDedupe := proto.Size(md)
+	if cfg.dedupe {
+		log.Printf("size before dedupe: %d bytes, size after dedupe: %d bytes\n", sizeBeforeDedupe, sizeAfterDedupe)
 	}
 
 	var (
@@ -225,40 +229,48 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 		err error
 	)
 
-	switch outputFormat {
+	switch cfg.outputFormat {
 	case "json":
-		var jsonBuf []byte
-		jsonBuf, err = protojson.Marshal(md)
+		buf, err = protojson.Marshal(md)
 		if err != nil {
 			return chunkCount, fmt.Errorf("marshal json message: %w", err)
 		}
-
-		var b bytes.Buffer
-		w := gzip.NewWriter(&b)
-		if _, err = w.Write(jsonBuf); err != nil {
-			return chunkCount, fmt.Errorf("gzip json message: %w", err)
-		}
-		_ = w.Close()
-
-		buf = b.Bytes()
 	case "protobuf":
 		buf, err = proto.Marshal(md)
 		if err != nil {
 			return chunkCount, fmt.Errorf("marshal protobuf message: %w", err)
 		}
 	default:
-		return chunkCount, fmt.Errorf("unsupported output format: %s", outputFormat)
+		return chunkCount, fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
 	}
 
-	if countOnly {
+	switch cfg.compressionType {
+	case "":
+		// No compression.
+	case "gzip":
+		var b bytes.Buffer
+		w := gzip.NewWriter(&b)
+		if _, err = w.Write(buf); err != nil {
+			return chunkCount, fmt.Errorf("write gzip: %w", err)
+		}
+		if err = w.Close(); err != nil {
+			return chunkCount, fmt.Errorf("flush gzip writer: %w", err)
+		}
+
+		buf = b.Bytes()
+	default:
+		return chunkCount, fmt.Errorf("unsupported compression type: %s", cfg.compressionType)
+	}
+
+	if cfg.count {
 		n := len(buf)
 		writtenBytesCount += n
-		log.Printf("registered %d bytes (%d bytes before dedupe) for chunk %d (%d bytes overall)\n", n, sizeBeforeDedupe, chunkCount, writtenBytesCount)
+		log.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
 
 		return chunkCount + 1, nil
 	}
 
-	fp := filepath.Join(destDir, strconv.Itoa(chunkCount))
+	fp := filepath.Join(cfg.dest, strconv.Itoa(chunkCount))
 	f, err := os.OpenFile(fp, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
 	if err != nil {
 		return chunkCount, fmt.Errorf("open file '%s' for writing: %w", fp, err)
@@ -270,7 +282,7 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, destDir string, coun
 	}
 	defer func() { _ = f.Close() }()
 
-	log.Printf("wrote chunk %d to disk (%d bytes, %d bytes before dedupe)\n", chunkCount, n, sizeBeforeDedupe)
+	log.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
 
 	return chunkCount + 1, nil
 }
