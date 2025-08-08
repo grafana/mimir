@@ -77,6 +77,10 @@ global:
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen, federation-frontend
   podLabels: {}
 
+  # -- Go memory limit percentage (e.g 90 or 0.9).
+  # scope: compactor, distributor, ingester, querier, query-frontend, and store-gateway.
+  goMemLimitPercentage: null
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
@@ -909,6 +913,9 @@ distributor:
     requests:
       cpu: 100m
       memory: 512Mi
+  
+  # -- Optinal Go memory limit percentage for distributor (e.g 90 or 0.9).
+  goMemLimitPercentage: null
 
   # Additional distributor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1012,6 +1019,9 @@ ingester:
     requests:
       cpu: 100m
       memory: 512Mi
+
+  # -- Optionally set Go memory limit percentage for ingester (e.g 90 or 0.9).
+  goMemLimitPercentage: null
 
   # Additional ingester container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1857,6 +1867,9 @@ querier:
       cpu: 100m
       memory: 128Mi
 
+  # -- Optionally set Go memory limit percentage for querier (e.g 90 or 0.9).
+  goMemLimitPercentage: null
+
   # Additional querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
@@ -1975,6 +1988,9 @@ query_frontend:
     requests:
       cpu: 100m
       memory: 128Mi
+
+  # -- Optionally set Go memory limit percentage for query_frontend (e.g 90 or 0.9).
+  goMemLimitPercentage: null
 
   # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2165,6 +2181,9 @@ store_gateway:
     requests:
       cpu: 100m
       memory: 512Mi
+
+  # -- Optionally set Go memory limit percentage for store_gateway (e.g 90 or 0.9).
+  goMemLimitPercentage: null
 
   # Additional store-gateway container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2421,6 +2440,9 @@ compactor:
     requests:
       cpu: 100m
       memory: 512Mi
+
+  # -- Optionally set Go memory limit percentage for compactor (e.g 90 or 0.9).
+  goMemLimitPercentage: null
 
   # Additional compactor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
