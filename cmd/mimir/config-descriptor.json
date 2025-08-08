@@ -10384,6 +10384,39 @@
             },
             {
               "kind": "field",
+              "name": "shared_postings_for_matchers_cache",
+              "required": false,
+              "desc": "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.shared-postings-for-matchers-cache",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_invalidation",
+              "required": false,
+              "desc": "Whether head block postings should be tracked and invalidated when they change.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_versions",
+              "required": false,
+              "desc": "The number of metric versions to store in each cache when invalidation is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2097152,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-versions",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
               "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
