@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/util/fs"
 )
 
@@ -57,7 +58,7 @@ func run() error {
 		return fmt.Errorf("could not list test files in '%v': %w", testsDir, err)
 	}
 
-	opts := streamingpromql.NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)

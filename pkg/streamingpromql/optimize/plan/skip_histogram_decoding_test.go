@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -370,7 +371,7 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 	observer := streamingpromql.NoopPlanningObserver{}
 
-	opts := streamingpromql.NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	planner := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil))
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())

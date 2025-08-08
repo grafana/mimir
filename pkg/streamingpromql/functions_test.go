@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 )
 
@@ -28,7 +29,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	`
 
 	storage := promqltest.LoadedStorage(t, data)
-	opts := NewTestEngineOpts()
+	opts := engineopts.NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 

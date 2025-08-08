@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/engineopts"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -305,16 +306,16 @@ func TestNewMockShardedQueryable(t *testing.T) {
 	}
 }
 
-type engineOpt func(o *streamingpromql.EngineOpts)
+type engineOpt func(o *engineopts.EngineOpts)
 
 func withTimeout(timeout time.Duration) engineOpt {
-	return func(o *streamingpromql.EngineOpts) {
+	return func(o *engineopts.EngineOpts) {
 		o.CommonOpts.Timeout = timeout
 	}
 }
 
 func withMaxSamples(samples int) engineOpt {
-	return func(o *streamingpromql.EngineOpts) {
+	return func(o *engineopts.EngineOpts) {
 		o.CommonOpts.MaxSamples = samples
 	}
 }
@@ -322,7 +323,7 @@ func withMaxSamples(samples int) engineOpt {
 func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql.EngineOpts, promql.QueryEngine) {
 	t.Helper()
 
-	mqeOpts := streamingpromql.NewTestEngineOpts()
+	mqeOpts := engineopts.NewTestEngineOpts()
 	for _, o := range opts {
 		o(&mqeOpts)
 	}
