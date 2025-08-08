@@ -278,23 +278,23 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 	// TODO: batch up series / steps to return, rather than sending each step one at a time?
 
 	floatsHead, floatsTail := stepData.Floats.UnsafePoints()
-	floats, needToReturnFloats, err := combineSlices(floatsHead, floatsTail, types.FPointSlicePool, evaluator.MemoryConsumptionTracker)
+	floats, cleanup, err := combineSlices(floatsHead, floatsTail, types.FPointSlicePool, evaluator.MemoryConsumptionTracker)
 	if err != nil {
 		return err
 	}
 
-	if needToReturnFloats {
-		defer types.FPointSlicePool.Put(&floats, evaluator.MemoryConsumptionTracker)
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	histogramsHead, histogramsTail := stepData.Histograms.UnsafePoints()
-	histograms, needToReturnHistograms, err := combineSlices(histogramsHead, histogramsTail, types.HPointSlicePool, evaluator.MemoryConsumptionTracker)
+	histograms, cleanup, err := combineSlices(histogramsHead, histogramsTail, types.HPointSlicePool, evaluator.MemoryConsumptionTracker)
 	if err != nil {
 		return err
 	}
 
-	if needToReturnHistograms {
-		defer types.HPointSlicePool.Put(&histograms, evaluator.MemoryConsumptionTracker)
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
@@ -312,25 +312,27 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 	})
 }
 
-func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, T], memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]T, bool, error) {
+func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, T], memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]T, func(), error) {
 	if len(head) == 0 {
-		return tail, false, nil
+		return tail, nil, nil
 	}
 
 	if len(tail) == 0 {
-		return head, false, nil
+		return head, nil, nil
 	}
 
 	// We can't mutate the head or tail slice, so create a new temporary slice with all points.
 	combined, err := pool.Get(len(head)+len(tail), memoryConsumptionTracker)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 
 	combined = append(combined, head...)
 	combined = append(combined, tail...)
 
-	return combined, true, nil
+	return combined, func() {
+		pool.Put(&combined, memoryConsumptionTracker)
+	}, nil
 }
 
 func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
