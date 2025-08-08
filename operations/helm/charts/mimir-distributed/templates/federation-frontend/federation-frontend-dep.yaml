@@ -10,6 +10,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.federation_frontend.replicas }}
+  revisionHistoryLimit: {{ .Values.federation_frontend.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend") | nindent 6 }}

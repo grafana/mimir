@@ -12,6 +12,7 @@ spec:
   {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
+  revisionHistoryLimit: {{ .Values.ruler.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 6 }}
