@@ -206,7 +206,7 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 
 	// Ensure the service is in the Running state. We want to avoid the case where someone tries to
 	// re-create a client after the service has been stopped.
-	if w.Service.State() != services.Running {
+	if w.State() != services.Running {
 		return nil, ErrWriterNotRunning
 	}
 

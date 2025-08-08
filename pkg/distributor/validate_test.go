@@ -492,7 +492,7 @@ func TestValidateLabels(t *testing.T) {
 						},
 					}
 					for name, value := range c.metric {
-						ts.TimeSeries.Labels = append(ts.TimeSeries.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
+						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
 					}
 
 					var wg sync.WaitGroup
