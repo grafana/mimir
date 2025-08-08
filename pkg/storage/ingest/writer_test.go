@@ -942,7 +942,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		actual := &mimirpb.PreallocWriteRequest{
 			UnmarshalFromRW2: true,
 			RW2SymbolOffset:  V2RecordSymbolOffset,
-			RW2CommonSymbols: V2CommonSymbols,
+			RW2CommonSymbols: V2CommonSymbols.GetSlice(),
 		}
 		require.NoError(t, actual.Unmarshal(records[0].Value))
 
@@ -1077,7 +1077,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			actual := &mimirpb.PreallocWriteRequest{
 				UnmarshalFromRW2: true,
 				RW2SymbolOffset:  V2RecordSymbolOffset,
-				RW2CommonSymbols: V2CommonSymbols,
+				RW2CommonSymbols: V2CommonSymbols.GetSlice(),
 			}
 			require.NoError(t, actual.Unmarshal(rec.Value))
 
