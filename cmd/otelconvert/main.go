@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	gokitlog "github.com/go-kit/log"
 
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	defaultMDChunkSizePostings     = 1000
+	defaultBatchSize               = 1000
 	defaultHistScale               = 5
 	defaultHistNumBins             = 20
 	defaultResourceAttributeLabels = "service,service_name,service_instance_id,instance_id,server_address,server_port,url_scheme,server,address,port,scheme,cluster,namespace"
@@ -38,7 +39,8 @@ type config struct {
 	block                   string
 	dest                    string
 	count                   bool
-	chunkSize               int
+	batchSize               int
+	chunkSize               time.Duration
 	histScale               int
 	histMax                 int
 	histNumBins             int
@@ -59,7 +61,8 @@ func main() {
 	flag.StringVar(&cfg.block, "block", "", "The block ID of the block to download or the directory of the block to convert is at")
 	flag.StringVar(&cfg.dest, "dest", "", "The path to write the resulting files to")
 	flag.BoolVar(&cfg.count, "count", false, "Only count the number of bytes that would've been written to disk")
-	flag.IntVar(&cfg.chunkSize, "chunk-size", defaultMDChunkSizePostings, "Output chunk size in postings")
+	flag.IntVar(&cfg.batchSize, "batch-size", defaultBatchSize, "The number of postings to consume before outputting chunks")
+	flag.DurationVar(&cfg.chunkSize, "chunk-size", 5*time.Minute, "The size as a time duration of a chunk")
 	flag.IntVar(&cfg.histScale, "hist-scale", defaultHistScale, "Scaling factor used to output analysis histograms")
 	flag.IntVar(&cfg.histMax, "hist-max", -1, "Filter cardinalities higher than this value out of the histogram (-1 to include all cardinalities)")
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")

@@ -41,6 +41,87 @@ func validateConvertConfig(cfg config) error {
 	return nil
 }
 
+type chunkedMetricsData struct {
+	resourceAttributeLabels map[string]struct{}
+	mds                     map[int64]*metricsv1.MetricsData
+}
+
+func newChunkedMetricsData(resourceAttributeLabels map[string]struct{}) *chunkedMetricsData {
+	return &chunkedMetricsData{
+		resourceAttributeLabels: resourceAttributeLabels,
+		mds:                     make(map[int64]*metricsv1.MetricsData),
+	}
+}
+
+func (cmd *chunkedMetricsData) Chunks() map[int64]*metricsv1.MetricsData {
+	return cmd.mds
+}
+
+func (cmd *chunkedMetricsData) Size() int {
+	if len(cmd.mds) == 0 {
+		return 0
+	}
+
+	size := 0
+
+	for _, md := range cmd.mds {
+		size += proto.Size(md)
+	}
+
+	return size
+}
+
+func (cmd *chunkedMetricsData) Reset() {
+	for interval := range cmd.mds {
+		delete(cmd.mds, interval)
+	}
+}
+
+func (cmd *chunkedMetricsData) AppendGauge(lbls labels.ScratchBuilder, interval int64, gauge *metricsv1.Metric_Gauge) {
+	rm := cmd.baseRM(lbls)
+	rm.ScopeMetrics[0].Metrics[0].Data = gauge
+
+	if _, ok := cmd.mds[interval]; !ok {
+		cmd.mds[interval] = &metricsv1.MetricsData{}
+		cmd.mds[interval].Reset()
+	}
+	cmd.mds[interval].ResourceMetrics = append(cmd.mds[interval].ResourceMetrics, rm)
+}
+
+func (cmd *chunkedMetricsData) AppendHistogram(lbls labels.ScratchBuilder, interval int64, histogram *metricsv1.Metric_ExponentialHistogram) {
+	rm := cmd.baseRM(lbls)
+	rm.ScopeMetrics[0].Metrics[0].Data = histogram
+
+	if _, ok := cmd.mds[interval]; !ok {
+		cmd.mds[interval] = &metricsv1.MetricsData{}
+		cmd.mds[interval].Reset()
+	}
+	cmd.mds[interval].ResourceMetrics = append(cmd.mds[interval].ResourceMetrics, rm)
+}
+
+func (cmd *chunkedMetricsData) baseRM(lbls labels.ScratchBuilder) *metricsv1.ResourceMetrics {
+	metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
+
+	return &metricsv1.ResourceMetrics{
+		Resource: &resourcev1.Resource{
+			Attributes: resourceAttrs,
+		},
+		ScopeMetrics: []*metricsv1.ScopeMetrics{
+			{
+				Scope: &commonv1.InstrumentationScope{
+					Attributes: scopeAttrs,
+				},
+				Metrics: []*metricsv1.Metric{
+					{
+						Name:     metricName,
+						Metadata: metricAttrs,
+					},
+				},
+			},
+		},
+	}
+}
+
 func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error {
 	b, err := tsdb.OpenBlock(utillog.SlogFromGoKit(logger), cfg.block, nil, nil)
 	if err != nil {
@@ -64,27 +145,24 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 	var builder labels.ScratchBuilder
 
-	md := &metricsv1.MetricsData{}
-	md.Reset()
+	mds := newChunkedMetricsData(commaStringToMap(cfg.resourceAttributeLabels))
 
-	chunkCount := 0
+	batchCount := 0
 	postingsCount := 0
-
-	resourceAttributeLabels := commaStringToMap(cfg.resourceAttributeLabels)
 
 	for p.Next() {
 		if err = p.Err(); err != nil {
 			return fmt.Errorf("iterate postings: %w", err)
 		}
 
-		// Flush a chunk to disk.
-		if postingsCount >= cfg.chunkSize {
-			chunkCount, err = writeMetricsDataChunkToFile(md, cfg, chunkCount)
+		// Flush a full batch to disk.
+		if postingsCount >= cfg.batchSize {
+			batchCount, err = writeBatchChunks(mds, cfg, batchCount)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
 
-			md.Reset()
+			mds.Reset()
 			postingsCount = 0
 		}
 
@@ -94,12 +172,11 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 			return fmt.Errorf("populate series chunk metas: %w", err)
 		}
 
-		metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(builder, resourceAttributeLabels)
-		builder.Reset()
-
 		var (
-			gauge = &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{}}
-			histo = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
+			intervalMS = cfg.chunkSize.Milliseconds()
+
+			gauges = make(map[int64]*metricsv1.Metric_Gauge)
+			histos = make(map[int64]*metricsv1.Metric_ExponentialHistogram)
 
 			chkItr chunkenc.Iterator
 		)
@@ -120,14 +197,27 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 				switch valType {
 				case chunkenc.ValFloat:
 					ts, val := chkItr.At()
-					gauge.Gauge.DataPoints = append(gauge.Gauge.DataPoints, &metricsv1.NumberDataPoint{
+
+					interval := snapToInterval(ts, intervalMS)
+
+					if _, ok := gauges[interval]; !ok {
+						gauges[interval] = &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{}}
+					}
+
+					gauges[interval].Gauge.DataPoints = append(gauges[interval].Gauge.DataPoints, &metricsv1.NumberDataPoint{
 						TimeUnixNano: uint64(time.UnixMilli(ts).UnixNano()),
 						Value:        &metricsv1.NumberDataPoint_AsDouble{AsDouble: val},
-						// Attributes:   metricAttrs,
 					})
 				case chunkenc.ValHistogram:
 					ts, h := chkItr.AtHistogram(nil)
-					histo.ExponentialHistogram.DataPoints = append(histo.ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
+
+					interval := snapToInterval(ts, intervalMS)
+
+					if _, ok := histos[interval]; !ok {
+						histos[interval] = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
+					}
+
+					histos[interval].ExponentialHistogram.DataPoints = append(histos[interval].ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
 						TimeUnixNano:  uint64(time.UnixMilli(ts).UnixNano()),
 						Count:         h.Count,
 						Sum:           &h.Sum,
@@ -136,11 +226,17 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 						ZeroThreshold: h.ZeroThreshold,
 						Positive:      translateToOTELHistogramBuckets(h.PositiveSpans, h.PositiveBucketIterator()),
 						Negative:      translateToOTELHistogramBuckets(h.NegativeSpans, h.NegativeBucketIterator()),
-						// Attributes:    metricAttrs,
 					})
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chkItr.AtFloatHistogram(nil)
-					histo.ExponentialHistogram.DataPoints = append(histo.ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
+
+					interval := snapToInterval(ts, intervalMS)
+
+					if _, ok := histos[interval]; !ok {
+						histos[interval] = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
+					}
+
+					histos[interval].ExponentialHistogram.DataPoints = append(histos[interval].ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
 						TimeUnixNano:  uint64(time.UnixMilli(ts).UnixNano()),
 						Count:         uint64(fh.Count),
 						Sum:           &fh.Sum,
@@ -149,7 +245,6 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 						ZeroThreshold: fh.ZeroThreshold,
 						Positive:      translateToOTELFloatHistogramBuckets(fh.PositiveSpans, fh.PositiveBucketIterator()),
 						Negative:      translateToOTELFloatHistogramBuckets(fh.NegativeSpans, fh.NegativeBucketIterator()),
-						// Attributes:    metricAttrs,
 					})
 				default:
 					return fmt.Errorf("unexpected value type: %s", valType)
@@ -157,45 +252,29 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 			}
 		}
 
-		rm := &metricsv1.ResourceMetrics{
-			Resource: &resourcev1.Resource{
-				Attributes: resourceAttrs,
-			},
-			ScopeMetrics: []*metricsv1.ScopeMetrics{
-				{
-					Scope: &commonv1.InstrumentationScope{
-						Attributes: scopeAttrs,
-					},
-					Metrics: []*metricsv1.Metric{
-						{
-							Name:     metricName,
-							Metadata: metricAttrs,
-						},
-					},
-				},
-			},
-		}
-
-		if len(gauge.Gauge.DataPoints) > 0 && len(histo.ExponentialHistogram.DataPoints) > 0 {
-			return fmt.Errorf("both float and histogram values associated with metric: %s", metricName)
-		} else if len(gauge.Gauge.DataPoints) > 0 {
-			rm.ScopeMetrics[0].Metrics[0].Data = gauge
-			md.ResourceMetrics = append(md.ResourceMetrics, rm)
-		} else if len(histo.ExponentialHistogram.DataPoints) > 0 {
-			rm.ScopeMetrics[0].Metrics[0].Data = histo
-			md.ResourceMetrics = append(md.ResourceMetrics, rm)
+		if len(gauges) > 0 && len(histos) > 0 {
+			return fmt.Errorf("both float and histogram values associated with metric: %s", builder.Labels().String())
+		} else if len(gauges) > 0 {
+			for interval, gauge := range gauges {
+				mds.AppendGauge(builder, interval, gauge)
+			}
+		} else if len(histos) > 0 {
+			for interval, hist := range histos {
+				mds.AppendHistogram(builder, interval, hist)
+			}
 		}
 
 		if verbose {
-			log.Printf("current size: %d\n", proto.Size(md))
+			log.Printf("current batch size: %d\n", mds.Size())
 		}
 
 		postingsCount++
+		builder.Reset()
 	}
 
-	// Flush any remaining partial chunk to disk.
-	if proto.Size(md) > 0 {
-		_, err = writeMetricsDataChunkToFile(md, cfg, chunkCount)
+	// Flush any remaining partial batch to disk.
+	if mds.Size() > 0 {
+		_, err = writeBatchChunks(mds, cfg, batchCount)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
 		}
@@ -214,13 +293,27 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, cfg config, chunkCount int) (int, error) {
+func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int) (int, error) {
+	for interval, md := range mds.Chunks() {
+		if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
+			return batchCount, fmt.Errorf("write batch chunk: %w", err)
+		}
+	}
+
+	if cfg.count {
+		log.Printf("batch %d: %d bytes written overall", batchCount, writtenBytesCount)
+	}
+
+	return batchCount + 1, nil
+}
+
+func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64, batchCount int) error {
 	sizeBeforeDedupe := proto.Size(md)
 	if cfg.dedupe {
 		deduplicate(md)
 	}
 	sizeAfterDedupe := proto.Size(md)
-	if cfg.dedupe {
+	if cfg.dedupe && verbose {
 		log.Printf("size before dedupe: %d bytes, size after dedupe: %d bytes\n", sizeBeforeDedupe, sizeAfterDedupe)
 	}
 
@@ -233,15 +326,15 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, cfg config, chunkCou
 	case "json":
 		buf, err = protojson.Marshal(md)
 		if err != nil {
-			return chunkCount, fmt.Errorf("marshal json message: %w", err)
+			return fmt.Errorf("marshal json message: %w", err)
 		}
 	case "protobuf":
 		buf, err = proto.Marshal(md)
 		if err != nil {
-			return chunkCount, fmt.Errorf("marshal protobuf message: %w", err)
+			return fmt.Errorf("marshal protobuf message: %w", err)
 		}
 	default:
-		return chunkCount, fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
+		return fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
 	}
 
 	switch cfg.compressionType {
@@ -251,40 +344,49 @@ func writeMetricsDataChunkToFile(md *metricsv1.MetricsData, cfg config, chunkCou
 		var b bytes.Buffer
 		w := gzip.NewWriter(&b)
 		if _, err = w.Write(buf); err != nil {
-			return chunkCount, fmt.Errorf("write gzip: %w", err)
+			return fmt.Errorf("write gzip: %w", err)
 		}
 		if err = w.Close(); err != nil {
-			return chunkCount, fmt.Errorf("flush gzip writer: %w", err)
+			return fmt.Errorf("flush gzip writer: %w", err)
 		}
 
 		buf = b.Bytes()
 	default:
-		return chunkCount, fmt.Errorf("unsupported compression type: %s", cfg.compressionType)
+		return fmt.Errorf("unsupported compression type: %s", cfg.compressionType)
 	}
 
 	if cfg.count {
 		n := len(buf)
 		writtenBytesCount += n
-		log.Printf("registered %d bytes for chunk %d (%d bytes overall)\n", n, chunkCount, writtenBytesCount)
+		if verbose {
+			log.Printf("registered %d bytes for batch %d of chunk %d (%d bytes overall)\n", n, batchCount, chunkInterval, writtenBytesCount)
+		}
 
-		return chunkCount + 1, nil
+		return nil
 	}
 
-	fp := filepath.Join(cfg.dest, strconv.Itoa(chunkCount))
+	chunkDirPath := filepath.Join(cfg.dest, strconv.Itoa(int(chunkInterval)))
+	if err = os.MkdirAll(chunkDirPath, os.ModePerm); err != nil {
+		return fmt.Errorf("create chunk directory '%s': %w", chunkDirPath, err)
+	}
+
+	fp := filepath.Join(chunkDirPath, fmt.Sprintf("batch-%d", batchCount))
 	f, err := os.OpenFile(fp, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
 	if err != nil {
-		return chunkCount, fmt.Errorf("open file '%s' for writing: %w", fp, err)
+		return fmt.Errorf("open file '%s' for writing: %w", fp, err)
 	}
 
 	n, err := f.Write(buf)
 	if err != nil {
-		return chunkCount, fmt.Errorf("write to file '%s': %w", fp, err)
+		return fmt.Errorf("write to file '%s': %w", fp, err)
 	}
 	defer func() { _ = f.Close() }()
 
-	log.Printf("wrote chunk %d to disk (%d bytes)\n", chunkCount, n)
+	if verbose {
+		log.Printf("wrote batch %d if chunk %d to disk (%d bytes)\n", batchCount, chunkInterval, n)
+	}
 
-	return chunkCount + 1, nil
+	return nil
 }
 
 func labelsToAttributes(builder labels.ScratchBuilder, resourceAttributeLabels map[string]struct{}) (string, []*commonv1.KeyValue, []*commonv1.KeyValue, []*commonv1.KeyValue) {
@@ -380,4 +482,8 @@ func translateToOTELFloatHistogramBuckets(spans []histogram.Span, itr histogram.
 	}
 
 	return bkts
+}
+
+func snapToInterval(unixMS, intervalMS int64) int64 {
+	return unixMS - (unixMS % intervalMS)
 }
