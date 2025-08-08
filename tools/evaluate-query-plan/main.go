@@ -31,12 +31,12 @@ type app struct {
 	instantQuery bool
 
 	// Instant query:
-	at flagext.Time
+	time flagext.Time
 
 	// Range query:
-	from flagext.Time
-	to   flagext.Time
-	step time.Duration
+	start flagext.Time
+	end   flagext.Time
+	step  time.Duration
 
 	planner *streamingpromql.QueryPlanner
 	logger  log.Logger
@@ -57,9 +57,9 @@ func main() {
 func (a *app) ParseFlags() error {
 	flag.StringVar(&a.rootUrl, "root-url", "http://localhost:8005", "root URL of querier")
 	flag.StringVar(&a.expr, "expr", "", "expression to evaluate")
-	flag.Var(&a.at, "at", "instant query time")
-	flag.Var(&a.from, "from", "start of range query time range")
-	flag.Var(&a.to, "to", "end of range query time range")
+	flag.Var(&a.time, "time", "instant query time")
+	flag.Var(&a.start, "start", "start of range query time range")
+	flag.Var(&a.end, "end", "end of range query time range")
 	flag.DurationVar(&a.step, "step", time.Minute, "range query time step")
 	flag.StringVar(&a.tenantID, "tenant-id", "anonymous", "tenant ID")
 
@@ -71,13 +71,13 @@ func (a *app) ParseFlags() error {
 		return errors.New("expression is required")
 	}
 
-	if time.Time(a.at).IsZero() {
-		if time.Time(a.from).IsZero() || time.Time(a.to).IsZero() {
+	if time.Time(a.time).IsZero() {
+		if time.Time(a.start).IsZero() || time.Time(a.end).IsZero() {
 			return errors.New("either range query time range or instant query time is required")
 		}
 
-		if time.Time(a.from).After(time.Time(a.to)) {
-			return fmt.Errorf("from time (%v) must be before to time (%v)", time.Time(a.from).Format(time.RFC3339Nano), time.Time(a.to).Format(time.RFC3339Nano))
+		if time.Time(a.start).After(time.Time(a.end)) {
+			return fmt.Errorf("start time (%v) must be before end time (%v)", time.Time(a.start).Format(time.RFC3339Nano), time.Time(a.end).Format(time.RFC3339Nano))
 		}
 
 		if a.step <= 0 {
@@ -86,7 +86,7 @@ func (a *app) ParseFlags() error {
 	} else {
 		a.instantQuery = true
 
-		if !time.Time(a.from).IsZero() || !time.Time(a.to).IsZero() {
+		if !time.Time(a.start).IsZero() || !time.Time(a.end).IsZero() {
 			return errors.New("either range query time range or instant query time is required, but not both")
 		}
 	}
@@ -163,10 +163,10 @@ func (a *app) Run() error {
 
 func (a *app) getQueryTimeRange() types.QueryTimeRange {
 	if a.instantQuery {
-		return types.NewInstantQueryTimeRange(time.Time(a.at))
+		return types.NewInstantQueryTimeRange(time.Time(a.time))
 	}
 
-	return types.NewRangeQueryTimeRange(time.Time(a.from), time.Time(a.to), a.step)
+	return types.NewRangeQueryTimeRange(time.Time(a.start), time.Time(a.end), a.step)
 }
 
 type streamingResponseDecoder struct {
