@@ -63,7 +63,7 @@ func NewIndexOnlyLookupPlan(matchers []*labels.Matcher) LookupPlan {
 
 type indexOnlyLookupPlan []*labels.Matcher
 
-func (l indexOnlyLookupPlan) ScanMatchers() []*labels.Matcher {
+func (indexOnlyLookupPlan) ScanMatchers() []*labels.Matcher {
 	return nil
 }
 
@@ -116,12 +116,12 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan
 	}, nil
 }
 
-func (p *ScanEmptyMatchersLookupPlanner) shouldDropMatcher(matcher *labels.Matcher) bool {
+func (*ScanEmptyMatchersLookupPlanner) shouldDropMatcher(matcher *labels.Matcher) bool {
 	// This matches everything (empty and arbitrary values), so it doesn't reduce the selectivity of the whole set of matchers.
 	return matcher.Type == labels.MatchRegexp && matcher.Value == ".*"
 }
 
-func (p *ScanEmptyMatchersLookupPlanner) shouldScanMatcher(matcher *labels.Matcher) bool {
+func (*ScanEmptyMatchersLookupPlanner) shouldScanMatcher(matcher *labels.Matcher) bool {
 	// Put empty string matchers and regex matchers that match everything in scan matchers.
 	// These matchers are unlikely to reduce the selectivity of the matchers, but can still filter out some series, so we can't ignore them.
 	return (matcher.Type == labels.MatchEqual && matcher.Value == "") ||

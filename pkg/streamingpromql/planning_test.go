@@ -262,7 +262,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 30},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,
@@ -297,7 +297,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 28},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 29},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,

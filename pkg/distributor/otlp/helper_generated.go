@@ -46,13 +46,12 @@ import (
 )
 
 const (
-	sumStr        = "_sum"
-	countStr      = "_count"
-	bucketStr     = "_bucket"
-	leStr         = "le"
-	quantileStr   = "quantile"
-	pInfStr       = "+Inf"
-	createdSuffix = "_created"
+	sumStr      = "_sum"
+	countStr    = "_count"
+	bucketStr   = "_bucket"
+	leStr       = "le"
+	quantileStr = "quantile"
+	pInfStr     = "+Inf"
 	// maxExemplarRunes is the maximum number of UTF-8 exemplar characters
 	// according to the prometheus specification
 	// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
@@ -382,10 +381,6 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			return err
 		}
 
-		if settings.ExportCreatedMetric && startTimestampNs != 0 {
-			labels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
-		}
 		logger.Debug("addHistogramDataPoints", "labels", labelsStringer(createLabels(metadata.MetricFamilyName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
 	}
 
@@ -566,11 +561,6 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			c.addSample(quantile, qtlabels)
 		}
 
-		if settings.ExportCreatedMetric && startTimestampMs != 0 {
-			createdLabels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
-		}
-
 		logger.Debug("addSummaryDataPoints", "labels", labelsStringer(createLabels(metadata.MetricFamilyName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
 	}
 
@@ -642,21 +632,6 @@ func (c *MimirConverter) getOrCreateTimeSeries(lbls []mimirpb.LabelAdapter) (*mi
 	}
 	c.unique[h] = ts
 	return ts, true
-}
-
-// addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
-// If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
-// both converted to milliseconds.
-func (c *MimirConverter) addTimeSeriesIfNeeded(lbls []mimirpb.LabelAdapter, startTimestamp int64, timestamp pcommon.Timestamp) {
-	ts, created := c.getOrCreateTimeSeries(lbls)
-	if created {
-		ts.Samples = []mimirpb.Sample{
-			{
-				Value:       float64(startTimestamp),
-				TimestampMs: convertTimeStamp(timestamp),
-			},
-		}
-	}
 }
 
 // defaultIntervalForStartTimestamps is hardcoded to 5 minutes in milliseconds.

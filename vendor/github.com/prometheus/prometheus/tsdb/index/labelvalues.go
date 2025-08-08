@@ -119,11 +119,11 @@ func (it *intersectLabelValuesV1) Err() error {
 	return it.err
 }
 
-func (it *intersectLabelValuesV1) Warnings() annotations.Annotations {
+func (*intersectLabelValuesV1) Warnings() annotations.Annotations {
 	return nil
 }
 
-func (it *intersectLabelValuesV1) Close() error {
+func (*intersectLabelValuesV1) Close() error {
 	return nil
 }
 
@@ -199,11 +199,11 @@ func (it *intersectLabelValues) Err() error {
 	return it.err
 }
 
-func (it *intersectLabelValues) Warnings() annotations.Annotations {
+func (*intersectLabelValues) Warnings() annotations.Annotations {
 	return nil
 }
 
-func (it *intersectLabelValues) Close() error {
+func (*intersectLabelValues) Close() error {
 	return nil
 }
 
