@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
+* [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
 
 ## 5.8.0-rc.0
 
