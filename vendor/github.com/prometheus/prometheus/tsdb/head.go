@@ -199,11 +199,8 @@ type HeadOptions struct {
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyCompaction bool
 
-	PostingsForMatchersCacheTTL      time.Duration
-	PostingsForMatchersCacheMaxItems int
-	PostingsForMatchersCacheMaxBytes int64
-	PostingsForMatchersCacheForce    bool
-	PostingsForMatchersCacheMetrics  *PostingsForMatchersCacheMetrics
+	// PostingsForMatchersCacheFactory returns a cache that can be used to optimize PostingsForMatchers calls.
+	PostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
 
 	// Optional hash function applied to each new series. Computed hash value is preserved for each series in the head,
 	// and values can be iterated by using Head.ForEachSecondaryHash method.
@@ -219,23 +216,19 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:                       DefaultBlockDuration,
-		ChunkDirRoot:                     "",
-		ChunkPool:                        chunkenc.NewPool(),
-		ChunkWriteBufferSize:             chunks.DefaultWriteBufferSize,
-		ChunkEndTimeVariance:             0,
-		ChunkWriteQueueSize:              chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:                  DefaultSamplesPerChunk,
-		StripeSize:                       DefaultStripeSize,
-		SeriesCallback:                   &noopSeriesLifecycleCallback{},
-		IsolationDisabled:                defaultIsolationDisabled,
-		PostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
-		PostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
-		PostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
-		PostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
-		PostingsForMatchersCacheMetrics:  NewPostingsForMatchersCacheMetrics(nil),
-		WALReplayConcurrency:             defaultWALReplayConcurrency,
-		IndexLookupPlanner:               &index.ScanEmptyMatchersLookupPlanner{},
+		ChunkRange:                      DefaultBlockDuration,
+		ChunkDirRoot:                    "",
+		ChunkPool:                       chunkenc.NewPool(),
+		ChunkWriteBufferSize:            chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance:            0,
+		ChunkWriteQueueSize:             chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:                 DefaultSamplesPerChunk,
+		StripeSize:                      DefaultStripeSize,
+		SeriesCallback:                  &noopSeriesLifecycleCallback{},
+		IsolationDisabled:               defaultIsolationDisabled,
+		PostingsForMatchersCacheFactory: DefaultPostingsForMatchersCacheFactory,
+		WALReplayConcurrency:            defaultWALReplayConcurrency,
+		IndexLookupPlanner:              &index.ScanEmptyMatchersLookupPlanner{},
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -309,7 +302,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:             stats,
 		reg:               r,
 		secondaryHashFunc: shf,
-		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics, []attribute.KeyValue{attribute.String("block", headULID.String())}),
+		pfmc:              opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1087,6 +1080,11 @@ func (h *Head) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
+}
+
+// PostingsForMatchersCache returns the postings for matchers cache used by the head, if any.
+func (h *Head) PostingsForMatchersCache() *PostingsForMatchersCache {
+	return h.pfmc
 }
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.

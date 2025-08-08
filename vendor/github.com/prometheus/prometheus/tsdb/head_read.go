@@ -115,7 +115,7 @@ func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name st
 }
 
 func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, ms...)
+	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, h.head.Meta().ULID, ms...)
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
