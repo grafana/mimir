@@ -54,10 +54,12 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 		}
 
 		var metadata MetadataRW2
-		if rw1Metadata, ok := metadataMap[metricName]; ok {
-			metadata = FromMetricMetadataToMetadataRW2(rw1Metadata, symbols)
+		if len(rw1.Metadata) > 0 {
+			if rw1Metadata, ok := metadataMap[metricName]; ok {
+				metadata = FromMetricMetadataToMetadataRW2(rw1Metadata, symbols)
+			}
+			delete(metadataMap, metricName)
 		}
-		delete(metadataMap, metricName)
 
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
 			LabelsRefs:       refs,
