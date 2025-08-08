@@ -40,6 +40,18 @@
     $._config.ingest_storage_ingester_autoscaling_enabled ||
     $._config.enable_rollout_operator_webhook,
 
+  local ingester_zpdb_enabled =
+    $._config.multi_zone_ingester_enabled &&
+    $._config.multi_zone_ingester_zpdb_enabled &&
+    $._config.enable_rollout_operator_webhook,
+
+  local store_gateway_zpdb_enabled =
+    $._config.multi_zone_store_gateway_enabled &&
+    $._config.multi_zone_store_gateway_zpdb_enabled &&
+    $._config.enable_rollout_operator_webhook,
+
+  local zpdb_enabled = ingester_zpdb_enabled || store_gateway_zpdb_enabled,
+
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
     'use-zone-tracker': true,
@@ -49,6 +61,10 @@
   } else {},
 
   rollout_operator_node_affinity_matchers:: [],
+
+  // Create custom resource template for PodDisruptionZoneBudget
+  zpdb_crd:
+    std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
 
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
@@ -101,6 +117,9 @@
         policyRule.withApiGroups('') +
         policyRule.withResources(['configmaps']) +
         policyRule.withVerbs(['get', 'update', 'create']),
+        policyRule.withApiGroups('rollout-operator.grafana.com') +
+        policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
+        policyRule.withVerbs(['get', 'list', 'watch'])
       ] + (
         if $._config.rollout_operator_replica_template_access_enabled then [
           policyRule.withApiGroups($.replica_template.spec.group) +
@@ -165,6 +184,80 @@
       name: 'rollout-operator',
       namespace: $._config.namespace,
     }),
+
+  zpdb_validation_webhook: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+    validatingWebhookConfiguration.new('zpdb-validation-%s' % $._config.namespace) +
+    validatingWebhookConfiguration.mixin.metadata.withLabels({
+      'grafana.com/namespace': $._config.namespace,
+      'grafana.com/inject-rollout-operator-ca': 'true',
+    }) +
+    validatingWebhookConfiguration.withWebhooksMixin([
+      validatingWebhook.withName('zpdb-validation-%s.grafana.com' % $._config.namespace)
+      + validatingWebhook.withAdmissionReviewVersions(['v1'])
+      + validatingWebhook.withFailurePolicy('Fail')
+      + validatingWebhook.withSideEffects('None')
+      + validatingWebhook.withRulesMixin([
+        {
+          apiGroups: ['rollout-operator.grafana.com'],
+          apiVersions: ['v1'],
+          operations: ['CREATE', 'UPDATE'],
+          resources: ['zoneawarepoddisruptionbudgets'],
+          scope: 'Namespaced',
+        },
+      ])
+      + {
+        namespaceSelector: {
+          matchLabels: {
+            'kubernetes.io/metadata.name': $._config.namespace,
+          },
+        },
+        clientConfig: {
+          service: {
+            name: 'rollout-operator',
+            namespace: $._config.namespace,
+            path: '/admission/zpdb-validation',
+            port: 443,
+          },
+        },
+      },
+    ]),
+
+  pod_eviction_webhook: if !zpdb_enabled then null else
+    validatingWebhookConfiguration.new('pod-eviction-%s' % $._config.namespace) +
+    validatingWebhookConfiguration.mixin.metadata.withLabels({
+      'grafana.com/namespace': $._config.namespace,
+      'grafana.com/inject-rollout-operator-ca': 'true',
+    }) +
+    validatingWebhookConfiguration.withWebhooksMixin([
+      validatingWebhook.withName('pod-eviction-%s.grafana.com' % $._config.namespace)
+      + validatingWebhook.withAdmissionReviewVersions(['v1'])
+      + validatingWebhook.withFailurePolicy('Fail')
+      + validatingWebhook.withSideEffects('None')
+      + validatingWebhook.withRulesMixin([
+        {
+          apiGroups: [''],
+          apiVersions: ['v1'],
+          operations: ['CREATE'],
+          resources: ['pods/eviction'],
+          scope: 'Namespaced',
+        },
+      ])
+      + {
+        namespaceSelector: {
+          matchLabels: {
+            'kubernetes.io/metadata.name': $._config.namespace,
+          },
+        },
+        clientConfig: {
+          service: {
+            name: 'rollout-operator',
+            namespace: $._config.namespace,
+            path: '/admission/pod-eviction',
+            port: 443,
+          },
+        },
+      },
+    ]),
 
   no_downscale_webhook: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     validatingWebhookConfiguration.new('no-downscale-%s' % $._config.namespace) +
