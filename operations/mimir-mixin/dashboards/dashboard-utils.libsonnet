@@ -1355,7 +1355,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
         'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
         'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'sum(histogram_sum(sum(rate(%s{%s}[$__rate_interval])))) / sum(histogram_count(sum(rate(%s{%s}[$__rate_interval])))) * 1e3' % [metric, selector, metric, selector],
+        'histogram_avg(sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
       ],
       [
         '99th percentile',
