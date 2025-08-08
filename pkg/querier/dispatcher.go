@@ -194,17 +194,17 @@ type httpResultStream struct {
 	w http.ResponseWriter
 }
 
-func (w *httpResultStream) Write(ctx context.Context, m *frontendv2pb.QueryResultStreamRequest) error {
-	b, err := m.Marshal()
+func (s *httpResultStream) Write(ctx context.Context, r *frontendv2pb.QueryResultStreamRequest) error {
+	b, err := r.Marshal()
 	if err != nil {
 		return err
 	}
 
-	if err := binary.Write(w.w, binary.LittleEndian, uint64(len(b))); err != nil {
+	if err := binary.Write(s.w, binary.LittleEndian, uint64(len(b))); err != nil {
 		return err
 	}
 
-	if _, err := w.w.Write(b); err != nil {
+	if _, err := s.w.Write(b); err != nil {
 		return err
 	}
 
@@ -216,10 +216,10 @@ type queryResponseWriter struct {
 	logger log.Logger
 }
 
-func (w *queryResponseWriter) Write(ctx context.Context, m querierpb.EvaluateQueryResponse) error {
+func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQueryResponse) error {
 	return w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &m,
+			EvaluateQueryResponse: &r,
 		},
 	})
 }
