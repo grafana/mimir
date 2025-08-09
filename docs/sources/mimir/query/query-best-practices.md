@@ -55,5 +55,3 @@ Recording rules are useful for the following types of queries:
 - Queries spanning long time ranges.
 
 For more information about recording rules, refer to [Defining recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) in the Prometheus documentation.
-
-
