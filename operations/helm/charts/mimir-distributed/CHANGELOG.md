@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
+* [ENHANCEMENT] add option to specify selector for pvc via matchLabels. #11805
 
 ## 5.8.0-rc.0
 
@@ -51,6 +52,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] KEDA Autoscaling: Resolved an issue where the authModes field was missing from the ScaledObject definition for the querier when authentication was enabled. #11709
 * [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
+* [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
 
 ## 5.7.0
 
