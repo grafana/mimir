@@ -35,10 +35,25 @@ Additionally, choose a step interval that matches your requirements for running 
 
 ## Avoid high cardinality operations
 
-Avoid high cardinality operations: Be cautious with functions that can significantly increase cardinality, such as `group_by` with many labels.
+Avoid high cardinality operations to avoid performance issues or latency with your queries. High cardinality operations typically involve processing exceptionally large datasets.
+
+High cardinality typically results from the following circumstances:
+
+- Using a large number of labels
+- Attaching a large number of values to a label.
+
+To reduce cardinality in your queries, limit operations that involve many labels, such as the `group_by` function.
 
 ## Use recording rules
 
-Use recording rules: Pre-compute expensive queries using [recording rules](../../manage/rule-evaluation/recording-rules/), especially for dashboard queries that run frequently, complex aggregations across high-cardinality metrics, or queries that span long time ranges.
+If you need to run a particularly expensive or complex query, consider creating a recording rule to minimize its load. Recording rules in Prometheus involve running queries at a predetermined time and then precomputing the query results to save for faster retrieval later.
+
+Recording rules are useful for the following types of queries:
+
+- Dashboard queries that run frequently
+- Complex aggregations across high-cardinality metrics
+- Queries spanning long time ranges.
+
+For more information about recording rules, refer to [Defining recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) in the Prometheus documentation.
 
 
