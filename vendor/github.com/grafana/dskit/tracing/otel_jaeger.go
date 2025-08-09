@@ -287,7 +287,7 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 	tracerProviderOptions := []tracesdk.TracerProviderOption{
 		tracesdk.WithBatcher(exp, batcherOptions...),
 		tracesdk.WithResource(res),
-		tracesdk.WithSampler(sampler),
+		tracesdk.WithSampler(&JaegerDebuggingSampler{sampler}),
 	}
 	tracerProviderOptions = append(tracerProviderOptions, otelCfg.tracerProviderOptions...)
 
@@ -313,4 +313,51 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 		}
 		return nil
 	}), nil
+}
+
+type contextKey int
+
+var jaegerDebugIdKey = contextKey(0)
+
+type JaegerDebuggingPropagator struct{}
+
+const jaegerDebugIdHeader string = "Jaeger-Debug-Id"
+
+func (j JaegerDebuggingPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	// Nothing to do, we don't want to propagate the header.
+}
+
+func (j JaegerDebuggingPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	debugId := carrier.Get(jaegerDebugIdHeader)
+
+	if debugId == "" {
+		return ctx
+	}
+
+	return context.WithValue(ctx, jaegerDebugIdKey, debugId)
+}
+
+func (j JaegerDebuggingPropagator) Fields() []string {
+	return []string{jaegerDebugIdHeader}
+}
+
+type JaegerDebuggingSampler struct {
+	inner tracesdk.Sampler
+}
+
+func (j *JaegerDebuggingSampler) ShouldSample(parameters tracesdk.SamplingParameters) tracesdk.SamplingResult {
+	debugId, haveDebugId := parameters.ParentContext.Value(jaegerDebugIdKey).(string)
+	innerResult := j.inner.ShouldSample(parameters)
+	if !haveDebugId {
+		return innerResult
+	}
+
+	innerResult.Decision = tracesdk.RecordAndSample
+	attr := attribute.String("jaeger-debug-id", debugId) // TODO: should we use a different attribute name?
+	innerResult.Attributes = append(innerResult.Attributes, attr)
+	return innerResult
+}
+
+func (j *JaegerDebuggingSampler) Description() string {
+	return "JaegerDebuggingSampler"
 }
