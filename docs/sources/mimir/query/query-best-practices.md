@@ -21,7 +21,7 @@ To reduce the initial dataset size, start with the most specific label selectors
 
 To further reduce the number of series that require processing, include as many label selectors as possible for your query.
 
-Whenever possible, use an exact label match, such as `label="value"`, instead of a regular expression, such as label=~"pattern". Regular expressions are more computationally expensive.
+Whenever possible, use an exact label match, such as `label="value"`, instead of a regular expression, such as `label=~"pattern"`. Regular expressions are more computationally expensive.
 
 For more information about how to query metric labels, refer to [Query metric labels](https://grafana.com/docs/mimir/<MIMIR_VERSION>/query/query-metric-labels/)
 
