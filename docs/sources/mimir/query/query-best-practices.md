@@ -31,7 +31,7 @@ Limit your query to a specific time period to reduce the number of metrics Mimir
 
 If you don't specify a time range, consider using the `-store.max-labels-query-length` configuration parameter to limit the maximum time range.
 
-Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provides higher resolution.
+Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provide higher resolution.
 
 ## Avoid high cardinality operations
 
@@ -52,6 +52,6 @@ Recording rules are useful for the following types of queries:
 
 - Dashboard queries that run frequently
 - Complex aggregations across high-cardinality metrics
-- Queries spanning long time ranges.
+- Queries spanning long time ranges
 
 For more information about recording rules, refer to [Defining recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) in the Prometheus documentation.
