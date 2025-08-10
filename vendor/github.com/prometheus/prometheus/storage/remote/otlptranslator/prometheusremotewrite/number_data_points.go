@@ -125,22 +125,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			ts.Exemplars = append(ts.Exemplars, exemplars...)
 		}
 
-		// add created time series if needed
-		if settings.ExportCreatedMetric && isMonotonic {
-			if startTimestampMs == 0 {
-				return nil
-			}
-
-			createdLabels := make([]prompb.Label, len(lbls))
-			copy(createdLabels, lbls)
-			for i, l := range createdLabels {
-				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = metadata.MetricFamilyName + createdSuffix
-					break
-				}
-			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
-		}
 		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
