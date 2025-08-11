@@ -166,8 +166,13 @@ How to **fix** it:
       ```
     b. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
        - Decrease `max_global_series_per_user` limit
-       - Ensure `ingestion_tenant_shard_size` is configure to a value equal or greater than `min(current setting, current number of ingesters across all zones)`
-       - Ensure `ingestion_partitions_tenant_shard_size` is configured to `ingestion_tenant_shard_size / 3` (only applicable when the experimental ingest storage is enabled)
+       - Ensure `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` are not decreased below a safe value:
+         - If the experimental ingest storage is enabled:
+           - Ensure `ingestion_partitions_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of partitions)`
+           - Ensure `ingestion_tenant_shard_size` is configured to `ingestion_partitions_tenant_shard_size * 3`
+         - If the experimental ingest storage is disabled:
+           - Ensure `ingestion_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of ingesters across all zones)`
+           - Ensure `ingestion_partitions_tenant_shard_size` is configured to `ingestion_tenant_shard_size / 3` (only applicable when the experimental ingest storage is enabled)
 
 ### MimirIngesterReachingTenantsLimit
 
