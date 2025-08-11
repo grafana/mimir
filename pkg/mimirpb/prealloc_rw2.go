@@ -35,7 +35,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
 	var metadataMap map[string]*MetricMetadata
-	if len(rw1.Metadata) > 0 {
+	if len(rw1.Metadata) > 0 && len(rw1.Timeseries) > 0 {
 		metadataMap = make(map[string]*MetricMetadata, len(rw1.Metadata))
 		for _, meta := range rw1.Metadata {
 			metadataMap[meta.MetricFamilyName] = meta
@@ -72,11 +72,14 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	// If there are extra metadata not associated with any timeseries, we fabricate an empty timeseries to carry it.
-	// We never replicate metadata if there are multiple series with the same name.
 	for _, meta := range rw1.Metadata {
-		if _, ok := metadataMap[meta.MetricFamilyName]; !ok {
-			continue
+		// If we are matching metadata to series, and we already matched this metadata, we can skip it.
+		if metadataMap != nil {
+			if _, ok := metadataMap[meta.MetricFamilyName]; !ok {
+				continue
+			}
 		}
+
 		labelsRefs := []uint32{symbols.Symbolize(labels.MetricName), symbols.Symbolize(meta.MetricFamilyName)}
 		rw2meta := FromMetricMetadataToMetadataRW2(meta, symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
