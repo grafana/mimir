@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -19,7 +20,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -108,7 +108,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			if testData.trackSeriesErr == nil {
 				if len(testData.trackSeriesRejectedHashes) > 0 {
 					require.NotNil(t, err)
-					st, ok := status.FromError(err)
+					st, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok, "Expected error to be a gRPC status error")
 					require.Equal(t, codes.ResourceExhausted, st.Code())
 				} else {
