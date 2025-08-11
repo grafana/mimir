@@ -989,27 +989,6 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 					Exemplars: []mimirpb.Exemplar{},
 				},
 			},
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-					Samples:   []mimirpb.Sample{},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-					Samples:   []mimirpb.Sample{},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-					Samples:   []mimirpb.Sample{},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
 		}
 		assert.Equal(t, expTimeseries, actual.Timeseries)
 	})
@@ -1064,7 +1043,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, splitRequestVersionTwo)
 		require.NoError(t, err)
-		require.Len(t, records, 4)
+		require.Len(t, records, 3)
 
 		// Assert each record, and decode all partial WriteRequests.
 		partials := make([]*mimirpb.WriteRequest, 0, len(records))
@@ -1097,33 +1076,6 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 							Exemplars: []mimirpb.Exemplar{},
 						},
 					},
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
-				},
-				Metadata: []*mimirpb.MetricMetadata{},
-			}, {
-				Source:              mimirpb.RULE,
-				SkipLabelValidation: true,
-				Timeseries: []mimirpb.PreallocTimeseries{
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-							Samples:   []mimirpb.Sample{},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
 				},
 				Metadata: []*mimirpb.MetricMetadata{
 					{
@@ -1139,7 +1091,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 					{
 						TimeSeries: &mimirpb.TimeSeries{
 							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-							Samples:   []mimirpb.Sample{},
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
 							Exemplars: []mimirpb.Exemplar{},
 						},
 					},
@@ -1158,7 +1110,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 					{
 						TimeSeries: &mimirpb.TimeSeries{
 							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-							Samples:   []mimirpb.Sample{},
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
 							Exemplars: []mimirpb.Exemplar{},
 						},
 					},
