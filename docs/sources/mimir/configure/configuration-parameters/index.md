@@ -4894,6 +4894,23 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
   [out_of_order_capacity_max: <int> | default = 32]
 
+  # (experimental) Whether postings for matchers cache should be shared across
+  # blocks, as opposed to instantiated per block. With a shared cache, one cache
+  # is created for head blocks, and one for compacted blocks.
+  # CLI flag: -blocks-storage.tsdb.shared-postings-for-matchers-cache
+  [shared_postings_for_matchers_cache: <boolean> | default = false]
+
+  # (experimental) Whether head block postings should be tracked and invalidated
+  # when they change, allowing higher TTLs to be used. When not using
+  # invalidation, cache entries will be used until removed.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
+  [head_postings_for_matchers_cache_invalidation: <boolean> | default = false]
+
+  # (experimental) The size of the metric versions cache in each ingester when
+  # invalidation is enabled.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
+  [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
+
   # (experimental) How long to cache postings for matchers in the Head and
   # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl

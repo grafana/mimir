@@ -239,6 +239,16 @@ type TSDBConfig struct {
 	// For experimental out of order metrics support.
 	OutOfOrderCapacityMax int `yaml:"out_of_order_capacity_max" category:"experimental"`
 
+	// SharedPostingsForMatchersCache indicates whether the PostingsForMatchersCache should be shared across blocks, as
+	// opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for non-head blocks.
+	SharedPostingsForMatchersCache bool `yaml:"shared_postings_for_matchers_cache" category:"experimental"`
+
+	// HeadPostingsForMatchersCacheInvalidation indicates whether postings should be tracked and invalidated when they change.
+	HeadPostingsForMatchersCacheInvalidation bool `yaml:"head_postings_for_matchers_cache_invalidation" category:"experimental"`
+
+	// HeadPostingsForMatchersCacheVersions is the number of metricVersions to store in the cache
+	HeadPostingsForMatchersCacheVersions int `yaml:"head_postings_for_matchers_cache_versions" category:"experimental"`
+
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	HeadPostingsForMatchersCacheTTL time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
@@ -322,6 +332,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
+	f.BoolVar(&cfg.SharedPostingsForMatchersCache, "blocks-storage.tsdb.shared-postings-for-matchers-cache", false, "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.")
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheInvalidation, "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", false, "Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.")
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheVersions, "blocks-storage.tsdb.head-postings-for-matchers-cache-versions", tsdb.DefaultPostingsForMatchersCacheVersions, "The size of the metric versions cache in each ingester when invalidation is enabled.")
 	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.HeadPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
 	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
