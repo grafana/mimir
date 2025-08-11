@@ -59,4 +59,6 @@ enum NodeType {
   NODE_TYPE_SUBQUERY = 9;
 
   NODE_TYPE_DUPLICATE = 10;
+
+  NODE_TYPE_REMOTE_EXEC = 11;
 }
