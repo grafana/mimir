@@ -10386,7 +10386,7 @@
               "kind": "field",
               "name": "shared_postings_for_matchers_cache",
               "required": false,
-              "desc": "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.",
+              "desc": "Whether postings for matchers cache should be shared across blocks and tenants, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks for each tenant.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.shared-postings-for-matchers-cache",
