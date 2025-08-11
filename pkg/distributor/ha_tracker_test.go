@@ -252,9 +252,31 @@ func TestReplicaDescMerge(t *testing.T) {
 	}
 }
 
-func TestHaTrackerWithMemberList(t *testing.T) {
+func createMemberlistKVConfig(c codec.Codec) *memberlist.KVConfig {
 	var config memberlist.KVConfig
+	flagext.DefaultValues(&config)
+	config.Codecs = []codec.Codec{c}
+	return &config
+}
 
+func createMemberlistKVStore(ctx context.Context, t *testing.T, cfg *memberlist.KVConfig, logger log.Logger) kv.Config {
+	memberListSvc := memberlist.NewKVInitService(
+		cfg,
+		logger,
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
+	})
+
+	return kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+		MemberlistKV: memberListSvc.GetMemberlistKV,
+	}}
+}
+
+func TestHaTrackerWithMemberList(t *testing.T) {
 	const (
 		cluster                  = "cluster"
 		replica1                 = "r1"
@@ -264,29 +286,14 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
 	)
 
-	flagext.DefaultValues(&config)
 	ctx := context.Background()
-
-	config.Codecs = []codec.Codec{
-		GetReplicaDescCodec(),
-	}
-
-	memberListSvc := memberlist.NewKVInitService(
-		&config,
-		log.NewNopLogger(),
-		&dnsProviderMock{},
-		prometheus.NewPedanticRegistry(),
-	)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
-	t.Cleanup(func() {
-		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
-	})
+	codec := GetReplicaDescCodec()
+	cfg := createMemberlistKVConfig(codec)
+	kvStore := createMemberlistKVStore(ctx, t, cfg, log.NewNopLogger())
 
 	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
-		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
-			MemberlistKV: memberListSvc.GetMemberlistKV,
-		}},
+		KVStore:         kvStore,
 	}, trackerLimits{
 		maxClusters:            100,
 		updateTimeout:          updateTimeout,
@@ -303,37 +310,35 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	now := time.Now()
 
 	// Write the first time.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now, now)
+	err = tracker.checkReplica(ctx, "user", cluster, replica1, now, now)
 	assert.NoError(t, err)
 
 	// Throw away a sample from replica2.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
+	err = tracker.checkReplica(ctx, "user", cluster, replica2, now, now)
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
 	now = now.Add(failoverTimeoutPlus100ms)
 
 	// Another sample from replica2 to update its timestamp.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
+	err = tracker.checkReplica(ctx, "user", cluster, replica2, now, now)
 	assert.Error(t, err)
 
 	// Update KVStore - this should elect replica 2.
-	tracker.updateKVStoreAll(context.Background(), now)
+	tracker.updateKVStoreAll(ctx, now)
 
 	checkReplicaTimestamp(t, 100*time.Millisecond, tracker, "user", cluster, replica2, now, now)
 
 	// Now we should accept from replica 2.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now, now)
+	err = tracker.checkReplica(ctx, "user", cluster, replica2, now, now)
 	assert.NoError(t, err)
 
 	// We timed out accepting samples from replica 1 and should now reject them.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now, now)
+	err = tracker.checkReplica(ctx, "user", cluster, replica1, now, now)
 	assert.Error(t, err)
 }
 
 func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateIsNotFailing(t *testing.T) {
-	var config memberlist.KVConfig
-
 	const (
 		cluster                  = "cluster"
 		tenant                   = "tenant"
@@ -344,32 +349,19 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
 	)
 
-	flagext.DefaultValues(&config)
 	ctx := context.Background()
 	logger := utiltest.NewTestingLogger(t)
-	config.Codecs = []codec.Codec{
-		GetReplicaDescCodec(),
-	}
+	codec := GetReplicaDescCodec()
+	cfg := createMemberlistKVConfig(codec)
 
 	// give some room to WatchPrefix to register
-	config.NotifyInterval = 250 * time.Millisecond
+	cfg.NotifyInterval = 250 * time.Millisecond
 
-	memberListSvc := memberlist.NewKVInitService(
-		&config,
-		logger,
-		&dnsProviderMock{},
-		prometheus.NewPedanticRegistry(),
-	)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
-	t.Cleanup(func() {
-		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
-	})
+	kvStore := createMemberlistKVStore(ctx, t, cfg, logger)
 
 	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
-		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
-			MemberlistKV: memberListSvc.GetMemberlistKV,
-		}},
+		KVStore:         kvStore,
 	}, trackerLimits{
 		maxClusters:            100,
 		updateTimeout:          updateTimeout,
@@ -386,7 +378,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	now := time.Now()
 
 	// Write the first time.
-	err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now, now)
+	err = tracker.checkReplica(ctx, tenant, cluster, replica1, now, now)
 	assert.NoError(t, err)
 
 	key := fmt.Sprintf("%s/%s", tenant, cluster)
@@ -407,11 +399,11 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	now = now.Add(failoverTimeoutPlus100ms)
 	// check replica2
-	err = tracker.checkReplica(context.Background(), tenant, cluster, replica2, now, now)
+	err = tracker.checkReplica(ctx, tenant, cluster, replica2, now, now)
 	assert.NoError(t, err)
 
 	// check replica1
-	assert.ErrorAs(t, tracker.checkReplica(context.Background(), tenant, cluster, replica1, now, now), &replicasDidNotMatchError{})
+	assert.ErrorAs(t, tracker.checkReplica(ctx, tenant, cluster, replica1, now, now), &replicasDidNotMatchError{})
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
@@ -1580,16 +1572,16 @@ func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
 	const replica1 = "replica-1"
 	const replica2 = "replica-2"
 
+	ctx := context.Background()
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(kvStore, "prefix")
+	cfg := createMemberlistKVConfig(codec)
+	kvStore := createMemberlistKVStore(ctx, t, cfg, log.NewNopLogger())
 
 	failoverTimeout := 30 * time.Second
 
 	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
-		KVStore:         kv.Config{Mock: mock},
+		KVStore:         kvStore,
 	}, trackerLimits{
 		maxClusters:            100,
 		updateTimeout:          15 * time.Second,
@@ -1598,15 +1590,15 @@ func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
 		failoverSampleTimeout:  failoverTimeout,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
-	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+	defer services.StopAndAwaitTerminated(ctx, tracker) //nolint:errcheck
 
 	now := time.Now()
 	sampleDelay := 20 * time.Second
 	sampleTime := now.Add(-sampleDelay)
 
 	// Establish replica1 as elected
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	err = tracker.checkReplica(ctx, userID, cluster, replica1, now, sampleTime)
 	require.NoError(t, err)
 
 	// Wait past failover timeout
@@ -1614,11 +1606,11 @@ func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
 	sampleTime2 := sampleTime.Add(failoverTimeout)
 
 	// Attempt failover to replica2
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	err = tracker.checkReplica(ctx, userID, cluster, replica2, now2, sampleTime2)
 	require.Error(t, err)
 
 	// Update KV store to try and trigger failover
-	tracker.updateKVStoreAll(context.Background(), now2)
+	tracker.updateKVStoreAll(ctx, now2)
 
 	// Now replica1 should still be elected
 	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica1, now, now)
@@ -1628,17 +1620,17 @@ func TestHATracker_UseSampleTimeForFailoverEnabled(t *testing.T) {
 	sampleTime3 := sampleTime2.Add(sampleDelay)
 
 	// Attempt failover to replica2 again
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	err = tracker.checkReplica(ctx, userID, cluster, replica2, now3, sampleTime3)
 	require.Error(t, err)
 
 	// Update KV store to try and trigger failover
-	tracker.updateKVStoreAll(context.Background(), now2)
+	tracker.updateKVStoreAll(ctx, now2)
 
 	// Now replica2 should be elected
 	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now3, now3)
 
 	// Verify replica2 is now accepted
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now3, sampleTime3)
+	err = tracker.checkReplica(ctx, userID, cluster, replica2, now3, sampleTime3)
 	require.NoError(t, err)
 }
 
@@ -1648,16 +1640,16 @@ func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
 	const replica1 = "replica-1"
 	const replica2 = "replica-2"
 
+	ctx := context.Background()
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(kvStore, "prefix")
+	cfg := createMemberlistKVConfig(codec)
+	kvStore := createMemberlistKVStore(ctx, t, cfg, log.NewNopLogger())
 
 	failoverTimeout := 30 * time.Second
 
 	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
-		KVStore:         kv.Config{Mock: mock},
+		KVStore:         kvStore,
 	}, trackerLimits{
 		maxClusters:            100,
 		updateTimeout:          15 * time.Second,
@@ -1666,15 +1658,15 @@ func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
 		failoverSampleTimeout:  0,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
-	defer services.StopAndAwaitTerminated(context.Background(), tracker) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+	defer services.StopAndAwaitTerminated(ctx, tracker) //nolint:errcheck
 
 	now := time.Now()
 	sampleDelay := 20 * time.Second
 	sampleTime := now.Add(-sampleDelay)
 
 	// Establish replica1 as elected
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica1, now, sampleTime)
+	err = tracker.checkReplica(ctx, userID, cluster, replica1, now, sampleTime)
 	require.NoError(t, err)
 
 	// Wait past failover timeout
@@ -1682,16 +1674,16 @@ func TestHATracker_UseSampleTimeForFailoverDisabled(t *testing.T) {
 	sampleTime2 := sampleTime.Add(failoverTimeout)
 
 	// Attempt failover to replica2
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, sampleTime2)
+	err = tracker.checkReplica(ctx, userID, cluster, replica2, now2, sampleTime2)
 	require.Error(t, err)
 
 	// Update KV store to try and trigger failover
-	tracker.updateKVStoreAll(context.Background(), now2)
+	tracker.updateKVStoreAll(ctx, now2)
 
 	// Now replica2 should be elected
 	checkReplicaTimestamp(t, 2*time.Second, tracker, userID, cluster, replica2, now2, now2)
 
 	// Verify replica2 is now accepted
-	err = tracker.checkReplica(context.Background(), userID, cluster, replica2, now2, now2)
+	err = tracker.checkReplica(ctx, userID, cluster, replica2, now2, now2)
 	require.NoError(t, err)
 }
