@@ -658,7 +658,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.API.AuthMiddleware.Wrap(internalQuerierRouter)
 	}
 
-	// If neither query-frontend nor query-scheduler is in use, then no worker is needed.
+	// If no query-scheduler is in use, then no worker is needed.
 	if !t.Cfg.Worker.IsSchedulerConfigured() {
 		return nil, nil
 	}
@@ -850,7 +850,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	// to connect to a scheduler on localhost on its own gRPC listening port.
 	if t.Cfg.isAnyModuleEnabled(QueryScheduler, Read, All) && !t.Cfg.Frontend.FrontendV2.IsSchedulerConfigured() {
 		address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
-		level.Info(util_log.Logger).Log("msg", "The querier-frontend has not been configured with the query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic frontend configuration. If queries are unresponsive, consider explicitly configuring the query-scheduler address for querier-frontend.", "address", address)
+		level.Info(util_log.Logger).Log("msg", "The query-frontend has not been configured with the query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic frontend configuration. If queries are unresponsive, consider explicitly configuring the query-scheduler address for querier-frontend.", "address", address)
 		t.Cfg.Frontend.FrontendV2.SchedulerAddress = address
 	}
 
