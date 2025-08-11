@@ -103,7 +103,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	metadata := []mimirpb.MetricMetadata{
 		{
 			Help: "foo",
-			Unit: "By",
+			Unit: "bytes",
 		},
 	}
 
@@ -153,7 +153,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 			 {
 				"type":"gauge",
 				"help":"foo",
-				"unit":"By"
+				"unit":"bytes"
 			 }
 		  ]
 	   }
@@ -198,14 +198,14 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 				 {
 					"type":"histogram",
 					"help":"foo",
-					"unit":"By"
+					"unit":"bytes"
 				 }
 			  ],
 			  "%s":[
 				 {
 					"type":"gauge",
 					"help":"foo",
-					"unit":"By"
+					"unit":"bytes"
 				 }
 			  ]
 		   }
