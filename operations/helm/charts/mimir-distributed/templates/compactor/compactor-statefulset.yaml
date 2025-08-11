@@ -166,13 +166,20 @@ spec:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.compactor.env }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "compactor") }}
+          {{- $hasAnyEnv := or $goml .Values.global.extraEnv .Values.compactor.env -}}
+          {{- if $hasAnyEnv }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.compactor.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "compactor") -}}
+            {{- if $goml }}
+            - name: "GOMEMLIMIT"
+              value: {{ $goml | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.compactor.extraEnvFrom }}

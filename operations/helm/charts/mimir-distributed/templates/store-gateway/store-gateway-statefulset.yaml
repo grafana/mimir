@@ -203,7 +203,8 @@ spec:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
           {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
-          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "store-gateway") -}}
+          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request $goml }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -217,9 +218,12 @@ spec:
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
             {{- end }}
-            {{- if $mem_request }}
+            {{- if $goml }}
             - name: "GOMEMLIMIT"
-              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
+              value: {{ $goml | toString | toYaml }}
+            {{- else if $mem_request }}
+            - name: "GOMEMLIMIT"
+              value: {{ include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}

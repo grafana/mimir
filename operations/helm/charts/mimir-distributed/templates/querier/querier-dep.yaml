@@ -107,7 +107,8 @@ spec:
           securityContext:
             {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
-          {{- if or .Values.global.extraEnv .Values.querier.env $cpu_request }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "querier") }}
+          {{- if or .Values.global.extraEnv .Values.querier.env $cpu_request $goml }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -120,6 +121,10 @@ spec:
               {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
+            {{- if $goml }}
+            - name: "GOMEMLIMIT"
+              value: {{ $goml | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.querier.extraEnvFrom }}
