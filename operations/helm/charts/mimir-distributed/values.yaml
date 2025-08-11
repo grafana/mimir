@@ -3847,7 +3847,7 @@ metaMonitoring:
     labels:
       grafana_dashboard: "1"
 
-  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator, Grafana Agent (deprecated), and/or Grafana Alloy
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
@@ -3916,7 +3916,9 @@ metaMonitoring:
   #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
 
-  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  # -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+  # Users are recommended to switch to Grafana k8s-monitoring, that orchestrates the lifecycle of Grafana Alloy instances, and comes with built-in support for monitoring Grafana LGTM stacks (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
+  # metaMonitoring.grafanaAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
@@ -4114,6 +4116,8 @@ metaMonitoring:
         # matchLabelKeys:
         #   - pod-template-hash
 
+# -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+# Users are recommended to switch to Grafana k8s-monitoring (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
   podSecurityContext:
