@@ -2364,6 +2364,23 @@ How to **fix** it:
 - Check the read requests latency through the `Mimir / Reads` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight read requests).
 - Consider scaling out the ingesters.
 
+### err-mimir-max-active-series
+
+This error occurs when the number of active series for a given tenant exceeds the configured limit.
+
+This limit is applied before the series are ingested into Kafka.
+
+The limit is used to protect ingesters from overloading in case a tenant writes a high number of active series, as well as to protect the whole system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-distributor.max-active-series-per-user` option (or `max_active_series_per_user` in the runtime configuration).
+
+How to **fix** it:
+- Ensure the actual number of active series written by the affected tenant is legit.
+- Consider increasing the per-tenant limit by using the `-distributor.max-active-series-per-user` option (or `max_active_series_per_user` in the runtime configuration).
+
+{{< admonition type="note" >}}
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
+{{< /admonition >}}
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
