@@ -254,7 +254,7 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 			sampler = tracesdk.NeverSample()
 		}
 	} else if cfg.samplerType == "probabilistic" {
-		tracesdk.TraceIDRatioBased(cfg.samplerParam)
+		sampler = tracesdk.TraceIDRatioBased(cfg.samplerParam)
 	} else if cfg.samplerType == "remote" {
 		sampler = jaegerremote.New(serviceName, jaegerremote.WithSamplingServerURL(cfg.samplingServerURL),
 			jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(cfg.samplerParam)))

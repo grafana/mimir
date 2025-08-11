@@ -721,7 +721,7 @@ github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20250804051503-9430c6c06c07
+# github.com/grafana/dskit v0.0.0-20250808065120-c54005d12afc
 ## explicit; go 1.23.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1345,7 +1345,7 @@ github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20250731075400-8e1610eb4d62
+# github.com/thanos-io/objstore v0.0.0-20250804093838-71d60dfee488
 ## explicit; go 1.24.0
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
