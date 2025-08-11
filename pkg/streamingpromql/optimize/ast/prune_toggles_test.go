@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ast
+package ast_test
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 var testCasesPruneToggles = map[string]string{
@@ -50,7 +52,7 @@ var testCasesPruneToggles = map[string]string{
 }
 
 func TestPruneToggles(t *testing.T) {
-	optimizer := NewPruneToggles()
+	optimizer := ast.NewPruneToggles()
 	ctx := context.Background()
 
 	for input, expected := range testCasesPruneToggles {
