@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testCases = map[string]string{
+var testCasesPruneToggles = map[string]string{
 	// Non-prunable expressions.
 	`foo`:                `foo`,
 	`foo[2m]`:            `foo[2m]`,
@@ -53,7 +53,7 @@ func TestPruneToggles(t *testing.T) {
 	optimizer := NewPruneToggles()
 	ctx := context.Background()
 
-	for input, expected := range testCases {
+	for input, expected := range testCasesPruneToggles {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
@@ -81,5 +81,5 @@ func TestPruneTogglesWithData(t *testing.T) {
 			bar{series="3"} 0+8x<num samples>
 			bar{series="4"} 0+9x<num samples>
 			bar{series="5"} 0+10x<num samples>
-	`, testCases)
+	`, testCasesPruneToggles)
 }
