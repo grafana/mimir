@@ -508,9 +508,13 @@ func requirePerTenantSeries(t *testing.T, p *partitionHandler, expected map[stri
 }
 
 func newPartitionHandlerTestHelper(t *testing.T) *partitionHandlerTestHelper {
-	ikv, instanceKVCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	consulConfig := consul.Config{
+		MaxCasRetries: 100,
+		CasRetryDelay: 10 * time.Millisecond,
+	}
+	ikv, instanceKVCloser := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consulConfig, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, instanceKVCloser.Close()) })
-	pkv, partitionKVCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	pkv, partitionKVCloser := consul.NewInMemoryClientWithConfig(ring.GetPartitionRingCodec(), consulConfig, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, partitionKVCloser.Close()) })
 	cluster := fakeKafkaCluster(t, eventsTopic, snapshotsMetadataTopic)
 

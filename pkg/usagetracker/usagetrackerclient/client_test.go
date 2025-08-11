@@ -39,11 +39,16 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 	prepareTest := func() (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
 		registerer := prometheus.NewPedanticRegistry()
 
+		consulConfig := consul.Config{
+			MaxCasRetries: 100,
+			CasRetryDelay: 10 * time.Millisecond,
+		}
+
 		// Setup the in-memory KV store used for the ring.
-		instanceRingStore, instanceRingCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+		instanceRingStore, instanceRingCloser := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consulConfig, log.NewNopLogger(), nil)
 		t.Cleanup(func() { assert.NoError(t, instanceRingCloser.Close()) })
 
-		partitionRingStore, partitionRingCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+		partitionRingStore, partitionRingCloser := consul.NewInMemoryClientWithConfig(ring.GetPartitionRingCodec(), consulConfig, log.NewNopLogger(), nil)
 		t.Cleanup(func() { assert.NoError(t, partitionRingCloser.Close()) })
 
 		// Add few usage-tracker instances to the instance ring.
