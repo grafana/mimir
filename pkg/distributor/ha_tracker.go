@@ -680,7 +680,7 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 				}
 				if h.failoverSampleTimeout > 0 {
 					if sampleTime.Sub(timestamp.Time(desc.ReceivedAt)) < h.failoverSampleTimeout {
-						level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout)
+						level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover based on earliest sample time", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "sample_time", sampleTime, "failover_sample_timeout", h.failoverSampleTimeout)
 						return nil, false, nil
 					}
 				}
