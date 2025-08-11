@@ -35,7 +35,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
@@ -334,32 +333,20 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
 
-	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
-		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
-	}
-	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
-		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
-	}
-	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
-		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
-	}
 	// validate the default limits
-	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
-func (c *Config) ValidateLimits(limits validation.Limits) error {
-	if err := c.Querier.ValidateLimits(limits); err != nil {
+// ValidateLimits validates the runtime limits.
+func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
-	return nil
+	return limits.Validate()
 }
 
 func (c *Config) isModuleEnabled(m string) bool {

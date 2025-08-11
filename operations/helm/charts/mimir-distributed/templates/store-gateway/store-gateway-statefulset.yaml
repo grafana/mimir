@@ -127,7 +127,8 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.store_gateway.persistentVolume.enabled }}
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {{- toYaml .Values.store_gateway.persistentVolume.emptyDir | nindent 12 }}
         {{- end }}
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}

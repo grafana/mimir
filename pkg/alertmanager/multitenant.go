@@ -69,6 +69,7 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+	errConfigNotFound                      = errors.New("configuration not found")
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -760,62 +761,82 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
-// computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
+// computeConfig takes Mimir and Grafana configurations and returns a config we can use to start an Alertmanager.
+// A bool is returned, indicating whether the Alertmanager should be started.
+//
+// Order of precedence:
+// 1. Custom Mimir configurations
+// 2. Custom, promoted Grafana configurations
+// 3. Default Grafana configurations
+// 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
-	userID := cfgs.Mimir.User
-	cfg := amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)
-
-	// Check if tenants can be skipped (strict initialization enabled).
-	skippable := am.cfg.StrictInitializationEnabled
-
-	// Check if the mimir config is non-empty and non-default.
-	isMimirConfigCustom := cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != ""
-
-	// If Grafana config is not usable, skip if possible.
-	if !isGrafanaConfigUsable(cfgs.Grafana) {
-		if !skippable || isMimirConfigCustom {
-			return cfg, true, nil
+	// Custom Mimir configurations have the highest precedence.
+	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
+		if !cfgs.Grafana.Default {
+			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		}
-
-		// For skippable tenants, only run if receiving requests recently.
-		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return cfg, false, nil
-		}
-
-		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-
-		// Use the zero value to signal that the tenant was skipped.
-		// If the value stored is not what we have in memory, the tenant received a request since the last read.
-		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
-			return cfg, false, nil
-		}
-
-		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
-		return cfg, true, nil
+		am.removeFromSkippedList(cfgs.Mimir.User)
+		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
-	// Clear any previous skipped status since we now have a usable config.
-	if skippable {
-		if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
-			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+	// Unpromoted/empty Grafana configurations are always ignored.
+	if !cfgs.Grafana.Promoted || cfgs.Grafana.RawConfig == "" {
+		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
+		if am.isTenantActive(cfgs.Mimir.User) {
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
+		return amConfig{}, false, nil
 	}
 
-	if !isMimirConfigCustom {
-		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
+	// Custom Grafana configurations have the second highest precedence.
+	if !cfgs.Grafana.Default {
+		am.removeFromSkippedList(cfgs.Mimir.User)
 		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
-	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
-	return cfg, true, nil
+	// We have no custom configs. Check the last activity time to determine whether to start the AM.
+	if !am.isTenantActive(cfgs.Mimir.User) {
+		return amConfig{}, false, nil
+	}
+
+	// Default Grafana configurations have the third highest precedence.
+	cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
+	return cfg, true, err
 }
 
-// isGrafanaConfigUsable returns true if the Grafana configuration is promoted, non-default, and not empty.
-func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
-	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
+// removeFromSkippedList remove a tenant from the 'skipped' tenants list.
+func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
+	if !am.cfg.StrictInitializationEnabled {
+		return
+	}
+
+	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
+		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+	}
+}
+
+// isTenantActive checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
+// If strict initialization is not enabled, it always returns true, as we don't keep track of request times.
+func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
+	if !am.cfg.StrictInitializationEnabled {
+		return true
+	}
+
+	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+	if !loaded || time.Unix(lastRequestTime.(int64), 0).IsZero() {
+		return false
+	}
+
+	// Use the zero value to signal that the tenant was skipped.
+	// If the value stored is not what we have in memory, the tenant received a request since the last read.
+	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, lastRequestTime, time.Time{}.Unix()) {
+		return false
+	}
+
+	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+	return true
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
@@ -1176,9 +1197,9 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	// If the Alertmanager initialization was skipped, start the Alertmanager.
 	if ok := am.lastRequestTime.CompareAndSwap(userID, time.Time{}.Unix(), time.Now().Unix()); ok {
-		userAM, err = am.startAlertmanager(userID)
+		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
-			if errors.Is(err, errNotUploadingFallback) {
+			if errors.Is(err, errNotUploadingFallback) || errors.Is(err, errConfigNotFound) {
 				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
 				http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
 				return
@@ -1216,19 +1237,28 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 }
 
 // startAlertmanager will start the Alertmanager for a tenant, using the fallback configuration if no config is found.
-func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		am.lastRequestTime.Delete(userID)
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
 
-	amConfig := amConfig{
-		User:            userID,
-		RawConfig:       "",
-		Templates:       nil,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
+	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
+
+	cfg, ok := cfgMap[userID]
+	if !ok {
+		return nil, errConfigNotFound
+	}
+
+	amConfig, _, err := am.computeConfig(cfg) // The second value indicates whether we should start the AM or not. Ignore it.
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute config: %w", err)
+	}
+
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
 	}

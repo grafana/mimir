@@ -346,7 +346,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_TIMESTAMP:
 			vs, isVectorSelector := args[0].(*core.VectorSelector)
 			if isVectorSelector {
-				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
+				vs.ReturnSampleTimestamps = true
 			}
 		}
 
