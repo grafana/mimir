@@ -134,7 +134,8 @@ How to **fix** it:
 4. **Ensure per-tenant max series limits are close to the actual utilization**<br />
    The `max_series` per ingester instance limit should be rarely hit if the per-tenant `max_global_series_per_user` limit is close to the actual utilization and ingesters are autoscaled based on owned active series. When investigating this alert, we recommend ensure that each per-tenant max series limit is not significantly higher than the actual utilization.
 
-   a. Run the following instant query to find out tenants whose their max series limit is significantly above the utilization and can put the Mimir cluster at risk:
+   1. Run the following instant query to find out tenants whose their max series limit is significantly above the utilization and can put the Mimir cluster at risk:
+
       ```
       (
           # How many more series can each tenant send per ingester with current ingesters and limits.
@@ -164,15 +165,16 @@ How to **fix** it:
           )
       )
       ```
-    b. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
-       - Decrease `max_global_series_per_user` limit
-       - Ensure `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` are not decreased below a safe value:
-         - If the experimental ingest storage is enabled:
-           - Ensure `ingestion_partitions_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of partitions)`
-           - Ensure `ingestion_tenant_shard_size` is configured to `ingestion_partitions_tenant_shard_size * 3`
-         - If the experimental ingest storage is disabled:
-           - Ensure `ingestion_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of ingesters across all zones)`
-           - Ensure `ingestion_partitions_tenant_shard_size` is configured to `ingestion_tenant_shard_size / 3` (only applicable when the experimental ingest storage is enabled)
+
+   2. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
+      - Decrease `max_global_series_per_user` limit
+      - Ensure `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` are not decreased below a safe value:
+        - If the experimental ingest storage is enabled:
+          - Ensure `ingestion_partitions_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of partitions)`
+          - Ensure `ingestion_tenant_shard_size` is configured to `ingestion_partitions_tenant_shard_size * 3`
+        - If the experimental ingest storage is disabled:
+          - Ensure `ingestion_tenant_shard_size` is configured to a value equal or greater than `min(current setting, current number of ingesters across all zones)`
+          - Ensure `ingestion_partitions_tenant_shard_size` is configured to `ingestion_tenant_shard_size / 3` (only applicable when the experimental ingest storage is enabled)
 
 ### MimirIngesterReachingTenantsLimit
 
