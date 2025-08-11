@@ -358,9 +358,6 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 			continue
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
-		if u.postingsCache != nil {
-			u.postingsCache.InvalidateMetric(u.userID, metricName)
-		}
 	}
 
 	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.
