@@ -604,9 +604,9 @@ func reconcileAllTrackersPartitionCountTimes(t require.TestingT, trackers map[st
 }
 
 func prepareKVStoreAndKafkaMocks(t *testing.T) (*consul.Client, *consul.Client, *kfake.Cluster) {
-	ikv, instanceKVCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	ikv, instanceKVCloser := consul.NewInMemoryClient(ring.GetCodec(), utiltest.NewTestingLogger(t), nil)
 	t.Cleanup(func() { assert.NoError(t, instanceKVCloser.Close()) })
-	pkv, partitionKVCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	pkv, partitionKVCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), utiltest.NewTestingLogger(t), nil)
 	t.Cleanup(func() { assert.NoError(t, partitionKVCloser.Close()) })
 	cluster := fakeKafkaCluster(t)
 	return ikv, pkv, cluster
