@@ -54,11 +54,11 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 		}
 
 		var metadata MetadataRW2
-		if len(rw1.Metadata) > 0 {
+		if len(metadataMap) > 0 {
 			if rw1Metadata, ok := metadataMap[metricName]; ok {
 				metadata = FromMetricMetadataToMetadataRW2(rw1Metadata, symbols)
+				delete(metadataMap, metricName)
 			}
-			delete(metadataMap, metricName)
 		}
 
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
@@ -71,8 +71,8 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 		})
 	}
 
-	// Represent metadata as extra, empty timeseries rather than attaching it to existing series.
-	// We never replicate metadata if there are multiple series with the same name, and it removes the requirement to match up the metadata to the right series.
+	// If there are extra metadata not associated with any timeseries, we fabricate an empty timeseries to carry it.
+	// We never replicate metadata if there are multiple series with the same name.
 	for _, meta := range rw1.Metadata {
 		if _, ok := metadataMap[meta.MetricFamilyName]; !ok {
 			continue
