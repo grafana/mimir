@@ -2866,13 +2866,6 @@ cluster_validation:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. If multiple
-# query-frontends are running, the host should be a DNS resolving to all
-# query-frontend instances. This option should be set only when query-scheduler
-# component is not in use.
-# CLI flag: -querier.frontend-address
-[frontend_address: <string> | default = ""]
-
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and

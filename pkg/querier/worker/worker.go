@@ -29,7 +29,6 @@ import (
 )
 
 type Config struct {
-	FrontendAddress                string            `yaml:"frontend_address"`
 	SchedulerAddress               string            `yaml:"scheduler_address"`
 	DNSLookupPeriod                time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
 	QuerierID                      string            `yaml:"id" category:"advanced"`
@@ -44,7 +43,6 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
-	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 	f.BoolVar(&cfg.ResponseStreamingEnabled, "querier.response-streaming-enabled", false, "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).")
@@ -56,11 +54,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
-		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
-	}
-	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && (cfg.FrontendAddress != "" || cfg.SchedulerAddress != "") {
-		return fmt.Errorf("frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
+		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
 	}
 
 	if err := cfg.QueryFrontendGRPCClientConfig.Validate(); err != nil {

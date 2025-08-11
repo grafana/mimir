@@ -1985,8 +1985,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
     	If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.
-  -querier.frontend-address string
-    	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration

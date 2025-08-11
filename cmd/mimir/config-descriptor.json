@@ -6051,16 +6051,6 @@
       "blockEntries": [
         {
           "kind": "field",
-          "name": "frontend_address",
-          "required": false,
-          "desc": "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "querier.frontend-address",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
