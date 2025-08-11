@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
@@ -31,14 +31,7 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 	// Use Prometheus's query engine to execute the queries, ensuring that our query rewriting
 	// produces the same results as the original queries without any added optimizations
 	// on the query engine.
-	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:               promslog.NewNopLogger(),
-		Reg:                  nil,
-		MaxSamples:           100000000,
-		Timeout:              time.Minute,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	})
+	engine := promql.NewEngine(streamingpromql.NewTestEngineOpts().CommonOpts)
 
 	for input, expected := range testCases {
 		if input == expected {
