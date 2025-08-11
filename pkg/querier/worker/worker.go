@@ -139,20 +139,19 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		factory      serviceDiscoveryFactory
 	)
 
-	switch {
-	case cfg.IsSchedulerConfigured():
-		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
-
-		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
-		}
-
-		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
-		workerClient = "query-scheduler-worker"
-		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
-	default:
+	if !cfg.IsSchedulerConfigured() {
 		return nil, errors.New("no query-scheduler address")
 	}
+
+	level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
+
+	factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
+		return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
+	}
+
+	grpcCfg = cfg.QuerySchedulerGRPCClientConfig
+	workerClient = "query-scheduler-worker"
+	processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)
 	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
