@@ -6,9 +6,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
-	modelLabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -39,7 +38,7 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -76,13 +75,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 1000, 52.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -125,13 +124,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "cheese"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 1000, 52.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -184,13 +183,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					3000, 2400, 52.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -267,13 +266,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -316,13 +315,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps-2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendSample(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					defaultIntervalForStartTimestamps+3000, 1000, 52.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -365,7 +364,7 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, test.GenerateTestHistogram(1),
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -402,13 +401,13 @@ func TestCombinedAppender(t *testing.T) {
 					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
 					2000, 1000, 42.0,
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid"), Value: 27, Ts: 1500, HasTs: true}})
 				ca.AppendHistogram(
 					"spam",
 					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
 					metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "help!"},
 					3000, 1000, test.GenerateTestHistogram(2),
-					[]exemplar.Exemplar{{Labels: modelLabels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
