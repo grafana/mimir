@@ -23,6 +23,7 @@ import (
 func TestOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
 		expr                        string
+		rangeQuery                  bool
 		expectedPlan                string
 		expectUnchanged             bool
 		expectedDuplicateNodes      int // Check that we don't do unnecessary work introducing a duplicate node multiple times when starting from different selectors (eg. when handling (a+b) + (a+b)).
@@ -226,14 +227,48 @@ func TestOptimizationPass(t *testing.T) {
 			expectUnchanged:            true,
 			expectedSelectorsInspected: 2,
 		},
-		"duplicate matrix selectors with different outer function": {
-			// We do not want to deduplicate matrix selectors.
+		"duplicate matrix selectors with different outer function in instant query": {
+			expr:       `rate(foo[5m]) + increase(foo[5m])`,
+			rangeQuery: false,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
+		"duplicate matrix selectors with different outer function in range query": {
+			// We do not want to deduplicate matrix selectors in range queries.
 			expr:                       `rate(foo[5m]) + increase(foo[5m])`,
+			rangeQuery:                 true,
 			expectUnchanged:            true,
 			expectedSelectorsInspected: 2,
 		},
-		"duplicate matrix selectors, some with different outer function": {
-			// We do not want to deduplicate matrix selectors themselves, but do want to deduplicate duplicate functions over matrix selectors.
+		"duplicate matrix selectors, some with different outer function in instant query": {
+			expr: `rate(foo[5m]) + increase(foo[5m]) + rate(foo[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#2 Duplicate
+							- FunctionCall: rate(...)
+								- ref#1 Duplicate
+									- MatrixSelector: {__name__="foo"}[5m0s]
+						- RHS: FunctionCall: increase(...)
+							- ref#1 Duplicate ...
+					- RHS: ref#2 Duplicate ...
+			`,
+			rangeQuery:                  false,
+			expectedDuplicateNodes:      2,
+			expectedSelectorsEliminated: 2,
+			expectedSelectorsInspected:  3,
+		},
+		"duplicate matrix selectors, some with different outer function in range query": {
+			// We do not want to deduplicate matrix selectors themselves in range queries, but do want to deduplicate duplicate functions over matrix selectors.
 			expr: `rate(foo[5m]) + increase(foo[5m]) + rate(foo[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -245,6 +280,7 @@ func TestOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
+			rangeQuery:                  true,
 			expectedDuplicateNodes:      1,
 			expectedSelectorsEliminated: 1, // We only eliminate one 'foo' selector in the duplicate rate(...) expression.
 			expectedSelectorsInspected:  3,
@@ -262,8 +298,24 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsEliminated: 1,
 			expectedSelectorsInspected:  2,
 		},
-		"duplicate subqueries with different outer function": {
-			// We do not want to deduplicate subqueries directly, but do want to deduplicate their contents if they are the same.
+		"duplicate subqueries with different outer function in instant query": {
+			expr: `rate(foo[5m:]) + increase(foo[5m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- Subquery: [5m0s:1m0s]
+								- VectorSelector: {__name__="foo"}
+					- RHS: FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+			`,
+			rangeQuery:                  false,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
+		"duplicate subqueries with different outer function in range query": {
+			// We do not want to deduplicate subqueries directly in range queries, but do want to deduplicate their contents if they are the same.
 			expr: `rate(foo[5m:]) + increase(foo[5m:])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -275,11 +327,30 @@ func TestOptimizationPass(t *testing.T) {
 						- Subquery: [5m0s:1m0s]
 							- ref#1 Duplicate ...
 			`,
+			rangeQuery:                  true,
 			expectedDuplicateNodes:      1,
 			expectedSelectorsEliminated: 1,
 			expectedSelectorsInspected:  2,
 		},
-		"duplicate subqueries with different outer function and multiple child selectors": {
+		"duplicate subqueries with different outer function and multiple child selectors in instant query": {
+			expr: `rate((a - b)[5m:]) + increase((a - b)[5m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- Subquery: [5m0s:1m0s]
+								- BinaryExpression: LHS - RHS
+									- LHS: VectorSelector: {__name__="a"}
+									- RHS: VectorSelector: {__name__="b"}
+					- RHS: FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+			`,
+			rangeQuery:                  false,
+			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedSelectorsEliminated: 2,
+			expectedSelectorsInspected:  4,
+		},
+		"duplicate subqueries with different outer function and multiple child selectors in range query": {
 			expr: `rate((a - b)[5m:]) + increase((a - b)[5m:])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -293,6 +364,7 @@ func TestOptimizationPass(t *testing.T) {
 						- Subquery: [5m0s:1m0s]
 							- ref#1 Duplicate ...
 			`,
+			rangeQuery:                  true,
 			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
 			expectedSelectorsEliminated: 2,
 			expectedSelectorsInspected:  4,
@@ -426,7 +498,6 @@ func TestOptimizationPass(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	timeRange := types.NewInstantQueryTimeRange(time.Now())
 	observer := streamingpromql.NoopPlanningObserver{}
 
 	for name, testCase := range testCases {
@@ -438,7 +509,15 @@ func TestOptimizationPass(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(reg))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg))
+
+			var timeRange types.QueryTimeRange
+
+			if testCase.rangeQuery {
+				timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(-time.Hour), time.Minute)
+			} else {
+				timeRange = types.NewInstantQueryTimeRange(time.Now())
+			}
 
 			if testCase.expectUnchanged {
 				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)

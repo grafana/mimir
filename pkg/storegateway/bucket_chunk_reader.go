@@ -7,12 +7,13 @@ package storegateway
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/dennwc/varint"
@@ -86,8 +87,8 @@ func (r *bucketChunkReader) load(res []seriesChunks, chunksPool *pool.SafeSlabPo
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
-		sort.Slice(pIdxs, func(i, j int) bool {
-			return pIdxs[i].offset < pIdxs[j].offset
+		slices.SortFunc(pIdxs, func(a, b loadIdx) int {
+			return cmp.Compare(a.offset, b.offset)
 		})
 		parts := r.block.partitioners.chunks.Partition(len(pIdxs), func(i int) (start, end uint64) {
 			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + uint64(pIdxs[i].length)

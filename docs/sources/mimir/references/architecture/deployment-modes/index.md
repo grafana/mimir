@@ -11,10 +11,11 @@ weight: 20
 
 # Grafana Mimir deployment modes
 
-You can deploy Grafana Mimir in one of two modes:
+You can deploy Grafana Mimir in three modes:
 
 - Monolithic mode
 - Microservices mode
+- Read-Write mode (experimental)
 
 The deployment mode is determined by the `-target` parameter, which you can set via CLI flag or YAML configuration.
 

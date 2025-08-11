@@ -27,17 +27,21 @@ import (
 // OptimizationPass is an optimization pass that identifies common subexpressions and injects Duplicate nodes
 // into the query plan where needed.
 //
-// When the query plan is materialized, a DuplicationBuffer is created to buffer the results of the common subexpression,
-// and a DuplicationConsumer is created for each consumer of the common subexpression.
+// When the query plan is materialized, a InstantVectorDuplicationBuffer or RangeVectorDuplicationBuffer is created to
+// buffer the results of the common subexpression, and a InstantVectorDuplicationConsumer or
+// RangeVectorDuplicationConsumer is created for each consumer of the common subexpression.
 
 type OptimizationPass struct {
+	enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool
+
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
 	selectorsInspected         prometheus.Counter
 }
 
-func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
+func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer) *OptimizationPass {
 	return &OptimizationPass{
+		enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries: enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries,
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
@@ -199,7 +203,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
-	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpression, timeRange := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
@@ -209,15 +213,17 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	var skipLongerExpressions bool
 	pathsEliminated := len(group) - 1
 
-	// We only want to deduplicate instant vectors.
-	if resultType == parser.ValueTypeVector {
+	// We only want to deduplicate instant vectors, or range vectors in an instant query.
+	if resultType == parser.ValueTypeVector || (e.enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries && resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
-		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
-		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
+		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
+		// query.
+		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
+		// subquery.
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
-		// Duplicated range vector selector, but the function that encloses each instance isn't the same (or isn't the same on all paths).
+		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
 	}
 

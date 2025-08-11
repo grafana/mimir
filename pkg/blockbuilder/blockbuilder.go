@@ -112,7 +112,7 @@ func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc
 	}
 	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
-	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
+	//nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(b.cfg.SchedulerConfig.Address, opts...)
 	if err != nil {
 		return nil, nil, err

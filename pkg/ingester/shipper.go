@@ -6,12 +6,13 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -234,8 +235,8 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		}
 		metas = append(metas, m)
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
+	slices.SortFunc(metas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return metas, nil
 }

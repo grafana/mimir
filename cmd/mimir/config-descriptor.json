@@ -729,7 +729,7 @@
           "kind": "field",
           "name": "trace_request_exclude_headers_list",
           "required": false,
-          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.trace-request-headers-exclude-list",
@@ -1284,36 +1284,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -2731,6 +2701,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
+              "required": false,
+              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -5284,17 +5265,6 @@
         },
         {
           "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_ingesters_within",
           "required": false,
           "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",
@@ -6442,6 +6412,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_translation_strategy",
+          "required": false,
+          "desc": "Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: \"\", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "distributor.otel-translation-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
@@ -6459,6 +6440,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "name_validation_scheme",
+          "required": false,
+          "desc": "Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: legacy, utf8.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldFlag": "validation.name-validation-scheme",
           "fieldType": "int",
           "fieldCategory": "experimental"
         }
@@ -7557,7 +7549,7 @@
               "kind": "field",
               "name": "backend",
               "required": false,
-              "desc": "Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.",
+              "desc": "Backend for query-frontend results cache, if not empty. Supported values: memcached.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.results-cache.backend",
@@ -7578,17 +7570,6 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.results-cache.memcached.addresses",
                   "fieldType": "string"
-                },
-                {
-                  "kind": "field",
-                  "name": "addresses_provider",
-                  "required": false,
-                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "miekgdns",
-                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-provider",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -7791,302 +7772,6 @@
               "fieldDefaultValue": null
             },
             {
-              "kind": "block",
-              "name": "redis",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "endpoint",
-                  "required": false,
-                  "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.endpoint",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "username",
-                  "required": false,
-                  "desc": "Username to use when connecting to Redis.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.username",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "password",
-                  "required": false,
-                  "desc": "Password to use when connecting to Redis.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.password",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "db",
-                  "required": false,
-                  "desc": "Database index.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "query-frontend.results-cache.redis.db",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "master_name",
-                  "required": false,
-                  "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.master-name",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "dial_timeout",
-                  "required": false,
-                  "desc": "Client dial timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 5000000000,
-                  "fieldFlag": "query-frontend.results-cache.redis.dial-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_timeout",
-                  "required": false,
-                  "desc": "Client read timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 3000000000,
-                  "fieldFlag": "query-frontend.results-cache.redis.read-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "write_timeout",
-                  "required": false,
-                  "desc": "Client write timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 3000000000,
-                  "fieldFlag": "query-frontend.results-cache.redis.write-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "connection_pool_size",
-                  "required": false,
-                  "desc": "Maximum number of connections in the pool.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "query-frontend.results-cache.redis.connection-pool-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "connection_pool_timeout",
-                  "required": false,
-                  "desc": "Maximum duration to wait to get a connection from pool.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4000000000,
-                  "fieldFlag": "query-frontend.results-cache.redis.connection-pool-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "min_idle_connections",
-                  "required": false,
-                  "desc": "Minimum number of idle connections.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 10,
-                  "fieldFlag": "query-frontend.results-cache.redis.min-idle-connections",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "idle_timeout",
-                  "required": false,
-                  "desc": "Amount of time after which client closes idle connections.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 300000000000,
-                  "fieldFlag": "query-frontend.results-cache.redis.idle-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_connection_age",
-                  "required": false,
-                  "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-connection-age",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_item_size",
-                  "required": false,
-                  "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 16777216,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-item-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_async_concurrency",
-                  "required": false,
-                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 50,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-async-concurrency",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_async_buffer_size",
-                  "required": false,
-                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 25000,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-async-buffer-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_get_multi_concurrency",
-                  "required": false,
-                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-get-multi-concurrency",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_get_multi_batch_size",
-                  "required": false,
-                  "desc": "The maximum size per batch for mget operations.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "query-frontend.results-cache.redis.max-get-multi-batch-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_enabled",
-                  "required": false,
-                  "desc": "Enable connecting to Redis with TLS.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cert_path",
-                  "required": false,
-                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-cert-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_key_path",
-                  "required": false,
-                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-key-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_ca_path",
-                  "required": false,
-                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-ca-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_server_name",
-                  "required": false,
-                  "desc": "Override the expected name on the server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-server-name",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_insecure_skip_verify",
-                  "required": false,
-                  "desc": "Skip validating server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-insecure-skip-verify",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cipher_suites",
-                  "required": false,
-                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-cipher-suites",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_min_version",
-                  "required": false,
-                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.results-cache.redis.tls-min-version",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
-            },
-            {
               "kind": "field",
               "name": "compression",
               "required": false,
@@ -8198,6 +7883,17 @@
         },
         {
           "kind": "field",
+          "name": "extra_propagated_headers",
+          "required": false,
+          "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.extra-propagated-headers",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -8215,17 +7911,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-samples-processed-stats",
           "fieldType": "boolean"
-        },
-        {
-          "kind": "field",
-          "name": "downstream_url",
-          "required": false,
-          "desc": "URL of downstream Prometheus.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.downstream-url",
-          "fieldType": "string",
-          "fieldCategory": "advanced"
         },
         {
           "kind": "block",
@@ -9794,7 +9479,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "The index cache backend type. Supported values: inmemory, memcached, redis.",
+                  "desc": "The index cache backend type. Supported values: inmemory, memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "inmemory",
                   "fieldFlag": "blocks-storage.bucket-store.index-cache.backend",
@@ -9815,17 +9500,6 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses",
                       "fieldType": "string"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -10029,302 +9703,6 @@
                 },
                 {
                   "kind": "block",
-                  "name": "redis",
-                  "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "endpoint",
-                      "required": false,
-                      "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.endpoint",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "username",
-                      "required": false,
-                      "desc": "Username to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.username",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "password",
-                      "required": false,
-                      "desc": "Password to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.password",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "db",
-                      "required": false,
-                      "desc": "Database index.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.db",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "master_name",
-                      "required": false,
-                      "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.master-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dial_timeout",
-                      "required": false,
-                      "desc": "Client dial timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 5000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.dial-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_timeout",
-                      "required": false,
-                      "desc": "Client read timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.read-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_timeout",
-                      "required": false,
-                      "desc": "Client write timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.write-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_size",
-                      "required": false,
-                      "desc": "Maximum number of connections in the pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_timeout",
-                      "required": false,
-                      "desc": "Maximum duration to wait to get a connection from pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "min_idle_connections",
-                      "required": false,
-                      "desc": "Minimum number of idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 10,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.min-idle-connections",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "idle_timeout",
-                      "required": false,
-                      "desc": "Amount of time after which client closes idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 300000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.idle-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_connection_age",
-                      "required": false,
-                      "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-connection-age",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_item_size",
-                      "required": false,
-                      "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 16777216,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-item-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent asynchronous operations can occur.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 50,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-async-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_buffer_size",
-                      "required": false,
-                      "desc": "The maximum number of enqueued asynchronous operations allowed.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 25000,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-async-buffer-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_batch_size",
-                      "required": false,
-                      "desc": "The maximum size per batch for mget operations.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.max-get-multi-batch-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_enabled",
-                      "required": false,
-                      "desc": "Enable connecting to Redis with TLS.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cert_path",
-                      "required": false,
-                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-cert-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_key_path",
-                      "required": false,
-                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-key-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_ca_path",
-                      "required": false,
-                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-ca-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_server_name",
-                      "required": false,
-                      "desc": "Override the expected name on the server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_insecure_skip_verify",
-                      "required": false,
-                      "desc": "Skip validating server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-insecure-skip-verify",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cipher_suites",
-                      "required": false,
-                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-cipher-suites",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_min_version",
-                      "required": false,
-                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.tls-min-version",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    }
-                  ],
-                  "fieldValue": null,
-                  "fieldDefaultValue": null
-                },
-                {
-                  "kind": "block",
                   "name": "inmemory",
                   "required": false,
                   "desc": "",
@@ -10357,7 +9735,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "Backend for chunks cache, if not empty. Supported values: memcached, redis.",
+                  "desc": "Backend for chunks cache, if not empty. Supported values: memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.backend",
@@ -10378,17 +9756,6 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -10591,302 +9958,6 @@
                   "fieldDefaultValue": null
                 },
                 {
-                  "kind": "block",
-                  "name": "redis",
-                  "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "endpoint",
-                      "required": false,
-                      "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.endpoint",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "username",
-                      "required": false,
-                      "desc": "Username to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.username",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "password",
-                      "required": false,
-                      "desc": "Password to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.password",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "db",
-                      "required": false,
-                      "desc": "Database index.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.db",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "master_name",
-                      "required": false,
-                      "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.master-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dial_timeout",
-                      "required": false,
-                      "desc": "Client dial timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 5000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.dial-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_timeout",
-                      "required": false,
-                      "desc": "Client read timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.read-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_timeout",
-                      "required": false,
-                      "desc": "Client write timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.write-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_size",
-                      "required": false,
-                      "desc": "Maximum number of connections in the pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_timeout",
-                      "required": false,
-                      "desc": "Maximum duration to wait to get a connection from pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "min_idle_connections",
-                      "required": false,
-                      "desc": "Minimum number of idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 10,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.min-idle-connections",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "idle_timeout",
-                      "required": false,
-                      "desc": "Amount of time after which client closes idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 300000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.idle-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_connection_age",
-                      "required": false,
-                      "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-connection-age",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_item_size",
-                      "required": false,
-                      "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 16777216,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-item-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent asynchronous operations can occur.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 50,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_buffer_size",
-                      "required": false,
-                      "desc": "The maximum number of enqueued asynchronous operations allowed.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 25000,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-async-buffer-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_batch_size",
-                      "required": false,
-                      "desc": "The maximum size per batch for mget operations.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-batch-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_enabled",
-                      "required": false,
-                      "desc": "Enable connecting to Redis with TLS.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cert_path",
-                      "required": false,
-                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-cert-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_key_path",
-                      "required": false,
-                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-key-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_ca_path",
-                      "required": false,
-                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-ca-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_server_name",
-                      "required": false,
-                      "desc": "Override the expected name on the server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_insecure_skip_verify",
-                      "required": false,
-                      "desc": "Skip validating server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-insecure-skip-verify",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cipher_suites",
-                      "required": false,
-                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-cipher-suites",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_min_version",
-                      "required": false,
-                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.tls-min-version",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    }
-                  ],
-                  "fieldValue": null,
-                  "fieldDefaultValue": null
-                },
-                {
                   "kind": "field",
                   "name": "max_get_range_requests",
                   "required": false,
@@ -10944,7 +10015,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "Backend for metadata cache, if not empty. Supported values: memcached, redis.",
+                  "desc": "Backend for metadata cache, if not empty. Supported values: memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.bucket-store.metadata-cache.backend",
@@ -10965,17 +10036,6 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "addresses_provider",
-                      "required": false,
-                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "miekgdns",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-provider",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -11172,302 +10232,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
-                    }
-                  ],
-                  "fieldValue": null,
-                  "fieldDefaultValue": null
-                },
-                {
-                  "kind": "block",
-                  "name": "redis",
-                  "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "endpoint",
-                      "required": false,
-                      "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.endpoint",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "username",
-                      "required": false,
-                      "desc": "Username to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.username",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "password",
-                      "required": false,
-                      "desc": "Password to use when connecting to Redis.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.password",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "db",
-                      "required": false,
-                      "desc": "Database index.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.db",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "master_name",
-                      "required": false,
-                      "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.master-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dial_timeout",
-                      "required": false,
-                      "desc": "Client dial timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 5000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.dial-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_timeout",
-                      "required": false,
-                      "desc": "Client read timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.read-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_timeout",
-                      "required": false,
-                      "desc": "Client write timeout.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 3000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.write-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_size",
-                      "required": false,
-                      "desc": "Maximum number of connections in the pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "connection_pool_timeout",
-                      "required": false,
-                      "desc": "Maximum duration to wait to get a connection from pool.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "min_idle_connections",
-                      "required": false,
-                      "desc": "Minimum number of idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 10,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.min-idle-connections",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "idle_timeout",
-                      "required": false,
-                      "desc": "Amount of time after which client closes idle connections.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 300000000000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.idle-timeout",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_connection_age",
-                      "required": false,
-                      "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 0,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-connection-age",
-                      "fieldType": "duration",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_item_size",
-                      "required": false,
-                      "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 16777216,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-item-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent asynchronous operations can occur.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 50,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_async_buffer_size",
-                      "required": false,
-                      "desc": "The maximum number of enqueued asynchronous operations allowed.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 25000,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-async-buffer-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_concurrency",
-                      "required": false,
-                      "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_get_multi_batch_size",
-                      "required": false,
-                      "desc": "The maximum size per batch for mget operations.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-batch-size",
-                      "fieldType": "int",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_enabled",
-                      "required": false,
-                      "desc": "Enable connecting to Redis with TLS.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cert_path",
-                      "required": false,
-                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-cert-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_key_path",
-                      "required": false,
-                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-key-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_ca_path",
-                      "required": false,
-                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-ca-path",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_server_name",
-                      "required": false,
-                      "desc": "Override the expected name on the server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_insecure_skip_verify",
-                      "required": false,
-                      "desc": "Skip validating server certificate.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-insecure-skip-verify",
-                      "fieldType": "boolean",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_cipher_suites",
-                      "required": false,
-                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-cipher-suites",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "tls_min_version",
-                      "required": false,
-                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.tls-min-version",
-                      "fieldType": "string",
-                      "fieldCategory": "deprecated"
                     }
                   ],
                   "fieldValue": null,
@@ -12164,6 +10928,17 @@
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_enabled",
+              "required": false,
+              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -12372,6 +11147,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 1,
           "fieldFlag": "compactor.max-block-upload-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "update_blocks_concurrency",
+          "required": false,
+          "desc": "Number of Go routines to use when updating blocks metadata during bucket index updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "compactor.update-blocks-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },
@@ -16300,7 +15086,7 @@
               "kind": "field",
               "name": "backend",
               "required": false,
-              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
+              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.cache.backend",
@@ -16321,17 +15107,6 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.cache.memcached.addresses",
                   "fieldType": "string"
-                },
-                {
-                  "kind": "field",
-                  "name": "addresses_provider",
-                  "required": false,
-                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "miekgdns",
-                  "fieldFlag": "ruler-storage.cache.memcached.addresses-provider",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -16528,302 +15303,6 @@
                   "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
-            },
-            {
-              "kind": "block",
-              "name": "redis",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "endpoint",
-                  "required": false,
-                  "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.endpoint",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "username",
-                  "required": false,
-                  "desc": "Username to use when connecting to Redis.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.username",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "password",
-                  "required": false,
-                  "desc": "Password to use when connecting to Redis.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.password",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "db",
-                  "required": false,
-                  "desc": "Database index.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "ruler-storage.cache.redis.db",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "master_name",
-                  "required": false,
-                  "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.master-name",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "dial_timeout",
-                  "required": false,
-                  "desc": "Client dial timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 5000000000,
-                  "fieldFlag": "ruler-storage.cache.redis.dial-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_timeout",
-                  "required": false,
-                  "desc": "Client read timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 3000000000,
-                  "fieldFlag": "ruler-storage.cache.redis.read-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "write_timeout",
-                  "required": false,
-                  "desc": "Client write timeout.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 3000000000,
-                  "fieldFlag": "ruler-storage.cache.redis.write-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "connection_pool_size",
-                  "required": false,
-                  "desc": "Maximum number of connections in the pool.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "connection_pool_timeout",
-                  "required": false,
-                  "desc": "Maximum duration to wait to get a connection from pool.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4000000000,
-                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "min_idle_connections",
-                  "required": false,
-                  "desc": "Minimum number of idle connections.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 10,
-                  "fieldFlag": "ruler-storage.cache.redis.min-idle-connections",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "idle_timeout",
-                  "required": false,
-                  "desc": "Amount of time after which client closes idle connections.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 300000000000,
-                  "fieldFlag": "ruler-storage.cache.redis.idle-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_connection_age",
-                  "required": false,
-                  "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "ruler-storage.cache.redis.max-connection-age",
-                  "fieldType": "duration",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_item_size",
-                  "required": false,
-                  "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 16777216,
-                  "fieldFlag": "ruler-storage.cache.redis.max-item-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_async_concurrency",
-                  "required": false,
-                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 50,
-                  "fieldFlag": "ruler-storage.cache.redis.max-async-concurrency",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_async_buffer_size",
-                  "required": false,
-                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 25000,
-                  "fieldFlag": "ruler-storage.cache.redis.max-async-buffer-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_get_multi_concurrency",
-                  "required": false,
-                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-concurrency",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_get_multi_batch_size",
-                  "required": false,
-                  "desc": "The maximum size per batch for mget operations.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 100,
-                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-batch-size",
-                  "fieldType": "int",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_enabled",
-                  "required": false,
-                  "desc": "Enable connecting to Redis with TLS.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "ruler-storage.cache.redis.tls-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cert_path",
-                  "required": false,
-                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-cert-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_key_path",
-                  "required": false,
-                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-key-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_ca_path",
-                  "required": false,
-                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-ca-path",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_server_name",
-                  "required": false,
-                  "desc": "Override the expected name on the server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-server-name",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_insecure_skip_verify",
-                  "required": false,
-                  "desc": "Skip validating server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "ruler-storage.cache.redis.tls-insecure-skip-verify",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cipher_suites",
-                  "required": false,
-                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-cipher-suites",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_min_version",
-                  "required": false,
-                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.cache.redis.tls-min-version",
-                  "fieldType": "string",
-                  "fieldCategory": "deprecated"
                 }
               ],
               "fieldValue": null,

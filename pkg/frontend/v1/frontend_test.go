@@ -39,6 +39,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/promtest"
 )
 
 func init() {
@@ -197,6 +199,37 @@ func TestFrontendCancel(t *testing.T) {
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
 
+func TestFrontendMetrics(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte("Hello World"))
+		require.NoError(t, err)
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+
+	test := func(addr string, fr *Frontend) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
+		require.NoError(t, err)
+		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
+		require.NoError(t, err)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Hello World", string(body))
+
+		require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_frontend_queue_duration_seconds"))
+		require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_frontend_queue_duration_seconds", 1))
+	}
+
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
+}
+
 func TestFrontendMetricsCleanup(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
@@ -344,7 +377,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	handlerCfg := transport.HandlerConfig{QueryStatsEnabled: true}
 	flagext.DefaultValues(&handlerCfg)
 
-	rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)
+	rt := httpgrpcutil.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)
 	r := mux.NewRouter()
 	r.PathPrefix("/").Handler(middleware.Merge(
 		middleware.AuthenticateUser,

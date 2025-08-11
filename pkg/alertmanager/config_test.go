@@ -78,7 +78,7 @@ const grafanaConfigWithDuplicateReceiverName = `{
 
 var grafanaConfigWithTemplates = `{"template_files":{"first.tpl":"{{ define \"t1\" }}Gra-gra{{end}}"},"templates":[{"name":"def.tpl","kind":"mimir","content":"{{ define \"t1\" }}Mimi-mi{{end}}"}],"alertmanager_config":{"route":{"receiver":"default","group_by":["grafana_folder","alertname"]},"receivers":[{"name":"default","grafana_managed_receiver_configs":[{"name":"WH","type":"webhook","settings":{"url":"http://localhost:8080"}}],"webhook_configs":[{"url":"http://localhost:8081"}]}]}}`
 
-func TestCreateUsableGrafanaConfig(t *testing.T) {
+func TestAmConfigFromGrafanaConfig(t *testing.T) {
 	defaultFromAddress := "grafana@example.com"
 	mimirConfig := fmt.Sprintf(`
 global:
@@ -108,7 +108,7 @@ receivers:
 	tests := []struct {
 		name                 string
 		grafanaConfig        alertspb.GrafanaAlertConfigDesc
-		mimirConfig          string
+		fallbackConfig       string
 		expEmailSenderConfig receivers.EmailSenderConfig
 		expErr               string
 		expTemplates         []definition.PostableApiTemplate
@@ -119,8 +119,8 @@ receivers:
 				ExternalUrl: externalURL,
 				RawConfig:   "",
 			},
-			mimirConfig: mimirConfig,
-			expErr:      "failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
+			fallbackConfig: mimirConfig,
+			expErr:         "failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
 		},
 		{
 			name: "invalid grafana config",
@@ -129,11 +129,11 @@ receivers:
 				RawConfig:   "invalid",
 				SmtpConfig:  smtpConfig,
 			},
-			mimirConfig: mimirConfig,
-			expErr:      "failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
+			fallbackConfig: mimirConfig,
+			expErr:         "failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
 		},
 		{
-			name: "no mimir config",
+			name: "no fallback config",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
 				RawConfig:   grafanaConfig,
@@ -142,7 +142,7 @@ receivers:
 			expEmailSenderConfig: baseEmailSenderConfig,
 		},
 		{
-			name: "no mimir config, custom SMTP config",
+			name: "no fallback config, custom SMTP config",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
 				RawConfig:   grafanaConfig,
@@ -183,17 +183,17 @@ receivers:
 			expEmailSenderConfig: baseEmailSenderConfig,
 		},
 		{
-			name: "non-empty mimir config",
+			name: "non-empty fallback config",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
 				RawConfig:   grafanaConfig,
 				SmtpConfig:  smtpConfig,
 			},
-			mimirConfig:          mimirConfig,
+			fallbackConfig:       mimirConfig,
 			expEmailSenderConfig: baseEmailSenderConfig,
 		},
 		{
-			name: "non-empty mimir config, empty SMTP from address",
+			name: "non-empty fallback config, empty SMTP from address",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
 				RawConfig:   grafanaConfig,
@@ -201,7 +201,7 @@ receivers:
 					StaticHeaders: staticHeaders,
 				},
 			},
-			mimirConfig: mimirConfig,
+			fallbackConfig: mimirConfig,
 			expEmailSenderConfig: receivers.EmailSenderConfig{
 				ContentTypes:  baseEmailSenderConfig.ContentTypes,
 				EhloIdentity:  baseEmailSenderConfig.EhloIdentity,
@@ -213,14 +213,14 @@ receivers:
 			},
 		},
 		{
-			name: "non-empty mimir config, SmtpFrom and StaticHeaders fields",
+			name: "non-empty fallback config, SmtpFrom and StaticHeaders fields",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   externalURL,
 				RawConfig:     grafanaConfig,
 				SmtpFrom:      "custom@example.com",
 				StaticHeaders: map[string]string{"test": "test"},
 			},
-			mimirConfig: mimirConfig,
+			fallbackConfig: mimirConfig,
 			expEmailSenderConfig: receivers.EmailSenderConfig{
 				ContentTypes:  baseEmailSenderConfig.ContentTypes,
 				EhloIdentity:  baseEmailSenderConfig.EhloIdentity,
@@ -232,7 +232,7 @@ receivers:
 			},
 		},
 		{
-			name: "non-empty mimir config, custom SMTP config",
+			name: "non-empty fallback config, custom SMTP config",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
 				RawConfig:   grafanaConfig,
@@ -248,7 +248,7 @@ receivers:
 					User:           "custom-user",
 				},
 			},
-			mimirConfig: mimirConfig,
+			fallbackConfig: mimirConfig,
 			expEmailSenderConfig: receivers.EmailSenderConfig{
 				AuthPassword:   "custom-password",
 				AuthUser:       "custom-user",
@@ -289,8 +289,11 @@ receivers:
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			am := MultitenantAlertmanager{logger: log.NewNopLogger()}
-			cfg, err := createUsableGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
+			am := MultitenantAlertmanager{
+				logger:         log.NewNopLogger(),
+				fallbackConfig: test.fallbackConfig,
+			}
+			cfg, err := am.amConfigFromGrafanaConfig(test.grafanaConfig)
 			if test.expErr != "" {
 				require.Error(t, err)
 				require.Equal(t, test.expErr, err.Error())
@@ -326,7 +329,7 @@ receivers:
 
 			// Ensure that configuration is deterministic. For example, ordering of receivers.
 			// This is important for change detection.
-			cfg2, err := createUsableGrafanaConfig(am.logger, test.grafanaConfig, test.mimirConfig)
+			cfg2, err := am.amConfigFromGrafanaConfig(test.grafanaConfig)
 			require.NoError(t, err)
 
 			require.Equal(t, cfg.RawConfig, cfg2.RawConfig)

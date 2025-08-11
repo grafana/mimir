@@ -416,7 +416,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -439,8 +439,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
+	validationScheme := r.limits.NameValidationScheme(userID)
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i]) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

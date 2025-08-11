@@ -1,0 +1,38 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-oss-emptydir-values-rollout-operator
+  namespace: "citestns"
+  labels:
+    helm.sh/chart: rollout-operator-0.30.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-oss-emptydir-values
+    app.kubernetes.io/version: "v0.28.0"
+    app.kubernetes.io/managed-by: Helm
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - get
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - list
+  - get
+  - watch
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - update

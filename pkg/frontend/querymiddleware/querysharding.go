@@ -277,7 +277,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(totalShards, astmapper.VectorSquasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
@@ -290,7 +290,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 		return "", nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	shardedQuery, err := mapper.Map(expr)
+	shardedQuery, err := mapper.Map(ctx, expr)
 	if err != nil {
 		return "", nil, err
 	}

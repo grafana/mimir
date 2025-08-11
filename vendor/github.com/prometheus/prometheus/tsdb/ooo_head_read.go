@@ -171,7 +171,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 // PostingsForMatchers needs to be overridden so that the right IndexReader
 // implementation gets passed down to the PostingsForMatchers call.
 func (oh *HeadAndOOOIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, ms...)
+	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, oh.head.Meta().ULID, ms...)
 }
 
 // Fake Chunk object to pass a set of Metas inside Meta.Chunk.
@@ -192,6 +192,11 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	}
 
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (oh *HeadAndOOOIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return oh.head.opts.IndexLookupPlanner
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
@@ -392,7 +397,7 @@ func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
 	return NewHeadAndOOOChunkReader(ch.head, ch.mint, ch.maxt, nil, nil, ch.lastMmapRef), nil
 }
 
-func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
+func (*OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
@@ -424,7 +429,7 @@ func (ch *OOOCompactionHead) CloneForTimeRange(mint, maxt int64) *OOOCompactionH
 	}
 }
 
-func (ch *OOOCompactionHead) Size() int64                            { return 0 }
+func (*OOOCompactionHead) Size() int64                               { return 0 }
 func (ch *OOOCompactionHead) MinTime() int64                         { return ch.mint }
 func (ch *OOOCompactionHead) MaxTime() int64                         { return ch.maxt }
 func (ch *OOOCompactionHead) ChunkRange() int64                      { return ch.chunkRange }
@@ -452,15 +457,15 @@ func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string,
 	return index.NewListPostings(ir.ch.postings), nil
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+func (*OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
 	return index.ErrPostings(errors.New("not supported"))
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
+func (*OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
 	return index.ErrPostings(errors.New("not supported"))
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
+func (*OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p
 }
@@ -500,32 +505,37 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
+func (*OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
+func (*OOOCompactionHeadIndexReader) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, _ bool, _ ...*labels.Matcher) (index.Postings, error) {
+func (*OOOCompactionHeadIndexReader) PostingsForMatchers(context.Context, bool, ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
+func (*OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
+func (*OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(_ context.Context, _ index.Postings) ([]string, error) {
+func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) Close() error {
+func (*OOOCompactionHeadIndexReader) Close() error {
 	return nil
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (ir *OOOCompactionHeadIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return ir.ch.head.opts.IndexLookupPlanner
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.

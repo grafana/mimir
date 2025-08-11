@@ -526,9 +526,8 @@
 
     enable_pod_priorities: true,
 
-    // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
-    query_scheduler_enabled: true,
-    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+    // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
+    query_scheduler_service_discovery_mode: 'dns',
 
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,

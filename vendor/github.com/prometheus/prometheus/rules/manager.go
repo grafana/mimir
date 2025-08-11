@@ -309,7 +309,7 @@ type GroupLoader interface {
 type FileLoader struct{}
 
 func (FileLoader) Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields)
+	return rulefmt.ParseFile(identifier, rulefmt.WithIgnoreUnknownFields(ignoreUnknownFields))
 }
 
 func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
@@ -490,7 +490,7 @@ type RuleDependencyController interface {
 type ruleDependencyController struct{}
 
 // AnalyseRules implements RuleDependencyController.
-func (c ruleDependencyController) AnalyseRules(rules []Rule) {
+func (ruleDependencyController) AnalyseRules(rules []Rule) {
 	depMap := buildDependencyMap(rules)
 
 	if depMap == nil {
@@ -534,11 +534,11 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 	}
 }
 
-func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+func (c *concurrentRuleEvalController) Allow(context.Context, *Group, Rule) bool {
 	return c.sema.TryAcquire(1)
 }
 
-func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
+func (*concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
 	// Using the rule dependency controller information (rules being identified as having no dependencies or no dependants),
 	// we can safely run the following concurrent groups:
 	// 1. Concurrently, all rules that have no dependencies
@@ -574,7 +574,7 @@ func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, 
 	return order
 }
 
-func (c *concurrentRuleEvalController) Done(_ context.Context) {
+func (c *concurrentRuleEvalController) Done(context.Context) {
 	c.sema.Release(1)
 }
 
@@ -583,15 +583,15 @@ var _ RuleConcurrencyController = &sequentialRuleEvalController{}
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
-func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+func (sequentialRuleEvalController) Allow(context.Context, *Group, Rule) bool {
 	return false
 }
 
-func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, _ *Group) []ConcurrentRules {
+func (sequentialRuleEvalController) SplitGroupIntoBatches(context.Context, *Group) []ConcurrentRules {
 	return nil
 }
 
-func (c sequentialRuleEvalController) Done(_ context.Context) {}
+func (sequentialRuleEvalController) Done(context.Context) {}
 
 // FromMaps returns new sorted Labels from the given maps, overriding each other in order.
 func FromMaps(maps ...map[string]string) labels.Labels {
@@ -627,7 +627,7 @@ func ParseFiles(patterns []string) error {
 		}
 	}
 	for fn, pat := range files {
-		_, errs := rulefmt.ParseFile(fn, false)
+		_, errs := rulefmt.ParseFile(fn)
 		if len(errs) > 0 {
 			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
 		}

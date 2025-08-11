@@ -228,6 +228,29 @@ func (m *WriteRequest) TimeseriesSize() int {
 	return n
 }
 
+// TimeseriesRW2Size is like Size() but returns only the marshalled size of TimeseriesRW2 field.
+func (m *WriteRequest) TimeseriesRW2Size() int {
+	var n, l int
+
+	for _, e := range m.TimeseriesRW2 {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
+// SymbolsRW2Size is like Size() but returns only the marshalled size of SymbolsRW2 field.
+func (m *WriteRequest) SymbolsRW2Size() int {
+	var n, l int
+	for _, s := range m.SymbolsRW2 {
+		l = len(s)
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
 func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
 	return ok
@@ -427,4 +450,13 @@ type SizedMarshaler interface {
 type MarshalerWithSize interface {
 	// MarshalWithSize returns a wire format byte slice of the given size.
 	MarshalWithSize(size int) ([]byte, error)
+}
+
+// orderAwareMetricMetadata is a tuple (index, metadata) that knows its own position in a metadata slice.
+// It's tied to custom logic that unmarshals RW2 metadata into a map, and allows us to
+// remember the order that metadata arrived in when unmarshalling.
+type orderAwareMetricMetadata struct {
+	MetricMetadata
+	// order is the 0-based index of this metadata object in a wider metadata array.
+	order int
 }

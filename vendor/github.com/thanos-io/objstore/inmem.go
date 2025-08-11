@@ -50,10 +50,9 @@ func (b *InMemBucket) Objects() map[string][]byte {
 	return objs
 }
 
-// Iter calls f for each entry in the given directory. The argument to f is the full
-// object name including the prefix of the inspected directory.
-func (b *InMemBucket) Iter(_ context.Context, dir string, f func(string) error, options ...IterOption) error {
+func (b *InMemBucket) genericIter(_ context.Context, dir string, f func(string, time.Time) error, options ...IterOption) error {
 	unique := map[string]struct{}{}
+	lastModified := map[string]time.Time{}
 	params := ApplyIterOptions(options...)
 
 	var dirPartsCount int
@@ -74,11 +73,18 @@ func (b *InMemBucket) Iter(_ context.Context, dir string, f func(string) error, 
 		if params.Recursive {
 			// Any object matching the prefix should be included.
 			unique[filename] = struct{}{}
+			lastModified[filename] = b.attrs[filename].LastModified
 			continue
 		}
 
 		parts := strings.SplitAfter(filename, DirDelim)
-		unique[strings.Join(parts[:dirPartsCount+1], "")] = struct{}{}
+
+		name := strings.Join(parts[:dirPartsCount+1], "")
+		unique[name] = struct{}{}
+
+		if params.LastModified {
+			lastModified[name] = b.attrs[filename].LastModified
+		}
 	}
 	b.mtx.RUnlock()
 
@@ -101,15 +107,27 @@ func (b *InMemBucket) Iter(_ context.Context, dir string, f func(string) error, 
 	})
 
 	for _, k := range keys {
-		if err := f(k); err != nil {
+		var modifiedTS time.Time
+		if params.LastModified {
+			modifiedTS = lastModified[k]
+		}
+		if err := f(k, modifiedTS); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// Iter calls f for each entry in the given directory. The argument to f is the full
+// object name including the prefix of the inspected directory.
+func (b *InMemBucket) Iter(_ context.Context, dir string, f func(string) error, options ...IterOption) error {
+	return b.genericIter(context.Background(), dir, func(s string, t time.Time) error {
+		return f(s)
+	}, options...)
+}
+
 func (i *InMemBucket) SupportedIterOptions() []IterOptionType {
-	return []IterOptionType{Recursive}
+	return []IterOptionType{Recursive, UpdatedAt}
 }
 
 func (b *InMemBucket) IterWithAttributes(ctx context.Context, dir string, f func(attrs IterObjectAttributes) error, options ...IterOption) error {
@@ -117,8 +135,11 @@ func (b *InMemBucket) IterWithAttributes(ctx context.Context, dir string, f func
 		return err
 	}
 
-	return b.Iter(ctx, dir, func(name string) error {
-		return f(IterObjectAttributes{Name: name})
+	return b.genericIter(context.Background(), dir, func(s string, t time.Time) error {
+		attrs := IterObjectAttributes{Name: s}
+		attrs.SetLastModified(t)
+
+		return f(attrs)
 	}, options...)
 }
 

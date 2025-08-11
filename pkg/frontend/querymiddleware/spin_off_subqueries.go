@@ -139,7 +139,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
 	mapperCtx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
-	mapper := astmapper.NewSubquerySpinOffMapper(mapperCtx, s.defaultStepFunc, spanLog, mapperStats)
+	mapper := astmapper.NewSubquerySpinOffMapper(s.defaultStepFunc, spanLog, mapperStats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
@@ -148,7 +148,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	spinOffQuery, err := mapper.Map(expr)
+	spinOffQuery, err := mapper.Map(mapperCtx, expr)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(spanLog).Log("msg", "timeout while spinning off subqueries, please fill in a bug report with this query, falling back to try executing without spin-off", "err", err)

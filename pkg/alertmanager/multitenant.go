@@ -7,8 +7,10 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,6 +41,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -65,6 +69,7 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+	errConfigNotFound                      = errors.New("configuration not found")
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -332,9 +337,9 @@ type MultitenantAlertmanager struct {
 
 	alertmanagersMtx sync.Mutex
 	alertmanagers    map[string]*Alertmanager
-	// Stores the current set of configurations we're running in each tenant's Alertmanager.
+	// Stores the current set of configuration hashes we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
-	cfgs map[string]amConfig
+	cfgs map[string]model.Fingerprint
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -420,7 +425,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
-		cfgs:                map[string]amConfig{},
+		cfgs:                map[string]model.Fingerprint{},
 		alertmanagers:       map[string]*Alertmanager{},
 		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
@@ -756,67 +761,82 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
-// computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
+// computeConfig takes Mimir and Grafana configurations and returns a config we can use to start an Alertmanager.
+// A bool is returned, indicating whether the Alertmanager should be started.
+//
+// Order of precedence:
+// 1. Custom Mimir configurations
+// 2. Custom, promoted Grafana configurations
+// 3. Default Grafana configurations
+// 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
-	userID := cfgs.Mimir.User
-	cfg := amConfig{
-		User:            cfgs.Mimir.User,
-		RawConfig:       cfgs.Mimir.RawConfig,
-		Templates:       templateDescToPostableApiTemplate(cfgs.Mimir.Templates, definition.MimirTemplateKind),
-		TmplExternalURL: am.cfg.ExternalURL.URL,
+	// Custom Mimir configurations have the highest precedence.
+	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
+		if !cfgs.Grafana.Default {
+			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+		}
+		am.removeFromSkippedList(cfgs.Mimir.User)
+		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 	}
 
-	// Check if tenants can be skipped (strict initialization enabled).
-	skippable := am.cfg.StrictInitializationEnabled
-
-	// Check if the mimir config is non-empty and non-default.
-	isMimirConfigCustom := cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != ""
-
-	// If Grafana config is not usable, skip if possible.
-	if !isGrafanaConfigUsable(cfgs.Grafana) {
-		if !skippable || isMimirConfigCustom {
-			return cfg, true, nil
+	// Unpromoted/empty Grafana configurations are always ignored.
+	if !cfgs.Grafana.Promoted || cfgs.Grafana.RawConfig == "" {
+		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
+		if am.isTenantActive(cfgs.Mimir.User) {
+			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
 		}
-
-		// For skippable tenants, only run if receiving requests recently.
-		createdAt, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
-		if !loaded || time.Unix(createdAt.(int64), 0).IsZero() {
-			return cfg, false, nil
-		}
-
-		gracePeriodExpired := time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-
-		// Use the zero value to signal that the tenant was skipped.
-		// If the value stored is not what we have in memory, the tenant received a request since the last read.
-		if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, createdAt, time.Time{}.Unix()) {
-			return cfg, false, nil
-		}
-
-		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
-		return cfg, true, nil
+		return amConfig{}, false, nil
 	}
 
-	// Clear any previous skipped status since we now have a usable config.
-	if skippable {
-		if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
-			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
-		}
-	}
-
-	if !isMimirConfigCustom {
-		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", userID)
-		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
+	// Custom Grafana configurations have the second highest precedence.
+	if !cfgs.Grafana.Default {
+		am.removeFromSkippedList(cfgs.Mimir.User)
+		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
 		return cfg, true, err
 	}
 
-	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", userID)
-	return cfg, true, nil
+	// We have no custom configs. Check the last activity time to determine whether to start the AM.
+	if !am.isTenantActive(cfgs.Mimir.User) {
+		return amConfig{}, false, nil
+	}
+
+	// Default Grafana configurations have the third highest precedence.
+	cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
+	return cfg, true, err
 }
 
-// isGrafanaConfigUsable returns true if the Grafana configuration is promoted, non-default, and not empty.
-func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
-	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
+// removeFromSkippedList remove a tenant from the 'skipped' tenants list.
+func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
+	if !am.cfg.StrictInitializationEnabled {
+		return
+	}
+
+	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
+		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
+	}
+}
+
+// isTenantActive checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
+// If strict initialization is not enabled, it always returns true, as we don't keep track of request times.
+func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
+	if !am.cfg.StrictInitializationEnabled {
+		return true
+	}
+
+	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+	if !loaded || time.Unix(lastRequestTime.(int64), 0).IsZero() {
+		return false
+	}
+
+	// Use the zero value to signal that the tenant was skipped.
+	// If the value stored is not what we have in memory, the tenant received a request since the last read.
+	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, lastRequestTime, time.Time{}.Unix()) {
+		return false
+	}
+
+	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+	return true
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
@@ -901,6 +921,95 @@ type amConfig struct {
 	EmailConfig        alertingReceivers.EmailSenderConfig
 }
 
+func (f amConfig) fingerprint() model.Fingerprint {
+	sum := fnv.New64a()
+
+	writeBytes := func(b []byte) {
+		_, _ = sum.Write(b)
+		_, _ = sum.Write([]byte{255}) // add separator between fields. It is impossible in strings so, it reduces collisions in strings
+	}
+	writeString := func(s string) {
+		if len(s) == 0 {
+			writeBytes(nil)
+			return
+		}
+		// #nosec G103 -- nosemgrep: use-of-unsafe-block
+		// avoid allocation when converting string to byte slice
+		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
+	}
+	writeBool := func(b bool) {
+		if b {
+			writeBytes([]byte{1})
+		} else {
+			writeBytes([]byte{0})
+		}
+	}
+
+	writeString(f.User)
+	writeString(f.RawConfig)
+	writeBool(f.UsingGrafanaConfig)
+	if f.TmplExternalURL != nil {
+		writeString(f.TmplExternalURL.String())
+	} else {
+		writeBytes(nil)
+	}
+	writeString(f.EmailConfig.AuthPassword)
+	writeString(f.EmailConfig.AuthUser)
+	writeString(f.EmailConfig.CertFile)
+	writeString(f.EmailConfig.EhloIdentity)
+	writeString(f.EmailConfig.ExternalURL)
+	writeString(f.EmailConfig.FromName)
+	writeString(f.EmailConfig.FromAddress)
+	writeString(f.EmailConfig.Host)
+	writeString(f.EmailConfig.KeyFile)
+	writeBool(f.EmailConfig.SkipVerify)
+	writeString(f.EmailConfig.StartTLSPolicy)
+	writeString(f.EmailConfig.SentBy)
+	result := sum.Sum64()
+
+	writeBytes(nil)
+	// Calculate hash for each key-value pair independently and combine it using XOR
+	// so we do not need to care about the random order of the pairs in the map.
+	var mapFp uint64
+	for k, v := range f.EmailConfig.StaticHeaders {
+		sum.Reset()
+		writeString(k)
+		writeString(v)
+		mapFp ^= sum.Sum64()
+	}
+
+	// Ignore order in templates because they're usually built from the map
+	var templatesFp uint64
+	for _, template := range f.Templates {
+		sum.Reset()
+		writeString(template.Name)
+		writeString(template.Content)
+		writeString(string(template.Kind))
+		templatesFp ^= sum.Sum64()
+	}
+
+	// Ignore order in content types because it does not matter
+	var contentTypesFp uint64
+	for _, ct := range f.EmailConfig.ContentTypes {
+		sum.Reset()
+		writeString(ct)
+		contentTypesFp ^= sum.Sum64()
+	}
+
+	// combine all hashes, including ones for empty slices\map
+	sum.Reset()
+	tmp := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tmp, result)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, mapFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, templatesFp)
+	writeBytes(tmp)
+	binary.LittleEndian.PutUint64(tmp, contentTypesFp)
+	writeBytes(tmp)
+	return model.Fingerprint(sum.Sum64())
+}
+
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
@@ -954,6 +1063,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
+	cfgFp := cfg.fingerprint()
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
@@ -962,16 +1072,20 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg) {
-		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
-		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
-		if err != nil {
-			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+	} else {
+		curFp := am.cfgs[cfg.User]
+		if curFp != cfgFp {
+			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
+			am.cfgs[cfg.User] = cfgFp
+			// If the config changed, apply the new one.
+			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
+			if err != nil {
+				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+			}
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg
+	am.cfgs[cfg.User] = cfgFp
 	return nil
 }
 
@@ -1083,9 +1197,9 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	// If the Alertmanager initialization was skipped, start the Alertmanager.
 	if ok := am.lastRequestTime.CompareAndSwap(userID, time.Time{}.Unix(), time.Now().Unix()); ok {
-		userAM, err = am.startAlertmanager(userID)
+		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
-			if errors.Is(err, errNotUploadingFallback) {
+			if errors.Is(err, errNotUploadingFallback) || errors.Is(err, errConfigNotFound) {
 				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
 				http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
 				return
@@ -1123,19 +1237,28 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 }
 
 // startAlertmanager will start the Alertmanager for a tenant, using the fallback configuration if no config is found.
-func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		am.lastRequestTime.Delete(userID)
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
 
-	amConfig := amConfig{
-		User:            userID,
-		RawConfig:       "",
-		Templates:       nil,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
+	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
+
+	cfg, ok := cfgMap[userID]
+	if !ok {
+		return nil, errConfigNotFound
+	}
+
+	amConfig, _, err := am.computeConfig(cfg) // The second value indicates whether we should start the AM or not. Ignore it.
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute config: %w", err)
+	}
+
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
 	}
@@ -1175,11 +1298,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfig{
-		User:            cfgDesc.User,
-		RawConfig:       cfgDesc.RawConfig,
-		TmplExternalURL: am.cfg.ExternalURL.URL,
-	}
+	amConfig := amConfigFromMimirConfig(cfgDesc, am.cfg.ExternalURL.URL)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
@@ -1504,34 +1623,4 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func configChanged(left, right amConfig) bool {
-	if left.User != right.User {
-		return true
-	}
-	if left.RawConfig != right.RawConfig {
-		return true
-	}
-
-	existing := make(map[string]string)
-	for _, tm := range left.Templates {
-		existing[fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)] = tm.Content
-	}
-
-	for _, tm := range right.Templates {
-		key := fmt.Sprintf("%s[%s]", tm.Name, tm.Kind)
-		corresponding, ok := existing[key]
-		if !ok {
-			return true // Right has a template that left does not.
-		}
-		if corresponding != tm.Content {
-			return true // The template content is different.
-		}
-		delete(existing, key)
-	}
-
-	// TODO add remaining fields to comparison
-
-	return len(existing) != 0 // Left has a template that right does not.
 }

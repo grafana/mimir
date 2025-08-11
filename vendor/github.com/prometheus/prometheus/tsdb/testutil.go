@@ -14,7 +14,9 @@
 package tsdb
 
 import (
+	"sync"
 	"testing"
+	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -233,4 +235,31 @@ func counterResetAsString(h histogram.CounterResetHint) string {
 		return "GaugeType"
 	}
 	panic("Unexpected counter reset type")
+}
+
+// timeNowMock offers a mockable time.Now() implementation
+// empty value is ready to be used, and it should not be copied (use a reference).
+type timeNowMock struct {
+	sync.Mutex
+	now time.Time
+}
+
+// timeNow can be used as a mocked replacement for time.Now().
+func (t *timeNowMock) timeNow() time.Time {
+	t.Lock()
+	defer t.Unlock()
+	if t.now.IsZero() {
+		t.now = time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	}
+	return t.now
+}
+
+// advance advances the mocked time.Now() value.
+func (t *timeNowMock) advance(d time.Duration) {
+	t.Lock()
+	defer t.Unlock()
+	if t.now.IsZero() {
+		t.now = time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	}
+	t.now = t.now.Add(d)
 }

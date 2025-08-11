@@ -18,6 +18,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -104,8 +106,15 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), userID)
 			res, err := distributors[0].Push(ctx, createWriteRequest())
 			if testData.trackSeriesErr == nil {
-				require.NoError(t, err)
-				require.NotNil(t, res)
+				if len(testData.trackSeriesRejectedHashes) > 0 {
+					require.NotNil(t, err)
+					st, ok := status.FromError(err)
+					require.True(t, ok, "Expected error to be a gRPC status error")
+					require.Equal(t, codes.ResourceExhausted, st.Code())
+				} else {
+					require.NoError(t, err)
+					require.NotNil(t, res)
+				}
 			} else {
 				require.ErrorContains(t, err, "failed to enforce max series limit")
 				require.Nil(t, res)

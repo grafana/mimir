@@ -76,7 +76,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -201,7 +202,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -326,7 +328,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:

@@ -6,10 +6,10 @@
 package mimirpb
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -129,9 +129,17 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range m.Timeseries {
 		m.Timeseries[idx].clearUnmarshalData()
 	}
+	m.rw2symbols = rw2PagedSymbols{}
+	m.unmarshalFromRW2 = false
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
+//
+// # DO NOT SHALLOW-COPY
+//
+// Data referenced from a PreallocTimeseries may change once the timeseries is
+// returned to the shared pool. This includes usually immutable references, like
+// strings. If needed, use DeepCopyTimeseries instead.
 type PreallocTimeseries struct {
 	*TimeSeries
 
@@ -184,7 +192,7 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.
 func (p *PreallocTimeseries) SortLabelsIfNeeded() {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// no need to run slices.SortFunc, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
 	last := ""
@@ -201,14 +209,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	p.clearUnmarshalData()
 }
@@ -252,8 +253,8 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 }
 
 func (p *PreallocTimeseries) SortExemplars() {
-	sort.Slice(p.Exemplars, func(i, j int) bool {
-		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	slices.SortFunc(p.Exemplars, func(a, b Exemplar) int {
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	p.clearUnmarshalData()
 }
@@ -270,7 +271,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
@@ -314,7 +315,9 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
-type LabelAdapter labels.Label
+type LabelAdapter struct {
+	Name, Value unsafeMutableString
+}
 
 // Marshal implements proto.Marshaller.
 func (bs *LabelAdapter) Marshal() ([]byte, error) {
@@ -507,6 +510,25 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 	}
 	return strings.Compare(bs.Value, other.Value)
 }
+
+// UnsafeMutableLabel is an alias of LabelAdapter meant to highlight its unsafety.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When an UnsafeMutableLabel is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type UnsafeMutableLabel = LabelAdapter
+
+// A unsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of unsafeMutableString may
+// later refer to different data than it originally did: it's effectively
+// a []byte with a string-like (and thus read-only) API and implicit capacity.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When a LabelAdapter is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type unsafeMutableString = string
 
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.
