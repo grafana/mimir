@@ -71,7 +71,7 @@ func (p plan) useIndexFor(predicateIdx int) plan {
 	return p
 }
 
-// useScanFor returns a copy of this plan where predicate predicateIdx is used during sequential scanning.
+// useScanFor returns a copy of this plan where the predicate at predicateIdx is used during sequential scanning.
 //
 //nolint:unused
 func (p plan) useScanFor(predicateIdx int) plan {
@@ -136,17 +136,18 @@ func (p plan) intersectionSize() uint64 {
 		//
 		// We also assume independence between the predicates. This is a simplification.
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
+		// While finalSelectivity is neither an upper bound nor a lower bound, assuming independence allows us to come up with cost estimates comparable between plans.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-// cardinality returns the total number of series that this plan would return.
+// cardinality returns an estimate of the total number of series that this plan would return.
 func (p plan) cardinality() uint64 {
 	finalSelectivity := 1.0
 	for _, pred := range p.predicates {
 		// We use the selectivity across all series instead of the selectivity across label values.
-		// For example, if {protocol=~.*} matches all values, it doesn't mean it won't reduce the result set after intersection.
+		// For example, if {protocol=~.*} matches all values, it could still reduce the result set after intersection.
 		//
 		// We also assume independence between the predicates. This is a simplification.
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
