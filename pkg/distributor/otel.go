@@ -292,6 +292,24 @@ func newOTLPParser(
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
 		translationStrategy := limits.OTelTranslationStrategy(tenantID)
+		if translationStrategy == "" {
+			// Generate translation strategy based on other settings.
+			suffixesEnabled := limits.OTelMetricSuffixesEnabled(tenantID)
+			switch limits.NameValidationScheme(tenantID) {
+			case model.LegacyValidation:
+				if suffixesEnabled {
+					translationStrategy = otlptranslator.UnderscoreEscapingWithSuffixes
+				} else {
+					translationStrategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+				}
+			case model.UTF8Validation:
+				if suffixesEnabled {
+					translationStrategy = otlptranslator.NoUTF8EscapingWithSuffixes
+				} else {
+					translationStrategy = otlptranslator.NoTranslation
+				}
+			}
+		}
 		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)

@@ -1640,7 +1640,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1655,7 +1655,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1670,7 +1670,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1685,7 +1685,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoTranslation), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},

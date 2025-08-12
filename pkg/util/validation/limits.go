@@ -616,21 +616,6 @@ func (l *Limits) Validate() error {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
-		// Generate translation strategy based on other settings.
-		switch validationScheme {
-		case model.LegacyValidation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
-			}
-		case model.UTF8Validation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
 	}
