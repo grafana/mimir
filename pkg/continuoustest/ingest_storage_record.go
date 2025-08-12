@@ -138,11 +138,13 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	recordsProcessedThisBatch := 0
 	for recordsRemainingInBatch > 0 {
+		level.Info(t.logger).Log("msg", "poll fetches")
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			level.Error(t.logger).Log("fetch errors", "errs", errs)
 			break
 		}
+		level.Info(t.logger).Log("msg", "num records", "count", fetches.NumRecords())
 
 		recordsRemainingInBatch -= int64(fetches.NumRecords())
 		recordsProcessedThisBatch += len(fetches.Records())
