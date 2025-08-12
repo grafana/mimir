@@ -18,7 +18,7 @@ type IngestStorageRecordTestConfig struct {
 }
 
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
+	// cfg.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 }
 
 type IngestStorageRecordTest struct {
