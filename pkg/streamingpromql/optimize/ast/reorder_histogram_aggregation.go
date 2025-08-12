@@ -29,6 +29,10 @@ func (r *ReorderHistogramAggregation) Apply(ctx context.Context, expr parser.Exp
 	return r.mapper.Map(ctx, expr)
 }
 
+func (r *ReorderHistogramAggregation) HasChanged() bool {
+	return r.mapper.HasChanged()
+}
+
 func NewReorderHistogramAggregationMapper() *ASTExprMapperWithState {
 	mapper := &reorderHistogramAggregation{}
 	return NewASTExprMapperWithState(mapper)

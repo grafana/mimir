@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ast
+package ast_test
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 var testCasesReorderHistogramAggregation = map[string]string{
@@ -52,12 +54,12 @@ func TestReorderHistogramAggregation(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
-			optimizer := NewReorderHistogramAggregation()
+			optimizer := ast.NewReorderHistogramAggregation()
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
-			require.Equal(t, input != expected, optimizer.mapper.HasChanged())
+			require.Equal(t, input != expected, optimizer.HasChanged())
 		})
 	}
 }
