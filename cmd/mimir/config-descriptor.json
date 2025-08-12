@@ -1284,36 +1284,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -7543,7 +7513,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "query-frontend.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -10409,6 +10379,39 @@
               "fieldValue": null,
               "fieldDefaultValue": 32,
               "fieldFlag": "blocks-storage.tsdb.out-of-order-capacity-max",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "shared_postings_for_matchers_cache",
+              "required": false,
+              "desc": "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.shared-postings-for-matchers-cache",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_invalidation",
+              "required": false,
+              "desc": "Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_versions",
+              "required": false,
+              "desc": "The size of the metric versions cache in each ingester when invalidation is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2097152,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-versions",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },

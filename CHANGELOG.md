@@ -11,13 +11,18 @@
 * [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
 * [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
 * [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
+* [CHANGE] Distributor: Remove deprecated global HA tracker timeout configuration flags. #12321
+* [CHANGE] Query-frontend: Use the Mimir Query Engine (MQE) by default. #12361
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306
+* [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
 * [ENHANCEMENT] Compactor: Add `-compactor.update-blocks-concurrency` flag to control concurrency for updating block metadata during bucket index updates, separate from deletion marker concurrency. #12117
 * [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail when experimental ingest storage is enabled. #12090
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
 * [ENHANCEMENT] MQE: Add support for applying common subexpression elimination to range vector expressions in instant queries. #12236
 * [ENHANCEMENT] Ingester: Improve the performance of active series custom trackers matchers. #12184
+* [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. Sharing and head cache invalidation can be enabled via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and the number of metric versions per cache can be configured via -`blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
+* [ENHANCEMENT] OTLP: Stick to OTLP vocabulary on invalid label value length error. #12273
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
 * [BUGFIX] Distributor: Fix pooled memory reuse bug that can cause corrupt data to appear in the err-mimir-label-value-too-long error message. #12048
@@ -31,6 +36,7 @@
 ### Documentation
 
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+* [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 
 ## 2.17.0-rc.1
 
@@ -180,7 +186,6 @@
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
 * [ENHANCEMENT] Store-gateway: Change level 0 blocks to be reported as 'unknown/old_block' in metrics instead of '0' to improve clarity. Level 0 indicates blocks with metadata from before compaction level tracking was added to the bucket index. #11891
 * [ENHANCEMENT] Compactor, distributor, ruler, scheduler and store-gateway: Makes `-<component-ring-config>.auto-forget-unhealthy-periods` configurable for each component. Deprecates the `-store-gateway.sharding-ring.auto-forget-enabled` flag. #11923
-* [ENHANCEMENT] OTLP: Stick to OTLP vocabulary on invalid label value length error. #12273
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952

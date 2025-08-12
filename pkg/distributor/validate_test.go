@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	grpcstatus "google.golang.org/grpc/status"
 	golangproto "google.golang.org/protobuf/proto"
 
@@ -445,8 +444,8 @@ func TestValidateLabels(t *testing.T) {
 		d.sampleValidationMetrics.deleteUserMetrics(utf8UserID)
 	}
 
-	var inFlightSubsets atomic.Int64
-	inFlightSubsets.Store(int64(len(testCases) * len(validationSchemes)))
+	// Run final checks after all subtests are done.
+	t.Cleanup(func() { finalChecks(t) })
 
 	for _, c := range testCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -454,12 +453,6 @@ func TestValidateLabels(t *testing.T) {
 			for _, scheme := range validationSchemes {
 				t.Run(scheme.String(), func(t *testing.T) {
 					t.Parallel()
-
-					defer func() {
-						if inFlightSubsets.Add(-1) == 0 {
-							finalChecks(t)
-						}
-					}()
 
 					var userID string
 					switch scheme {
@@ -490,7 +483,7 @@ func TestValidateLabels(t *testing.T) {
 						},
 					}
 					for name, value := range c.metric {
-						ts.TimeSeries.Labels = append(ts.TimeSeries.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
+						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
 					}
 
 					var wg sync.WaitGroup
