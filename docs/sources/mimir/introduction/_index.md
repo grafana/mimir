@@ -21,6 +21,6 @@ With Grafana Mimir, you can:
 
 ## Learn about metric data
 
-## Learn about Grafana Mimir's architecture
+## Learn about Grafana Mimir architecture
 
 ## Get started with Grafana Mimir
