@@ -131,6 +131,51 @@ How to **fix** it:
 3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
+4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
+   When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
+
+   1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
+
+      ```
+      (
+          # How many more series can each tenant send per ingester with current ingesters and limits.
+          (
+              (
+                  # Difference between usage and limits
+                  max by(namespace, user) (cortex_limits_overrides{namespace=~"(cortex|mimir).*", limit_name="max_global_series_per_user"})
+                  -
+                  max by (namespace, user) (namespace_user:cortex_ingester_owned_series:sum{namespace=~"(cortex|mimir).*"})
+              )
+              / on (namespace) group_left
+              max by (namespace) (sum by(namespace, job) (up{namespace=~"(cortex|mimir).*", container="ingester"}))
+          )
+
+          > on (namespace) group_left
+
+          # How many series per ingester can a namespace take without going into risk.
+          # This is: "target series * 1.25 - current owned series" on the ingester with most usage.
+          min by(namespace) (
+              min by(namespace) (
+                  0.8 * cortex_ingester_instance_limits{namespace=~"(cortex|mimir).*", limit="max_series"} > 0
+              )
+              -
+              max by(namespace) (
+                  sum by (namespace, pod) (cortex_ingester_owned_series{namespace=~"(cortex|mimir).*"})
+              )
+          )
+      )
+      ```
+
+   2. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
+      - Decrease the `max_global_series_per_user` limit.
+      - Ensure that the `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` values are not set below a safe value:
+        - If the experimental ingest storage is enabled:
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of partitions)`.
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to the value of `ingestion_partitions_tenant_shard_size * 3`.
+        - If the experimental ingest storage is disabled:
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of ingesters across all zones)`.
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to the value of `ingestion_tenant_shard_size / 3`.
+
 ### MimirIngesterReachingTenantsLimit
 
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
