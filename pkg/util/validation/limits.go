@@ -1428,7 +1428,30 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 }
 
 func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	return otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	if strategy != "" {
+		return strategy
+	}
+
+	// Generate translation strategy based on other settings.
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
+	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	case model.LegacyValidation:
+		if suffixesEnabled {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case model.UTF8Validation:
+		if suffixesEnabled {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.NoTranslation
+		}
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
+	}
+	return strategy
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.
