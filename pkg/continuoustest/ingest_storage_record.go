@@ -2,7 +2,6 @@ package continuoustest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,21 +13,27 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 type IngestStorageRecordTestConfig struct {
-	Kafka         ingest.KafkaConfig `yaml:"-"`
-	ConsumerGroup string             `yaml:"consumer_group"`
+	Kafka                    ingest.KafkaConfig `yaml:"-"`
+	ConsumerGroup            string             `yaml:"consumer_group"`
+	MaxJumpLimitPerPartition int                `yaml:"max_jump_size"`
+	RecordsProcessedPercent  int                `yaml:"records_processed_percent"`
 }
 
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	// cfg.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
+	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
+	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
 
 type IngestStorageRecordTest struct {
 	name        string
 	cfg         IngestStorageRecordTestConfig
+	client      *kgo.Client
 	adminClient *kadm.Client
 	logger      log.Logger
 	reg         prometheus.Registerer
@@ -62,6 +67,7 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
 
+	t.client = kc
 	t.adminClient = kadm.NewClient(kc)
 	return nil
 }
@@ -96,29 +102,49 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	if endOffsetsResp.Error() != nil {
 		return fmt.Errorf("fetch end offsets response error: %w", err)
 	}
-	endOffsets := endOffsetsResp.Offsets()
+	allPartitionEndOffsets := endOffsetsResp.Offsets()
+	endOffsets := allPartitionEndOffsets["ingest"]
 
-	// Calculate the amount of jump per partition.
-	diffMap := make(map[int32]int64)
-	for topic, partOffsets := range offsets {
-		for partition, startOffset := range partOffsets {
-			if endPartOffset, ok := endOffsets[topic]; ok {
-				if endOffset, ok := endPartOffset[partition]; ok {
-					diffMap[partition] = endOffset.At - startOffset.At
-				} else {
-					diffMap[partition] = -1
-				}
-			}
+	totalOffsetDiff := int64(0)
+	for partition, endOffset := range endOffsets {
+		startOffset, ok := offsets["ingest"][partition]
+		if !ok {
+			continue
 		}
+
+		diff := endOffset.At - startOffset.At
+		if diff > int64(t.cfg.MaxJumpLimitPerPartition) {
+			level.Warn(t.logger).Log(
+				"msg", "skipping partition because it jumped by an amount greater than the limit per run",
+				"partition", partition,
+				"limit", t.cfg.MaxJumpLimitPerPartition,
+				"actual", diff,
+			)
+			continue
+		}
+		totalOffsetDiff += diff
 	}
-	js, err := json.Marshal(diffMap)
-	if err != nil {
-		return fmt.Errorf("marshal error: %w", err)
+
+	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
+
+	t.client.AddConsumePartitions(offsets.KOffsets())
+
+	recordsProcessedThisBatch := 0
+	for recordsRemainingInBatch > 0 {
+		fetches := t.client.PollFetches(ctx)
+		if errs := fetches.Errors(); len(errs) > 0 {
+			level.Error(t.logger).Log("fetch errors", "errs", errs)
+			break
+		}
+
+		recordsRemainingInBatch -= int64(fetches.NumRecords())
+		recordsProcessedThisBatch += len(fetches.Records())
 	}
-	level.Info(t.logger).Log("msg", "grabbed batch", "diffsPerPartition", string(js))
+
+	level.Info(t.logger).Log("msg", "processed batch", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff)
 
 	// Update to the end.
-	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, endOffsets)
+	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
 
 	return nil
 }
