@@ -21,7 +21,7 @@ With Grafana Mimir, you can:
 
 ## About metrics
 
-Metrics provide a high-level picture of the state of a system. Metrics are the foundation of alerts because metrics are numeric values and can be compared against known thresholds. Alerts constantly run in the background and trigger when a value is outside of an expected range. This is typically the first sign that something is going on and are where discovery first starts. Metrics indicate that something is happening.
+Metrics provide a high-level picture of the state of a system. Metrics are the foundation of alerts because metrics are numeric values and can be compared against known thresholds. Alerts constantly run in the background and trigger when a value is outside of an expected range. This is typically the first sign that something is going on and is where discovery first starts. Metrics indicate that something is happening.
 
 Metrics tell you how much of something exists, such as how much memory a computer system has available or how many centimeters long a desktop is. In the case of Grafana, metrics are most useful when they are recorded repeatedly over time. This permits us to compare things like how running a program affects the availability of system resources, as shown in the following dashboard.
 
