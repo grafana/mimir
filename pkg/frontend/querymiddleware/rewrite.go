@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -18,16 +20,38 @@ type rewriteMiddleware struct {
 	next   MetricsQueryHandler
 	logger log.Logger
 	cfg    Config
+
+	rewriteMetrics
+}
+
+type rewriteMetrics struct {
+	propagateMatchersAttempts  prometheus.Counter
+	propagateMatchersSuccesses prometheus.Counter
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
 // unnecessary computations.
-func newRewriteMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
+func newRewriteMiddleware(
+	logger log.Logger,
+	cfg Config,
+	registerer prometheus.Registerer,
+) MetricsQueryMiddleware {
+	metrics := rewriteMetrics{
+		propagateMatchersAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_rewrites_propagate_matchers_attempted_total",
+			Help: "Total number of queries the query-frontend attempted to rewrite by propagating matchers across binary operations.",
+		}),
+		propagateMatchersSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_rewrites_propagate_matchers_succeeded_total",
+			Help: "Total number of queries the query-frontend has successfully rewritten by propagating matchers across binary operations.",
+		}),
+	}
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &rewriteMiddleware{
-			next:   next,
-			logger: logger,
-			cfg:    cfg,
+			next:           next,
+			logger:         logger,
+			cfg:            cfg,
+			rewriteMetrics: metrics,
 		}
 	})
 }
@@ -68,12 +92,14 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 
 	if m.cfg.RewriteQueriesPropagateMatchers {
 		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
+		m.propagateMatchersAttempts.Inc()
 		rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
 		if err != nil {
 			return "", false, err
 		}
 		if mapperPropagateMatchers.HasChanged() {
 			changed = true
+			m.propagateMatchersSuccesses.Inc()
 		}
 	}
 

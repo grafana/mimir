@@ -470,7 +470,7 @@ func newQueryMiddlewares(
 	)
 
 	if cfg.isPruningQueriesEnabled() {
-		rewriteMiddleware := newRewriteMiddleware(log, cfg)
+		rewriteMiddleware := newRewriteMiddleware(log, cfg, registerer)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			newInstrumentMiddleware("rewriting", metrics),
