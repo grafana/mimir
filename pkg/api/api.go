@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -265,8 +266,11 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool)
+	}
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
-		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
+		pushConfig.MaxRecvMsgSize, newRequestBuffers, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 

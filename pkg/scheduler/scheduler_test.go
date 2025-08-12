@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/otel"
@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -253,7 +254,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	// Wait until the frontend has connected to the scheduler.
 	test.Poll(t, time.Second, float64(1), func() interface{} {
-		return promtest.ToFloat64(scheduler.connectedFrontendClients)
+		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
 
 	// Disconnect frontend.
@@ -261,7 +262,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	// Wait until the frontend has disconnected.
 	test.Poll(t, time.Second, float64(0), func() interface{} {
-		return promtest.ToFloat64(scheduler.connectedFrontendClients)
+		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
 
 	querierLoop := initQuerierLoop(t, querierClient, "querier-1")
@@ -546,7 +547,7 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_scheduler_queue_length Number of queries in the queue.
 		# TYPE cortex_query_scheduler_queue_length gauge
 		cortex_query_scheduler_queue_length{user="another"} 1
@@ -555,7 +556,7 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	scheduler.cleanupMetricsForInactiveUser("test")
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_scheduler_queue_length Number of queries in the queue.
 		# TYPE cortex_query_scheduler_queue_length gauge
 		cortex_query_scheduler_queue_length{user="another"} 1
@@ -564,7 +565,16 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	_, _, querierClient := setupScheduler(t, reg)
+	_, frontendClient, querierClient := setupScheduler(t, reg)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		StatsEnabled: true,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	querierLoop, err := querierClient.QuerierLoop(ctx)
@@ -572,7 +582,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
 
 	require.Eventually(t, func() bool {
-		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+		err := testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
 			# TYPE cortex_query_scheduler_connected_querier_clients gauge
 			cortex_query_scheduler_connected_querier_clients 1
@@ -585,7 +595,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	require.Eventually(t, func() bool {
-		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+		err := testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
 			# TYPE cortex_query_scheduler_connected_querier_clients gauge
 			cortex_query_scheduler_connected_querier_clients 0
@@ -593,6 +603,9 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
+
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_scheduler_queue_duration_seconds"))
+	require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_scheduler_queue_duration_seconds", 1))
 }
 
 func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) schedulerpb.SchedulerForFrontend_FrontendLoopClient {

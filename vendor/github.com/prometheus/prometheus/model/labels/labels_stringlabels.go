@@ -70,7 +70,7 @@ func (ls Labels) IsZero() bool {
 
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
 // If on is set to true, it returns the subset of labels that match with the provided label names and its inverse when 'on' is set to false.
-// TODO: This is only used in printing an error message
+// TODO: This is only used in printing an error message.
 func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	b := NewBuilder(ls)
 	if on {
@@ -449,11 +449,11 @@ func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 }
 
 // InternStrings is a no-op because it would only save when the whole set of labels is identical.
-func (ls *Labels) InternStrings(intern func(string) string) {
+func (*Labels) InternStrings(func(string) string) {
 }
 
 // ReleaseStrings is a no-op for the same reason as InternStrings.
-func (ls Labels) ReleaseStrings(release func(string)) {
+func (Labels) ReleaseStrings(func(string)) {
 }
 
 // Builder allows modifying Labels.
@@ -664,10 +664,10 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -676,7 +676,7 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 
