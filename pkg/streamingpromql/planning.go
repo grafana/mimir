@@ -54,6 +54,10 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles()) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+	// The following is applied in query pruning middleware for now as we need to run them before query sharding, but we leave most of the code here as we plan to move them here later. Note that these do not track the changed state properly.
+	// if opts.EnablePropagateMatchers {
+	// 	planner.RegisterASTOptimizationPass(ast.NewPropagateMatchers())
+	// }
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
