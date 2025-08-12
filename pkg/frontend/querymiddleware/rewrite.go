@@ -90,6 +90,17 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	rewrittenQuery := expr
 	changed := false
 
+	if m.cfg.RewriteQueriesHistogram {
+		mapperHistogram := ast.NewReorderHistogramAggregationMapper()
+		rewrittenQuery, err = mapperHistogram.Map(ctx, rewrittenQuery)
+		if err != nil {
+			return "", false, err
+		}
+		if mapperHistogram.HasChanged() {
+			changed = true
+		}
+	}
+
 	if m.cfg.RewriteQueriesPropagateMatchers {
 		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
 		m.propagateMatchersAttempts.Inc()
