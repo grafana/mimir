@@ -10,7 +10,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.overrides_exporter.replicas }}
-  revisionHistoryLimit: {{ .Values.overrides_exporter.revisionHistoryLimit }}
+  {{- with .Values.overrides_exporter.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}

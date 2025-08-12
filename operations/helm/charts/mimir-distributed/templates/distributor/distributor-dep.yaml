@@ -15,7 +15,9 @@ spec:
   replicas: {{ .Values.distributor.replicas }}
   {{- end }}
   {{- end }}
-  revisionHistoryLimit: {{ .Values.distributor.revisionHistoryLimit }}
+  {{- with .Values.distributor.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 6 }}

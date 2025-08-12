@@ -14,7 +14,9 @@ spec:
 {{- if not .autoscaling.enabled }}
   replicas: {{ .replicas }}
 {{- end }}
-  revisionHistoryLimit: {{ .revisionHistoryLimit }}
+  {{- with .revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "gateway") | nindent 6 }}
