@@ -18,7 +18,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -253,6 +252,5 @@ overrides:
 func getDefaultLimits() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
-	limits.OTelTranslationStrategy = validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 	return limits
 }
