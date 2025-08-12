@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -120,8 +121,35 @@ func main() {
 		if err := analyzeBlock(ctx, cfg.block, cfg.dest, cfg.histScale, cfg.histMax, cfg.histNumBins, logger); err != nil {
 			log.Fatalln("failed to analyze block:", err)
 		}
+	case "download-convert":
+		if err := validateConvertConfig(cfg); err != nil {
+			log.Fatalln("config failed validation:", err)
+		}
+
+		blockDest := filepath.Join(os.TempDir(), cfg.block)
+		if err := os.MkdirAll(blockDest, 0755); err != nil {
+			log.Fatalln("failed to create temp block dir:", err)
+		}
+
+		log.Printf("downloading block %s to %s...\n", cfg.block, blockDest)
+		if err := downloadBlock(ctx, cfg.bucket, cfg.userID, cfg.block, blockDest, logger); err != nil {
+			log.Fatalln("failed to download block:", err)
+		}
+
+		// Get the config ready for the conversion.
+		cfg.block = blockDest
+
+		if cfg.count {
+			log.Printf("dry run converting block at %s in %s format...\n", cfg.block, cfg.outputFormat)
+		} else {
+			log.Printf("converting block at %s to %s in %s format...\n", cfg.block, cfg.dest, cfg.outputFormat)
+		}
+
+		if err := convertBlock(ctx, cfg, logger); err != nil {
+			log.Fatalln("failed to convert block:", err)
+		}
 	default:
-		log.Fatalln("--action must be 'download' or 'convert'")
+		log.Fatalln("--action must be 'download' or 'convert' or 'analyze' or 'download-convert'")
 	}
 
 	log.Println("done.")
