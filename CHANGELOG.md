@@ -12,6 +12,7 @@
 * [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
 * [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
 * [CHANGE] Distributor: Remove deprecated global HA tracker timeout configuration flags. #12321
+* [CHANGE] Query-frontend: Use the Mimir Query Engine (MQE) by default. #12361
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306
 * [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
