@@ -48,7 +48,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.QueryMiddleware.RegisterFlags(f)
 	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 
-	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.PrometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
+	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 }
 

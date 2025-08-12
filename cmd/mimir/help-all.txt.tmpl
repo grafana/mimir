@@ -2290,7 +2290,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-frontend.query-engine string
-    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "prometheus")
+    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -query-frontend.query-result-response-format string
     	Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "protobuf")
   -query-frontend.query-sharding-max-regexp-size-bytes int
