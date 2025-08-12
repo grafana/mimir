@@ -1077,9 +1077,6 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
-<<<<<<< HEAD
-# github.com/philhofer/fwd v1.2.0
-=======
 # github.com/oracle/oci-go-sdk/v65 v65.95.2
 ## explicit; go 1.13
 # github.com/parquet-go/parquet-go v0.25.1
@@ -1111,8 +1108,7 @@ github.com/parquet-go/parquet-go/internal/bytealg
 github.com/parquet-go/parquet-go/internal/debug
 github.com/parquet-go/parquet-go/internal/unsafecast
 github.com/parquet-go/parquet-go/sparse
-# github.com/philhofer/fwd v1.1.3-0.20240916144458-20a13a1f6b7c
->>>>>>> 6e42b486c1 (bring in prometheus/parquet-common code to new package (#11490))
+# github.com/philhofer/fwd v1.2.0
 ## explicit; go 1.20
 github.com/philhofer/fwd
 # github.com/pierrec/lz4/v4 v4.1.22
