@@ -15,7 +15,6 @@ spec:
   replicas: {{ .replicas }}
 {{- end }}
   revisionHistoryLimit: {{ .revisionHistoryLimit }}
-  {{- if not $isGEMGateway }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "gateway") | nindent 6 }}

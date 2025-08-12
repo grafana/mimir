@@ -14,7 +14,6 @@ spec:
   replicas: {{ .Values.nginx.replicas }}
 {{- end }}
   revisionHistoryLimit: {{ .Values.nginx.revisionHistoryLimit }}
-  {{- end }}
 {{- with .Values.nginx.deploymentStrategy }}
   strategy:
 {{ toYaml . | trim | indent 4 }}
