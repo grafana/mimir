@@ -28,6 +28,10 @@ func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser
 	return p.mapper.Map(ctx, expr)
 }
 
+func (p *PropagateMatchers) HasChanged() bool {
+	return p.mapper.HasChanged()
+}
+
 func NewPropagateMatchersMapper() *ASTExprMapperWithState {
 	mapper := &propagateMatchers{}
 	return NewASTExprMapperWithState(mapper)
