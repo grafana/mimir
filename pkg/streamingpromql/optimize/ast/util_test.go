@@ -44,11 +44,13 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 
 			qInput, err := engine.NewRangeQuery(ctx, queryable, nil, input, startTime, endTime, step)
 			require.NoError(t, err)
+			t.Cleanup(qInput.Close)
 			resInput := qInput.Exec(context.Background())
 			require.NoError(t, resInput.Err)
 
 			qRewritten, err := engine.NewRangeQuery(ctx, queryable, nil, expected, startTime, endTime, step)
 			require.NoError(t, err)
+			t.Cleanup(qRewritten.Close)
 			resRewritten := qRewritten.Exec(context.Background())
 			require.NoError(t, resRewritten.Err)
 
