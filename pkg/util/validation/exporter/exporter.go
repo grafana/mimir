@@ -257,7 +257,7 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 							fieldValue := limitsValue.FieldByName(fName)
 							value, err := convertToFloat64(fieldValue)
 							if err != nil {
-								// Log error and return 0.0 as fallback to avoid breaking metrics collection
+								// Return 0.0 as fallback to avoid breaking metrics collection
 								// This should not happen in practice if the reflection setup is correct
 								return 0.0
 							}
