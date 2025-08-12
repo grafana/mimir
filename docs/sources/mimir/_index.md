@@ -29,7 +29,7 @@ cards:
   items:
     - title: Introduction to Grafana Mimir
       href: ./introduction/
-      description: Learn about Grafana Mimir's core concepts, architecture, and key features.
+      description: Learn about Grafana Mimir's core concepts and key features for handling metric data.
       height: 24
     - title: Get started
       href: ./get-started/
