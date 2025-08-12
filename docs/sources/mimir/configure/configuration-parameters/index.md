@@ -3751,10 +3751,10 @@ blocked_requests:
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
-# (experimental) Enable certain experimental PromQL functions, which are subject
-# to being changed or removed at any time, on a per-tenant basis. Defaults to
-# empty which means all experimental functions are disabled. Set to 'all' to
-# enable all experimental functions.
+# Enable certain experimental PromQL functions, which are subject to being
+# changed or removed at any time, on a per-tenant basis. Defaults to empty which
+# means all experimental functions are disabled. Set to 'all' to enable all
+# experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
