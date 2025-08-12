@@ -32,6 +32,7 @@ func main() {
 	)
 	flag.CommandLine.IntVar(&serverMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.RegisterFlags(flag.CommandLine)
+	cfg.IngestStorageRecordTest.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", flag.CommandLine)
 	logLevel.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
