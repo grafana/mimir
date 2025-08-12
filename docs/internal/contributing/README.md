@@ -119,7 +119,8 @@ There are currently no guardrails around this, beyond tests.
 
 Some (but maybe not all) specific critical areas are:
 
-- In the distributor, such strings must not outlive the `PushFunc` passed to `Handler`.
+- In the distributor, those strings must not outlive the `PushFunc` passed to `Handler`.
+  - The `PushFunc` decompresses an incoming request into a reused buffer, then unmarshals the buffer into a `PreallocWriteRequest` that holds `unsafeMutableString`s (indirectly through `unsafeMutableLabel`) into that same buffer, and then, before returning, returns the buffer to the pool to be reused. If any strings from the `PreallocWriteRequest` are still alive at that point, they will be referring to a buffer that could be reused for a new request at any point.
 
 ## Documentation
 
