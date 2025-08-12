@@ -8,7 +8,6 @@ package distributor
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -123,16 +122,6 @@ var (
 	)
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
-
-type LabelValueTooLongError struct {
-	Label  mimirpb.LabelAdapter
-	Series []mimirpb.LabelAdapter
-	Limit  int
-}
-
-func (e LabelValueTooLongError) Error() string {
-	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series))
-}
 
 // sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig interface {
@@ -249,9 +238,9 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 }
 
 // validateSample returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
@@ -270,9 +259,9 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 }
 
 // validateSampleHistogram returns an err if the sample is invalid.
-// The returned error may retain the provided series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
@@ -329,8 +318,8 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 }
 
 // validateExemplar returns an error if the exemplar is invalid.
-// The returned error may retain the provided series labels.
-func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
+func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.UnsafeMutableLabel, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
 		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{}))
@@ -391,7 +380,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
-	ValidationScheme(userID string) model.ValidationScheme
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -414,8 +403,8 @@ func removeNonASCIIChars(in string) (out string) {
 }
 
 // validateLabels returns an err if the labels are invalid.
-// The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
@@ -423,7 +412,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	validationScheme := cfg.ValidationScheme(userID)
+	validationScheme := cfg.NameValidationScheme(userID)
 
 	if !labels.IsValidMetricName(unsafeMetricName, validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
@@ -466,7 +455,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return LabelValueTooLongError{Label: l, Series: slices.Clone(ls), Limit: maxLabelValueLength}
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()

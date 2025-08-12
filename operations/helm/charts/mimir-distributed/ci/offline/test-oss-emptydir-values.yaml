@@ -1,0 +1,7 @@
+store_gateway:
+  enabled: true
+  persistentVolume:
+    enabled: false
+    emptyDir:
+      medium: Memory
+      sizeLimit: 1Gi

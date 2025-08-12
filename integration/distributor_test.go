@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -1288,4 +1290,256 @@ func assertStats(t *testing.T, expectedStats promRemote.WriteResponseStats, res 
 	exemplars, err := strconv.Atoi(exemplarsH)
 	require.NoError(t, err, "exemplars stats header value should be an integer")
 	require.Equal(t, expectedStats.Exemplars, exemplars, "wrong exemplars stats header value")
+}
+
+func TestDistributor_NameValidation(t *testing.T) {
+	for _, scheme := range []model.ValidationScheme{model.LegacyValidation, model.UTF8Validation} {
+		for _, rwVersion := range []string{"rw1", "rw2"} {
+			t.Run(path.Join(scheme.String(), rwVersion), func(t *testing.T) {
+				testDistributorNameValidation(t, rwVersion, scheme)
+			})
+		}
+	}
+}
+
+func testDistributorNameValidation(
+	t *testing.T,
+	rwVersion string,
+	validationScheme model.ValidationScheme,
+) {
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 5 * time.Minute
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+
+	baseFlags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-distributor.ingestion-tenant-shard-size":           "0",
+			"-ingester.ring.heartbeat-period":                    "1s",
+			"-validation.name-validation-scheme":                 validationScheme.String(),
+			"-timeseries-unmarshal-caching-optimization-enabled": "false",
+		},
+	)
+
+	queryFrontendFlags := mergeFlags(baseFlags, map[string]string{
+		"-query-frontend.cache-results":                      "true",
+		"-query-frontend.results-cache.backend":              "memcached",
+		"-query-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                strconv.FormatBool(false),
+		"-query-frontend.query-sharding-total-shards":        "32",
+		"-query-frontend.query-sharding-max-sharded-queries": "128",
+	})
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), queryFrontendFlags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	querierFlags := mergeFlags(
+		baseFlags,
+		map[string]string{
+			"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
+		},
+	)
+
+	distributorFlags := mergeFlags(baseFlags, map[string]string{
+		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
+		"-ingester.max-global-exemplars-per-user": "3",
+	})
+
+	ingesterFlags := mergeFlags(baseFlags, map[string]string{
+		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
+		"-ingester.max-global-exemplars-per-user": "100",
+	})
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), querierFlags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until the distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until the querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name       string
+		rw1request *prompb.WriteRequest
+		rw2request *promRW2.Request
+		queries    map[string]model.Matrix
+		wantStatus map[model.ValidationScheme]int
+	}{
+		{
+			name: "legacy metric name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "legacy_metricC"},
+							{Name: "label_name", Value: "test"},
+						},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Symbols: []string{
+					"", "__name__", "legacy_metricC",
+					"label_name", "test",
+				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC": {{
+					Metric: model.Metric{
+						"__name__":   "legacy_metricC",
+						"label_name": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusOK,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+		{
+			name: "utf8 metric name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels:  []prompb.Label{{Name: "__name__", Value: "utf_metric😀C"}},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Metadata: []prompb.MetricMetadata{
+					{
+						MetricFamilyName: "utf_metric😀C",
+						Help:             "some helpC",
+						Unit:             "someunitC",
+						Type:             prompb.MetricMetadata_COUNTER,
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+						Metadata: promRW2.Metadata{
+							Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+							UnitRef: 4,
+						},
+					},
+				},
+				Symbols: []string{
+					"",
+					"__name__", "utf_metric😀C",
+					"some helpC",
+					"someunitC",
+				},
+			},
+			queries: map[string]model.Matrix{
+				`{"utf_metric😀C"}`: {{
+					Metric: model.Metric{
+						"__name__": "utf_metric😀C",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusBadRequest,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+		{
+			name: "utf8 label name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "legacy_metricC_total_2"},
+							{Name: "utf8_label😀", Value: "test"},
+						},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Symbols: []string{
+					"", "__name__", "legacy_metricC_total_2",
+					"utf8_label😀", "test",
+				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC_total_2": {{
+					Metric: model.Metric{
+						"__name__":    "legacy_metricC_total_2",
+						"utf8_label😀": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusBadRequest,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var writeRes *http.Response
+			switch rwVersion {
+			case "rw1":
+				writeRes, err = client.PushRW1(tc.rw1request)
+			case "rw2":
+				writeRes, err = client.PushRW2(tc.rw2request)
+			default:
+				t.Fatalf("unsupported rw version: %s", rwVersion)
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus[validationScheme], writeRes.StatusCode)
+			if writeRes.StatusCode != http.StatusOK {
+				// No point in running queries if we didn't write anything.
+				return
+			}
+			for q, want := range tc.queries {
+				got, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				require.NoError(t, err)
+				require.Equal(t, want.String(), got.String())
+			}
+		})
+	}
 }

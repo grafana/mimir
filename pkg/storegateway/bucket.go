@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -714,7 +714,7 @@ func mapSeriesError(err error) error {
 	switch {
 	case errors.As(err, &stGwErr):
 		switch cause := stGwErr.errorCause(); cause {
-		case mimirpb.INSTANCE_LIMIT:
+		case mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		default:
 			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause}).Err()
@@ -1809,11 +1809,11 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.blocks = append(s.blocks, b)
 
 	// Always sort blocks by min time, then max time.
-	sort.Slice(s.blocks, func(j, k int) bool {
-		if s.blocks[j].meta.MinTime == s.blocks[k].meta.MinTime {
-			return s.blocks[j].meta.MaxTime < s.blocks[k].meta.MaxTime
+	slices.SortFunc(s.blocks, func(a, b *bucketBlock) int {
+		if a.meta.MinTime == b.meta.MinTime {
+			return cmp.Compare(a.meta.MaxTime, b.meta.MaxTime)
 		}
-		return s.blocks[j].meta.MinTime < s.blocks[k].meta.MinTime
+		return cmp.Compare(a.meta.MinTime, b.meta.MinTime)
 	})
 	return nil
 }

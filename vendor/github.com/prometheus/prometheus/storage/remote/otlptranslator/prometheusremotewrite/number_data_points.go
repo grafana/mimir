@@ -38,7 +38,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		pt := dataPoints.At(x)
-		labels := createAttributes(
+		labels, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -49,6 +49,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return err
+		}
 		sample := &prompb.Sample{
 			// convert ns to ms
 			Timestamp: convertTimeStamp(pt.Timestamp()),
@@ -80,7 +83,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -91,6 +94,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return err
+		}
 		sample := &prompb.Sample{
 			// convert ns to ms
 			Timestamp: timestamp,
@@ -119,22 +125,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			ts.Exemplars = append(ts.Exemplars, exemplars...)
 		}
 
-		// add created time series if needed
-		if settings.ExportCreatedMetric && isMonotonic {
-			if startTimestampMs == 0 {
-				return nil
-			}
-
-			createdLabels := make([]prompb.Label, len(lbls))
-			copy(createdLabels, lbls)
-			for i, l := range createdLabels {
-				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = metadata.MetricFamilyName + createdSuffix
-					break
-				}
-			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
-		}
 		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 

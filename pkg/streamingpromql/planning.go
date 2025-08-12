@@ -53,7 +53,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
 	}
 
 	if opts.EnableSkippingHistogramDecoding {
@@ -343,7 +343,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_TIMESTAMP:
 			vs, isVectorSelector := args[0].(*core.VectorSelector)
 			if isVectorSelector {
-				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
+				vs.ReturnSampleTimestamps = true
 			}
 		}
 

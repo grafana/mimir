@@ -247,7 +247,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr12036-d9b5f13dc5
+LATEST_BUILD_IMAGE_TAG ?= pr12352-27854ede92
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -414,13 +414,6 @@ lint: check-makefiles
 		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
-
-	# Use the faster slices.Sort where we can.
-	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
-	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
-	faillint -paths \
-		"sort.{Strings,Ints}=slices.Sort" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \

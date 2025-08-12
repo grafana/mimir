@@ -68,6 +68,7 @@ func reuseSymbolsSlice(s []string) {
 	for i := range s {
 		s[i] = ""
 	}
+	//nolint:staticcheck // SA6002: We can't put a pointer back in the pool, since it holds slices instead.
 	symbolsSlicePool.Put(s[:0])
 }
 
@@ -146,6 +147,15 @@ func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
 		prealloc[v-t.offset] = k
 	}
 	return prealloc
+}
+
+func (t *FastSymbolsTable) SymbolsSizeProto() int {
+	var l, n int
+	for k := range t.symbolsMap {
+		l = len(k)
+		n += 1 + l + sovMimir(uint64(l))
+	}
+	return n
 }
 
 func (t *FastSymbolsTable) Reset() {

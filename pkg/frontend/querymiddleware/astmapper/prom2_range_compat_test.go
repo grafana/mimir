@@ -15,8 +15,8 @@ func TestProm2RangeCompat_Cancellation(t *testing.T) {
 	cancel()
 
 	query, _ := parser.ParseExpr(`up{foo="bar"}`)
-	mapper := NewProm2RangeCompat(ctx)
-	_, err := mapper.Map(query)
+	mapper := NewProm2RangeCompat()
+	_, err := mapper.Map(ctx, query)
 
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -55,8 +55,9 @@ func TestProm2RangeCompat_Queries(t *testing.T) {
 			query, err := parser.ParseExpr(tc.query)
 			require.NoError(t, err)
 
-			mapper := NewProm2RangeCompat(context.Background())
-			mapped, err := mapper.Map(query)
+			mapper := NewProm2RangeCompat()
+			ctx := context.Background()
+			mapped, err := mapper.Map(ctx, query)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedQuery, mapped.String())
 		})

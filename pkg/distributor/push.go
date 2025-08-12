@@ -86,7 +86,7 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -96,7 +96,7 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -140,7 +140,7 @@ func (e distributorMaxOTLPRequestSizeErr) Error() string {
 
 func handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -165,7 +165,12 @@ func handler(
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
+			var rb *util.RequestBuffers
+			if newRequestBuffers != nil {
+				rb = newRequestBuffers()
+			} else {
+				rb = util.NewRequestBuffers(nil)
+			}
 			var req mimirpb.PreallocWriteRequest
 
 			req.UnmarshalFromRW2 = isRW2
