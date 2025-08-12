@@ -33,7 +33,7 @@
 ### Documentation
 
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
-* [ENHANCEMENT] Improve MimirIngesterReachingSeriesLimit runbook. #12356
+* [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 
 ## 2.17.0-rc.1
 
