@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -138,22 +139,49 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	recordsProcessedThisBatch := 0
 	for recordsRemainingInBatch > 0 {
-		level.Info(t.logger).Log("msg", "poll fetches")
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			level.Error(t.logger).Log("fetch errors", "errs", errs)
 			break
 		}
-		level.Info(t.logger).Log("msg", "num records", "count", fetches.NumRecords())
 
 		recordsRemainingInBatch -= int64(fetches.NumRecords())
-		recordsProcessedThisBatch += len(fetches.Records())
+		recordsProcessedThisBatch += fetches.NumRecords()
+
+		err = t.testBatch(fetches)
+		if err != nil {
+			// Log errors, but don't fail them, this is experimental and we don't want to fail the actual continuous tester yet.
+			level.Error(t.logger).Log("msg", "test failed", "reason", err)
+			err = nil
+		}
 	}
 
-	level.Info(t.logger).Log("msg", "processed batch", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff)
+	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff)
 
 	// Update to the end.
 	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
 
 	return nil
+}
+
+func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
+	var errs []error
+	fetches.EachRecord(func(rec *kgo.Record) {
+		req := mimirpb.PreallocWriteRequest{}
+		defer mimirpb.ReuseSlice(req.Timeseries)
+
+		version := ingest.ParseRecordVersion(rec)
+		if version > ingest.LatestRecordVersion {
+			errs = append(errs, fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion))
+			return
+		}
+
+		err := ingest.DeserializeRecordContent(rec.Value, &req, version)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err))
+			return
+		}
+	})
+
+	return errors.Join(errs...)
 }
