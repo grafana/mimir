@@ -1791,8 +1791,8 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# (experimental) True to enable rewriting queries to propagate label matchers
-# across binary expressions.
+# (experimental) Set to true to enable rewriting queries to propagate label
+# matchers across binary expressions.
 # CLI flag: -query-frontend.rewrite-propagate-matchers
 [rewrite_propagate_matchers: <boolean> | default = false]
 

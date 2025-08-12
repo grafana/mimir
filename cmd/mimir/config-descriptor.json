@@ -7426,7 +7426,7 @@
           "kind": "field",
           "name": "rewrite_propagate_matchers",
           "required": false,
-          "desc": "True to enable rewriting queries to propagate label matchers across binary expressions.",
+          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.rewrite-propagate-matchers",
