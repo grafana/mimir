@@ -37,4 +37,4 @@ Grafana and Grafana Cloud offer a variety of visualizations to suit different us
 
 ## Get started with Grafana Mimir
 
-To get started running Grafana Mimir, refer to [Get started with Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/).
+To get started with Grafana Mimir, refer to [Get started with Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/).
