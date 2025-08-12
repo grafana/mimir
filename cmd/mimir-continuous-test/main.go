@@ -74,6 +74,7 @@ func main() {
 	// Run continuous testing.
 	m := continuoustest.NewManager(cfg.Manager, logger)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
+	m.AddTest(continuoustest.NewIngestStorageRecordTest(cfg.IngestStorageRecordTest, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
 		if !errors.Is(err, modules.ErrStopProcess) {
 			level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
