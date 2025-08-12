@@ -94,22 +94,10 @@ func (c *Config) Validate() error {
 	if err := c.Ring.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter.ring config")
 	}
-
-	// Use reflection to validate that enabled metrics correspond to actual struct fields
-	limitsType := reflect.TypeOf(validation.Limits{})
-	defaultLimits := &validation.Limits{} // Create a zero-value instance for type checking
-
+	fieldRegistry := newLimitsFieldRegistry()
 	for _, metricName := range c.EnabledMetrics {
-		field, found := getFieldByYamlTag(limitsType, metricName)
-		if !found {
-			return fmt.Errorf("enabled-metrics: unknown metric name '%s' - must match a yaml tag in the Limits struct", metricName)
-		}
-
-		// Attempt to convert the field type to float64 to ensure it's supported
-		limitsValue := reflect.ValueOf(defaultLimits).Elem()
-		fieldValue := limitsValue.FieldByName(field.Name)
-		if _, err := convertToFloat64(fieldValue); err != nil {
-			return fmt.Errorf("enabled-metrics: metric '%s' has unsupported type %s - %v", metricName, fieldValue.Type(), err)
+		if err := fieldRegistry.ValidateMetricName(metricName); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -202,26 +190,22 @@ func convertToFloat64(value reflect.Value) (float64, error) {
 	return 0.0, fmt.Errorf("cannot convert type %s to float64", value.Type())
 }
 
-// getFieldByYamlTag finds a struct field by its yaml tag value
-func getFieldByYamlTag(structType reflect.Type, yamlTag string) (reflect.StructField, bool) {
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
-		tag := field.Tag.Get("yaml")
-		if tag != "" {
-			// Remove any options like ",omitempty"
-			tagValue := strings.Split(tag, ",")[0]
-			if tagValue == yamlTag {
-				return field, true
-			}
-		}
-	}
-	return reflect.StructField{}, false
+// LimitsFieldRegistry provides efficient field lookup and validation for validation.Limits struct
+type LimitsFieldRegistry struct {
+	limitsType         reflect.Type
+	fieldsByYamlTag    map[string]reflect.StructField
+	allowedMetricNames []string
+	defaultLimitsValue reflect.Value
 }
 
-// getAllowedMetricNames extracts all yaml tag values from validation.Limits struct
-func getAllowedMetricNames() []string {
-	var metricNames []string
+// newLimitsFieldRegistry creates a new registry for validation.Limits struct field operations
+func newLimitsFieldRegistry() *LimitsFieldRegistry {
 	limitsType := reflect.TypeOf(validation.Limits{})
+	defaultLimits := &validation.Limits{}
+	defaultLimitsValue := reflect.ValueOf(defaultLimits).Elem()
+
+	fieldsByTag := make(map[string]reflect.StructField)
+	var metricNames []string
 
 	for i := 0; i < limitsType.NumField(); i++ {
 		field := limitsType.Field(i)
@@ -230,42 +214,79 @@ func getAllowedMetricNames() []string {
 			// Remove any options like ",omitempty"
 			tagValue := strings.Split(tag, ",")[0]
 			if tagValue != "" {
+				fieldsByTag[tagValue] = field
 				metricNames = append(metricNames, tagValue)
 			}
 		}
 	}
-	return metricNames
+
+	return &LimitsFieldRegistry{
+		limitsType:         limitsType,
+		fieldsByYamlTag:    fieldsByTag,
+		allowedMetricNames: metricNames,
+		defaultLimitsValue: defaultLimitsValue,
+	}
+}
+
+// GetField returns the struct field for a given yaml tag name
+func (r *LimitsFieldRegistry) GetField(yamlTag string) (reflect.StructField, bool) {
+	field, found := r.fieldsByYamlTag[yamlTag]
+	return field, found
+}
+
+// ValidateMetricName validates that a metric name exists and can be converted to float64
+func (r *LimitsFieldRegistry) ValidateMetricName(metricName string) error {
+	field, found := r.fieldsByYamlTag[metricName]
+	if !found {
+		return fmt.Errorf("enabled-metrics: unknown metric name '%s' - must match a yaml tag in the Limits struct", metricName)
+	}
+
+	// Attempt to convert the field type to float64 to ensure it's supported
+	fieldValue := r.defaultLimitsValue.FieldByName(field.Name)
+	if _, err := convertToFloat64(fieldValue); err != nil {
+		return fmt.Errorf("enabled-metrics: metric '%s' has unsupported type %s - %v", metricName, fieldValue.Type(), err)
+	}
+
+	return nil
+}
+
+// GetAllowedMetricNames returns all available metric names
+func (r *LimitsFieldRegistry) GetAllowedMetricNames() []string {
+	return r.allowedMetricNames
 }
 
 func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []ExportedMetric) []ExportedMetric {
-	var exportedMetrics []ExportedMetric
-	limitsType := reflect.TypeOf(validation.Limits{})
+	var (
+		exportedMetrics []ExportedMetric
+		fieldRegistry   = newLimitsFieldRegistry()
+	)
 
-	// Get all possible metric names from struct yaml tags and check if each is enabled
-	allMetricNames := getAllowedMetricNames()
-	for _, metricName := range allMetricNames {
+	// Get all possible metric names from global registry and check if each is enabled
+	for _, metricName := range fieldRegistry.GetAllowedMetricNames() {
 		if enabledMetrics.IsAllowed(metricName) {
-			if field, found := getFieldByYamlTag(limitsType, metricName); found {
-				fieldName := field.Name
-
-				// Create a getter function for this field using a closure that captures fieldName
-				exportedMetrics = append(exportedMetrics, ExportedMetric{
-					Name: metricName,
-					Get: func(fName string) func(*validation.Limits) float64 {
-						return func(limits *validation.Limits) float64 {
-							limitsValue := reflect.ValueOf(limits).Elem()
-							fieldValue := limitsValue.FieldByName(fName)
-							value, err := convertToFloat64(fieldValue)
-							if err != nil {
-								// Return 0.0 as fallback to avoid breaking metrics collection
-								// This should not happen in practice if the reflection setup is correct
-								return 0.0
-							}
-							return value
-						}
-					}(fieldName),
-				})
+			field, found := fieldRegistry.GetField(metricName)
+			if !found {
+				panic("couldn't find fields that fields registry returned, this shouldn't happen")
 			}
+			fieldName := field.Name
+
+			// Create a getter function for this field using a closure that captures fieldName
+			exportedMetrics = append(exportedMetrics, ExportedMetric{
+				Name: metricName,
+				Get: func(fName string) func(*validation.Limits) float64 {
+					return func(limits *validation.Limits) float64 {
+						limitsValue := reflect.ValueOf(limits).Elem()
+						fieldValue := limitsValue.FieldByName(fName)
+						value, err := convertToFloat64(fieldValue)
+						if err != nil {
+							// Return 0.0 as fallback to avoid breaking metrics collection
+							// This should not happen in practice if the reflection setup is correct
+							return 0.0
+						}
+						return value
+					}
+				}(fieldName),
+			})
 		}
 	}
 
