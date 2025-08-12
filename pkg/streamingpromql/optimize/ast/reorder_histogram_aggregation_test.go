@@ -35,6 +35,11 @@ var testCasesReorderHistogramAggregation = map[string]string{
 	"histogram_sum(rate(foo[2m]))":              "histogram_sum(rate(foo[2m]))",
 	`3 + (((histogram_sum(sum(foo)))))`:         `3 + (((sum(histogram_sum(foo)))))`,
 	`vector(3) + (((histogram_sum(sum(foo)))))`: `vector(3) + (((sum(histogram_sum(foo)))))`,
+
+	// Do not reorder when __name__ is used in grouping or matcher as the histogram function drops the metric name which will cause incorrect aggregations or vector cannot contain metrics with the same labelset error.
+	`histogram_sum(sum by (__name__) (foo))`:            `histogram_sum(sum by (__name__) (foo))`,
+	`histogram_sum(sum({__name__=~"foo.*"}))`:           `histogram_sum(sum({__name__=~"foo.*"}))`,
+	`histogram_sum(sum(rate({__name__=~"foo.*"}[2m])))`: `histogram_sum(sum(rate({__name__=~"foo.*"}[2m])))`,
 }
 
 func TestReorderHistogramAggregation(t *testing.T) {

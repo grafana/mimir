@@ -5,6 +5,7 @@ package ast
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -56,6 +57,18 @@ func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr par
 		return expr, false, nil
 	}
 
+	for _, label := range agg.Grouping {
+		if label == labels.MetricName {
+			// Do not reorder if __name__ is used in grouping, as it can lead to incorrect aggregations.
+			return expr, false, nil
+		}
+	}
+
+	if vectorSelectorContainsNonExactMetricNameMatcher(agg.Expr) {
+		// Do not reorder if any vector selector matcher specifies __name__, as it can lead to errors due to duplicate label sets.
+		return expr, false, nil
+	}
+
 	newExpr := &parser.AggregateExpr{
 		Op: agg.Op,
 		Expr: &parser.Call{
@@ -80,4 +93,39 @@ func (*reorderHistogramAggregation) isSwitchableCall(callFunc *parser.Function) 
 
 func (*reorderHistogramAggregation) isSwitchableAgg(op parser.ItemType) bool {
 	return op == parser.SUM || op == parser.AVG
+}
+
+func vectorSelectorContainsNonExactMetricNameMatcher(expr parser.Expr) bool {
+	switch e := expr.(type) {
+	case *parser.VectorSelector:
+		for _, matcher := range e.LabelMatchers {
+			if matcher.Name == labels.MetricName && matcher.Type != labels.MatchEqual {
+				return true
+			}
+		}
+		return false
+	case *parser.MatrixSelector:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.VectorSelector)
+	case *parser.ParenExpr:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
+	case *parser.UnaryExpr:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
+	case *parser.Call:
+		// TODO: Handle more cases in this function and check if we need a separate one for this pass.
+		if i := getIndexForEligibleFunction(e.Func.Name); i >= 0 {
+			return vectorSelectorContainsNonExactMetricNameMatcher(e.Args[i])
+		}
+		// If unsure, don't reorder.
+		return true
+	case *parser.AggregateExpr:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
+	case *parser.BinaryExpr:
+		if vectorSelectorContainsNonExactMetricNameMatcher(e.LHS) {
+			return true
+		}
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.RHS)
+	default:
+		// If unsure, don't reorder.
+		return true
+	}
 }
