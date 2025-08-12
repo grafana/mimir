@@ -127,7 +127,14 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
 
-	t.client.AddConsumePartitions(offsets.KOffsets())
+	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
+	for _, partitionOffsets := range offsets {
+		for partition, offset := range partitionOffsets {
+			startOffsets["ingest"][partition] = kgo.NewOffset().At(offset.At)
+		}
+	}
+
+	t.client.AddConsumePartitions(startOffsets)
 
 	recordsProcessedThisBatch := 0
 	for recordsRemainingInBatch > 0 {
