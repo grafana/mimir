@@ -93,7 +93,7 @@ func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, 
 	return total, nil
 }
 
-// newHighCardinalityMockStatistics creates a mock statistics with higher cardinality
+// newHighCardinalityMockStatistics creates a mockStatistics with higher cardinality
 // to test the planner's behavior with realistic scale data
 func newHighCardinalityMockStatistics() *mockStatistics {
 	stats := &mockStatistics{
