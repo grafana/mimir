@@ -33,7 +33,7 @@ Follow these guidelines for setting a time range based on your query type.
 
 - Dashboards: For dashboards, use a time range that matches the typical viewing window. While users can zoom out to view more history, the default view should be efficient and focused on recent, relevant data.
 - Alerting rules: Alerting rules should almost always operate on short, recent time windows to detect current states or recent trends, rather than long-term historical patterns. Timely alerts depend on the quick evaluations of fresh data.
-- Ad-Hoc Analysis: When exploring data, start with small time ranges and gradually expand if more historical context is required for your investigation. This iterative approach prevents unnecessary strain on the system during exploratory phases.
+- Ad-hoc analysis: When exploring data, start with small time ranges and gradually expand if more historical context is required for your investigation. This iterative approach prevents unnecessary strain on the system during exploratory phases.
 
 If you don't specify a time range in your query, consider using the `-store.max-labels-query-length` configuration parameter to limit the maximum time range.
 
