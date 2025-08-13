@@ -262,7 +262,7 @@ func generatePodNames(numDeployments int, seriesPerPod uint64) map[string]uint64
 		for j := 0; j < replicas; j++ {
 			// Generate random-looking pod suffix (simulating Kubernetes pod names)
 			podName := fmt.Sprintf("%s-%s-%s", deployment,
-				generateRandomString(10), generateRandomString(5))
+				generateRandomString(i, 10), generateRandomString(j, 5))
 			podMap[podName] = seriesPerPod
 		}
 	}
@@ -271,12 +271,13 @@ func generatePodNames(numDeployments int, seriesPerPod uint64) map[string]uint64
 }
 
 // generateRandomString creates a pseudo-random string for pod names
-func generateRandomString(length int) string {
+func generateRandomString(seed, length int) string {
 	chars := "abcdefghijklmnopqrstuvwxyz0123456789"
 	result := make([]byte, length)
 	for i := range result {
 		// Use deterministic "randomness" based on position for consistent test results
-		result[i] = chars[(i*7+length*3)%len(chars)]
+		result[i] = chars[(seed*7+length*3)%len(chars)]
+		seed++
 	}
 	return string(result)
 }
