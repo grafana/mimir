@@ -76,6 +76,9 @@ func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.
 	return generatePredicateCombinations(allPlans, noopPlan, 0), nil
 }
 
+// generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
+// It generates 2^n plans for n predicates and appends them to the plans slice.
+// It also returns the plans slice with all the generated plans.
 func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredicates int) []plan {
 	if decidedPredicates == len(currentPlan.predicates) {
 		return append(plans, currentPlan)
