@@ -99,7 +99,7 @@ The partition will also periodically run a garbage-collection process to remove 
 
 ## Horizontal Scaling
 
-### Partition distribution across usage-tracker replicas.
+### Partition distribution across usage tracker replicas
 
 Partitions are distributed using a consistent division algorithm, ensuring that each replica owns a partition range no larger than 2x the smallest partition range owned by any other replica.
 This is done by consecutively dividing the partition ranges among the replicas, starting from the lowest index.
