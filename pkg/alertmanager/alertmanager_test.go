@@ -798,12 +798,9 @@ func TestGetFullStateHandler(t *testing.T) {
 
 		var parsedState clusterpb.FullState
 		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
-
 		require.Len(t, parsedState.Parts, 2)
-		var (
-			nflC int
-			silC int
-		)
+
+		var nflC, silC int
 		for _, p := range parsedState.Parts {
 			switch p.Key {
 			case "nfl:test":
