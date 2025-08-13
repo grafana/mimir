@@ -19,23 +19,26 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
 
 	type testCase struct {
+		name                  string
 		inputMatchers         []*labels.Matcher
 		expectedIndexMatchers []*labels.Matcher
 		expectedScanMatchers  []*labels.Matcher
 	}
 
 	data := newCSVTestData(
-		[]string{"inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
-				inputMatchers:         parseVectorSelector(t, record[0]),
-				expectedIndexMatchers: parseVectorSelector(t, record[1]),
-				expectedScanMatchers:  parseVectorSelector(t, record[2]),
+				name:                  record[0],
+				inputMatchers:         parseVectorSelector(t, record[1]),
+				expectedIndexMatchers: parseVectorSelector(t, record[2]),
+				expectedScanMatchers:  parseVectorSelector(t, record[3]),
 			}
 		},
 		func(tc testCase) []string {
 			return []string{
+				tc.name,
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.inputMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedIndexMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedScanMatchers)),
@@ -55,7 +58,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	}
 
 	for tcIdx, tc := range testCases {
-		t.Run(fmt.Sprintf("%s", tc.inputMatchers), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			// Create a basic lookup plan with the input matchers
 			inputPlan := &basicLookupPlan{
 				indexMatchers: tc.inputMatchers,
