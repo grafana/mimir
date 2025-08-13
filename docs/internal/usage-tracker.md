@@ -87,7 +87,7 @@ The partition service will subscribe to the events topic, which may receive two 
   - This event is used to achieve eventual consistency across replicas.
 - **SnapshotEvent**: contains the information about a single snapshot file produced by some replica (own events are ignored).
   - This file might contain one or multiple shards.
-  - Continuous snapshot loading is done to ensure that a replica that has not received updates for a given series hash won't garbage-collect it if a different replica updated it in the meanatime.
+  - Continuous snapshot loading is done to ensure that a replica that has not received updates for a given series hash won't garbage-collect it if a different replica updated it in the meantime.
 
 The partition service will also start to periodically produce snapshots of the current state:
 
