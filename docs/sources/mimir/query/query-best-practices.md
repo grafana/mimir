@@ -55,10 +55,10 @@ Filtering data in the query provides the following benefits.
 - Lower processing load: Mimir can apply filters at the storage layer, allowing it to discard irrelevant time series and data points before they are retrieved, processed, and aggregated. This significantly reduces the computational load on the Mimir cluster.
 - Improved query speed: Queries that are pre-filtered are generally faster to run and return results.
 
-### Implement Early Filtering
+Use these strategies to implement early filtering.
 
-- Use Label Selectors: Leverage precise label selectors within your PromQL query to narrow down the dataset from the start. (For more information, refer to [Use Precise Label Selectors](#use-precise-label-selectors) documentation.)
-- Apply Functions and Aggregations: If you need to transform or aggregate data, do so within the query. For example, `sum by (job) (metric_name)` is more efficient than retrieving all `metric_name` series and then summing them in Grafana.
+- Use label selectors: Leverage precise label selectors within your PromQL query to narrow down the dataset from the start. For more information, refer to [Use Precise Label Selectors](#use-precise-label-selectors).
+- Apply functions and aggregations: If you need to transform or aggregate data, do so within the query. For example, `sum by (job) (metric_name)` is more efficient than retrieving all `metric_name` series and then summing them in Grafana.
 
 ## Avoid high cardinality operations
 
