@@ -35,7 +35,7 @@ Follow these guidelines for setting a time range based on your query type:
 - Alerting rules: Alerting rules should almost always operate on short, recent time windows to detect current states or recent trends, rather than long-term historical patterns. Timely alerts depend on the quick evaluations of fresh data.
 - Ad-hoc analysis: When exploring data, start with small time ranges and gradually expand if more historical context is required for your investigation. This iterative approach prevents unnecessary strain on the system during exploratory phases.
 
-If you don't specify a time range in your query, consider using the `-store.max-labels-query-length` configuration parameter to limit the maximum time range.
+If you don't specify a time range in your query, consider using the `-store.max-labels-query-length` CLI flag to limit the maximum time range.
 
 Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provide higher resolution.
 
