@@ -278,6 +278,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  ncLatencyPanel(metricName, selector, multiplier='1e3')::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier),
+
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
@@ -1190,28 +1193,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Attributes') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: GetRange') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Upload') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
     ),
   ],
 
