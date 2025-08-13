@@ -290,10 +290,21 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	labelsComparer := cmp.Comparer(func(x, y mimirpb.LabelAdapter) bool {
 		return string(x.Name) == string(y.Name) && string(x.Value) == string(y.Value)
 	})
+	tsPtrComparer := cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
+		if a == nil && b == nil {
+			return true
+		}
+		if a == nil || b == nil {
+			return false
+		}
+		return cmp.Equal(*a, *b,
+			cmpopts.IgnoreFields(mimirpb.TimeSeries{}, "Labels", "Samples", "Exemplars", "Histograms"),
+		)
+	})
+
 	opts := []cmp.Option{
 		labelsComparer,
-		cmpopts.IgnoreFields(mimirpb.PreallocTimeseries{}, "TimeSeries", "Labels", "Samples", "Exemplars", "Histograms"),
-		cmpopts.IgnoreFields(mimirpb.TimeSeries{}, "Labels", "Samples", "Exemplars", "Histograms"),
+		tsPtrComparer,
 	}
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
 		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Inc()
