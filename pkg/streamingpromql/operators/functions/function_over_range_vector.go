@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -55,7 +54,12 @@ type FunctionOverRangeVector struct {
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
 	seriesValidationFunc RangeVectorSeriesValidationFunction
+
+	groups [][]PiecePair
 }
+
+const HeadMetadataGroupIdx = -1
+const TailMetadataGroupIdx = -2
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
@@ -193,6 +197,8 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
+	//TODO: need to control next series for head and tail too
+	//
 
 	defer func() {
 		m.currentSeriesIndex++
@@ -333,7 +339,22 @@ func (m *FunctionOverRangeVector) Close() {
 	m.scalarArgsData = nil
 }
 
+// TODO: don't need struct, can just append as two numbers in slice, we know even idx = piece, odd = idx in piece
+// TODO: think of less awful name
+type PiecePair struct {
+	Piece int
+	Idx   int
+}
+
+// TODO: is it worth tracking the metadata + idx? with range queries this won't be foolproof (new head in next step will not follow these idx rules)
+// This code is mostly from deduplicate_and_merge.go
 func (m *FunctionOverRangeVector) mergeSeriesMetadataWithIntermediate(ctx context.Context) ([]types.SeriesMetadata, error) {
+	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
+	outputGroupMap := map[string][]PiecePair{}
+
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	labelBytes := make([]byte, 0, 1024)
+
 	// merge metadata from start / end + intermediate results
 	startMetadata, err := m.InnerHead.SeriesMetadata(ctx)
 	if err != nil {
@@ -343,47 +364,85 @@ func (m *FunctionOverRangeVector) mergeSeriesMetadataWithIntermediate(ctx contex
 	if err != nil {
 		return nil, err
 	}
-	metadata := make([][]types.SeriesMetadata, 0, len(m.intermediateResults)+2)
-	metadata = append(metadata, startMetadata, endMetadata)
-	for _, result := range m.intermediateResults {
-		//TODO: is this the right metadata? this is the metadata for the current func, not the inner func
-		metadata = append(metadata, result.Series)
-	}
-	return mergeSeriesMetadata(metadata)
-}
 
-// TODO: best merging algorithm? This is currently copied/based on deduplicate_and_merge.go
-// TODO: can duplicate labelsets be returned by head/tail? is that allowed? and does that need to be persisted?
-func mergeSeriesMetadata(metadataSets [][]types.SeriesMetadata) ([]types.SeriesMetadata, error) {
-	if len(metadataSets) == 0 {
-		return nil, nil
-	}
-	if len(metadataSets) == 1 {
-		return metadataSets[0], nil
-	}
-
-	// TODO: we might want to track the idx of the series like dedupe and merge rather than discarding it? then we have access to the idx for the cache entries when we read the data
-	seriesMap := make(map[string]types.SeriesMetadata)
-
-	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-	labelBytes := make([]byte, 0, 1024)
-
-	for _, metadataSet := range metadataSets {
-		for _, series := range metadataSet {
-			labelBytes = series.Labels.Bytes(labelBytes)
-			// Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
-			seriesMap[string(labelBytes)] = series
+	for seriesIdx, series := range startMetadata {
+		labelBytes = series.Labels.Bytes(labelBytes)
+		g, groupExists := outputGroupMap[string(labelBytes)]
+		if !groupExists {
+			outputGroupMap[string(labelBytes)] = []PiecePair{{HeadMetadataGroupIdx, seriesIdx}}
+		} else {
+			outputGroupMap[string(labelBytes)] = append(g, PiecePair{HeadMetadataGroupIdx, seriesIdx})
 		}
 	}
 
-	result := make([]types.SeriesMetadata, 0, len(seriesMap))
-	for _, series := range seriesMap {
-		result = append(result, series)
+	for irIdx, result := range m.intermediateResults {
+		for seriesIdx, series := range result.Series {
+			labelBytes = series.Labels.Bytes(labelBytes)
+			g, groupExists := outputGroupMap[string(labelBytes)]
+			if !groupExists {
+				outputGroupMap[string(labelBytes)] = []PiecePair{{irIdx, seriesIdx}}
+			} else {
+				outputGroupMap[string(labelBytes)] = append(g, PiecePair{irIdx, seriesIdx})
+			}
+		}
 	}
 
-	slices.SortFunc(result, func(a, b types.SeriesMetadata) int {
-		return labels.Compare(a.Labels, b.Labels)
+	for seriesIdx, series := range endMetadata {
+		labelBytes = series.Labels.Bytes(labelBytes)
+		g, groupExists := outputGroupMap[string(labelBytes)]
+		if !groupExists {
+			outputGroupMap[string(labelBytes)] = []PiecePair{{TailMetadataGroupIdx, seriesIdx}}
+		} else {
+			outputGroupMap[string(labelBytes)] = append(g, PiecePair{TailMetadataGroupIdx, seriesIdx})
+		}
+	}
+
+	outputGroups := make([][]PiecePair, 0, len(outputGroupMap))
+	for _, group := range outputGroupMap {
+		outputGroups = append(outputGroups, group)
+	}
+
+	// Sort the groups so that the groups that can be completed earliest are returned earliest.
+	// TODO: we might want to sort by label name instead of idxs- if we have a new head returned (if range query that's shifted), we will need to match its series metadata with what's here
+	// or is it even worth calculating order here?
+	slices.SortFunc(outputGroups, func(a, b []PiecePair) int {
+		aLastIndex := a[len(a)-1].Piece
+		bLastIndex := b[len(b)-1].Piece
+
+		if aLastIndex == bLastIndex {
+			return a[len(a)-1].Idx - b[len(b)-1].Idx
+		}
+
+		// if is tail piece (-2) that can't be an earlier piece than bLastIndex
+		if aLastIndex == -2 {
+			return 1
+		}
+
+		return aLastIndex - bLastIndex
 	})
 
-	return result, nil
+	// TODO: sort out admin on memory consumption tracker
+	// Now that we know which series we'll return, and in what order, create the list of output series.
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputGroups), m.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, group := range outputGroups {
+		first := group[0]
+		if first.Piece == HeadMetadataGroupIdx {
+			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, startMetadata[first.Idx])
+		} else if first.Piece == TailMetadataGroupIdx {
+			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, endMetadata[first.Idx])
+		} else {
+			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, m.intermediateResults[first.Piece].Series[first.Idx])
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	m.groups = outputGroups
+
+	return outputMetadata, nil
 }
