@@ -300,3 +300,26 @@ func (e *errorMockStatistics) LabelValuesCount(context.Context, string) (uint64,
 func (e *errorMockStatistics) LabelValuesCardinality(context.Context, string, ...string) (uint64, error) {
 	return 0, fmt.Errorf("mock statistics error: failed to get label values cardinality")
 }
+
+func newSingleValueStatistics() *mockStatistics {
+	return &mockStatistics{
+		seriesPerValue: map[string]map[string]uint64{
+			"label": {
+				"value": 10,
+			},
+			"__name__": {
+				"a": 1,
+				"b": 1,
+				"c": 1,
+				"d": 1,
+				"e": 1,
+				"f": 1,
+				"g": 1,
+				"h": 1,
+				"i": 1,
+				"j": 1,
+			},
+		},
+		totalSeries: 10,
+	}
+}

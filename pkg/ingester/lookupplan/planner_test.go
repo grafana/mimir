@@ -68,6 +68,8 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
+			require.NotEmpty(t, tc.expectedIndexMatchers, "PostingsForMatchers doesn't support empty index matchers, your test case is wrong")
+
 			// Verify that the partitioning is correct
 			assert.ElementsMatch(t, matchersStrings(tc.expectedIndexMatchers), matchersStrings(result.IndexMatchers()))
 			assert.ElementsMatch(t, matchersStrings(tc.expectedScanMatchers), matchersStrings(result.ScanMatchers()))
@@ -224,4 +226,35 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 
 		assert.ElementsMatch(t, allOriginalMatchers, allResultMatchers, "Planner should preserve all matchers from scan-only input")
 	})
+}
+
+func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
+	ctx := context.Background()
+	stats := newSingleValueStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
+
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "label", "value"),
+	}
+
+	inputPlan := &basicLookupPlan{
+		indexMatchers: matchers,
+		scanMatchers:  []*labels.Matcher{},
+	}
+
+	result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers despite potentially higher cost")
+}
+
+func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
+	ctx := context.Background()
+	stats := newMockStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
+
+	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
+	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
+	assert.Nil(t, result, "Result should be nil when no matchers are provided")
 }

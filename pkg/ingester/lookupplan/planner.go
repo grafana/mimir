@@ -61,7 +61,15 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return cmp.Compare(a.totalCost(), b.totalCost())
 	})
 
-	return allPlans[0], nil
+	// Select the cheapest plan that has at least one index matcher.
+	// PostingsForMatchers will return incorrect results if there are no matchers.
+	for _, p := range allPlans {
+		if len(p.IndexMatchers()) > 0 {
+			return p, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no plan with index matchers found out of %d plans", len(allPlans))
 }
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
