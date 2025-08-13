@@ -145,17 +145,17 @@ func newHighCardinalityMockStatistics() *mockStatistics {
 	// Generate instances with realistic patterns
 	// Format: hostname-region-az-index
 	regions := []string{"us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"}
-	azs := []string{"a", "b", "c"}
+	availabilityZones := []string{"a", "b", "c"}
 	hostTypes := []string{"web", "api", "worker", "db", "cache", "monitor"}
 
 	seriesPerInstance := uint64(50) // Each instance has ~50 series
 	instanceCount := 0
 
 	for _, region := range regions {
-		for _, az := range azs {
+		for _, az := range availabilityZones {
 			for _, hostType := range hostTypes {
-				for i := 1; i <= 200; i++ { // 200 instances per host type per AZ
-					instanceName := fmt.Sprintf("%s-%s-%s%s-%03d", hostType, region, az, az, i)
+				for i := 1; i <= 200; i++ {
+					instanceName := fmt.Sprintf("%s-%s-%s-%03d", hostType, region, az, i)
 					instanceMap[instanceName] = seriesPerInstance
 					instanceCount++
 				}
