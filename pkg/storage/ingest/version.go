@@ -109,7 +109,7 @@ func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
 	case 1:
 		return versionOneRecordSerializer{}
 	case 2:
-		return versionTwoRecordSerializer{}
+		return VersionTwoRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -144,9 +144,9 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 	return records, nil
 }
 
-type versionTwoRecordSerializer struct{}
+type VersionTwoRecordSerializer struct{}
 
-func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func (v VersionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
 	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
 	defer mimirpb.ReuseRW2(reqv2)
 	if err != nil {
