@@ -61,7 +61,7 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m *MatrixSelector) OperatorFactory(_ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	matchers, err := LabelMatchersToPrometheusType(m.Matchers)
 	if err != nil {
 		return nil, err

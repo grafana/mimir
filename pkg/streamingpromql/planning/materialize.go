@@ -3,6 +3,8 @@
 package planning
 
 import (
+	"fmt"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -26,19 +28,7 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 		return f.Produce()
 	}
 
-	childTimeRange := node.ChildrenTimeRange(timeRange)
-	childrenNodes := node.Children()
-	childrenOperators := make([]types.Operator, 0, len(childrenNodes))
-	for _, child := range childrenNodes {
-		o, err := m.ConvertNodeToOperator(child, childTimeRange)
-		if err != nil {
-			return nil, err
-		}
-
-		childrenOperators = append(childrenOperators, o)
-	}
-
-	f, err := node.OperatorFactory(childrenOperators, timeRange, m.operatorParams)
+	f, err := node.OperatorFactory(m, timeRange, m.operatorParams)
 	if err != nil {
 		return nil, err
 	}
@@ -46,4 +36,46 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 	m.operatorFactories[node] = f
 
 	return f.Produce()
+}
+
+func (m *Materializer) ConvertNodeToInstantVectorOperator(node Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	o, err := m.ConvertNodeToOperator(node, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	ivo, ok := o.(types.InstantVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected InstantVectorOperator, got %T", o)
+	}
+
+	return ivo, nil
+}
+
+func (m *Materializer) ConvertNodeToScalarOperator(node Node, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+	o, err := m.ConvertNodeToOperator(node, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	so, ok := o.(types.ScalarOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected ScalarOperator, got %T", o)
+	}
+
+	return so, nil
+}
+
+func (m *Materializer) ConvertNodeToStringOperator(node Node, timeRange types.QueryTimeRange) (types.StringOperator, error) {
+	o, err := m.ConvertNodeToOperator(node, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	so, ok := o.(types.StringOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected StringOperator, got %T", o)
+	}
+
+	return so, nil
 }
