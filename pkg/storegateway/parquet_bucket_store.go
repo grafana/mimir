@@ -696,8 +696,7 @@ func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.Seri
 	}
 	for labelsIt.Next() {
 		numSeries++
-		var lset labels.Labels
-		lset = labelsIt.At()
+		lset := labelsIt.At()
 
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
