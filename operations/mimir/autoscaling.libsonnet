@@ -274,10 +274,15 @@
       // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
       //
       // When computing the actual CPU utilization, We only take in account ready pods.
+      //
+      // We use irate() instead of rate() because it is more reliable when scrapes fail. It calculates
+      // the rate from only the last two data points in the range, whereas rate() extrapolates missing
+      // values over the full window, which can underestimate CPU utilization and trigger unnecessary
+      // downscaling.
       |||
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
           )[15m:]
@@ -288,13 +293,18 @@
       // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
       // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
       //
-      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
       // of containers there are running at any given time, without suffering the PromQL lookback period.
+      //
+      // We use irate() instead of rate() because it is more reliable when scrapes fail. It calculates
+      // the rate from only the last two data points in the range, whereas rate() extrapolates missing
+      // values over the full window, which can underestimate CPU utilization and trigger unnecessary
+      // downscaling.
       |||
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
             and
             max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
           )[15m:]
