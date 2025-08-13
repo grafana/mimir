@@ -783,20 +783,20 @@ func TestGetFullStateHandler(t *testing.T) {
 
 		body, err := io.ReadAll(rec.Body)
 		require.NoError(t, err)
-		var (
-			parsedBody struct {
-				Status string `json:"status"`
-				Data   struct {
-					State string `json:"state"`
-				} `json:"data"`
-			}
-			parsedState clusterpb.FullState
-		)
+
+		var parsedBody struct {
+			Status string `json:"status"`
+			Data   struct {
+				State string `json:"state"`
+			} `json:"data"`
+		}
 		require.NoError(t, json.Unmarshal(body, &parsedBody))
 		require.Equal(t, "success", parsedBody.Status)
 
 		decodedState, err := base64.StdEncoding.DecodeString(parsedBody.Data.State)
 		require.NoError(t, err)
+
+		var parsedState clusterpb.FullState
 		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
 
 		require.Len(t, parsedState.Parts, 2)
