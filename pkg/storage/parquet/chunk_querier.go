@@ -164,7 +164,7 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 
 	for i, shard := range shards {
 		errGroup.Go(func() error {
-			ss, err := shard.Query(ctx, sortSeries, minT, maxT, skipChunks, matchers)
+			ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
 			seriesSet[i] = ss
 			return err
 		})
