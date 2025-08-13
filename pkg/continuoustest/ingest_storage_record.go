@@ -271,7 +271,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 
 	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
-		t.metrics.recordsProcessedTotal.WithLabelValues(tenantID).Inc()
+		t.metrics.recordsWithMetadataProcessedTotal.WithLabelValues(tenantID).Inc()
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
