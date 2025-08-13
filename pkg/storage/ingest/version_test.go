@@ -267,7 +267,7 @@ func TestRecordSerializer(t *testing.T) {
 			},
 		}
 
-		serializer := versionTwoRecordSerializer{}
+		serializer := VersionTwoRecordSerializer{}
 		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
 		require.NoError(t, err)
 		require.Len(t, records, 1)

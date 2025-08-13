@@ -21,6 +21,7 @@ type IngestStorageRecordTestConfig struct {
 	Kafka                    ingest.KafkaConfig `yaml:"-"`
 	ConsumerGroup            string             `yaml:"consumer_group"`
 	MaxJumpLimitPerPartition int                `yaml:"max_jump_size"`
+	MaxRecordsPerRun         int                `yaml:"max_records_per_run"`
 	RecordsProcessedPercent  int                `yaml:"records_processed_percent"`
 }
 
@@ -28,6 +29,7 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	// cfg.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
 	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
+	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. ")
 	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
 
@@ -75,7 +77,6 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 
 // Run implements Test.
 func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error {
-	level.Info(t.logger).Log("msg", "test loop")
 	topics, err := t.adminClient.ListTopics(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to ping kafka: %w", err)
@@ -127,6 +128,10 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	}
 
 	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
+	if recordsRemainingInBatch > int64(t.cfg.MaxRecordsPerRun) {
+		level.Info(t.logger).Log("msg", "the expected number of records is larger than the limit", "expectedRecordsToProcess", recordsRemainingInBatch, "limit", t.cfg.MaxRecordsPerRun)
+		recordsRemainingInBatch = int64(t.cfg.MaxRecordsPerRun)
+	}
 
 	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
 	for _, partitionOffsets := range offsets {
@@ -167,21 +172,73 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 	var errs []error
 	fetches.EachRecord(func(rec *kgo.Record) {
-		req := mimirpb.PreallocWriteRequest{}
-		defer mimirpb.ReuseSlice(req.Timeseries)
-
-		version := ingest.ParseRecordVersion(rec)
-		if version > ingest.LatestRecordVersion {
-			errs = append(errs, fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion))
-			return
-		}
-
-		err := ingest.DeserializeRecordContent(rec.Value, &req, version)
+		err := t.testRec(rec)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err))
-			return
+			errs = append(errs, err)
+			tenantID := string(rec.Key)
+			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "errs", errs)
 		}
 	})
 
 	return errors.Join(errs...)
+}
+
+func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
+	req := mimirpb.PreallocWriteRequest{}
+	defer mimirpb.ReuseSlice(req.Timeseries)
+
+	version := ingest.ParseRecordVersion(rec)
+	if version > ingest.LatestRecordVersion {
+		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion)
+	}
+
+	err := ingest.DeserializeRecordContent(rec.Value, &req, version)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal record from ingest topic: %w", err)
+	}
+
+	ser := ingest.VersionTwoRecordSerializer{}
+	v2Records, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
+	if len(v2Records) == 0 {
+		return fmt.Errorf("no records returned after v2 conversion")
+	}
+	if len(v2Records) > 1 {
+		return fmt.Errorf("A V1 record was split when converted to its smaller V2 counterpart. This is highly unusual")
+	}
+	v2Rec := v2Records[0]
+
+	if string(rec.Key) != string(v2Rec.Key) {
+		return fmt.Errorf("Key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key))
+	}
+
+	if version != 2 {
+		if len(v2Rec.Value) > len(rec.Value) {
+			level.Warn(t.logger).Log("msg", "a v2 record was larger than its v1 counterpart", "user", string(rec.Key), "v1size", len(rec.Value), "v2size", len(v2Rec.Value))
+		}
+	}
+
+	v2Req := mimirpb.PreallocWriteRequest{}
+	defer mimirpb.ReuseSlice(v2Req.Timeseries)
+	err = ingest.DeserializeRecordContent(v2Rec.Value, &v2Req, 2)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal V2 record: %w", err)
+	}
+
+	if v2Req.SkipLabelValidation != req.SkipLabelValidation {
+		return fmt.Errorf("SkipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation)
+	}
+	if v2Req.SkipLabelCountValidation != req.SkipLabelCountValidation {
+		return fmt.Errorf("SkipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation)
+	}
+	if v2Req.Source != req.Source {
+		return fmt.Errorf("Source did not match, original: %d, v2: %d", req.Source, v2Req.Source)
+	}
+	if v2Req.SymbolsRW2 != nil {
+		return fmt.Errorf("v2 record had a SymbolsRW2 unmarshalling field left populated")
+	}
+	if v2Req.TimeseriesRW2 != nil {
+		return fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated")
+	}
+
+	return nil
 }
