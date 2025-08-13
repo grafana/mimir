@@ -1370,7 +1370,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__",namespace="default"}) > 0
           )[15m:]
@@ -1434,7 +1434,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1498,7 +1498,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -1562,7 +1562,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1626,7 +1626,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__",namespace="default"}) > 0
           )[15m:]
@@ -1690,7 +1690,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1754,7 +1754,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -1818,7 +1818,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1882,7 +1882,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1__",namespace="default"}) > 0
           )[15m:]
@@ -1944,7 +1944,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -2006,7 +2006,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -2068,7 +2068,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -2130,7 +2130,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2194,7 +2194,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2258,7 +2258,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2322,7 +2322,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2386,7 +2386,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2450,7 +2450,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2514,7 +2514,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2578,7 +2578,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2642,7 +2642,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2704,7 +2704,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2766,7 +2766,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2828,7 +2828,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2890,7 +2890,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__",namespace="default"}) > 0
           )[15m:]
@@ -2954,7 +2954,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3018,7 +3018,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3082,7 +3082,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3146,7 +3146,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__",namespace="default"}) > 0
           )[15m:]
@@ -3210,7 +3210,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3274,7 +3274,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3338,7 +3338,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3402,7 +3402,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1__",namespace="default"}) > 0
           )[15m:]
@@ -3464,7 +3464,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3526,7 +3526,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3588,7 +3588,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3650,7 +3650,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3714,7 +3714,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -3778,7 +3778,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3842,7 +3842,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -3906,7 +3906,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3970,7 +3970,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4034,7 +4034,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4098,7 +4098,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4162,7 +4162,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1__",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4224,7 +4224,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4286,7 +4286,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4348,7 +4348,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]

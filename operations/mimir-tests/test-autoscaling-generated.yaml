@@ -1976,7 +1976,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="alertmanager",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="alertmanager",namespace="default"}[5m]))
             and
             max by (pod) (up{container="alertmanager",namespace="default"}) > 0
           )[15m:]
@@ -2048,7 +2048,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2163,7 +2163,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="query-frontend",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="query-frontend",namespace="default"}[5m]))
             and
             max by (pod) (up{container="query-frontend",namespace="default"}) > 0
           )[15m:]
@@ -2225,7 +2225,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="ruler",namespace="default"}[5m]))
             and
             max by (pod) (up{container="ruler",namespace="default"}) > 0
           )[15m:]
@@ -2287,7 +2287,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler-querier",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="ruler-querier",namespace="default"}[5m]))
             and
             max by (pod) (up{container="ruler-querier",namespace="default"}) > 0
           )[15m:]
@@ -2357,7 +2357,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler-query-frontend",namespace="default"}[5m]))
+            sum by (pod) (irate(container_cpu_usage_seconds_total{container="ruler-query-frontend",namespace="default"}[5m]))
             and
             max by (pod) (up{container="ruler-query-frontend",namespace="default"}) > 0
           )[15m:]
