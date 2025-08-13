@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
@@ -238,6 +240,14 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 	if v2Req.TimeseriesRW2 != nil {
 		return fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated")
+	}
+
+	sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
+		return m1.MetricFamilyName < m2.MetricFamilyName
+	})
+	if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
+		diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
+		return fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff)
 	}
 
 	return nil
