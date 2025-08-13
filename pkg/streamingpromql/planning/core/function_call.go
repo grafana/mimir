@@ -99,6 +99,7 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 		return nil, err
 	}
 
+	//TODO: special logic here to delay materialization for func over range vector (once https://github.com/grafana/mimir/pull/12377/ is merged in)
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
 

@@ -27,6 +27,7 @@ import (
 type FunctionOverRangeVector struct {
 	// Separate out operators for intermediate result caching
 	// should this be moved somewhere else (not sure if FunctionOverRangeVector is the most suitable)
+	// TODO: this won't work properly for range queries, as head will need to update over time
 	InnerHead types.RangeVectorOperator
 	InnerTail types.RangeVectorOperator
 	// TODO: is middle necessary? if we always recompute if missing a block
@@ -87,6 +88,7 @@ func NewFunctionOverRangeVector(
 		cachedStart := ((start / blockLengthMs) + 1) * blockLengthMs
 		cachedEnd := (end / blockLengthMs) * blockLengthMs
 
+		// TODO: clone plan.Node for time range instead of inner operator (we can delay materialisation following https://github.com/grafana/mimir/pull/12377/)
 		o.InnerHead = inner.CloneForTimeRange(time.UnixMilli(start), time.UnixMilli(cachedStart))
 		o.InnerMiddle = inner.CloneForTimeRange(time.UnixMilli(cachedStart), time.UnixMilli(cachedEnd))
 		o.InnerTail = inner.CloneForTimeRange(time.UnixMilli(cachedEnd), time.UnixMilli(end))
@@ -146,7 +148,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		}
 	}
 
-	// TODO: what to do with this?
 	if m.metricNames != nil {
 		m.metricNames.CaptureMetricNames(metadata)
 	}
@@ -205,6 +206,12 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 
 	for {
+		// for instant queries only atm
+		head, err := m.InnerHead.NextStepSamples()
+		if err != nil { // TODO: EOS is probably valid
+			return types.InstantVectorSeriesData{}, err
+		}
+
 		// FIXME when using cached pieces we only want the head and tail here; when building pieces we want multiple blocks.
 		step, err := m.Inner.NextStepSamples()
 

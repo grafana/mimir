@@ -171,6 +171,6 @@ func (m *RangeVectorSelector) Close() {
 	m.chunkIterator = nil
 }
 
-func (m *RangeVectorSelector) CloneForTimeRange(start, end time.Time) RangeVectorSelector {
+func (m *RangeVectorSelector) CloneForTimeRange(start, end time.Time) types.RangeVectorOperator {
 	panic("unimplemented")
 }
