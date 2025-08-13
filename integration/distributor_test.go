@@ -1521,11 +1521,12 @@ func testDistributorNameValidation(
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var writeRes *http.Response
-			if rwVersion == "rw1" {
+			switch rwVersion {
+			case "rw1":
 				writeRes, err = client.PushRW1(tc.rw1request)
-			} else if rwVersion == "rw2" {
+			case "rw2":
 				writeRes, err = client.PushRW2(tc.rw2request)
-			} else {
+			default:
 				t.Fatalf("unsupported rw version: %s", rwVersion)
 			}
 			require.NoError(t, err)

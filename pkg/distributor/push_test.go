@@ -563,10 +563,11 @@ func createMalformedRW1Request(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
+func createPrometheusRemoteWriteProtobuf(t testing.TB, timeseries ...prompb.TimeSeries) []byte {
 	t.Helper()
-	input := prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
+
+	if len(timeseries) == 0 {
+		timeseries = []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
 					{Name: "__name__", Value: "foo"},
@@ -577,29 +578,36 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 				Histograms: []prompb.Histogram{
 					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))},
 			},
-		},
+		}
+	}
+
+	input := prompb.WriteRequest{
+		Timeseries: timeseries,
 	}
 	inputBytes, err := input.Marshal()
 	require.NoError(t, err)
 	return inputBytes
 }
 
-func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool) []byte {
+func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool, timeseries ...mimirpb.PreallocTimeseries) []byte {
 	t.Helper()
 	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
-	ts := mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
+
+	if len(timeseries) == 0 {
+		timeseries = []mimirpb.PreallocTimeseries{{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+				},
+				Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
 			},
-			Samples: []mimirpb.Sample{
-				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
-			},
-			Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
-		},
+		}}
 	}
 	input := mimirpb.WriteRequest{
-		Timeseries:               []mimirpb.PreallocTimeseries{ts},
+		Timeseries:               timeseries,
 		Source:                   mimirpb.RULE,
 		SkipLabelValidation:      skipLabelNameValidation,
 		SkipLabelCountValidation: skipLabelCountValidation,

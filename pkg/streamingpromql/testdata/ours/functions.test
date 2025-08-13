@@ -302,6 +302,22 @@ eval range from 0 to 10m step 5m label_join(series, "(export)", "-", "label", "o
   series{"(export)"="b-2", label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
   series{"(export)"="c-3", label="c", opt="3"} NaN _
 
+# Empty destination label name
+eval instant at 0m label_join(series, "", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): $
+
+# Empty source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "")
+  expect fail regex:^invalid source label name in label_join\(\): $
+
+# Invalid UTF-8 in destination label name
+eval instant at 0m label_join(series, "\x80", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): �$
+
+# Invalid UTF-8 in source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "\x80")
+  expect fail regex:^invalid source label name in label_join\(\): �$
+
 clear
 
 # The following tests pass prometheus' engine when promql-delayed-name-removal is enabled.

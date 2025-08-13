@@ -208,6 +208,10 @@ The following features are currently experimental:
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`
     - `-ingester.rejection-prioritizer.calibration-interval`
+  - Postings for matchers cache sharing and invalidation. Sharing allows caches to be shared across multiple TSDBs. Invalidation allows cache entries to be marked as invalid, after which they'll be lazily evicted when they hit their normal TTL or when the cache hits its max size.
+    - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)

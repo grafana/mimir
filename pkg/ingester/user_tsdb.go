@@ -142,6 +142,8 @@ type userTSDB struct {
 	ownedTokenRanges ring.TokenRanges
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
+
+	postingsCache *tsdb.PostingsForMatchersCache
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -324,6 +326,7 @@ func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
 	return count, minLocalLimit
 }
 
+// PostCreation implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
@@ -339,8 +342,12 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 		return
 	}
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
+	if u.postingsCache != nil {
+		u.postingsCache.InvalidateMetric(u.userID, metricName)
+	}
 }
 
+// PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 

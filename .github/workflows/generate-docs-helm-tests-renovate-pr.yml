@@ -35,7 +35,7 @@ jobs:
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     permissions:
       contents: read
       # The "id-token: write" permission is required by "get-vault-secrets" action. We request it here

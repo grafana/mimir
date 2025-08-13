@@ -539,13 +539,13 @@ templates:
 	}
 	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
-	// Ensure the Grafana config is ignored when it's marked as default.
+	// Ensure the Grafana config is not ignored when it's marked as default.
 	userGrafanaCfg.Default = true
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -1477,7 +1477,6 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 
 	amConfig := mockAlertmanagerConfig(t)
 	amConfig.StrictInitializationEnabled = true
-	amConfig.GrafanaAlertmanagerIdleGracePeriod = 0 // No grace period, turned off in the next config sync.
 
 	externalURL := flagext.URLValue{}
 	err := externalURL.Set("http://localhost:8080/alertmanager")
@@ -1488,15 +1487,33 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Create a default Grafana config and an empty Mimir config.
-	// These should make the MOA skip the tenants.
+	// Create a tenant with a default Grafana and an empty Mimir config.
+	// It should be skipped by the MOA.
 	ctx := context.Background()
-	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
-		User:      testGrafanaUser,
-		RawConfig: grafanaConfig,
-		Promoted:  true,
-		Default:   true,
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: testGrafanaUser,
 	}))
+	smtpConfig := &alertspb.SmtpConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		Password:       "test password",
+		SkipVerify:     true,
+		StartTlsPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		User:           "test-user",
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
+		User:       testGrafanaUser,
+		RawConfig:  grafanaConfig,
+		Promoted:   true,
+		Default:    true,
+		SmtpConfig: smtpConfig,
+	}))
+
+	// Create another tenant with an empty Mimir config.
+	// It should be skipped by the MOA.
 	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
 		User: testMimirUser,
 	}))
@@ -1510,15 +1527,38 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
+	require.NoError(t, err)
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
-	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
+	// The configuration should have the custom SMTP settings.
+	exp := alertingReceivers.EmailSenderConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		AuthPassword:   "test password",
+		SkipVerify:     true,
+		StartTLSPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		AuthUser:       "test-user",
+
+		ContentTypes: []string{"text/html"}, // Added by default
+		SentBy:       "Mimir vunknown",      // The version in tests is "unknown"
+	}
+	gAM, ok := am.alertmanagers[testGrafanaUser]
+	require.True(t, ok)
+	require.Equal(t, exp, gAM.emailCfg)
+
+	w = httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
-	require.Equal(t, w.Result().StatusCode, http.StatusOK)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 2)
 
+	// Set the idle period to 0.
 	// The Alertmanagers should be turned off after the next sync.
+	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
@@ -2666,6 +2706,14 @@ func TestComputeConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	baseEmailCfg := alertingReceivers.EmailSenderConfig{
+		FromName:     "Grafana",
+		EhloIdentity: "localhost",
+		ExternalURL:  "https://grafana.com",
+		ContentTypes: []string{"text/html"},
+		SentBy:       "Mimir vunknown", // no 'version' flag passed in tests.
+	}
+
+	patchedEmailCfg := alertingReceivers.EmailSenderConfig{
 		FromName:      "Grafana",
 		EhloIdentity:  "localhost",
 		ExternalURL:   "https://grafana.com",
@@ -3224,10 +3272,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expCfg: amConfig{
-				User:            testTenant,
-				RawConfig:       am.fallbackConfig,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               testTenant,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3245,9 +3294,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expCfg: amConfig{
-				User:            testTenant,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               testTenant,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3290,10 +3341,11 @@ func TestComputeConfig(t *testing.T) {
 			},
 			expStartAM: true,
 			expCfg: amConfig{
-				User:            tenantReceivingRequests,
-				RawConfig:       am.fallbackConfig,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3312,9 +3364,11 @@ func TestComputeConfig(t *testing.T) {
 			},
 			expStartAM: true,
 			expCfg: amConfig{
-				User:            tenantReceivingRequests,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3356,10 +3410,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expCfg: amConfig{
-				User:            tenantReceivingRequestsExpired,
-				RawConfig:       am.fallbackConfig,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3377,9 +3432,11 @@ func TestComputeConfig(t *testing.T) {
 				},
 			},
 			expCfg: amConfig{
-				User:            tenantReceivingRequestsExpired,
-				Templates:       []definition.PostableApiTemplate{},
-				TmplExternalURL: mimirExternalURL,
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
 		},
 		{
@@ -3401,7 +3458,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3424,7 +3481,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               "user-grafana",
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3448,7 +3505,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3471,7 +3528,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequests,
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3495,7 +3552,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3518,7 +3575,7 @@ func TestComputeConfig(t *testing.T) {
 			expCfg: amConfig{
 				User:               tenantReceivingRequestsExpired,
 				RawConfig:          string(combinedCfg),
-				EmailConfig:        baseEmailCfg,
+				EmailConfig:        patchedEmailCfg,
 				TmplExternalURL:    grafanaExternalURLParsed,
 				UsingGrafanaConfig: true,
 			},
@@ -3651,18 +3708,16 @@ func TestComputeConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			// require.Equal(t, test.expEmailCfg, cfg.EmailConfig)
 
 			require.True(t, startAM)
 			require.Equal(t, test.expCfg, cfg)
-			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
-			// } else {
-			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
-			// }
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			// Set a recent last request time for the tenant receiving requests.
+			amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
+			amWithSuffix.lastRequestTime.Store(tenantReceivingRequests+"-grafana", time.Now().Unix())
+
 			cfg, startAM, err := amWithStrictInit.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
@@ -3671,13 +3726,9 @@ func TestComputeConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, test.expStartAM, startAM)
-			require.Equal(t, test.expCfg, cfg)
-			// require.Equal(t, test.expHeaders, cfg.EmailConfig.StaticHeaders)
-			// if test.expURL == "" {
-			// 	require.Equal(t, mimirExternalURL, cfg.TmplExternalURL.String())
-			// } else {
-			// 	require.Equal(t, test.expURL, cfg.TmplExternalURL.String())
-			// }
+			if startAM {
+				require.Equal(t, test.expCfg, cfg)
+			}
 		})
 	}
 }
