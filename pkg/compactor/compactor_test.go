@@ -39,8 +39,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -2372,4 +2375,253 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func makeTestCompactorConfig(schedulingMode, schedulerAddress string) Config {
+	return Config{
+		SchedulingMode:                      schedulingMode,
+		SchedulerAddress:                    schedulerAddress,
+		CompactionJobsOrder:                 CompactionOrderOldestFirst,
+		MaxOpeningBlocksConcurrency:         1,
+		MaxClosingBlocksConcurrency:         1,
+		SymbolsFlushersConcurrency:          1,
+		MaxBlockUploadValidationConcurrency: 1,
+		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+	}
+}
+
+func mockBucketFactory(ctx context.Context) (objstore.Bucket, error) {
+	return &bucket.ClientMock{}, nil
+}
+
+// mockCompactorSchedulerClient implements CompactorSchedulerClient
+type mockCompactorSchedulerClient struct {
+	leaseJobCallCount     int
+	updateJobCallCount    int
+	leaseJobResponse      *schedulerpb.LeaseJobResponse
+	leaseJobError         error
+	updateJobResponse     *schedulerpb.UpdateJobResponse
+	updateJobError        error
+	plannedJobsResponse   *schedulerpb.PlannedJobsResponse
+	plannedJobsError      error
+	updatePlanJobResponse *schedulerpb.UpdateJobResponse
+	updatePlanJobError    error
+}
+
+func (m *mockCompactorSchedulerClient) LeaseJob(ctx context.Context, in *schedulerpb.LeaseJobRequest, opts ...grpc.CallOption) (*schedulerpb.LeaseJobResponse, error) {
+	m.leaseJobCallCount++
+	if m.leaseJobError != nil {
+		return nil, m.leaseJobError
+	}
+	return m.leaseJobResponse, nil
+}
+
+func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *schedulerpb.PlannedJobsRequest, opts ...grpc.CallOption) (*schedulerpb.PlannedJobsResponse, error) {
+	if m.plannedJobsError != nil {
+		return nil, m.plannedJobsError
+	}
+	return m.plannedJobsResponse, nil
+}
+
+func (m *mockCompactorSchedulerClient) UpdatePlanJob(ctx context.Context, in *schedulerpb.UpdatePlanJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
+	if m.updatePlanJobError != nil {
+		return nil, m.updatePlanJobError
+	}
+	return m.updatePlanJobResponse, nil
+}
+
+func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
+	m.updateJobCallCount++
+	if m.updateJobError != nil {
+		return nil, m.updateJobError
+	}
+	return m.updateJobResponse, nil
+}
+
+func TestCompactor_SchedulerMode_ConfigValidation(t *testing.T) {
+
+	schedulerAddress := "localhost:9095"
+	tests := map[string]struct {
+		config      Config
+		expectedErr error
+	}{
+		"standalone_mode_should_be_valid": {
+			config: makeTestCompactorConfig(planningModeStandalone, ""),
+		},
+		"scheduler_mode_with_address_should_be_valid": {
+			config: makeTestCompactorConfig(planningModeScheduler, schedulerAddress),
+		},
+		"scheduler_mode_without_address_should_fail": {
+			config:      makeTestCompactorConfig(planningModeScheduler, ""),
+			expectedErr: errInvalidSchedulerAddress,
+		},
+		"invalid_scheduling_mode_should_fail": {
+			config:      makeTestCompactorConfig("invalid-mode", schedulerAddress),
+			expectedErr: errInvalidPlanningMode,
+		},
+		"scheduler_mode_with_whitespace_only_address_should_fail": {
+			config:      makeTestCompactorConfig(planningModeScheduler, "   "),
+			expectedErr: errInvalidSchedulerAddress,
+		},
+	}
+
+	for testName, tt := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := tt.config.Validate(log.NewNopLogger())
+			if tt.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Equal(t, tt.expectedErr, err)
+			}
+		})
+	}
+}
+
+func TestCompactor_SchedulerMode_ClientLifecycle(t *testing.T) {
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	inmem := objstore.NewInMemBucket()
+
+	cfg := prepareConfig(t)
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+	cfg.SchedulerAddress = "localhost:9095"
+	cfg.SchedulingMode = planningModeScheduler
+	c, _, _, _, _ := prepare(t, cfg, inmem)
+
+	// Initialization
+	assert.Nil(t, c.schedulerClient, "scheduler client should be nil before service start")
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	assert.NotNil(t, c.schedulerClient, "scheduler client should be initialized after starting")
+
+	// Other Subservices...
+	assert.True(t, c.ringSubservices.IsHealthy())
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	// Shutdown
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+	assert.Equal(t, c.schedulerConn.GetState(), connectivity.Shutdown)
+}
+
+func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
+
+	var IDs = [][]byte{[]byte("block-1"), []byte("block-2")}
+
+	tests := map[string]struct {
+		setupMock           func(*mockCompactorSchedulerClient)
+		expectedLeaseCalls  int
+		expectedUpdateCalls int
+	}{
+		"scheduler_errors_should_trigger_backoff": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.leaseJobError = errors.New("error")
+			},
+			expectedLeaseCalls:  3,
+			expectedUpdateCalls: 0,
+		},
+		"leasing_empty_job_should_trigger_backoff": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.leaseJobResponse = &schedulerpb.LeaseJobResponse{}
+			},
+			expectedLeaseCalls:  3,
+			expectedUpdateCalls: 0,
+		},
+		"successful_job_execution": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.leaseJobResponse = &schedulerpb.LeaseJobResponse{
+					Key: &schedulerpb.JobKey{Id: "test-job"},
+					Spec: &schedulerpb.JobSpec{
+						Tenant: "user-1",
+						Job:    &schedulerpb.CompactionJob{Split: true, BlockIds: IDs},
+					},
+				}
+				mock.updateJobResponse = &schedulerpb.UpdateJobResponse{}
+			},
+			expectedLeaseCalls:  3,
+			expectedUpdateCalls: 6,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			mockScheduler := &mockCompactorSchedulerClient{}
+			tc.setupMock(mockScheduler)
+
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			cfg := prepareConfig(t)
+			cfg.ShardingRing.Common.InstanceID = "compactor-1"
+			cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+			cfg.ShardingRing.Common.KVStore.Mock = ringStore
+			cfg.SchedulerAddress = "localhost:9095"
+			cfg.SchedulingMode = planningModeScheduler
+
+			inmem := objstore.NewInMemBucket()
+			c, _, _, _, _ := prepare(t, cfg, inmem)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+			c.schedulerClient = mockScheduler
+
+			require.Eventually(t, func() bool {
+				return (mockScheduler.leaseJobCallCount == tc.expectedLeaseCalls) &&
+					(mockScheduler.updateJobCallCount == tc.expectedUpdateCalls)
+			}, 6*time.Second, 100*time.Millisecond)
+		})
+	}
+}
+
+func TestCompactor_SchedulerMode_JobLeasing(t *testing.T) {
+	tests := map[string]struct {
+		setupMock   func(*mockCompactorSchedulerClient)
+		expectedJob bool
+	}{
+		"nil_job_lease_response_should_be_handled_gracefully": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.leaseJobResponse = &schedulerpb.LeaseJobResponse{}
+			},
+			expectedJob: false,
+		},
+		"valid_job_should_succeed": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.leaseJobResponse = &schedulerpb.LeaseJobResponse{
+					Key: &schedulerpb.JobKey{Id: "valid-job"},
+					Spec: &schedulerpb.JobSpec{
+						Tenant: "test-tenant",
+						Job:    &schedulerpb.CompactionJob{Split: false},
+					},
+				}
+				mock.updateJobResponse = &schedulerpb.UpdateJobResponse{}
+			},
+			expectedJob: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			mockScheduler := &mockCompactorSchedulerClient{}
+			tc.setupMock(mockScheduler)
+
+			c, err := newMultitenantCompactor(
+				makeTestCompactorConfig(planningModeScheduler, "localhost:9095"),
+				mimir_tsdb.BlocksStorageConfig{},
+				nil,
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+				mockBucketFactory,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			c.schedulerClient = mockScheduler
+
+			gotWork, err := c.leaseAndExecuteJob(context.Background(), "compactor-1")
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedJob, gotWork)
+		})
+	}
 }
