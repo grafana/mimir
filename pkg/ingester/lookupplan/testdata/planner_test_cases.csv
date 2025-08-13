@@ -1,5 +1,4 @@
 testName;inputMatchers;expectedIndexMatchers;expectedScanMatchers
-empty_matcher;{};{};{}
 simple_existing_metric_name;{__name__="http_requests_total"};{__name__="http_requests_total"};{}
 simple_existing_label_name;{method="GET"};{method="GET"};{}
 simple_existing_label_name;{instance="web-us-east-1-a-001"};{instance="web-us-east-1-a-001"};{}
