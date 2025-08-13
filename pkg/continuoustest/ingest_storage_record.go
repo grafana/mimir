@@ -178,7 +178,7 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 		if err != nil {
 			errs = append(errs, err)
 			tenantID := string(rec.Key)
-			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "errs", errs)
+			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "errs", err)
 		}
 	})
 
