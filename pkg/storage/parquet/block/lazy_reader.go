@@ -277,8 +277,7 @@ func (r *lazyReaderLoader) unloadIfIdleSince(tsNano int64) error {
 func (r *lazyReaderLoader) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
 	if resp.reader != nil {
-		// TODO: this should be necessary but is not currently working
-		// resp.inUse.Done()
+		resp.inUse.Done()
 	}
 }
 
