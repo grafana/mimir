@@ -153,19 +153,20 @@ func Filter(ctx context.Context, s storage.ParquetShard, rgIdx int, cs ...Constr
 }
 
 type PageToRead struct {
+	idx int
+
 	// for data pages
 	pfrom int64
 	pto   int64
 
-	idx int
-
 	// for data and dictionary pages
-	off int
-	csz int
+	off int64
+	csz int64 // compressed size
 }
 
-func NewPageToRead(pfrom, pto int64, off, csz int) PageToRead {
+func NewPageToRead(idx int, pfrom, pto, off, csz int64) PageToRead {
 	return PageToRead{
+		idx:   idx,
 		pfrom: pfrom,
 		pto:   pto,
 		off:   off,
@@ -181,11 +182,11 @@ func (p *PageToRead) To() int64 {
 	return p.pto
 }
 
-func (p *PageToRead) Offset() int {
+func (p *PageToRead) Offset() int64 {
 	return p.off
 }
 
-func (p *PageToRead) CompressedSize() int {
+func (p *PageToRead) CompressedSize() int64 {
 	return p.csz
 }
 
@@ -296,7 +297,7 @@ func (ec *equalConstraint) filter(ctx context.Context, rgIdx int, primary bool, 
 	readPgs := make([]PageToRead, 0, 10)
 
 	for i := 0; i < cidx.NumPages(); i++ {
-		poff, pcsz := uint64(oidx.Offset(i)), oidx.CompressedPageSize(i)
+		poff, pcsz := oidx.Offset(i), oidx.CompressedPageSize(i)
 
 		// If page does not intersect from, to; we can immediately discard it
 		pfrom := oidx.FirstRowIndex(i)
@@ -334,7 +335,7 @@ func (ec *equalConstraint) filter(ctx context.Context, rgIdx int, primary bool, 
 			continue
 		}
 		// We cannot discard the page through statistics but we might need to read it to see if it has the value
-		readPgs = append(readPgs, PageToRead{pfrom: pfrom, pto: pto, idx: i, off: int(poff), csz: int(pcsz)})
+		readPgs = append(readPgs, NewPageToRead(i, pfrom, pto, poff, pcsz))
 	}
 
 	// Did not find any pages
