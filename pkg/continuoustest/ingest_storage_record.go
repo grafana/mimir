@@ -292,7 +292,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	})
 	opts := []cmp.Option{
 		labelsComparer,
-		cmpopts.IgnoreFields(mimirpb.PreallocTimeseries{}, "TimeSeries"),
+		cmpopts.IgnoreFields(mimirpb.PreallocTimeseries{}, "TimeSeries", "Labels", "Samples", "Exemplars", "Histograms"),
 		cmpopts.IgnoreFields(mimirpb.TimeSeries{}, "Labels", "Samples", "Exemplars", "Histograms"),
 	}
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
