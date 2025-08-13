@@ -56,7 +56,7 @@ func main() {
 
 func (a *app) ParseFlags() error {
 	flag.StringVar(&a.rootUrl, "root-url", "http://localhost:8005", "root URL of querier")
-	flag.StringVar(&a.expr, "expr", "", "expression to evaluate")
+	flag.StringVar(&a.expr, "expr", "", "PromQL expression to evaluate")
 	flag.Var(&a.time, "time", "instant query time")
 	flag.Var(&a.start, "start", "start of range query time range")
 	flag.Var(&a.end, "end", "end of range query time range")
