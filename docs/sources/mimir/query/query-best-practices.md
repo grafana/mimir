@@ -39,7 +39,7 @@ If you don't specify a time range in your query, consider using the `-store.max-
 
 Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provide higher resolution.
 
-## Match you query time range to the evaluation frequency
+## Match your query time range to the evaluation frequency
 
 Align the time range of your query with how frequently the query is evaluated or how current the data needs to be. For instance, if a query runs every minute, such as for an alerting rule or a frequently refreshing dashboard panel, there's no need for it to look back for a long time period, such as 30 days.
 
