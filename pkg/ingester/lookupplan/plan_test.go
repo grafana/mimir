@@ -20,6 +20,7 @@ func TestPlanCosts(t *testing.T) {
 	stats := newMockStatistics()
 
 	type testCase struct {
+		name             string
 		indexMatchers    []*labels.Matcher
 		scanMatchers     []*labels.Matcher
 		cardinality      uint64
@@ -30,21 +31,23 @@ func TestPlanCosts(t *testing.T) {
 	}
 
 	data := newCSVTestData(
-		[]string{"indexMatchers", "scanMatchers", "cardinality", "indexCost", "intersectionCost", "filterCost", "totalCost"},
+		[]string{"testName", "indexMatchers", "scanMatchers", "cardinality", "indexCost", "intersectionCost", "filterCost", "totalCost"},
 		filepath.Join("testdata", "plan_cost_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
-				indexMatchers:    parseVectorSelector(t, record[0]),
-				scanMatchers:     parseVectorSelector(t, record[1]),
-				cardinality:      parseUint(t, record[2]),
-				indexCost:        parseFloat(t, record[3]),
-				intersectionCost: parseFloat(t, record[4]),
-				filterCost:       parseFloat(t, record[5]),
-				totalCost:        parseFloat(t, record[6]),
+				name:             record[0],
+				indexMatchers:    parseVectorSelector(t, record[1]),
+				scanMatchers:     parseVectorSelector(t, record[2]),
+				cardinality:      parseUint(t, record[3]),
+				indexCost:        parseFloat(t, record[4]),
+				intersectionCost: parseFloat(t, record[5]),
+				filterCost:       parseFloat(t, record[6]),
+				totalCost:        parseFloat(t, record[7]),
 			}
 		},
 		func(tc testCase) []string {
 			return []string{
+				tc.name,
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.indexMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.scanMatchers)),
 				fmt.Sprintf("%d", tc.cardinality),
@@ -64,8 +67,7 @@ func TestPlanCosts(t *testing.T) {
 	}
 
 	for tcIdx, tc := range testCases {
-		testName := fmt.Sprintf("%s_%s", tc.indexMatchers, tc.scanMatchers)
-		t.Run(testName, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			var allMatchers []*labels.Matcher
 
 			allMatchers = append(allMatchers, tc.indexMatchers...)
