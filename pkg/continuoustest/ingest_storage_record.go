@@ -247,12 +247,14 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		return fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated")
 	}
 
-	sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
-		return m1.MetricFamilyName < m2.MetricFamilyName
-	})
-	if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
-		diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
-		return fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff)
+	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
+		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
+			return m1.MetricFamilyName < m2.MetricFamilyName
+		})
+		if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
+			diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
+			return fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff)
+		}
 	}
 
 	return nil
