@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -35,11 +36,30 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
 
+type IngestStorageRecordTestMetrics struct {
+	recordsProcessedTotal             *prometheus.CounterVec
+	recordsWithMetadataProcessedTotal *prometheus.CounterVec
+}
+
+func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
+	return &IngestStorageRecordTestMetrics{
+		recordsProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_records_processed_total",
+			Help: "Number of records analyzed by the tool per tenant.",
+		}, []string{"user"}),
+		recordsWithMetadataProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_record_metadata_processed_total",
+			Help: "Number of records containing metadata analyzed by the tool per tenant.",
+		}, []string{"user"}),
+	}
+}
+
 type IngestStorageRecordTest struct {
 	name        string
 	cfg         IngestStorageRecordTestConfig
 	client      *kgo.Client
 	adminClient *kadm.Client
+	metrics     *IngestStorageRecordTestMetrics
 	logger      log.Logger
 	reg         prometheus.Registerer
 }
@@ -48,10 +68,11 @@ func NewIngestStorageRecordTest(cfg IngestStorageRecordTestConfig, logger log.Lo
 	const name = "ingest-storage-record"
 
 	return &IngestStorageRecordTest{
-		name:   name,
-		cfg:    cfg,
-		logger: logger,
-		reg:    reg,
+		name:    name,
+		cfg:     cfg,
+		metrics: NewIngestStorageRecordTestMetrics(reg),
+		logger:  logger,
+		reg:     reg,
 	}
 }
 
@@ -179,9 +200,10 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 			return
 		}
 
+		tenantID := string(rec.Key)
+		t.metrics.recordsProcessedTotal.WithLabelValues(tenantID).Inc()
 		err := t.testRec(rec)
 		if err != nil {
-			tenantID := string(rec.Key)
 			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "err", err)
 			batchErr = err
 		}
@@ -191,6 +213,7 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 }
 
 func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
+	tenantID := string(rec.Key)
 	req := mimirpb.PreallocWriteRequest{}
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
@@ -248,6 +271,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 
 	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
+		t.metrics.recordsProcessedTotal.WithLabelValues(tenantID).Inc()
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
