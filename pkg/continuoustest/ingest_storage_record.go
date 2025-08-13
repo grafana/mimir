@@ -37,8 +37,9 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type IngestStorageRecordTestMetrics struct {
-	recordsProcessedTotal             *prometheus.CounterVec
-	recordsWithMetadataProcessedTotal *prometheus.CounterVec
+	recordsProcessedTotal               *prometheus.CounterVec
+	recordsWithMetadataProcessedTotal   *prometheus.CounterVec
+	recordsWithTimeseriesProcessedTotal *prometheus.CounterVec
 }
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
@@ -50,6 +51,10 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 		recordsWithMetadataProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_record_metadata_processed_total",
 			Help: "Number of records containing metadata analyzed by the tool per tenant.",
+		}, []string{"user"}),
+		recordsWithTimeseriesProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_record_timeseries_processed_total",
+			Help: "Number of records containing timeseries analyzed by the tool per tenant.",
 		}, []string{"user"}),
 	}
 }
@@ -278,6 +283,14 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
 			diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
 			return fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff)
+		}
+	}
+
+	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
+		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Inc()
+		if !cmp.Equal(req.Timeseries, v2Req.Timeseries) {
+			diff := cmp.Diff(req.Timeseries, v2Req.Timeseries)
+			return fmt.Errorf("Timeseries did not match. Diff: %s", diff)
 		}
 	}
 
