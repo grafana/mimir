@@ -264,7 +264,10 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Contex
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-				NodeIndex:  o.nodeIndex,
+				NodeIndex: o.nodeIndex,
+
+				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
+				// serializing the message and sending it before the deferred return to the pool occurs above.
 				Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
 				Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
 			},
@@ -305,8 +308,11 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 				StepT:       stepData.StepT,
 				RangeStart:  stepData.RangeStart,
 				RangeEnd:    stepData.RangeEnd,
-				Floats:      mimirpb.FromFPointsToSamples(floats),
-				Histograms:  mimirpb.FromHPointsToHistograms(histograms),
+
+				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
+				// serializing the message and sending it before returning (and therefore before anything else can modify the slices).
+				Floats:     mimirpb.FromFPointsToSamples(floats),
+				Histograms: mimirpb.FromHPointsToHistograms(histograms),
 			},
 		},
 	})
@@ -342,7 +348,10 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 		Message: &querierpb.EvaluateQueryResponse_ScalarValue{
 			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
 				NodeIndex: o.nodeIndex,
-				Values:    mimirpb.FromFPointsToSamples(data.Samples),
+
+				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
+				// serializing the message and sending it before the deferred return to the pool occurs above.
+				Values: mimirpb.FromFPointsToSamples(data.Samples),
 			},
 		},
 	})
