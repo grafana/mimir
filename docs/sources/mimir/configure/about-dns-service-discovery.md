@@ -9,7 +9,9 @@ weight: 260
 
 # About Grafana Mimir DNS service discovery
 
-Some clients in Grafana Mimir support service discovery via DNS to locate the addresses of backend servers to connect to. The following clients support service discovery via DNS:
+Some clients in Grafana Mimir support service discovery via DNS to locate the addresses of backend servers to connect to.
+When using DNS service discovery search domains are not supported and so all domain names must be [fully qualified](https://en.wikipedia.org/wiki/Fully_qualified_domain_name).
+The following clients support service discovery via DNS:
 
 - [Memcached server addresses](../configuration-parameters/#memcached)
   - `-blocks-storage.bucket-store.chunks-cache.memcached.addresses`
