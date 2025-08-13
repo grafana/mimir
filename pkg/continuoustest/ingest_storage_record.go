@@ -172,17 +172,22 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 }
 
 func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
-	var errs []error
+	var batchErr error
 	fetches.EachRecord(func(rec *kgo.Record) {
+		// Only log the first failure in a batch, to keep the logs from being spammed.
+		if batchErr != nil {
+			return
+		}
+
 		err := t.testRec(rec)
 		if err != nil {
-			errs = append(errs, err)
 			tenantID := string(rec.Key)
-			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "errs", err)
+			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "err", err)
+			batchErr = err
 		}
 	})
 
-	return errors.Join(errs...)
+	return batchErr
 }
 
 func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
