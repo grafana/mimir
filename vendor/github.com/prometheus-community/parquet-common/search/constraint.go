@@ -161,7 +161,7 @@ type pageToRead struct {
 
 	// for data and dictionary pages
 	off int
-	csz int
+	csz int // compressed size
 }
 
 // symbolTable is a helper that can decode the i-th value of a page.
