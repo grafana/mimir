@@ -47,7 +47,7 @@ Queries with very long lookback periods can be computationally expensive. They r
 
 ## Filter early in the query
 
-Avoid running broad, large-scale queries and then filtering the results within your Grafana. This approach is computationally expensive and inefficient. Instead, filter your data as early as possible in the query itself.
+Avoid running broad, large-scale queries and then filtering the results within Grafana. This approach is computationally expensive and inefficient. Instead, filter your data as early as possible in the query itself.
 
 Filtering data in the query provides the following benefits.
 
