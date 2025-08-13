@@ -287,10 +287,10 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
-	labelsComparer := cmp.Comparer(func(x, y mimirpb.LabelAdapter) bool {
+	/*labelsComparer := cmp.Comparer(func(x, y mimirpb.LabelAdapter) bool {
 		return string(x.Name) == string(y.Name) && string(x.Value) == string(y.Value)
 	})
-	/*tsPtrComparer := cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
+	tsPtrComparer := cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
 		if a == nil && b == nil {
 			return true
 		}
