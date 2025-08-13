@@ -326,7 +326,7 @@
                 sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
                 and
                 max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-              ) or vector(0)
+              )
             )[15m:]
           )
         |||
@@ -344,7 +344,7 @@
                 sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
                 and
                 max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-              ) or vector(0)
+              )
             )[15m:]
           )
         |||
@@ -358,7 +358,6 @@
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
-          or vector(0)
         )
       |||
     ),
