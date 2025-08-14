@@ -29,6 +29,10 @@
 * [BUGFIX] Querier: Fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #12261
 * [BUGFIX] Block-builder-scheduler: Fix a caching bug in initial job probing causing excessive memory usage at startup. #12389
 
+### Mixin
+
+* [BUGFIX] Block-builder dashboard: fix reference to detected gaps metric in errors panel. #12401
+
 ### Jsonnet
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
