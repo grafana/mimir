@@ -122,7 +122,7 @@ func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 	}
 }
 
-func fromEncodedTimeRange(e EncodedQueryTimeRange) types.QueryTimeRange {
+func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
 	if e.IsInstant {
 		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
 	}
@@ -200,23 +200,34 @@ func NodeTypeName(n Node) string {
 	return reflect.TypeOf(n).Elem().Name()
 }
 
-func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
+// ToDecodedPlan converts this encoded plan to its decoded form.
+// It returns references to the specified nodeIndices.
+func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
 	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
 	root, err := decoder.decodeNode(p.RootNode)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	nodes := make([]Node, 0, len(nodeIndices))
+	for _, idx := range nodeIndices {
+		n, err := decoder.decodeNode(idx)
+		if err != nil {
+			return nil, nil, err
+		}
+		nodes = append(nodes, n)
 	}
 
 	return &QueryPlan{
-		TimeRange:          fromEncodedTimeRange(p.TimeRange),
+		TimeRange:          p.TimeRange.ToDecodedTimeRange(),
 		Root:               root,
 		OriginalExpression: p.OriginalExpression,
-	}, nil
+	}, nodes, nil
 }
 
 type queryPlanDecoder struct {
