@@ -8,23 +8,48 @@
 * [CHANGE] Query-frontend: Add support for UTF-8 label and metric names in `/api/v1/cardinality/{label_values|label_values|active_series}` endpoints. #11848.
 * [CHANGE] Querier: Add support for UTF-8 label and metric names in `label_join`, `label_replace` and `count_values` PromQL functions. #11848.
 * [CHANGE] Remove support for Redis as a cache backend. #12163
-* [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175
+* [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175 #12385
 * [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
-* [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` option to specify the validation scheme for metric and label names. #12215
-* [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail when experimental ingest storage is enabled. #12090
+* [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
+* [CHANGE] Query-frontend, querier: Replace `query-frontend.prune-queries` flag with `querier.mimir-query-engine.enable-prune-toggles` as pruning middleware has been moved into MQE. #12303 #12375
+* [CHANGE] Distributor: Remove deprecated global HA tracker timeout configuration flags. #12321
+* [CHANGE] Query-frontend: Use the Mimir Query Engine (MQE) by default. #12361
+* [CHANGE] Query-frontend: Remove the CLI flags `-querier.frontend-address`, `-querier.max-outstanding-requests-per-tenant`, and `-query-frontend.querier-forget-delay` and corresponding YAML configurations. This is part of a change that makes the query-scheduler a required component. This removes the ability to run the query-frontend with an embedded query-scheduler. Instead, you must run a dedicated query-scheduler component. #12200
+* [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
+* [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306 #12369
+* [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.enabled-promql-experimental-functions` and its associated YAML configuration is now stable. #12368
+* [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
+* [ENHANCEMENT] MQE: Add support for applying common subexpression elimination to range vector expressions in instant queries. #12236
+* [ENHANCEMENT] Ingester: Improve the performance of active series custom trackers matchers. #12184
+* [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. Sharing and head cache invalidation can be enabled via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and the number of metric versions per cache can be configured via -`blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
+* [BUGFIX] Distributor: Fix pooled memory reuse bug that can cause corrupt data to appear in the err-mimir-label-value-too-long error message. #12048
+* [BUGFIX] Querier: Fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #12261
 
 ### Jsonnet
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
+* [CHANGE] Use `irate()` when calculating CPU scaling metric. Using `irate()` prevents underestimating CPU utilization when scraping fails. #12384
+* [CHANGE] Remove `vector(0)` when calculating memory scaling metric to prevent underestimating memory usage when scraping fails. #12386
 * [CHANGE] Rollout-operator: Support for zone and partition aware pod disruption budgets, enabling finer control over pod eviction policies. #12315
 
 ### Documentation
 
+* [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+
+## 2.17.0-rc.2
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Stagger head compaction intervals across zones to prevent compactions from aligning simultaneously, which could otherwise cause strong consistency queries to fail when experimental ingest storage is enabled. #12090
+* [ENHANCEMENT] Compactor: Add `-compactor.update-blocks-concurrency` flag to control concurrency for updating block metadata during bucket index updates, separate from deletion marker concurrency. #12117
+* [ENHANCEMENT] Query-frontend: Allow users to set the `query-frontend.extra-propagated-headers` flag to specify the extra headers allowed to pass through to the rest of the query path. #12174
+* [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #12128
+* [BUGFIX] otlp: Reverts #11889 which has a pooled memory re-use bug. #12266
 
 ## 2.17.0-rc.1
 
@@ -41,13 +66,11 @@
 * [ENHANCEMENT] Query-frontend: Added labels query optimizer that automatically removes redundant `__name__!=""` matchers from label names and label values queries, improving query performance. You can enable the optimizer per-tenant with the `labels_query_optimizer_enabled` runtime configuration flag. #12054 #12066 #12076 #12080
 * [ENHANCEMENT] Query-frontend: Standardise non-regex patterns in query blocking upon loading of config. #12102
 * [ENHANCEMENT] Ruler: Propagate GCS object mutation rate limit for rule group uploads. #12086
-* [ENHANCEMENT] Query-frontend: Allow users to set the `query-frontend.extra-propagated-headers` flag to specify the extra headers allowed to pass through to the rest of the query path. #12174
 * [BUGFIX] Distributor: Validate the RW2 symbols field and reject invalid requests that don't have an empty string as the first symbol. #11953
 * [BUGFIX] Distributor: Check `max_inflight_push_requests_bytes` before decompressing incoming requests. #11967
 * [BUGFIX] Query-frontend: Allow limit parameter to be 0 in label queries to explicitly request unlimited results. #12054
 * [BUGFIX] Distributor: Fix a possible panic in the OTLP push path while handling a gRPC status error. #12072
 * [BUGFIX] Query-frontend: Evaluate experimental duration expressions before sharding, splitting, and caching. Otherwise, the result is not correct. #12038
-* [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #12128
 * [BUGFIX] Block-builder-scheduler: Fix bugs in handling of partitions with no commit. #12130
 
 ### Mixin
@@ -174,7 +197,6 @@
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
 * [ENHANCEMENT] Store-gateway: Change level 0 blocks to be reported as 'unknown/old_block' in metrics instead of '0' to improve clarity. Level 0 indicates blocks with metadata from before compaction level tracking was added to the bucket index. #11891
 * [ENHANCEMENT] Compactor, distributor, ruler, scheduler and store-gateway: Makes `-<component-ring-config>.auto-forget-unhealthy-periods` configurable for each component. Deprecates the `-store-gateway.sharding-ring.auto-forget-enabled` flag. #11923
-* [ENHANCEMENT] otlp: Stick to OTLP vocabulary on invalid label value length error. #11889
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952

@@ -45,7 +45,6 @@ type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
 	DisableTargetInfo                 bool
-	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	SendMetadata                      bool
 	AllowUTF8                         bool
@@ -185,9 +184,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
+				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 				metadata := prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: promName,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -287,7 +291,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
-			addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+			err := addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+			if err != nil {
+				errs = multierr.Append(errs, err)
+			}
 		}
 	}
 

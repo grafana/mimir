@@ -547,8 +547,6 @@ Usage of ./cmd/mimir/mimir:
     	Print the config and exit.
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
-  -querier.frontend-address string
-    	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -583,6 +581,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-samples-processed-stats
     	Cache statistics of processed samples on results cache.
+  -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
+    	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int
@@ -818,7 +818,7 @@ Usage of ./cmd/mimir/mimir:
   -server.trace-request-headers
     	Optionally add request headers to tracing spans.
   -server.trace-request-headers-exclude-list string
-    	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
+    	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints string

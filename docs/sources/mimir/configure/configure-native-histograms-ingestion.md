@@ -2,7 +2,7 @@
 description: Learn how to configure Grafana Mimir to ingest and query native histograms.
 menuTitle: Native histograms
 title: Configure native histograms
-weight: 160
+weight: 110
 ---
 
 # Configure native histograms

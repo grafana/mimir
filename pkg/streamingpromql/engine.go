@@ -153,28 +153,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
-	}
-
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
-
-	operatorParams := &planning.OperatorParameters{
-		Queryable:                queryable,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations.New(),
-		LookbackDelta:            lookbackDelta,
-		EagerLoadSelectors:       e.eagerLoadSelectors,
-	}
-
-	materializer := NewMaterializer(operatorParams)
-	root, err := materializer.ConvertNodeToOperator(plan.Root, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	evaluator, err := NewEvaluator(root, operatorParams, plan.TimeRange, e, opts, plan.OriginalExpression)
+	evaluator, err := e.newEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +174,55 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		evaluator:                evaluator,
 		engine:                   e,
 		statement:                statement,
-		memoryConsumptionTracker: memoryConsumptionTracker,
+		memoryConsumptionTracker: evaluator.MemoryConsumptionTracker,
 		originalExpression:       plan.OriginalExpression,
 		topLevelQueryTimeRange:   plan.TimeRange,
 	}, nil
+}
+
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange) (*Evaluator, error) {
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (evaluator creation)")
+	if err != nil {
+		return nil, err
+	}
+
+	defer e.activeQueryTracker.Delete(queryID)
+
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	return e.newEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+}
+
+func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
+	}
+
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
+
+	operatorParams := &planning.OperatorParameters{
+		Queryable:                queryable,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations.New(),
+		LookbackDelta:            lookbackDelta,
+		EagerLoadSelectors:       e.eagerLoadSelectors,
+	}
+
+	materializer := planning.NewMaterializer(operatorParams)
+	op, err := materializer.ConvertNodeToOperator(node, nodeTimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewEvaluator(op, operatorParams, nodeTimeRange, e, opts, plan.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {

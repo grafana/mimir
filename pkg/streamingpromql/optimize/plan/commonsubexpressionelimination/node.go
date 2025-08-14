@@ -64,28 +64,41 @@ func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) type
 }
 
 func (d *Duplicate) ResultType() (parser.ValueType, error) {
-	return parser.ValueTypeVector, nil
+	return d.Inner.ResultType()
 }
 
-func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	if len(children) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 child for Duplicate, got %v", len(children))
+func (d *Duplicate) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(d.Inner, timeRange)
+	if err != nil {
+		return nil, err
 	}
 
-	inner, ok := children[0].(types.InstantVectorOperator)
-	if !ok {
-		return nil, fmt.Errorf("expected InstantVectorOperator as child of Duplicate, got %T", children[0])
+	switch inner := inner.(type) {
+	case types.InstantVectorOperator:
+		return &InstantVectorDuplicationConsumerOperatorFactory{
+			Buffer: NewInstantVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+		}, nil
+	case types.RangeVectorOperator:
+		return &RangeVectorDuplicationConsumerOperatorFactory{
+			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+		}, nil
+	default:
+		return nil, fmt.Errorf("expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got %T", inner)
 	}
-
-	return &DuplicationConsumerOperatorFactory{
-		Buffer: NewDuplicationBuffer(inner, params.MemoryConsumptionTracker),
-	}, nil
 }
 
-type DuplicationConsumerOperatorFactory struct {
-	Buffer *DuplicationBuffer
+type InstantVectorDuplicationConsumerOperatorFactory struct {
+	Buffer *InstantVectorDuplicationBuffer
 }
 
-func (d *DuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
+func (d *InstantVectorDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
+	return d.Buffer.AddConsumer(), nil
+}
+
+type RangeVectorDuplicationConsumerOperatorFactory struct {
+	Buffer *RangeVectorDuplicationBuffer
+}
+
+func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
 	return d.Buffer.AddConsumer(), nil
 }

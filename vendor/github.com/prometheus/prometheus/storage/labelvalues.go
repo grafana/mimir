@@ -12,11 +12,11 @@ type errLabelValues struct {
 	warnings annotations.Annotations
 }
 
-func (e errLabelValues) Next() bool                        { return false }
-func (e errLabelValues) At() string                        { return "" }
+func (errLabelValues) Next() bool                          { return false }
+func (errLabelValues) At() string                          { return "" }
 func (e errLabelValues) Err() error                        { return e.err }
 func (e errLabelValues) Warnings() annotations.Annotations { return e.warnings }
-func (e errLabelValues) Close() error                      { return nil }
+func (errLabelValues) Close() error                        { return nil }
 
 // ErrLabelValues returns a LabelValues with err.
 func ErrLabelValues(err error) LabelValues {

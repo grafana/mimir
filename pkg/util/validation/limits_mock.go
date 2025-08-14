@@ -5,7 +5,9 @@
 
 package validation
 
-import "github.com/grafana/dskit/flagext"
+import (
+	"github.com/grafana/dskit/flagext"
+)
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
 type mockTenantLimits struct {
