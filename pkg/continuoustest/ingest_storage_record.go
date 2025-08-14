@@ -308,29 +308,9 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
 		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
-		/*if !cmp.Equal(req.Timeseries, v2Req.Timeseries, opts...) {
-			diff := cmp.Diff(req.Timeseries, v2Req.Timeseries, opts...)
-			return fmt.Errorf("Timeseries did not match. Diff: %s", diff)
-		}*/
 		if len(req.Timeseries) != len(v2Req.Timeseries) {
 			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
 		}
-		/*for i := range req.Timeseries {
-			if req.Timeseries[i].CreatedTimestamp != v2Req.Timeseries[i].CreatedTimestamp {
-				return fmt.Errorf("CreatedTimestamp did not match. Index: %d, orig: %d, v2: %d", i, req.Timeseries[i].CreatedTimestamp, v2Req.Timeseries[i].CreatedTimestamp)
-			}
-			if req.Timeseries[i].SkipUnmarshalingExemplars != v2Req.Timeseries[i].SkipUnmarshalingExemplars {
-				return fmt.Errorf("SkipUnmarshalingExemplars did not match. Index: %d, orig: %t, v2: %t", i, req.Timeseries[i].SkipUnmarshalingExemplars, v2Req.Timeseries[i].SkipUnmarshalingExemplars)
-			}
-			if len(req.Timeseries[i].Labels) != len(v2Req.Timeseries[i].Labels) {
-				return fmt.Errorf("Labels length did not match. Index: %d, orig: %d, v2: %d", i, len(req.Timeseries[i].Labels), len(req.Timeseries[i].Labels))
-			}
-			for j := range req.Timeseries[i].Labels {
-				if !req.Timeseries[i].Labels[j].Equal(v2Req.Timeseries[i].Labels[j]) {
-					return fmt.Errorf("Labels do not match. orig: %v, v2: %v", req.Timeseries[i].Labels[j], v2Req.Timeseries[i].Labels[j])
-				}
-			}
-		}*/
 		for i := range req.Timeseries {
 			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
 				return fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
