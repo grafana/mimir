@@ -76,7 +76,9 @@ type Node interface {
 	ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange
 
 	// OperatorFactory returns a factory that produces operators for this node.
-	OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
+	//
+	// Implementations may retain the provided Materializer for later use.
+	OperatorFactory(materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
 
 	// ResultType returns the kind of result this node produces.
 	//

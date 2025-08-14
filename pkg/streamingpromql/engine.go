@@ -168,7 +168,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 	}
 
-	materializer := NewMaterializer(operatorParams)
+	materializer := planning.NewMaterializer(operatorParams)
 	root, err := materializer.ConvertNodeToOperator(plan.Root, plan.TimeRange)
 	if err != nil {
 		return nil, err
