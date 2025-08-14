@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -314,8 +315,8 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		if len(req.Timeseries) != len(v2Req.Timeseries) {
 			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
 		}
-		for i := range req.Timeseries {
-			/*if req.Timeseries[i].CreatedTimestamp != v2Req.Timeseries[i].CreatedTimestamp {
+		/*for i := range req.Timeseries {
+			if req.Timeseries[i].CreatedTimestamp != v2Req.Timeseries[i].CreatedTimestamp {
 				return fmt.Errorf("CreatedTimestamp did not match. Index: %d, orig: %d, v2: %d", i, req.Timeseries[i].CreatedTimestamp, v2Req.Timeseries[i].CreatedTimestamp)
 			}
 			if req.Timeseries[i].SkipUnmarshalingExemplars != v2Req.Timeseries[i].SkipUnmarshalingExemplars {
@@ -328,12 +329,107 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 				if !req.Timeseries[i].Labels[j].Equal(v2Req.Timeseries[i].Labels[j]) {
 					return fmt.Errorf("Labels do not match. orig: %v, v2: %v", req.Timeseries[i].Labels[j], v2Req.Timeseries[i].Labels[j])
 				}
-			}*/
-			if !req.Timeseries[i].Equal(v2Req.Timeseries[i]) {
-				return fmt.Errorf("Timeseries do not match at index %d, orig: %v, v2: %v", i, req.Timeseries[i], v2Req.Timeseries[i])
+			}
+		}*/
+		for i := range req.Timeseries {
+			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
+				return fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
 			}
 		}
 	}
 
 	return nil
+}
+
+// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
+func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*mimirpb.TimeSeries)
+	if !ok {
+		that2, ok := that.(mimirpb.TimeSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	if len(this.Samples) != len(that1.Samples) {
+		return false
+	}
+	for i := range this.Samples {
+		/*if !this.Samples[i].Equal(&that1.Samples[i]) {
+			return false
+		}*/
+		if !SampleEqual(&this.Samples[i], &that1.Samples[i]) {
+			return false
+		}
+	}
+	if len(this.Exemplars) != len(that1.Exemplars) {
+		return false
+	}
+	for i := range this.Exemplars {
+		if !this.Exemplars[i].Equal(&that1.Exemplars[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(&that1.Histograms[i]) {
+			return false
+		}
+	}
+	if this.CreatedTimestamp != that1.CreatedTimestamp {
+		return false
+	}
+	return true
+}
+
+// SampleEqual is a copy of mimirpb.Sample.Equal but equates NaN values.
+func SampleEqual(this *mimirpb.Sample, that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*mimirpb.Sample)
+	if !ok {
+		that2, ok := that.(mimirpb.Sample)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	if math.IsNaN(this.Value) && math.IsNaN(that1.Value) {
+		return true
+	}
+	if this.Value != that1.Value {
+		return false
+	}
+	return true
 }
