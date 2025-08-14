@@ -52,7 +52,6 @@ var testCasesPruneToggles = map[string]string{
 }
 
 func TestPruneToggles(t *testing.T) {
-	optimizer := ast.NewPruneToggles()
 	ctx := context.Background()
 
 	for input, expected := range testCasesPruneToggles {
@@ -62,10 +61,12 @@ func TestPruneToggles(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+			optimizer := ast.NewPruneToggles()
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
+			require.Equal(t, input != expected, optimizer.HasChanged())
 		})
 	}
 }

@@ -16,13 +16,12 @@ import (
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == 1)` -> `(avg(rate(foo[1m])))`
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
-	mapper astmapper.ASTMapper
+	mapper *astmapper.ASTExprMapperWithState
 }
 
 func NewPruneToggles() *PruneToggles {
-	mapper := astmapper.NewASTExprMapper(&pruneToggles{})
 	return &PruneToggles{
-		mapper: mapper,
+		mapper: NewPruneTogglesMapper(),
 	}
 }
 
@@ -34,7 +33,22 @@ func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr
 	return p.mapper.Map(ctx, expr)
 }
 
-type pruneToggles struct{}
+func (p *PruneToggles) HasChanged() bool {
+	return p.mapper.HasChanged()
+}
+
+func NewPruneTogglesMapper() *astmapper.ASTExprMapperWithState {
+	mapper := &pruneToggles{}
+	return astmapper.NewASTExprMapperWithState(mapper)
+}
+
+type pruneToggles struct {
+	changed bool
+}
+
+func (mapper *pruneToggles) HasChanged() bool {
+	return mapper.changed
+}
 
 func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
@@ -55,10 +69,12 @@ func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapp
 	if isEmpty {
 		// The right hand side is empty, so the whole expression is empty due to
 		// "and on()", return the right hand side.
+		mapper.changed = true
 		return e.RHS, false, nil
 	}
 	// The right hand side is const and not empty, so the whole expression is
 	// just the left side.
+	mapper.changed = true
 	return e.LHS, false, nil
 }
 
