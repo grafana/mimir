@@ -100,7 +100,7 @@ func (a *AggregateExpression) ChildrenLabels() []string {
 	return []string{"expression", "parameter"}
 }
 
-func (a *AggregateExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(a.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for AggregateExpression: %w", err)

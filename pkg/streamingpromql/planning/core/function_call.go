@@ -82,7 +82,7 @@ func (f *FunctionCall) ChildrenLabels() []string {
 	return l
 }
 
-func (f *FunctionCall) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))

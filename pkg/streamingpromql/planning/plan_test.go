@@ -111,10 +111,6 @@ func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRang
 	panic("not supported")
 }
 
-func (t *testNode) OperatorFactory(_ *Materializer, _ types.QueryTimeRange, _ *OperatorParameters) (OperatorFactory, error) {
-	panic("not supported")
-}
-
 func (t *testNode) ResultType() (parser.ValueType, error) {
 	panic("not supported")
 }
