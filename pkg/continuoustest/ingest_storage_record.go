@@ -183,13 +183,15 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 		err = t.testBatch(fetches)
 		if err != nil {
-			// Log errors, but don't fail them, this is experimental and we don't want to fail the actual continuous tester yet.
+			// Log errors, but don't fail them. We still want to commit the end offsets and continue,
+			// that way a single failed record doesn't make the tool get stuck in time and stay there forever.
 			level.Error(t.logger).Log("msg", "test failed", "reason", err)
 			err = nil
 		}
 	}
 
-	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff)
+	timeTaken := time.Now().Sub(now)
+	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff, "time", timeTaken)
 
 	// Update to the end.
 	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
@@ -287,25 +289,6 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
-	/*labelsComparer := cmp.Comparer(func(x, y mimirpb.LabelAdapter) bool {
-		return string(x.Name) == string(y.Name) && string(x.Value) == string(y.Value)
-	})
-	tsPtrComparer := cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
-		if a == nil && b == nil {
-			return true
-		}
-		if a == nil || b == nil {
-			return false
-		}
-		return cmp.Equal(*a, *b,
-			cmpopts.IgnoreFields(mimirpb.TimeSeries{}, "Labels", "Samples", "Exemplars", "Histograms"),
-		)
-	})
-
-	opts := []cmp.Option{
-		labelsComparer,
-		tsPtrComparer,
-	}*/
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
 		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
 		/*if !cmp.Equal(req.Timeseries, v2Req.Timeseries, opts...) {
