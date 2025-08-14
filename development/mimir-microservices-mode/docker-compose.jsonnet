@@ -117,7 +117,7 @@ std.manifestYamlDoc({
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9008 -querier.frontend-address=' else '' +
-          if $._config.enable_parquet then ' -querier.store-gateway-replica-load-balancing-strategy=in-order' else '',
+                                                                                                                                  if $._config.enable_parquet then ' -querier.store-gateway-replica-load-balancing-strategy=in-order' else '',
       }),
 
       'query-frontend': mimirService({
