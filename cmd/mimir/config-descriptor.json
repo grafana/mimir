@@ -2279,6 +2279,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "enable_prune_toggles",
+              "required": false,
+              "desc": "Enable pruning query expressions that are toggled off with constants.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-prune-toggles",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
               "desc": "Enable common subexpression elimination when evaluating queries.",
@@ -5104,8 +5115,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -6040,16 +6050,6 @@
       "blockEntries": [
         {
           "kind": "field",
-          "name": "frontend_address",
-          "required": false,
-          "desc": "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "querier.frontend-address",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
@@ -6723,28 +6723,6 @@
         },
         {
           "kind": "field",
-          "name": "max_outstanding_per_tenant",
-          "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429.",
-          "fieldValue": null,
-          "fieldDefaultValue": 100,
-          "fieldFlag": "querier.max-outstanding-requests-per-tenant",
-          "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "querier_forget_delay",
-          "required": false,
-          "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.querier-forget-delay",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
@@ -7413,17 +7391,6 @@
         },
         {
           "kind": "field",
-          "name": "prune_queries",
-          "required": false,
-          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.prune-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -7513,7 +7480,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "query-frontend.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"

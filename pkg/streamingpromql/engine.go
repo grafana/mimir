@@ -216,7 +216,7 @@ func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, 
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 	}
 
-	materializer := NewMaterializer(operatorParams)
+	materializer := planning.NewMaterializer(operatorParams)
 	op, err := materializer.ConvertNodeToOperator(node, nodeTimeRange)
 	if err != nil {
 		return nil, err

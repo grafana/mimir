@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -778,17 +779,40 @@ func TestGetFullStateHandler(t *testing.T) {
 		rec := httptest.NewRecorder()
 		am.GetFullStateHandler(rec, nil)
 		require.Equal(t, http.StatusOK, rec.Code)
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
 		body, err := io.ReadAll(rec.Body)
 		require.NoError(t, err)
-		json := `
-		{
-			"data": {
-				"state": "CgoKCG5mbDp0ZXN0CgoKCHNpbDp0ZXN0"
-			},
-			"status": "success"
+
+		var parsedBody struct {
+			Status string `json:"status"`
+			Data   struct {
+				State string `json:"state"`
+			} `json:"data"`
 		}
-		`
-		require.JSONEq(t, json, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+		require.NoError(t, json.Unmarshal(body, &parsedBody))
+		require.Equal(t, "success", parsedBody.Status)
+
+		decodedState, err := base64.StdEncoding.DecodeString(parsedBody.Data.State)
+		require.NoError(t, err)
+
+		var parsedState clusterpb.FullState
+		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
+		require.Len(t, parsedState.Parts, 2)
+
+		var nflC, silC int
+		for _, p := range parsedState.Parts {
+			switch p.Key {
+			case "nfl:test":
+				nflC++
+			case "sil:test":
+				silC++
+			default:
+				t.Errorf("unexpected part key in full state: %s", p.Key)
+			}
+		}
+
+		require.Equal(t, 1, nflC, "Expected exactly one notification")
+		require.Equal(t, 1, silC, "Expected exactly one silence")
 	}
 }

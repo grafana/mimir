@@ -67,7 +67,7 @@ func (v *VectorSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (v *VectorSelector) OperatorFactory(_ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	matchers, err := LabelMatchersToPrometheusType(v.Matchers)
 	if err != nil {
 		return nil, err

@@ -55,11 +55,18 @@ const (
 	maxNotifyFrontendRetries = 5
 )
 
-var tracer = otel.Tracer("querier/worker")
+var (
+	tracer = otel.Tracer("querier/worker")
 
-var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
-var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
-var errAlreadyFailed = errors.New("the query-frontend stream has already failed")
+	errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
+	errQueryEvaluationFinished                       = cancellation.NewErrorf("query evaluation finished")
+	errAlreadyFailed                                 = errors.New("the query-frontend stream has already failed")
+
+	processorBackoffConfig = backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+	}
+)
 
 func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
