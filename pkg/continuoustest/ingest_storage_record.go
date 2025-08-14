@@ -174,7 +174,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	for recordsRemainingInBatch > 0 {
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
-			level.Error(t.logger).Log("fetch errors", "err", errors.Join(fetches.Errors()...))
+			level.Error(t.logger).Log("fetch errors", "err", fetches.Err())
 			break
 		}
 
