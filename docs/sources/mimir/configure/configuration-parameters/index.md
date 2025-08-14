@@ -233,6 +233,12 @@ activity_tracker:
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
+# (experimental) Include tenant ID in pprof labels for profiling. Currently only
+# supported by the ingester. This can help debug performance issues for specific
+# tenants.
+# CLI flag: -include-tenant-id-in-profile-labels
+[include_tenant_id_in_profile_labels: <boolean> | default = false]
+
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
   # CLI flag: -vault.enabled
