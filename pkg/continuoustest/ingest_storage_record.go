@@ -315,13 +315,12 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		if len(req.Timeseries) != len(v2Req.Timeseries) {
 			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
 		}
-		// TODO: go-cmp the internal writerequest
 		opts := []cmp.Option{
 			cmpopts.EquateNaNs(),
 		}
 		for i := range req.Timeseries {
-			if !cmp.Equal(*req.Timeseries[i].TimeSeries, *v2Req.Timeseries[i].TimeSeries, opts...) {
-				diff := cmp.Diff(*req.Timeseries[i].TimeSeries, *v2Req.Timeseries[i].TimeSeries, opts...)
+			if !cmp.Equal(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...) {
+				diff := cmp.Diff(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...)
 				return fmt.Errorf("Timeseries did not match. Index: %d, Diff: %s", i, diff)
 			}
 		}
