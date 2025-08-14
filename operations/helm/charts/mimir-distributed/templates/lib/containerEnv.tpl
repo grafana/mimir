@@ -1,5 +1,9 @@
 {{/*
-Mimir common container environment variables with merge precedence
+Mimir common container environment variables with merge precedence.
+The order of precedence is as follows (high to low):
+1. Component-specific values
+2. Global values
+3. The provided defaults (if any)
 Outputs the complete env/envFrom section for a container manifest.
 Params:
   ctx = . context
