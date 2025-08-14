@@ -383,7 +383,7 @@ func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64,
 	defer func() { _ = f.Close() }()
 
 	if verbose {
-		log.Printf("wrote batch %d if chunk %d to disk (%d bytes)\n", batchCount, chunkInterval, n)
+		log.Printf("wrote batch %d of chunk %d to disk (%d bytes)\n", batchCount, chunkInterval, n)
 	}
 
 	return nil
