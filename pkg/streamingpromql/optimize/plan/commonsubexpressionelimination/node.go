@@ -67,7 +67,7 @@ func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
 }
 
-func (d *Duplicate) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperator(d.Inner, timeRange)
 	if err != nil {
 		return nil, err
