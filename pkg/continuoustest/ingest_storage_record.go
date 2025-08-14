@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -170,6 +171,25 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	t.client.AddConsumePartitions(startOffsets)
 
+	const numWorkers = 10
+	jobs := make(chan kgo.Fetches)
+	var wg sync.WaitGroup
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				err = t.testBatch(job)
+				if err != nil {
+					// Log errors, but don't fail them. We still want to commit the end offsets and continue,
+					// that way a single failed record doesn't make the tool get stuck in time and stay there forever.
+					level.Error(t.logger).Log("msg", "test failed", "reason", err)
+					err = nil
+				}
+			}
+		}()
+	}
+
 	recordsProcessedThisBatch := 0
 	for recordsRemainingInBatch > 0 {
 		fetches := t.client.PollFetches(ctx)
@@ -181,16 +201,12 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		recordsRemainingInBatch -= int64(fetches.NumRecords())
 		recordsProcessedThisBatch += fetches.NumRecords()
 
-		err = t.testBatch(fetches)
-		if err != nil {
-			// Log errors, but don't fail them. We still want to commit the end offsets and continue,
-			// that way a single failed record doesn't make the tool get stuck in time and stay there forever.
-			level.Error(t.logger).Log("msg", "test failed", "reason", err)
-			err = nil
-		}
+		jobs <- fetches
 	}
+	close(jobs)
+	wg.Wait()
 
-	timeTaken := time.Now().Sub(now)
+	timeTaken := time.Since(now)
 	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff, "time", timeTaken)
 
 	// Update to the end.
