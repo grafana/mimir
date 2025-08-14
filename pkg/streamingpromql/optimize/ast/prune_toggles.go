@@ -5,6 +5,8 @@ package ast
 import (
 	"context"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -16,13 +18,20 @@ import (
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == 1)` -> `(avg(rate(foo[1m])))`
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
-	mapper astmapper.ASTMapper
+	pruneTogglesAttempts prometheus.Counter
+	pruneTogglesRewrites prometheus.Counter
 }
 
-func NewPruneToggles() *PruneToggles {
-	mapper := astmapper.NewASTExprMapper(&pruneToggles{})
+func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
 	return &PruneToggles{
-		mapper: mapper,
+		pruneTogglesAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_prune_toggles_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.",
+		}),
+		pruneTogglesRewrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_prune_toggles_rewritten_total",
+			Help: "Total number of queries where the optimization pass has rewritten the query by pruning toggles.",
+		}),
 	}
 }
 
@@ -31,10 +40,27 @@ func (p *PruneToggles) Name() string {
 }
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	return p.mapper.Map(ctx, expr)
+	p.pruneTogglesAttempts.Inc()
+	mapper := NewPruneTogglesMapper()
+	newExpr, err := mapper.Map(ctx, expr)
+	if mapper.HasChanged() {
+		p.pruneTogglesRewrites.Inc()
+	}
+	return newExpr, err
 }
 
-type pruneToggles struct{}
+func NewPruneTogglesMapper() *astmapper.ASTExprMapperWithState {
+	mapper := &pruneToggles{}
+	return astmapper.NewASTExprMapperWithState(mapper)
+}
+
+type pruneToggles struct {
+	changed bool
+}
+
+func (mapper *pruneToggles) HasChanged() bool {
+	return mapper.changed
+}
 
 func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
@@ -55,10 +81,12 @@ func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapp
 	if isEmpty {
 		// The right hand side is empty, so the whole expression is empty due to
 		// "and on()", return the right hand side.
+		mapper.changed = true
 		return e.RHS, false, nil
 	}
 	// The right hand side is const and not empty, so the whole expression is
 	// just the left side.
+	mapper.changed = true
 	return e.LHS, false, nil
 }
 

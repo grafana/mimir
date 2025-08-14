@@ -4,8 +4,12 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
@@ -52,22 +56,41 @@ var testCasesPruneToggles = map[string]string{
 }
 
 func TestPruneToggles(t *testing.T) {
-	optimizer := ast.NewPruneToggles()
 	ctx := context.Background()
 
 	for input, expected := range testCasesPruneToggles {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
-
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+
+			reg := prometheus.NewPedanticRegistry()
+			optimizer := ast.NewPruneToggles(reg)
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
+			expectedChanged := 0
+			if input != expected {
+				expectedChanged = 1
+			}
+			checkPruneTogglesMetrics(t, reg, 1, expectedChanged)
 		})
 	}
+}
+
+func checkPruneTogglesMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
+	const metricNameTotal = "cortex_mimir_query_engine_prune_toggles_attempted_total"
+	const metricNameChanged = "cortex_mimir_query_engine_prune_toggles_rewritten_total"
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.
+# TYPE %[1]v counter
+%[1]v %[2]v
+# HELP %[3]v Total number of queries where the optimization pass has rewritten the query by pruning toggles.
+# TYPE %[3]v counter
+%[3]v %[4]v
+`, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
 }
 
 func TestPruneTogglesWithData(t *testing.T) {
