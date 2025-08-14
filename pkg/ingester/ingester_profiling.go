@@ -26,11 +26,39 @@ func NewIngesterProfilingWrapper(ing api.Ingester) *ProfilingWrapper {
 	}
 }
 
-type baseCtxStream struct {
+type labelNamesAndValuesStream struct {
 	ctx context.Context
+	client.Ingester_LabelNamesAndValuesServer
 }
 
-func (s baseCtxStream) Context() context.Context {
+func (s labelNamesAndValuesStream) Context() context.Context {
+	return s.ctx
+}
+
+type labelValuesCardinalityStream struct {
+	ctx context.Context
+	client.Ingester_LabelValuesCardinalityServer
+}
+
+func (s labelValuesCardinalityStream) Context() context.Context {
+	return s.ctx
+}
+
+type activeSeriesStream struct {
+	ctx context.Context
+	client.Ingester_ActiveSeriesServer
+}
+
+func (s activeSeriesStream) Context() context.Context {
+	return s.ctx
+}
+
+type queryStreamStream struct {
+	ctx context.Context
+	client.Ingester_QueryStreamServer
+}
+
+func (s queryStreamStream) Context() context.Context {
 	return s.ctx
 }
 
@@ -59,13 +87,7 @@ func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server clie
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
 		defer pprof.SetGoroutineLabels(ctx)
-
-		type queryStreamStream struct {
-			baseCtxStream
-			client.Ingester_QueryStreamServer
-		}
-
-		server = queryStreamStream{baseCtxStream{ctx}, server}
+		server = queryStreamStream{ctx, server}
 	}
 
 	return i.ing.QueryStream(request, server)
@@ -163,13 +185,7 @@ func (i *ProfilingWrapper) LabelNamesAndValues(request *client.LabelNamesAndValu
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
 		defer pprof.SetGoroutineLabels(ctx)
-
-		type labelNamesAndValuesStream struct {
-			baseCtxStream
-			client.Ingester_LabelNamesAndValuesServer
-		}
-
-		server = labelNamesAndValuesStream{baseCtxStream{ctx}, server}
+		server = labelNamesAndValuesStream{ctx, server}
 	}
 
 	return i.ing.LabelNamesAndValues(request, server)
@@ -183,13 +199,7 @@ func (i *ProfilingWrapper) LabelValuesCardinality(request *client.LabelValuesCar
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
 		defer pprof.SetGoroutineLabels(ctx)
-
-		type labelValuesCardinalityStream struct {
-			baseCtxStream
-			client.Ingester_LabelValuesCardinalityServer
-		}
-
-		server = labelValuesCardinalityStream{baseCtxStream{ctx}, server}
+		server = labelValuesCardinalityStream{ctx, server}
 	}
 
 	return i.ing.LabelValuesCardinality(request, server)
@@ -203,13 +213,7 @@ func (i *ProfilingWrapper) ActiveSeries(request *client.ActiveSeriesRequest, ser
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
 		defer pprof.SetGoroutineLabels(ctx)
-
-		type activeSeriesStream struct {
-			baseCtxStream
-			client.Ingester_ActiveSeriesServer
-		}
-
-		server = activeSeriesStream{baseCtxStream{ctx}, server}
+		server = activeSeriesStream{ctx, server}
 	}
 
 	return i.ing.ActiveSeries(request, server)
