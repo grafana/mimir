@@ -119,7 +119,7 @@
         policyRule.withVerbs(['get', 'update', 'create']),
         policyRule.withApiGroups('rollout-operator.grafana.com') +
         policyRule.withResources(['zoneawarepoddisruptionbudgets']) +
-        policyRule.withVerbs(['get', 'list', 'watch'])
+        policyRule.withVerbs(['get', 'list', 'watch']),
       ] + (
         if $._config.rollout_operator_replica_template_access_enabled then [
           policyRule.withApiGroups($.replica_template.spec.group) +
