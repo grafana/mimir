@@ -740,6 +740,9 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	if t.ActivityTracker != nil {
 		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
 	}
+	if t.Cfg.Ingester.IncludeTenantIDInProfileLabels {
+		ing = ingester.NewIngesterProfilingWrapper(t.Ingester)
+	}
 	t.API.RegisterIngester(ing)
 	return nil, nil
 }
