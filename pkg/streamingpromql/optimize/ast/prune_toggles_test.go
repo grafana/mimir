@@ -54,6 +54,8 @@ var testCasesPruneToggles = map[string]string{
 
 func TestPruneToggles(t *testing.T) {
 	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	optimizer := ast.NewPruneToggles(reg)
 
 	for input, expected := range testCasesPruneToggles {
 		t.Run(input, func(t *testing.T) {
@@ -62,8 +64,6 @@ func TestPruneToggles(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
-			reg := prometheus.NewPedanticRegistry()
-			optimizer := ast.NewPruneToggles(reg)
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
