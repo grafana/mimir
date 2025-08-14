@@ -5,6 +5,8 @@ package ast
 import (
 	"context"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -17,10 +19,29 @@ import (
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
 	mapper *astmapper.ASTExprMapperWithState
+
+	pruneTogglesMetrics
 }
 
-func NewPruneToggles() *PruneToggles {
-	return &PruneToggles{}
+type pruneTogglesMetrics struct {
+	pruneTogglesAttempts  prometheus.Counter
+	pruneTogglesSuccesses prometheus.Counter
+}
+
+func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
+	metrics := pruneTogglesMetrics{
+		pruneTogglesAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_prune_toggles_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.",
+		}),
+		pruneTogglesSuccesses: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_prune_toggles_succeeded_total",
+			Help: "Total number of queries where the optimization pass has successfully rewritten by pruning toggles.",
+		}),
+	}
+	return &PruneToggles{
+		pruneTogglesMetrics: metrics,
+	}
 }
 
 func (p *PruneToggles) Name() string {
@@ -29,7 +50,12 @@ func (p *PruneToggles) Name() string {
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
 	p.mapper = NewPruneTogglesMapper()
-	return p.mapper.Map(ctx, expr)
+	p.pruneTogglesAttempts.Inc()
+	newExpr, err := p.mapper.Map(ctx, expr)
+	if p.mapper.HasChanged() {
+		p.pruneTogglesSuccesses.Inc()
+	}
+	return newExpr, err
 }
 
 func (p *PruneToggles) HasChanged() bool {

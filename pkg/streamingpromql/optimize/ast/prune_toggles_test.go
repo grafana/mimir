@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
@@ -61,7 +62,8 @@ func TestPruneToggles(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
-			optimizer := ast.NewPruneToggles()
+			reg := prometheus.NewPedanticRegistry()
+			optimizer := ast.NewPruneToggles(reg)
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
