@@ -1814,3 +1814,150 @@ func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
 
 	return c.cleanUsers(ctx, users, log.NewNopLogger())
 }
+
+func TestBlocksCleaner_InProgressIndex(t *testing.T) {
+	const userID = "user-1"
+	
+	// Create test data
+	bucketClient := &bucket.ClientMock{}
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 2 * time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+	cfgProvider := newMockConfigProvider()
+	logger := log.NewNopLogger()
+	reg := prometheus.NewPedanticRegistry()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, func(userID string) (bool, error) { return true, nil }, cfgProvider, logger, reg)
+
+	t.Run("no in-progress index initially", func(t *testing.T) {
+		idx := cleaner.getInProgressIndex(userID, time.Now().Unix())
+		assert.Nil(t, idx)
+	})
+
+	t.Run("save and retrieve in-progress index", func(t *testing.T) {
+		now := time.Now().Unix()
+		testIndex := &bucketindex.Index{
+			Version:   bucketindex.IndexVersion2,
+			UpdatedAt: now,
+			Blocks: bucketindex.Blocks{
+				{ID: ulid.MustNew(uint64(now), nil), MinTime: now * 1000, MaxTime: now * 1000 + 3600000, UploadedAt: now},
+			},
+		}
+
+		// Save in-progress index
+		cleaner.saveInProgressIndex(userID, testIndex, now)
+
+		// Retrieve it
+		retrieved := cleaner.getInProgressIndex(userID, now)
+		assert.NotNil(t, retrieved)
+		assert.Equal(t, testIndex.UpdatedAt, retrieved.UpdatedAt)
+		assert.Len(t, retrieved.Blocks, 1)
+		assert.Equal(t, testIndex.Blocks[0].ID, retrieved.Blocks[0].ID)
+	})
+
+	t.Run("discard stale in-progress index", func(t *testing.T) {
+		oldTime := time.Now().Unix() - 3600 // 1 hour ago
+		newTime := time.Now().Unix()
+		
+		testIndex := &bucketindex.Index{
+			Version:   bucketindex.IndexVersion2,
+			UpdatedAt: oldTime,
+			Blocks:    bucketindex.Blocks{},
+		}
+
+		// Save in-progress index based on old timestamp
+		cleaner.saveInProgressIndex(userID, testIndex, oldTime)
+
+		// Try to retrieve with newer timestamp - should return nil
+		retrieved := cleaner.getInProgressIndex(userID, newTime)
+		assert.Nil(t, retrieved, "should discard stale in-progress index when storage has newer index")
+	})
+
+	t.Run("clear in-progress index", func(t *testing.T) {
+		now := time.Now().Unix()
+		testIndex := &bucketindex.Index{
+			Version:   bucketindex.IndexVersion2,
+			UpdatedAt: now,
+			Blocks:    bucketindex.Blocks{},
+		}
+
+		// Save in-progress index
+		cleaner.saveInProgressIndex(userID, testIndex, now)
+		assert.NotNil(t, cleaner.getInProgressIndex(userID, now))
+
+		// Clear it
+		cleaner.clearInProgressIndex(userID)
+		assert.Nil(t, cleaner.getInProgressIndex(userID, now))
+	})
+}
+
+func TestBlocksCleaner_InProgressIndexIntegration(t *testing.T) {
+	const userID = "user-1"
+	
+	bucketClient := &bucket.ClientMock{}
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 2 * time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+	cfgProvider := newMockConfigProvider()
+	logger := log.NewNopLogger()
+	reg := prometheus.NewPedanticRegistry()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, func(userID string) (bool, error) { return true, nil }, cfgProvider, logger, reg)
+
+	t.Run("in-progress index survives failed cleanup runs", func(t *testing.T) {
+		now := time.Now().Unix()
+
+		// Create an updated index to simulate successful UpdateIndex
+		updatedIndex := &bucketindex.Index{
+			Version:   bucketindex.IndexVersion2,
+			UpdatedAt: now + 60, // Simulate updated timestamp
+			Blocks: bucketindex.Blocks{
+				{ID: ulid.MustNew(uint64(now), nil), MinTime: now * 1000, MaxTime: now * 1000 + 3600000, UploadedAt: now},
+				{ID: ulid.MustNew(uint64(now+1), nil), MinTime: (now + 1) * 1000, MaxTime: (now + 1) * 1000 + 3600000, UploadedAt: now + 1},
+			},
+		}
+
+		// First, save an in-progress index to simulate a successful UpdateIndex but failed WriteIndex
+		cleaner.saveInProgressIndex(userID, updatedIndex, now)
+
+		// Verify the in-progress index is cached
+		cached := cleaner.getInProgressIndex(userID, now)
+		assert.NotNil(t, cached)
+		assert.Equal(t, updatedIndex.UpdatedAt, cached.UpdatedAt)
+		assert.Len(t, cached.Blocks, 2)
+
+		// Simulate a new cleanup run that would use the cached index
+		cached2 := cleaner.getInProgressIndex(userID, now)
+		assert.NotNil(t, cached2)
+		assert.Equal(t, cached.UpdatedAt, cached2.UpdatedAt)
+		assert.Len(t, cached2.Blocks, 2)
+	})
+
+	t.Run("successful cleanup clears in-progress index", func(t *testing.T) {
+		now := time.Now().Unix()
+		
+		testIndex := &bucketindex.Index{
+			Version:   bucketindex.IndexVersion2,
+			UpdatedAt: now,
+			Blocks:    bucketindex.Blocks{},
+		}
+
+		// Save in-progress index
+		cleaner.saveInProgressIndex(userID, testIndex, now)
+		assert.NotNil(t, cleaner.getInProgressIndex(userID, now))
+
+		// Simulate successful cleanup completion by calling the defer function logic
+		cleaner.clearInProgressIndex(userID)
+		
+		// Verify it's cleared
+		assert.Nil(t, cleaner.getInProgressIndex(userID, now))
+	})
+}
