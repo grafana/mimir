@@ -318,6 +318,15 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		opts := []cmp.Option{
 			cmpopts.EquateNaNs(),
 		}
+		opts = append(opts, cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
+			if a == nil && b == nil {
+				return true
+			}
+			if a == nil || b == nil {
+				return false
+			}
+			return cmp.Equal(*a, *b, opts...)
+		}))
 		for i := range req.Timeseries {
 			if !cmp.Equal(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...) {
 				diff := cmp.Diff(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...)
