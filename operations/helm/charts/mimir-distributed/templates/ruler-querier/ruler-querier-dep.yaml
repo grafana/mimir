@@ -15,6 +15,9 @@ spec:
   replicas: {{ .Values.ruler_querier.replicas }}
   {{- end }}
   {{- end }}
+  {{- with .Values.ruler_querier.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-querier" "memberlist" true) | nindent 6 }}

@@ -10,6 +10,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.admin_api.replicas }}
+  {{- with .Values.admin_api.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 6 }}
