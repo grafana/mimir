@@ -174,7 +174,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	for recordsRemainingInBatch > 0 {
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
-			level.Error(t.logger).Log("fetch errors", "errs", errs)
+			level.Error(t.logger).Log("fetch errors", "err", errors.Join(fetches.Errors()...))
 			break
 		}
 
@@ -276,7 +276,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	}
 
 	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
-		t.metrics.recordsWithMetadataProcessedTotal.WithLabelValues(tenantID).Inc()
+		t.metrics.recordsWithMetadataProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Metadata)))
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
@@ -307,7 +307,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		tsPtrComparer,
 	}*/
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
-		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Inc()
+		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
 		/*if !cmp.Equal(req.Timeseries, v2Req.Timeseries, opts...) {
 			diff := cmp.Diff(req.Timeseries, v2Req.Timeseries, opts...)
 			return fmt.Errorf("Timeseries did not match. Diff: %s", diff)
@@ -316,6 +316,12 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
 		}
 		// TODO: go-cmp the internal writerequest
+		for i := range req.Timeseries {
+			if !cmp.Equal(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
+				diff := cmp.Diff(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
+				return fmt.Errorf("Timeseries did not match. Index: %d, Diff: %s", i, diff)
+			}
+		}
 	}
 
 	return nil
