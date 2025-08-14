@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
@@ -178,6 +179,70 @@ func TestToProto(t *testing.T) {
 				Rules:           []*RuleDesc{},
 			},
 		},
+		"check grouplabels are properly propagated": {
+			input: rulefmt.RuleGroup{
+				Name: "group",
+				Labels: map[string]string{
+					"groupKey": "groupValue",
+				},
+				Interval: model.Duration(60 * time.Second),
+				Rules: []rulefmt.Rule{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: map[string]string{
+							"recordKey": "recordValue",
+						},
+						Annotations: make(map[string]string),
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: map[string]string{
+							"alertKey": "alertValue",
+						},
+						Annotations: make(map[string]string),
+					},
+				},
+			},
+			expected: &RuleGroupDesc{
+				Name:            "group",
+				Namespace:       namespace,
+				Interval:        60 * time.Second,
+				User:            user,
+				EvaluationDelay: 0,
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "groupKey",
+						Value: "groupValue",
+					},
+				},
+				Rules: []*RuleDesc{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "recordKey",
+								Value: "recordValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "alertKey",
+								Value: "alertValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+				},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -209,11 +274,13 @@ func TestFromProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 0,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:     "group",
 				Interval: model.Duration(60 * time.Second),
 				Rules:    []rulefmt.Rule{},
+				Labels:   map[string]string{},
 			},
 		},
 		"with evaluation delay": {
@@ -224,12 +291,14 @@ func TestFromProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 5 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
 			},
 		},
 		"with query offset": {
@@ -240,12 +309,14 @@ func TestFromProto(t *testing.T) {
 				User:        user,
 				QueryOffset: 2 * time.Second,
 				Rules:       []*RuleDesc{},
+				Labels:      []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
 				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
 				Rules:       []rulefmt.Rule{},
+				Labels:      map[string]string{},
 			},
 		},
 		"with both evaluation delay and query offset": {
@@ -257,6 +328,7 @@ func TestFromProto(t *testing.T) {
 				EvaluationDelay: 5 * time.Second,
 				QueryOffset:     2 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
@@ -264,6 +336,71 @@ func TestFromProto(t *testing.T) {
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
 				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
+			},
+		},
+		"check grouplabels are properly propagated": {
+			input: &RuleGroupDesc{
+				Name:            "group",
+				Namespace:       namespace,
+				Interval:        60 * time.Second,
+				User:            user,
+				EvaluationDelay: 0,
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "groupKey",
+						Value: "groupValue",
+					},
+				},
+				Rules: []*RuleDesc{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "recordKey",
+								Value: "recordValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "alertKey",
+								Value: "alertValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+				},
+			},
+			expected: rulefmt.RuleGroup{
+				Name: "group",
+				Labels: map[string]string{
+					"groupKey": "groupValue",
+				},
+				Interval: model.Duration(60 * time.Second),
+				Rules: []rulefmt.Rule{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: map[string]string{
+							"recordKey": "recordValue",
+						},
+						Annotations: make(map[string]string),
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: map[string]string{
+							"alertKey": "alertValue",
+						},
+						Annotations: make(map[string]string),
+					},
+				},
 			},
 		},
 	}
