@@ -196,7 +196,22 @@ jobs:
       - prepare
     strategy:
       matrix:
-        target: ${{ fromJSON(needs.prepare.outputs.image_build_targets) }}
+        # target: ${{ fromJSON(needs.prepare.outputs.image_build_targets) }}
+        include:
+          - name: "metaconvert"
+            target: "./cmd/metaconvert/.uptodate"
+
+          - name: "mimir"
+            target: "./cmd/mimir/.uptodate"
+
+          - name: "query-tee"
+            target: "./cmd/query-tee/.uptodate"
+
+          - name: "mimirtool"
+            target: "./cmd/mimirtool/.uptodate"
+
+          - name: "copyblocks"
+            target: "./tools/copyblocks/.uptodate"
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -227,7 +242,7 @@ jobs:
       - name: Upload Archive with Docker Image
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }} Docker Image # TODO: make this name nicer, it's currently something like './cmd/mimirtool/.uptodate Docker Image'
+          name: ${{ matrix.name }} Docker Image
           path: ./image.tar
 
   build-race-image:
@@ -296,7 +311,7 @@ jobs:
       - name: Download mimirtool Docker Image
         uses: actions/download-artifact@v4
         with:
-          name: ./cmd/mimirtool/.uptodate Docker Image
+          name: mimirtool Docker Image
       - name: Extract Docker Image from Archive
         run: tar xvf image.tar -C /
       - name: Load Mimirtool Image into Docker
