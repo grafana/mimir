@@ -73,7 +73,7 @@ To reduce cardinality in your queries, limit operations that involve many labels
 
 ## Use recording rules
 
-If you need to run a particularly expensive or complex query, consider creating a recording rule to minimize its load. Recording rules in Prometheus involve running queries at a predetermined time and then precomputing the query results to save for faster retrieval later.
+If you need to run a particularly expensive or complex query, consider creating a recording rule to minimize its load. Recording rules in Mimir involve precomputing queries at a predetermined time and then saving the results for faster retrieval later.
 
 Recording rules are useful for the following types of queries:
 
