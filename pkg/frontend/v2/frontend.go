@@ -397,6 +397,52 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
+	firstMessage, err := f.receiveFromStream(stream)
+	if err != nil {
+		return err
+	}
+	if firstMessage == nil {
+		return errors.New("received EOF at start of stream")
+	}
+
+	switch d := firstMessage.Data.(type) {
+	case *frontendv2pb.QueryResultStreamRequest_Metadata:
+		return f.receiveResultForHTTPRequest(userID, firstMessage, d, stream)
+	default:
+		return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
+	}
+}
+
+func (f *Frontend) receiveFromStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (*frontendv2pb.QueryResultStreamRequest, error) {
+	resp, err := stream.Recv()
+	if err == nil {
+		return resp, nil
+	}
+
+	if errors.Is(err, io.EOF) {
+		return nil, nil
+	}
+
+	if errors.Is(err, context.Canceled) {
+		if cause := context.Cause(stream.Context()); cause != nil {
+			return nil, fmt.Errorf("aborted streaming on canceled context: %w", cause)
+		}
+	}
+
+	return nil, fmt.Errorf("failed to receive query result stream message: %w", err)
+}
+
+func (f *Frontend) receiveResultForHTTPRequest(userID string, firstMessage *frontendv2pb.QueryResultStreamRequest, metadata *frontendv2pb.QueryResultStreamRequest_Metadata, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
+	req := f.requests.get(firstMessage.QueryID)
+
+	if req == nil {
+		return fmt.Errorf("query %d not found", firstMessage.QueryID)
+	}
+
+	if req.userID != userID {
+		return fmt.Errorf("expected metadata for user: %q, got: %q", req.userID, userID)
+	}
+
 	reader, writer := io.Pipe()
 	defer func(c *io.PipeWriter) {
 		if err := c.CloseWithError(err); err != nil {
@@ -404,66 +450,46 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 	}(writer)
 
-	metadataReceived := false
-
-	for {
-		var resp *frontendv2pb.QueryResultStreamRequest
-		resp, err = stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if errors.Is(err, context.Canceled) {
-				if cause := context.Cause(stream.Context()); cause != nil {
-					return fmt.Errorf("aborted streaming on canceled context: %w", cause)
-				}
-			}
-			return fmt.Errorf("failed to receive query result stream message: %w", err)
-		}
-		switch d := resp.Data.(type) {
-		case *frontendv2pb.QueryResultStreamRequest_Metadata:
-			if metadataReceived {
-				return fmt.Errorf("metadata for query ID %d received more than once", resp.QueryID)
-			}
-			req := f.requests.get(resp.QueryID)
-			if req == nil {
-				return fmt.Errorf("query %d not found", resp.QueryID)
-			}
-			if req.userID != userID {
-				return fmt.Errorf("expected metadata for user: %s, got: %s", req.userID, userID)
-			}
-			res := queryResultWithBody{
-				queryResult: &frontendv2pb.QueryResultRequest{
-					QueryID: resp.QueryID,
-					Stats:   d.Metadata.Stats,
-					HttpResponse: &httpgrpc.HTTPResponse{
-						Code:    d.Metadata.Code,
-						Headers: d.Metadata.Headers,
-					},
-				},
-				bodyStream: reader,
-			}
-			select {
-			case req.response <- res: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
-				metadataReceived = true
-			default:
-				level.Warn(f.log).Log("msg", "failed to write query result to the response channel",
-					"queryID", resp.QueryID, "user", req.userID)
-			}
-		case *frontendv2pb.QueryResultStreamRequest_Body:
-			if !metadataReceived {
-				return fmt.Errorf("result body for query ID %d received before metadata", resp.QueryID)
-			}
-			_, err = writer.Write(d.Body.Chunk)
-			if err != nil {
-				return fmt.Errorf("failed to write query result body chunk: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown query result stream message type: %T", resp.Data)
-		}
+	res := queryResultWithBody{
+		queryResult: &frontendv2pb.QueryResultRequest{
+			QueryID: firstMessage.QueryID,
+			Stats:   metadata.Metadata.Stats,
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code:    metadata.Metadata.Code,
+				Headers: metadata.Metadata.Headers,
+			},
+		},
+		bodyStream: reader,
 	}
 
-	return nil
+	select {
+	case req.response <- res:
+		// Should always be possible unless QueryResultStream is called multiple times with the same queryID.
+	default:
+		level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", firstMessage.QueryID, "user", req.userID)
+		return fmt.Errorf("failed to write query result to the response channel for query ID %d for user %q", firstMessage.QueryID, userID)
+	}
+
+	for {
+		resp, err := f.receiveFromStream(stream)
+		if err != nil {
+			return err
+		}
+		if resp == nil {
+			// EOF. We are done.
+			return nil
+		}
+
+		d, ok := resp.Data.(*frontendv2pb.QueryResultStreamRequest_Body)
+		if !ok {
+			return fmt.Errorf("unexpected query result stream message type after first message: %T", resp.Data)
+		}
+
+		_, err = writer.Write(d.Body.Chunk)
+		if err != nil {
+			return fmt.Errorf("failed to write query result body chunk: %w", err)
+		}
+	}
 }
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return
