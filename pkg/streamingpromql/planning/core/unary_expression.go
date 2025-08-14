@@ -62,7 +62,7 @@ func (u *UnaryExpression) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (u *UnaryExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperator(u.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for UnaryExpression: %w", err)
