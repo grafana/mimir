@@ -70,7 +70,7 @@ func main() {
 	flag.IntVar(&cfg.histNumBins, "hist-num-bins", defaultHistNumBins, "The number of bins to display in the analysis histogram")
 	flag.StringVar(&cfg.resourceAttributeLabels, "resource-attribute-labels", defaultResourceAttributeLabels, "Comma-delimited list of labels to promote to resource attributes")
 	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
-	flag.StringVar(&cfg.outputFormat, "output-format", defaultOutputFormat, "Format to output chunks in (options: 'json', 'protobuf')")
+	flag.StringVar(&cfg.outputFormat, "output-format", defaultOutputFormat, "Format to output chunks in (options: 'json', 'protobuf', 'arrow')")
 	flag.StringVar(&cfg.compressionType, "compression-type", "", "Compression type to use")
 	flag.IntVar(&cfg.numBatches, "num-batches", 0, "The number of batches to convert (<=0 for all)")
 

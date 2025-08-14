@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/cmd/otelconvert/arrow"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -34,7 +35,7 @@ func validateConvertConfig(cfg config) error {
 	if cfg.dest == "" && !cfg.count {
 		return fmt.Errorf("must use either --dest or --count")
 	}
-	if cfg.outputFormat != "protobuf" && cfg.outputFormat != "json" {
+	if cfg.outputFormat != "protobuf" && cfg.outputFormat != "json" && cfg.outputFormat != "arrow" {
 		return fmt.Errorf("--output-format must be one of 'json' or 'protobuf'")
 	}
 
@@ -337,6 +338,11 @@ func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64,
 		buf, err = proto.Marshal(md)
 		if err != nil {
 			return fmt.Errorf("marshal protobuf message: %w", err)
+		}
+	case "arrow":
+		buf, err = arrow.Marshal(md)
+		if err != nil {
+			return fmt.Errorf("marshal arrow message: %w", err)
 		}
 	default:
 		return fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
