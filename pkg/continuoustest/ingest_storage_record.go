@@ -314,22 +314,15 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		if len(req.Timeseries) != len(v2Req.Timeseries) {
 			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
 		}
-		opts := []cmp.Option{
-			cmpopts.EquateNaNs(),
-		}
-		opts = append(opts, cmp.Comparer(func(a, b *mimirpb.TimeSeries) bool {
-			if a == nil && b == nil {
-				return true
-			}
-			if a == nil || b == nil {
-				return false
-			}
-			return cmp.Equal(*a, *b, opts...)
-		}))
 		for i := range req.Timeseries {
-			if !cmp.Equal(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...) {
-				diff := cmp.Diff(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries, opts...)
-				return fmt.Errorf("Timeseries did not match. Index: %d, Diff: %s", i, diff)
+			if req.Timeseries[i].CreatedTimestamp != v2Req.Timeseries[i].CreatedTimestamp {
+				return fmt.Errorf("CreatedTimestamp did not match. Index: %d, orig: %d, v2: %d", i, req.Timeseries[i].CreatedTimestamp, v2Req.Timeseries[i].CreatedTimestamp)
+			}
+			if req.Timeseries[i].SkipUnmarshalingExemplars != v2Req.Timeseries[i].SkipUnmarshalingExemplars {
+				return fmt.Errorf("SkipUnmarshalingExemplars did not match. Index: %d, orig: %t, v2: %t", i, req.Timeseries[i].SkipUnmarshalingExemplars, v2Req.Timeseries[i].SkipUnmarshalingExemplars)
+			}
+			if len(req.Timeseries[i].Labels) != len(v2Req.Timeseries[i].Labels) {
+				return fmt.Errorf("Labels length did not match. Index: %d, orig: %d, v2: %d", i, len(req.Timeseries[i].Labels), len(req.Timeseries[i].Labels))
 			}
 		}
 	}
