@@ -49,6 +49,7 @@ type config struct {
 	dedupe                  bool
 	outputFormat            string
 	compressionType         string
+	numBatches              int
 }
 
 func main() {
@@ -71,6 +72,7 @@ func main() {
 	flag.BoolVar(&cfg.dedupe, "dedupe", false, "Dedupe by batching metrics with the same resource and scope attributes")
 	flag.StringVar(&cfg.outputFormat, "output-format", defaultOutputFormat, "Format to output chunks in (options: 'json', 'protobuf')")
 	flag.StringVar(&cfg.compressionType, "compression-type", "", "Compression type to use")
+	flag.IntVar(&cfg.numBatches, "num-batches", 0, "The number of batches to convert (<=0 for all)")
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (this will run much slower than non-verbose)")
 	flag.StringVar(&pprofPort, "pprof-port", "6060", "The pprof server port")

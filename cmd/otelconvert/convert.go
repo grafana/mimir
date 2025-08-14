@@ -166,6 +166,11 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 			postingsCount = 0
 		}
 
+		if cfg.numBatches > 0 && batchCount >= cfg.numBatches {
+			log.Printf("%d batches reached; exiting early\n", batchCount)
+			break
+		}
+
 		chkMetas := []chunks.Meta(nil)
 		err = ir.Series(p.At(), &builder, &chkMetas)
 		if err != nil {
