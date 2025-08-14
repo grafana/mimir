@@ -270,39 +270,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}()
 
-	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
-
-enqueueAgain:
-	spanLogger.DebugLog("msg", "enqueuing request")
-
-	var cancelCh chan<- uint64
-	select {
-	case <-ctx.Done():
-		spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
-		return nil, nil, ctx.Err()
-
-	case f.requestsCh <- freq:
-		// Enqueued, let's wait for response.
-		enqRes := <-freq.enqueue
-		if enqRes.status == waitForResponse {
-			cancelCh = enqRes.cancelCh
-			break // go wait for response.
-		} else if enqRes.status == failed {
-			if enqRes.clientErr != nil {
-				// It failed because of a client error. No need to retry.
-				return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
-			}
-
-			retries--
-			if retries > 0 {
-				spanLogger.DebugLog("msg", "enqueuing request failed, will retry")
-				goto enqueueAgain
-			}
-		}
-
-		spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
-
-		return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	cancelCh, err := f.enqueueRequestWithRetries(ctx, freq, spanLogger)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
@@ -340,6 +310,40 @@ enqueueAgain:
 		}
 		return resp.queryResult.HttpResponse, body, nil
 	}
+}
+
+func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest, spanLogger *spanlogger.SpanLogger) (chan<- uint64, error) {
+	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
+
+	for attempt := range maxAttempts {
+		spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
+
+		select {
+		case <-ctx.Done():
+			spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
+			return nil, ctx.Err()
+
+		case f.requestsCh <- freq:
+			// Enqueued in our worker queue, let's wait for response from scheduler.
+			enqRes := <-freq.enqueue
+			switch enqRes.status {
+			case waitForResponse:
+				// Succeeded, go wait for response from querier.
+				return enqRes.cancelCh, nil
+			case failed:
+				if enqRes.clientErr != nil {
+					// It failed because of a client error. No need to retry.
+					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+				}
+			}
+
+			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.
+		}
+	}
+
+	spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
+
+	return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 }
 
 type cleanupReadCloser struct {
