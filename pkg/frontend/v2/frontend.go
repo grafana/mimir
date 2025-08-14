@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -39,7 +40,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
-	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -127,10 +127,11 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID      uint64
-	request      *httpgrpc.HTTPRequest
-	userID       string
-	statsEnabled bool
+	queryID         uint64
+	httpRequest     *httpgrpc.HTTPRequest
+	protobufRequest proto.Message
+	userID          string
+	statsEnabled    bool
 
 	ctx context.Context
 
@@ -223,7 +224,7 @@ func (f *Frontend) stopping(_ error) error {
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
 		return nil, nil, fmt.Errorf("frontend not running: %v", s)
@@ -235,16 +236,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req))
-
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
 	// cancel is passed to the cleanup function and invoked from there
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
-		request:      req,
+		httpRequest:  httpRequest,
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
