@@ -58,7 +58,7 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 }
 
 // enrichedVectorSelector is a struct to hold additional information about vector selectors,
-// mainly the set of matchers that are allowed to propagate inwards and outwards (same set used
+// mainly the set of labels that are allowed to propagate inwards and outwards (same set used
 // for both), and whether that set is for including or excluding, which are used only for aggregate
 // expressions and the expressions that contain them.
 type enrichedVectorSelector struct {
@@ -117,8 +117,7 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
-// info, see enrichedVectorSelector), along with the label matchers associated with them, and a boolean
-// indicating whether any vector selectors were found.
+// info, see enrichedVectorSelector), along with the label matchers associated with them.
 func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
@@ -163,13 +162,13 @@ func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *pars
 	}
 	groupingSet := makeStringSet(e.Grouping)
 	for _, vs := range vss {
-		updateVecSelWithAggInfo(vs, groupingSet, include)
+		updateVectorSelectorWithAggregationInfo(vs, groupingSet, include)
 	}
 	newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, include)
 	return vss, newMatchers
 }
 
-func updateVecSelWithAggInfo(vs *enrichedVectorSelector, groupingSet map[string]struct{}, include bool) {
+func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupingSet map[string]struct{}, include bool) {
 	if vs.containsAgg {
 		switch {
 		case vs.include && include:
