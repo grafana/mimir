@@ -293,6 +293,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		defer func() {
 			if r := recover(); r != nil {
 				level.Error(c.logger).Log("msg", "parquet-converter discovery goroutine panicked", "panic", r)
+				panic(r) // Re-panic to force service restart
 			}
 		}()
 
@@ -320,6 +321,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		defer func() {
 			if r := recover(); r != nil {
 				level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
+				panic(r) // Re-panic to force service restart
 			}
 		}()
 
@@ -364,13 +366,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			return g.Wait()
 		case err := <-c.ringSubservicesWatcher.Chan():
 			return errors.Wrap(err, "parquet-converter ring subservice failed")
-		default:
-			// Check if any goroutine failed (non-blocking)
-			select {
-			case <-gCtx.Done():
-				return g.Wait()
-			default:
-			}
+		case <-gCtx.Done():
+			// Check if any goroutine failed
+			return g.Wait()
 		}
 	}
 }
