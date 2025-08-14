@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -4115,4 +4116,22 @@ func TestInstantQueryDurationExpression(t *testing.T) {
 	t.Cleanup(mimirQuery.Close)
 
 	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
+}
+
+func TestEngine_RegisterNodeMaterializer(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	nodeType := planning.NodeType(1234)
+	materializer := dummyMaterializer{}
+	require.NoError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "should not fail to register new node type")
+
+	require.EqualError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "materializer for node type 1234 already registered", "should fail to register materializer again if already registered")
+}
+
+type dummyMaterializer struct{}
+
+func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	panic("not implemented")
 }

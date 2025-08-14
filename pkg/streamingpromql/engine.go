@@ -133,6 +133,15 @@ type Engine struct {
 	nodeMaterializers map[planning.NodeType]planning.NodeMaterializer
 }
 
+func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
+	if _, exists := e.nodeMaterializers[nodeType]; exists {
+		return fmt.Errorf("materializer for node type %s already registered", nodeType)
+	}
+
+	e.nodeMaterializers[nodeType] = materializer
+	return nil
+}
+
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
 }
