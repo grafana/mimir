@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -685,24 +686,53 @@ var errStopIter = errors.New("stop iteration")
 // stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
 func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
 	var lastModified time.Time
-	err := userBucket.WithExpectedErrs(func(err error) bool {
-		return errors.Is(err, errStopIter) // sentinel error
-	}).Iter(ctx, blockID.String(), func(name string) error {
-		if strings.HasSuffix(name, objstore.DirDelim) {
+
+	var err error
+
+	// If bucket supports UpdatedAt IterOptionType, use IterWithAttributes
+	// to reduce the amount of object attributes calls.
+	if slices.Contains(userBucket.SupportedIterOptions(), objstore.UpdatedAt) {
+		err = userBucket.WithExpectedErrs(func(err error) bool {
+			return errors.Is(err, errStopIter) // sentinel error
+		}).IterWithAttributes(ctx, blockID.String(), func(attrs objstore.IterObjectAttributes) error {
+			if strings.HasSuffix(attrs.Name, objstore.DirDelim) {
+				return nil
+			}
+
+			modified, ok := attrs.LastModified()
+			if !ok {
+				// If for some reason we don't get the last modified time, we can't check it, so we just skip it.
+				return nil
+			}
+
+			if modified.After(partialDeletionCutoffTime) {
+				return errStopIter
+			}
+			if modified.After(lastModified) {
+				lastModified = modified
+			}
 			return nil
-		}
-		attrib, err := userBucket.Attributes(ctx, name)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get attributes for %s", name)
-		}
-		if attrib.LastModified.After(partialDeletionCutoffTime) {
-			return errStopIter
-		}
-		if attrib.LastModified.After(lastModified) {
-			lastModified = attrib.LastModified
-		}
-		return nil
-	}, objstore.WithRecursiveIter())
+		}, objstore.WithRecursiveIter(), objstore.WithUpdatedAt())
+	} else {
+		err = userBucket.WithExpectedErrs(func(err error) bool {
+			return errors.Is(err, errStopIter) // sentinel error
+		}).Iter(ctx, blockID.String(), func(name string) error {
+			if strings.HasSuffix(name, objstore.DirDelim) {
+				return nil
+			}
+			attrib, err := userBucket.Attributes(ctx, name)
+			if err != nil {
+				return errors.Wrapf(err, "failed to get attributes for %s", name)
+			}
+			if attrib.LastModified.After(partialDeletionCutoffTime) {
+				return errStopIter
+			}
+			if attrib.LastModified.After(lastModified) {
+				lastModified = attrib.LastModified
+			}
+			return nil
+		}, objstore.WithRecursiveIter())
+	}
 
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil
