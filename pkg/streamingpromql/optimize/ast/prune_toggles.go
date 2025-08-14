@@ -20,9 +20,7 @@ type PruneToggles struct {
 }
 
 func NewPruneToggles() *PruneToggles {
-	return &PruneToggles{
-		mapper: NewPruneTogglesMapper(),
-	}
+	return &PruneToggles{}
 }
 
 func (p *PruneToggles) Name() string {
@@ -30,10 +28,14 @@ func (p *PruneToggles) Name() string {
 }
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	p.mapper = NewPruneTogglesMapper()
 	return p.mapper.Map(ctx, expr)
 }
 
 func (p *PruneToggles) HasChanged() bool {
+	if p.mapper == nil {
+		return false
+	}
 	return p.mapper.HasChanged()
 }
 
