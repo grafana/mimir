@@ -1763,28 +1763,6 @@ func Test_DecodeOptions(t *testing.T) {
 				ShardingDisabled: true,
 			},
 		},
-		{
-			name: "custom instant query splitting",
-			input: &http.Request{
-				Header: http.Header{
-					instantSplitControlHeader: []string{"1h"},
-				},
-			},
-			expected: &Options{
-				InstantSplitInterval: time.Hour.Nanoseconds(),
-			},
-		},
-		{
-			name: "disable instant query splitting",
-			input: &http.Request{
-				Header: http.Header{
-					instantSplitControlHeader: []string{"0"},
-				},
-			},
-			expected: &Options{
-				InstantSplitDisabled: true,
-			},
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -1813,14 +1791,6 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 		{
 			name:    "shard count disabled via header",
 			headers: http.Header{totalShardsControlHeader: []string{"0"}},
-		},
-		{
-			name:    "split interval header",
-			headers: http.Header{instantSplitControlHeader: []string{"1h0m0s"}},
-		},
-		{
-			name:    "split interval disabled via header",
-			headers: http.Header{instantSplitControlHeader: []string{"0"}},
 		},
 		{
 			name:    "cache disabled via header",

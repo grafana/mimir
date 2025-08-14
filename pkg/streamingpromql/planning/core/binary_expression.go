@@ -117,25 +117,20 @@ func (b *BinaryExpression) ChildrenLabels() []string {
 	return []string{"LHS", "RHS"}
 }
 
-func (b *BinaryExpression) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (b *BinaryExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	op, ok := b.Op.ToItemType()
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' binary expression", b.Op.String()))
 	}
 
-	if len(children) != 2 {
-		return nil, fmt.Errorf("expected exactly 2 children for BinaryExpression, got %v", len(children))
+	lhsVector, lhsScalar, err := b.getChildOperator(b.LHS, timeRange, materializer, "left")
+	if err != nil {
+		return nil, err
 	}
 
-	lhsVector, lhsScalar := b.getChildOperator(children[0])
-	rhsVector, rhsScalar := b.getChildOperator(children[1])
-
-	if lhsVector == nil && lhsScalar == nil {
-		return nil, fmt.Errorf("expected either InstantVectorOperator or ScalarOperator on left-hand side of BinaryExpression, got %T", children[0])
-	}
-
-	if rhsVector == nil && rhsScalar == nil {
-		return nil, fmt.Errorf("expected either InstantVectorOperator or ScalarOperator on right-hand side of BinaryExpression, got %T", children[1])
+	rhsVector, rhsScalar, err := b.getChildOperator(b.RHS, timeRange, materializer, "right")
+	if err != nil {
+		return nil, err
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
@@ -177,14 +172,19 @@ func (b *BinaryExpression) OperatorFactory(children []types.Operator, timeRange 
 	return planning.NewSingleUseOperatorFactory(operators.NewDeduplicateAndMerge(o, params.MemoryConsumptionTracker)), nil
 }
 
-func (b *BinaryExpression) getChildOperator(child types.Operator) (types.InstantVectorOperator, types.ScalarOperator) {
-	switch child := child.(type) {
+func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
+	o, err := materializer.ConvertNodeToOperator(node, timeRange)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch o := o.(type) {
 	case types.InstantVectorOperator:
-		return child, nil
+		return o, nil, nil
 	case types.ScalarOperator:
-		return nil, child
+		return nil, o, nil
 	default:
-		return nil, nil
+		return nil, nil, fmt.Errorf("expected either InstantVectorOperator or ScalarOperator on %s-hand side of BinaryExpression, got %T", side, o)
 	}
 }
 

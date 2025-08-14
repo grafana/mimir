@@ -525,7 +525,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	}
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QueryPlanner,
 	)
 	if err != nil {
@@ -614,11 +614,18 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	var dispatcher *querier.Dispatcher
+
+	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
+		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable)
+	}
+
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.Cfg.Querier,
+		dispatcher,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,
@@ -628,6 +635,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		util_log.Logger,
 		t.Overrides,
 	)
+
+	if dispatcher != nil {
+		// If MQE is enabled, register the evaluation API with the external HTTP server.
+		t.API.RegisterEvaluationAPI(internalQuerierRouter)
+	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -642,11 +654,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.Server.HTTPServer.Handler
 	} else {
 		// Monolithic mode requires a query-frontend endpoint for the worker. If no frontend and scheduler endpoint
-		// is configured, Mimir will default to using frontend on localhost on it's own gRPC listening port.
-		if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
+		// is configured, Mimir will default to using frontend on localhost on its own gRPC listening port.
+		if !t.Cfg.Worker.IsSchedulerConfigured() {
 			address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
-			level.Info(util_log.Logger).Log("msg", "The querier worker has not been configured with either the query-frontend or query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic worker configuration. If queries are unresponsive, consider explicitly configuring the query-frontend or query-scheduler address for querier worker.", "address", address)
-			t.Cfg.Worker.FrontendAddress = address
+			level.Info(util_log.Logger).Log("msg", "The querier worker has not been configured with the query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic worker configuration. If queries are unresponsive, consider explicitly configuring the query-scheduler address for querier worker.", "address", address)
+			t.Cfg.Worker.SchedulerAddress = address
 		}
 
 		// Add a middleware to extract the trace context and add a header.
@@ -658,12 +670,12 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.API.AuthMiddleware.Wrap(internalQuerierRouter)
 	}
 
-	// If neither query-frontend nor query-scheduler is in use, then no worker is needed.
-	if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
+	// If no query-scheduler is in use, then no worker is needed.
+	if !t.Cfg.Worker.IsSchedulerConfigured() {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), dispatcher, util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
@@ -818,7 +830,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 			eng = streamingEngine
 		}
 	default:
-		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Querier.QueryEngine))
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
@@ -845,9 +857,17 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+	// If the query-frontend is running in the same process as the query-scheduler and
+	// the query-scheduler hasn't been explicitly configured, Mimir will default to trying
+	// to connect to a scheduler on localhost on its own gRPC listening port.
+	if t.Cfg.isAnyModuleEnabled(QueryScheduler, Read, All) && !t.Cfg.Frontend.FrontendV2.IsSchedulerConfigured() {
+		address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
+		level.Info(util_log.Logger).Log("msg", "The query-frontend has not been configured with the query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic frontend configuration. If queries are unresponsive, consider explicitly configuring the query-scheduler address for querier-frontend.", "address", address)
+		t.Cfg.Frontend.FrontendV2.SchedulerAddress = address
+	}
+
+	roundTripper, frontendV2, err := frontend.InitFrontend(
 		t.Cfg.Frontend,
-		t.Overrides,
 		t.Overrides,
 		t.Cfg.Server.GRPCListenPort,
 		util_log.Logger,
@@ -858,23 +878,12 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	var frontendSvc services.Service
-	if frontendV1 != nil {
-		t.API.RegisterQueryFrontend1(frontendV1)
-		t.FrontendV1 = frontendV1
-		frontendSvc = frontendV1
-	} else if frontendV2 != nil {
-		t.API.RegisterQueryFrontend2(frontendV2)
-		frontendSvc = frontendV2
-	}
+	t.API.RegisterQueryFrontend2(frontendV2)
 
 	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
-	// that the frontend is ready to receive requests when running v1 or v2 of the query-frontend,
-	// i.e. not using the "downstream-url" feature.
+	// that the frontend is ready to receive requests when running the query-frontend.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	if frontendSvc != nil {
-		roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
-	}
+	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendV2, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
@@ -883,13 +892,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
-		if frontendSvc != nil {
-			w.WatchService(frontendSvc)
-			// Note that we pass an independent context to the service, since we want to
-			// delay stopping it until in-flight requests are waited on.
-			return services.StartAndAwaitRunning(context.Background(), frontendSvc)
-		}
-		return nil
+		w.WatchService(frontendV2)
+		// Note that we pass an independent context to the service, since we want to
+		// delay stopping it until in-flight requests are waited on.
+		return services.StartAndAwaitRunning(context.Background(), frontendV2)
 	}, func(serviceContext context.Context) error {
 		select {
 		case <-serviceContext.Done():
@@ -899,11 +905,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 	}, func(_ error) error {
 		handler.Stop()
-
-		if frontendSvc != nil {
-			return services.StopAndAwaitTerminated(context.Background(), frontendSvc)
-		}
-		return nil
+		return services.StopAndAwaitTerminated(context.Background(), frontendV2)
 	}), nil
 }
 
@@ -964,7 +966,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QueryPlanner)
+		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
@@ -1311,7 +1313,7 @@ func (t *Mimir) setupModuleManager() error {
 		Read:    {QueryFrontend, Querier},
 		Write:   {Distributor, Ingester},
 
-		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		All: {QueryFrontend, QueryScheduler, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

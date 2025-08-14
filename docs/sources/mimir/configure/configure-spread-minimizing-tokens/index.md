@@ -2,7 +2,7 @@
 aliases:
   - ../operators-guide/configure/configure-spread-minimizing-tokens/
 description: Learn how to migrate ingesters to spread-minimizing tokens.
-weight: 115
+weight: 150
 menuTitle: Spread-minimizing tokens
 title: Migrate ingesters to spread-minimizing tokens
 ---

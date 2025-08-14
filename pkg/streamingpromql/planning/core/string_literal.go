@@ -56,7 +56,7 @@ func (s *StringLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func (s *StringLiteral) OperatorFactory(_ []types.Operator, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (s *StringLiteral) OperatorFactory(_ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition.ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil

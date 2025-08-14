@@ -6,6 +6,8 @@
 package astmapper
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -19,7 +21,7 @@ func init() {
 // ASTMapper is the exported interface for mapping between multiple AST representations
 type ASTMapper interface {
 	// Map the input expr and returns the mapped expr.
-	Map(expr parser.Expr) (mapped parser.Expr, err error)
+	Map(ctx context.Context, expr parser.Expr) (mapped parser.Expr, err error)
 }
 
 // MultiMapper can compose multiple ASTMappers
@@ -28,7 +30,7 @@ type MultiMapper struct {
 }
 
 // Map implements ASTMapper
-func (m *MultiMapper) Map(expr parser.Expr) (parser.Expr, error) {
+func (m *MultiMapper) Map(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
 	var result = expr
 	var err error
 
@@ -37,7 +39,7 @@ func (m *MultiMapper) Map(expr parser.Expr) (parser.Expr, error) {
 	}
 
 	for _, x := range m.mappers {
-		result, err = x.Map(result)
+		result, err = x.Map(ctx, result)
 		if err != nil {
 			return nil, err
 		}
@@ -65,18 +67,18 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 	return parser.ParseExpr(expr.String())
 }
 
-func cloneAndMap(mapper ASTExprMapper, expr parser.Expr) (parser.Expr, error) {
+func cloneAndMap(ctx context.Context, mapper ASTExprMapper, expr parser.Expr) (parser.Expr, error) {
 	cloned, err := cloneExpr(expr)
 	if err != nil {
 		return nil, err
 	}
-	return mapper.Map(cloned)
+	return mapper.Map(ctx, cloned)
 }
 
 type ExprMapper interface {
 	// MapExpr either maps a single AST expr or returns the unaltered expr.
 	// It returns a finished bool to signal whether no further recursion is necessary.
-	MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error)
+	MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error)
 }
 
 // NewASTExprMapper creates an ASTMapper from a ExprMapper
@@ -90,8 +92,13 @@ type ASTExprMapper struct {
 }
 
 // Map implements ASTMapper from a ExprMapper
-func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
-	expr, finished, err := em.MapExpr(expr)
+func (em ASTExprMapper) Map(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	// Check for context cancellation before mapping expressions.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	expr, finished, err := em.MapExpr(ctx, expr)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +113,7 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return nil, nil
 
 	case *parser.AggregateExpr:
-		expr, err := em.Map(e.Expr)
+		expr, err := em.Map(ctx, e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -114,13 +121,13 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return e, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := em.Map(e.LHS)
+		lhs, err := em.Map(ctx, e.LHS)
 		if err != nil {
 			return nil, err
 		}
 		e.LHS = lhs
 
-		rhs, err := em.Map(e.RHS)
+		rhs, err := em.Map(ctx, e.RHS)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +137,7 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 
 	case *parser.Call:
 		for i, arg := range e.Args {
-			mapped, err := em.Map(arg)
+			mapped, err := em.Map(ctx, arg)
 			if err != nil {
 				return nil, err
 			}
@@ -139,7 +146,7 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return e, nil
 
 	case *parser.SubqueryExpr:
-		mapped, err := em.Map(e.Expr)
+		mapped, err := em.Map(ctx, e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +154,7 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return e, nil
 
 	case *parser.ParenExpr:
-		mapped, err := em.Map(e.Expr)
+		mapped, err := em.Map(ctx, e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +162,15 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return e, nil
 
 	case *parser.UnaryExpr:
-		mapped, err := em.Map(e.Expr)
+		mapped, err := em.Map(ctx, e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		e.Expr = mapped
+		return e, nil
+
+	case *parser.StepInvariantExpr:
+		mapped, err := em.Map(ctx, e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +178,7 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		return e, nil
 
 	case *parser.MatrixSelector:
-		mapped, err := em.Map(e.VectorSelector)
+		mapped, err := em.Map(ctx, e.VectorSelector)
 		if err != nil {
 			return nil, err
 		}
@@ -176,4 +191,32 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 	default:
 		return nil, errors.Errorf("ASTExprMapper: unhandled expr type %T", expr)
 	}
+}
+
+// ExprMapperWithState wraps ExprMapper to include a method for checking if the mapper has changed the expression.
+type ExprMapperWithState interface {
+	ExprMapper
+	// HasChanged returns whether the mapper made any changes during mapping
+	HasChanged() bool
+}
+
+// ASTExprMapperWithState is a wrapper around an ASTExprMapper that stores the original mapper to provide a method to check if any changes were made.
+type ASTExprMapperWithState struct {
+	mapper    ExprMapperWithState
+	astMapper ASTExprMapper
+}
+
+func NewASTExprMapperWithState(mapper ExprMapperWithState) *ASTExprMapperWithState {
+	return &ASTExprMapperWithState{
+		mapper:    mapper,
+		astMapper: NewASTExprMapper(mapper),
+	}
+}
+
+func (w *ASTExprMapperWithState) Map(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	return w.astMapper.Map(ctx, expr)
+}
+
+func (w *ASTExprMapperWithState) HasChanged() bool {
+	return w.mapper.HasChanged()
 }

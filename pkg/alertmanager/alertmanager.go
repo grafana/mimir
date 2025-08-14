@@ -368,6 +368,13 @@ func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Reque
 		Status: statusSuccess,
 		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
 	})
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error marshalling success result", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error marshalling success result: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(d); err != nil {

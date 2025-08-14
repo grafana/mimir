@@ -82,10 +82,20 @@ func (f *FunctionCall) ChildrenLabels() []string {
 	return l
 }
 
-func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (f *FunctionCall) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
+	}
+
+	children := make([]types.Operator, 0, len(f.Args))
+	for _, arg := range f.Args {
+		o, err := materializer.ConvertNodeToOperator(arg, timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		children = append(children, o)
 	}
 
 	var absentLabels labels.Labels

@@ -12,7 +12,7 @@ import (
 )
 
 func TestSeriesDataRingBuffer(t *testing.T) {
-	buffer := &SeriesDataRingBuffer{}
+	buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
 
 	// Test empty buffer.
 	require.Equal(t, 0, buffer.Size())
@@ -79,7 +79,7 @@ func TestSeriesDataRingBuffer(t *testing.T) {
 }
 
 func TestSeriesDataRingBuffer_Resizing(t *testing.T) {
-	buffer := &SeriesDataRingBuffer{}
+	buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
 
 	// Add two series to fill the slice.
 	s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}
@@ -111,7 +111,7 @@ func TestSeriesDataRingBuffer_Resizing(t *testing.T) {
 }
 
 func TestSeriesDataRingBuffer_RemovingThroughWrapAround(t *testing.T) {
-	buffer := &SeriesDataRingBuffer{}
+	buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
 
 	// Add four series to fill the slice.
 	s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}

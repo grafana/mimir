@@ -68,6 +68,7 @@ func reuseSymbolsSlice(s []string) {
 	for i := range s {
 		s[i] = ""
 	}
+	//nolint:staticcheck // SA6002: We can't put a pointer back in the pool, since it holds slices instead.
 	symbolsSlicePool.Put(s[:0])
 }
 

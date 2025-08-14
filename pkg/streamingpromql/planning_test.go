@@ -262,7 +262,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 30},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,
@@ -297,7 +297,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 28},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 29},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,
@@ -1104,7 +1104,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.Equal(t, testCase.expectedPlan, encoded)
 
 			// Decode plan, confirm it matches the original plan
-			decodedPlan, err := encoded.ToDecodedPlan()
+			decodedPlan, _, err := encoded.ToDecodedPlan()
 			require.NoError(t, err)
 			require.Equal(t, originalPlan, decodedPlan)
 		})
@@ -1173,7 +1173,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 						require.NoError(b, err)
 					}
 
-					_, err = unmarshalled.ToDecodedPlan()
+					_, _, err = unmarshalled.ToDecodedPlan()
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1621,7 +1621,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			output, err := testCase.input.ToDecodedPlan()
+			output, _, err := testCase.input.ToDecodedPlan()
 			require.EqualError(t, err, testCase.expectedError)
 			require.Nil(t, output)
 		})

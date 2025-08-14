@@ -69,7 +69,7 @@ func (l *runtimeConfigTenantLimits) AllByUserID() map[string]*validation.Limits 
 
 // runtimeConfigLoader loads and validates the per-tenant limits
 type runtimeConfigLoader struct {
-	validate func(limits validation.Limits) error
+	validate func(limits *validation.Limits) error
 }
 
 func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
@@ -93,7 +93,7 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 			if limits == nil {
 				continue
 			}
-			if err := l.validate(*limits); err != nil {
+			if err := l.validate(limits); err != nil {
 				return nil, err
 			}
 		}
