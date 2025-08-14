@@ -530,6 +530,9 @@ func (i *RowRangesValueIterator) Next() bool {
 					i.remainingRr = i.remainingRr[1:]
 				}
 			}
+			if i.pageIterator.CanSkip() && i.remaining > 0 {
+				i.currentRow += i.pageIterator.Skip(i.next - i.currentRow - 1)
+			}
 			i.currentRow++
 		}
 		parquet.Release(page)
@@ -599,6 +602,16 @@ func (i *PageValueIterator) Next() bool {
 	}
 
 	return true
+}
+
+func (i *PageValueIterator) CanSkip() bool {
+	return i.vr == nil
+}
+
+func (i *PageValueIterator) Skip(n int64) int64 {
+	r := min(n, i.p.NumRows()-int64(i.current)-1)
+	i.current += int(r)
+	return r
 }
 
 func (i *PageValueIterator) Reset(p parquet.Page) {
