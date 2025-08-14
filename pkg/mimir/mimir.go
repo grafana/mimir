@@ -112,25 +112,26 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API                   api.Config                      `yaml:"api"`
-	Server                server.Config                   `yaml:"server"`
-	Distributor           distributor.Config              `yaml:"distributor"`
-	Querier               querier.Config                  `yaml:"querier"`
-	IngesterClient        client.Config                   `yaml:"ingester_client"`
-	Ingester              ingester.Config                 `yaml:"ingester"`
-	Flusher               flusher.Config                  `yaml:"flusher"`
-	LimitsConfig          validation.Limits               `yaml:"limits"`
-	Worker                querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
-	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
-	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
-	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor             compactor.Config                `yaml:"compactor"`
-	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
-	Vault                 vault.Config                    `yaml:"vault"`
+	API                            api.Config                      `yaml:"api"`
+	Server                         server.Config                   `yaml:"server"`
+	Distributor                    distributor.Config              `yaml:"distributor"`
+	Querier                        querier.Config                  `yaml:"querier"`
+	IngesterClient                 client.Config                   `yaml:"ingester_client"`
+	Ingester                       ingester.Config                 `yaml:"ingester"`
+	Flusher                        flusher.Config                  `yaml:"flusher"`
+	LimitsConfig                   validation.Limits               `yaml:"limits"`
+	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor                      compactor.Config                `yaml:"compactor"`
+	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
+	IncludeTenantIDInProfileLabels bool                            `yaml:"include_tenant_id_in_profile_labels" category:"experimental"`
+	Vault                          vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -204,6 +205,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
+	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", false, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
 	c.ContinuousTest.RegisterFlags(f)
