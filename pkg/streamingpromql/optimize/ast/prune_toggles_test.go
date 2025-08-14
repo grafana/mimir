@@ -4,9 +4,12 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
@@ -54,23 +57,43 @@ var testCasesPruneToggles = map[string]string{
 
 func TestPruneToggles(t *testing.T) {
 	ctx := context.Background()
-	reg := prometheus.NewPedanticRegistry()
-	optimizer := ast.NewPruneToggles(reg)
 
 	for input, expected := range testCasesPruneToggles {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
-
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+
+			reg := prometheus.NewPedanticRegistry()
+			optimizer := ast.NewPruneToggles(reg)
 			outputExpr, err := optimizer.Apply(ctx, inputExpr)
 			require.NoError(t, err)
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
-			require.Equal(t, input != expected, optimizer.HasChanged())
+			expectedChanged := 0
+			if input != expected {
+				expectedChanged = 1
+			}
+			checkPruneTogglesMetrics(t, reg, 1, expectedChanged)
 		})
 	}
+}
+
+func checkPruneTogglesMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
+	const metricNameTotal = "cortex_mimir_query_engine_prune_toggles_attempted_total"
+	expectedMetricsTotal := fmt.Sprintf(`# HELP %v Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.
+# TYPE %v counter
+%v %v
+`, metricNameTotal, metricNameTotal, metricNameTotal, expectedTotal)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetricsTotal), metricNameTotal))
+
+	const metricNameChanged = "cortex_mimir_query_engine_prune_toggles_rewritten_total"
+	expectedMetricsChanged := fmt.Sprintf(`# HELP %v Total number of queries where the optimization pass has rewritten the query by pruning toggles.
+# TYPE %v counter
+%v %v
+`, metricNameChanged, metricNameChanged, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetricsChanged), metricNameChanged))
 }
 
 func TestPruneTogglesWithData(t *testing.T) {

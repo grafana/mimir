@@ -18,14 +18,12 @@ import (
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == 1)` -> `(avg(rate(foo[1m])))`
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
-	mapper *astmapper.ASTExprMapperWithState
-
 	pruneTogglesMetrics
 }
 
 type pruneTogglesMetrics struct {
-	pruneTogglesAttempts  prometheus.Counter
-	pruneTogglesSuccesses prometheus.Counter
+	pruneTogglesAttempts prometheus.Counter
+	pruneTogglesRewrites prometheus.Counter
 }
 
 func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
@@ -34,9 +32,9 @@ func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
 			Name: "cortex_mimir_query_engine_prune_toggles_attempted_total",
 			Help: "Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.",
 		}),
-		pruneTogglesSuccesses: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_prune_toggles_succeeded_total",
-			Help: "Total number of queries where the optimization pass has successfully rewritten by pruning toggles.",
+		pruneTogglesRewrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_prune_toggles_rewritten_total",
+			Help: "Total number of queries where the optimization pass has rewritten the query by pruning toggles.",
 		}),
 	}
 	return &PruneToggles{
@@ -49,20 +47,13 @@ func (p *PruneToggles) Name() string {
 }
 
 func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	p.mapper = NewPruneTogglesMapper()
 	p.pruneTogglesAttempts.Inc()
-	newExpr, err := p.mapper.Map(ctx, expr)
-	if p.mapper.HasChanged() {
-		p.pruneTogglesSuccesses.Inc()
+	mapper := NewPruneTogglesMapper()
+	newExpr, err := mapper.Map(ctx, expr)
+	if mapper.HasChanged() {
+		p.pruneTogglesRewrites.Inc()
 	}
 	return newExpr, err
-}
-
-func (p *PruneToggles) HasChanged() bool {
-	if p.mapper == nil {
-		return false
-	}
-	return p.mapper.HasChanged()
 }
 
 func NewPruneTogglesMapper() *astmapper.ASTExprMapperWithState {
