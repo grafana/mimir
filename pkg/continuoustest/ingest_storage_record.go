@@ -317,7 +317,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 		}
 		// TODO: go-cmp the internal writerequest
 		for i := range req.Timeseries {
-			if !cmp.Equal(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
+			if !cmp.Equal(*req.Timeseries[i].TimeSeries, *v2Req.Timeseries[i].TimeSeries) {
 				diff := cmp.Diff(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
 				return fmt.Errorf("Timeseries did not match. Index: %d, Diff: %s", i, diff)
 			}
