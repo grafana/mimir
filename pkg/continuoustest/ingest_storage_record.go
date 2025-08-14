@@ -49,12 +49,12 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 			Help: "Number of records analyzed by the tool per tenant.",
 		}, []string{"user"}),
 		recordsWithMetadataProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "mimir_continuous_test_ingest_storage_record_metadata_processed_total",
-			Help: "Number of records containing metadata analyzed by the tool per tenant.",
+			Name: "mimir_continuous_test_ingest_storage_metadata_processed_total",
+			Help: "Number of metadata analyzed by the tool per tenant.",
 		}, []string{"user"}),
 		recordsWithTimeseriesProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "mimir_continuous_test_ingest_storage_record_timeseries_processed_total",
-			Help: "Number of records containing timeseries analyzed by the tool per tenant.",
+			Name: "mimir_continuous_test_ingest_storage_timeseries_processed_total",
+			Help: "Number of timeseries analyzed by the tool per tenant.",
 		}, []string{"user"}),
 	}
 }
