@@ -18,16 +18,12 @@ import (
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == 1)` -> `(avg(rate(foo[1m])))`
 // e.g. `(avg(rate(foo[1m]))) and on() (vector(1) == -1)` -> `(vector(1) == -1)`
 type PruneToggles struct {
-	pruneTogglesMetrics
-}
-
-type pruneTogglesMetrics struct {
 	pruneTogglesAttempts prometheus.Counter
 	pruneTogglesRewrites prometheus.Counter
 }
 
 func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
-	metrics := pruneTogglesMetrics{
+	return &PruneToggles{
 		pruneTogglesAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_prune_toggles_attempted_total",
 			Help: "Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.",
@@ -36,9 +32,6 @@ func NewPruneToggles(reg prometheus.Registerer) *PruneToggles {
 			Name: "cortex_mimir_query_engine_prune_toggles_rewritten_total",
 			Help: "Total number of queries where the optimization pass has rewritten the query by pruning toggles.",
 		}),
-	}
-	return &PruneToggles{
-		pruneTogglesMetrics: metrics,
 	}
 }
 

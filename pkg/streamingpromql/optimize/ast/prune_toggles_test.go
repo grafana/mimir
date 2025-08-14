@@ -82,18 +82,15 @@ func TestPruneToggles(t *testing.T) {
 
 func checkPruneTogglesMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
 	const metricNameTotal = "cortex_mimir_query_engine_prune_toggles_attempted_total"
-	expectedMetricsTotal := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.
+	const metricNameChanged = "cortex_mimir_query_engine_prune_toggles_rewritten_total"
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by pruning toggles.
 # TYPE %[1]v counter
 %[1]v %[2]v
-`, metricNameTotal, expectedTotal)
-	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetricsTotal), metricNameTotal))
-
-	const metricNameChanged = "cortex_mimir_query_engine_prune_toggles_rewritten_total"
-	expectedMetricsChanged := fmt.Sprintf(`# HELP %v Total number of queries where the optimization pass has rewritten the query by pruning toggles.
-# TYPE %v counter
-%v %v
-`, metricNameChanged, metricNameChanged, metricNameChanged, expectedChanged)
-	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetricsChanged), metricNameChanged))
+# HELP %[3]v Total number of queries where the optimization pass has rewritten the query by pruning toggles.
+# TYPE %[3]v counter
+%[3]v %[4]v
+`, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
 }
 
 func TestPruneTogglesWithData(t *testing.T) {
