@@ -11,20 +11,25 @@ import (
 // Materializer is responsible for converting query plan nodes to operators.
 // This type is not thread safe.
 type Materializer struct {
-	operatorFactories map[Node]OperatorFactory
+	operatorFactories map[OperatorFactoryMapKey]OperatorFactory
 	operatorParams    *OperatorParameters
+}
+
+type OperatorFactoryMapKey struct {
+	node      Node
+	timeRange types.QueryTimeRange
 }
 
 func NewMaterializer(params *OperatorParameters) *Materializer {
 	return &Materializer{
-		operatorFactories: make(map[Node]OperatorFactory),
+		operatorFactories: make(map[OperatorFactoryMapKey]OperatorFactory),
 		operatorParams:    params,
 	}
 }
 
 func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
-	// FIXME: we should check that we're not trying to get the same operator but with a different time range
-	if f, ok := m.operatorFactories[node]; ok {
+	key := OperatorFactoryMapKey{node: node, timeRange: timeRange}
+	if f, ok := m.operatorFactories[key]; ok {
 		return f.Produce()
 	}
 
@@ -33,7 +38,7 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 		return nil, err
 	}
 
-	m.operatorFactories[node] = f
+	m.operatorFactories[key] = f
 
 	return f.Produce()
 }
