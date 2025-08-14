@@ -368,7 +368,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 	for _, off := range consumeOffs {
 		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
 			off.start, off.resume, off.end, endTime, s.cfg.JobSize,
-			time.Now().Add(-s.cfg.MaxScanAge), s.logger)
+			endTime.Add(-s.cfg.MaxScanAge), s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
