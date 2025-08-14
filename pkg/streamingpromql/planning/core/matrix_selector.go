@@ -5,8 +5,10 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
@@ -87,4 +89,15 @@ func (m *MatrixSelector) OperatorFactory(_ *planning.Materializer, timeRange typ
 
 func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
+}
+
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _ time.Duration) planning.QueriedTimeRange {
+	// Matrix selectors do not use the lookback delta, so we don't pass it below.
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
+
+	return planning.QueriedTimeRange{
+		MinT:           timestamp.Time(minT),
+		MaxT:           timestamp.Time(maxT),
+		AnyDataQueried: true,
+	}
 }

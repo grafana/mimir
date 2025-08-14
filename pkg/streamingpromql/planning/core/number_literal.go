@@ -5,6 +5,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -64,4 +65,8 @@ func (n *NumberLiteral) OperatorFactory(_ *planning.Materializer, timeRange type
 
 func (n *NumberLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
+}
+
+func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.QueriedTimeRange{AnyDataQueried: false}
 }

@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -65,6 +66,10 @@ func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) type
 
 func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
+}
+
+func (d *Duplicate) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
 func (d *Duplicate) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

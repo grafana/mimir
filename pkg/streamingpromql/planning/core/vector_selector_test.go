@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestVectorSelector_Describe(t *testing.T) {
@@ -329,4 +331,73 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 
 func timestampOf(ts int64) *time.Time {
 	return TimeFromTimestamp(&ts)
+}
+
+func TestVectorSelector_QueriedTimeRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	lookbackDelta := 7 * time.Minute
+	offset := 3 * time.Minute
+	ts := timestamp.Time(0).Add(5 * time.Hour)
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	testCases := map[string]struct {
+		selector *VectorSelector
+		expected planning.QueriedTimeRange
+	}{
+		"no timestamp or offset": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           startT.Add(-lookbackDelta).Add(excludeLowerBoundary),
+				MaxT:           endT,
+				AnyDataQueried: true,
+			},
+		},
+		"timestamp set, no offset": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           ts.Add(-lookbackDelta).Add(excludeLowerBoundary),
+				MaxT:           ts,
+				AnyDataQueried: true,
+			},
+		},
+		"offset set, no timestamp": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Offset: offset,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           startT.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary),
+				MaxT:           endT.Add(-offset),
+				AnyDataQueried: true,
+			},
+		},
+		"both timestamp and offset set": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Offset:    offset,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           ts.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary),
+				MaxT:           ts.Add(-offset),
+				AnyDataQueried: true,
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta))
+		})
+	}
 }

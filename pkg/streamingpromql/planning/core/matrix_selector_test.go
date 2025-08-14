@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestMatrixSelector_Describe(t *testing.T) {
@@ -339,6 +341,80 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 
 			require.True(t, testCase.a.EquivalentTo(testCase.a))
 			require.True(t, testCase.b.EquivalentTo(testCase.b))
+		})
+	}
+}
+
+func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	rng := 7 * time.Minute
+	offset := 3 * time.Minute
+	ts := timestamp.Time(0).Add(5 * time.Hour)
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	testCases := map[string]struct {
+		selector *MatrixSelector
+		expected planning.QueriedTimeRange
+	}{
+		"no timestamp or offset": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range: rng,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           startT.Add(-rng).Add(excludeLowerBoundary),
+				MaxT:           endT,
+				AnyDataQueried: true,
+			},
+		},
+		"timestamp set, no offset": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:     rng,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           ts.Add(-rng).Add(excludeLowerBoundary),
+				MaxT:           ts,
+				AnyDataQueried: true,
+			},
+		},
+		"offset set, no timestamp": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:  rng,
+					Offset: offset,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary),
+				MaxT:           endT.Add(-offset),
+				AnyDataQueried: true,
+			},
+		},
+		"both timestamp and offset set": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:     rng,
+					Offset:    offset,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.QueriedTimeRange{
+				MinT:           ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary),
+				MaxT:           ts.Add(-offset),
+				AnyDataQueried: true,
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, 100*time.Minute))
 		})
 	}
 }

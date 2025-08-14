@@ -5,8 +5,10 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
@@ -90,4 +92,14 @@ func (v *VectorSelector) OperatorFactory(_ *planning.Materializer, timeRange typ
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
+
+	return planning.QueriedTimeRange{
+		MinT:           timestamp.Time(minT),
+		MaxT:           timestamp.Time(maxT),
+		AnyDataQueried: true,
+	}
 }

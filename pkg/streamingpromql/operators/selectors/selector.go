@@ -93,29 +93,13 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	if s.LookbackDelta != 0 && s.Range != 0 {
-		return errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
-	}
-
-	startTimestamp := s.TimeRange.StartT
-	endTimestamp := s.TimeRange.EndT
-
-	if s.Timestamp != nil {
-		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
-		startTimestamp = *s.Timestamp
-		endTimestamp = *s.Timestamp
-	}
-
-	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
-	rangeMilliseconds := s.Range.Milliseconds()
-	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
-	endTimestamp = endTimestamp - s.Offset
+	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta)
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.TimeRange.IntervalMilliseconds,
-		Range: rangeMilliseconds,
+		Range: s.Range.Milliseconds(),
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
@@ -135,6 +119,28 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, s.Matchers...)
 	return nil
+}
+
+func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, rng time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
+	if lookbackDelta != 0 && rng != 0 {
+		panic("both lookback delta and range are non-zero")
+	}
+
+	startTimestamp := timeRange.StartT
+	endTimestamp := timeRange.EndT
+
+	if timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
+		startTimestamp = *timestamp
+		endTimestamp = *timestamp
+	}
+
+	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
+	rangeMilliseconds := rng.Milliseconds()
+	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
+	endTimestamp = endTimestamp - offset
+
+	return startTimestamp, endTimestamp
 }
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {

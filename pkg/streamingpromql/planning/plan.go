@@ -85,7 +85,46 @@ type Node interface {
 	// May return an error if the kind of result cannot be determined (eg. because the node references an unknown function).
 	ResultType() (parser.ValueType, error)
 
+	// QueriedTimeRange returns the range of data queried from ingesters and store-gateways by this node
+	// and its children.
+	//
+	// If no data is queried by this node and its children, QueriedTimeRange returns false.
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+type QueriedTimeRange struct {
+	MinT           time.Time
+	MaxT           time.Time
+	AnyDataQueried bool
+}
+
+func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
+	if !t.AnyDataQueried {
+		return other
+	}
+
+	if !other.AnyDataQueried {
+		return t
+	}
+
+	minT := t.MinT
+	maxT := t.MaxT
+
+	if other.MinT.Before(t.MinT) {
+		minT = other.MinT
+	}
+
+	if other.MaxT.After(t.MaxT) {
+		maxT = other.MaxT
+	}
+
+	return QueriedTimeRange{
+		MinT:           minT,
+		MaxT:           maxT,
+		AnyDataQueried: true,
+	}
 }
 
 type OperatorParameters struct {
