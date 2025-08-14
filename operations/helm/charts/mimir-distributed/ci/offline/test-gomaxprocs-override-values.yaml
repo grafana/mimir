@@ -39,4 +39,4 @@ store_gateway:
     - name: GOMAXPROCS
       value: "10" # This should override the calculated value
     - name: GOMEMLIMIT
-      value: "20Gi" # This should override the calculated value
+      value: "10000" # This should override the calculated value
