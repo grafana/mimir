@@ -152,7 +152,7 @@
     clusterRole.withRulesMixin([
       policyRule.withApiGroups('admissionregistration.k8s.io')
       + policyRule.withResources(['validatingwebhookconfigurations', 'mutatingwebhookconfigurations'])
-      + policyRule.withVerbs(['list', 'patch']),
+      + policyRule.withVerbs(['list', 'patch', 'watch']),
     ]),
 
   rollout_operator_webhook_cert_update_clusterrolebinding: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else

@@ -5,6 +5,7 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -82,7 +83,7 @@ func (f *FunctionCall) ChildrenLabels() []string {
 	return l
 }
 
-func (f *FunctionCall) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
@@ -118,4 +119,14 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 	}
 
 	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
+}
+
+func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	timeRange := planning.NoDataQueried()
+
+	for _, arg := range f.Args {
+		timeRange = timeRange.Union(arg.QueriedTimeRange(queryTimeRange, lookbackDelta))
+	}
+
+	return timeRange
 }

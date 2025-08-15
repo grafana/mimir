@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -117,7 +118,7 @@ func (b *BinaryExpression) ChildrenLabels() []string {
 	return []string{"LHS", "RHS"}
 }
 
-func (b *BinaryExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	op, ok := b.Op.ToItemType()
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' binary expression", b.Op.String()))
@@ -230,6 +231,12 @@ func (b *BinaryExpression) ResultType() (parser.ValueType, error) {
 	}
 
 	return parser.ValueTypeVector, nil
+}
+
+func (b *BinaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	lhs := b.LHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	rhs := b.RHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	return lhs.Union(rhs)
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {

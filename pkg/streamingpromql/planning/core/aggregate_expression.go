@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -100,7 +101,7 @@ func (a *AggregateExpression) ChildrenLabels() []string {
 	return []string{"expression", "parameter"}
 }
 
-func (a *AggregateExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(a.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for AggregateExpression: %w", err)
@@ -154,4 +155,13 @@ func (a *AggregateExpression) OperatorFactory(materializer *planning.Materialize
 
 func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	innerRange := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if a.Param == nil {
+		return innerRange
+	}
+
+	return innerRange.Union(a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta))
 }

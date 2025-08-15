@@ -51,7 +51,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	//  2. We don't want to register these optimization passes in queriers.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
 	if opts.EnablePruneToggles {
-		planner.RegisterASTOptimizationPass(ast.NewPruneToggles()) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
+		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 
