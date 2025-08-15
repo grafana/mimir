@@ -9,6 +9,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -58,7 +59,7 @@ func (s *StringLiteral) ChildrenLabels() []string {
 }
 
 func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition.ToPrometheusType())
+	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -69,4 +70,8 @@ func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 
 func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
 	return planning.NoDataQueried()
+}
+
+func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
+	return s.GetExpressionPosition().ToPrometheusType()
 }
