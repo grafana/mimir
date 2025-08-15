@@ -689,6 +689,16 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 
 	var err error
 
+	checkModifiedTime := func(modified time.Time) error {
+		if modified.After(partialDeletionCutoffTime) {
+			return errStopIter
+		}
+		if modified.After(lastModified) {
+			lastModified = modified
+		}
+		return nil
+	}
+
 	// If bucket supports UpdatedAt IterOptionType, use IterWithAttributes
 	// to reduce the amount of object attributes calls.
 	if slices.Contains(userBucket.SupportedIterOptions(), objstore.UpdatedAt) {
@@ -698,16 +708,8 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			if strings.HasSuffix(attrs.Name, objstore.DirDelim) {
 				return nil
 			}
-
 			modified, _ := attrs.LastModified()
-
-			if modified.After(partialDeletionCutoffTime) {
-				return errStopIter
-			}
-			if modified.After(lastModified) {
-				lastModified = modified
-			}
-			return nil
+			return checkModifiedTime(modified)
 		}, objstore.WithRecursiveIter(), objstore.WithUpdatedAt())
 	} else {
 		err = userBucket.WithExpectedErrs(func(err error) bool {
@@ -720,13 +722,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			if err != nil {
 				return errors.Wrapf(err, "failed to get attributes for %s", name)
 			}
-			if attrib.LastModified.After(partialDeletionCutoffTime) {
-				return errStopIter
-			}
-			if attrib.LastModified.After(lastModified) {
-				lastModified = attrib.LastModified
-			}
-			return nil
+			return checkModifiedTime(attrib.LastModified)
 		}, objstore.WithRecursiveIter())
 	}
 
