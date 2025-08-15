@@ -699,11 +699,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 				return nil
 			}
 
-			modified, ok := attrs.LastModified()
-			if !ok {
-				// If for some reason we don't get the last modified time, we can't check it, so we just skip it.
-				return nil
-			}
+			modified, _ := attrs.LastModified()
 
 			if modified.After(partialDeletionCutoffTime) {
 				return errStopIter
