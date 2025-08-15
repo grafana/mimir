@@ -88,7 +88,7 @@ type Node interface {
 	// QueriedTimeRange returns the range of data queried from ingesters and store-gateways by this node
 	// and its children.
 	//
-	// If no data is queried by this node and its children, QueriedTimeRange returns false.
+	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
 	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
 
 	// FIXME: implementations for many of the above methods can be generated automatically
