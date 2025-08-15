@@ -279,15 +279,14 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	case <-ctx.Done():
 		spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
 
-		if cancelCh != nil {
-			select {
-			case cancelCh <- freq.queryID:
-				// cancellation sent.
-			default:
-				// failed to cancel, ignore.
-				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
-			}
+		select {
+		case cancelCh <- freq.queryID:
+			// cancellation sent.
+		default:
+			// failed to cancel, ignore.
+			level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 		}
+
 		return nil, nil, ctx.Err()
 
 	case resp := <-freq.response:
