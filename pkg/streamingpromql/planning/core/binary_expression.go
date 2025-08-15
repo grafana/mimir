@@ -118,7 +118,7 @@ func (b *BinaryExpression) ChildrenLabels() []string {
 	return []string{"LHS", "RHS"}
 }
 
-func (b *BinaryExpression) OperatorFactory(materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	op, ok := b.Op.ToItemType()
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' binary expression", b.Op.String()))

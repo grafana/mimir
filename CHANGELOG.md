@@ -27,13 +27,16 @@
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
 * [BUGFIX] Distributor: Fix pooled memory reuse bug that can cause corrupt data to appear in the err-mimir-label-value-too-long error message. #12048
 * [BUGFIX] Querier: Fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #12261
+* [BUGFIX] Block-builder-scheduler: Fix a caching bug in initial job probing causing excessive memory usage at startup. #12389
+
+### Mixin
+
+* [BUGFIX] Block-builder dashboard: fix reference to detected gaps metric in errors panel. #12401
 
 ### Jsonnet
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
-* [CHANGE] Use `irate()` when calculating CPU scaling metric. Using `irate()` prevents underestimating CPU utilization when scraping fails. #12384
-* [CHANGE] Remove `vector(0)` when calculating memory scaling metric to prevent underestimating memory usage when scraping fails. #12386
 
 ### Documentation
 
