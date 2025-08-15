@@ -15,11 +15,9 @@ keywords:
 
 The way you write queries for Grafana Mimir affects the speed and quality of your results. Follow these best practices to ensure optimal performance and reliability for queries.
 
-## Use precise label selectors
+## Use label selectors
 
-To reduce the initial dataset size, start with the most specific label selectors. For example, if you have labels like `namespace` and `app_name` where `app_name` is more specific, lead with `app_name="myapp"` rather than starting with the broader `namespace` selector.
-
-To further reduce the number of series that require processing, include as many label selectors as possible for your query.
+To reduce the initial size of your dataset, apply label selectors to your query. Label selectors help you to filter your data based on its associated labels. For example, you if you have a label called `app_name`, you can append `app_name="myapp"` to your query.
 
 Whenever possible, use an exact label match, such as `label="value"`, instead of a regular expression, such as `label=~"pattern"`. Regular expressions are more computationally expensive.
 
@@ -34,8 +32,6 @@ Follow these guidelines for setting a time range based on your query type:
 - Dashboards: For dashboards, use a time range that matches the typical viewing window. While users can zoom out to view more history, the default view should be efficient and focused on recent, relevant data.
 - Alerting rules: Alerting rules should almost always operate on short, recent time windows to detect current states or recent trends, rather than long-term historical patterns. Timely alerts depend on the quick evaluations of fresh data.
 - Ad-hoc analysis: When exploring data, start with small time ranges and gradually expand if more historical context is required for your investigation. This iterative approach prevents unnecessary strain on the system during exploratory phases.
-
-If you don't specify a time range in your query, consider using the `-store.max-labels-query-length` CLI flag to limit the maximum time range.
 
 Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provide higher resolution.
 
