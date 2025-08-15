@@ -101,7 +101,7 @@ func (cmd *chunkedMetricsData) AppendHistogram(lbls labels.ScratchBuilder, inter
 }
 
 func (cmd *chunkedMetricsData) baseRM(lbls labels.ScratchBuilder) *metricsv1.ResourceMetrics {
-	metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
+	metricName, resourceAttrs, scopeAttrs, _ := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
 
 	return &metricsv1.ResourceMetrics{
 		Resource: &resourcev1.Resource{
@@ -114,8 +114,7 @@ func (cmd *chunkedMetricsData) baseRM(lbls labels.ScratchBuilder) *metricsv1.Res
 				},
 				Metrics: []*metricsv1.Metric{
 					{
-						Name:     metricName,
-						Metadata: metricAttrs,
+						Name: metricName,
 					},
 				},
 			},
@@ -145,8 +144,9 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 	p = ir.SortedPostings(p)
 
 	var builder labels.ScratchBuilder
+	resourceAttributeLabels := commaStringToMap(cfg.resourceAttributeLabels)
 
-	mds := newChunkedMetricsData(commaStringToMap(cfg.resourceAttributeLabels))
+	mds := newChunkedMetricsData(resourceAttributeLabels)
 
 	batchCount := 0
 	postingsCount := 0
@@ -177,6 +177,8 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 		if err != nil {
 			return fmt.Errorf("populate series chunk metas: %w", err)
 		}
+
+		_, _, _, metricAttrs := labelsToAttributes(builder, resourceAttributeLabels)
 
 		var (
 			intervalMS = cfg.chunkSize.Milliseconds()
@@ -213,6 +215,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 					gauges[interval].Gauge.DataPoints = append(gauges[interval].Gauge.DataPoints, &metricsv1.NumberDataPoint{
 						TimeUnixNano: uint64(time.UnixMilli(ts).UnixNano()),
 						Value:        &metricsv1.NumberDataPoint_AsDouble{AsDouble: val},
+						Attributes:   metricAttrs,
 					})
 				case chunkenc.ValHistogram:
 					ts, h := chkItr.AtHistogram(nil)
@@ -232,6 +235,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 						ZeroThreshold: h.ZeroThreshold,
 						Positive:      translateToOTELHistogramBuckets(h.PositiveSpans, h.PositiveBucketIterator()),
 						Negative:      translateToOTELHistogramBuckets(h.NegativeSpans, h.NegativeBucketIterator()),
+						Attributes:    metricAttrs,
 					})
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chkItr.AtFloatHistogram(nil)
@@ -251,6 +255,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 						ZeroThreshold: fh.ZeroThreshold,
 						Positive:      translateToOTELFloatHistogramBuckets(fh.PositiveSpans, fh.PositiveBucketIterator()),
 						Negative:      translateToOTELFloatHistogramBuckets(fh.NegativeSpans, fh.NegativeBucketIterator()),
+						Attributes:    metricAttrs,
 					})
 				default:
 					return fmt.Errorf("unexpected value type: %s", valType)
