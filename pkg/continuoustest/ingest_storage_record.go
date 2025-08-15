@@ -102,6 +102,8 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 
 	t.client = kc
 	t.adminClient = kadm.NewClient(kc)
+
+	// On every startup, we just skip to the end and run from there. We
 	return nil
 }
 
@@ -125,7 +127,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	if err := offResp.Error(); err != nil {
 		return fmt.Errorf("fetch offsets response error: %w", err)
 	}
-	offsets := offResp.Offsets()
+	committedOffsets := offResp.Offsets()
 
 	endOffsetsResp, err := t.adminClient.ListEndOffsets(ctx, "ingest")
 	if err != nil {
@@ -137,14 +139,18 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	allPartitionEndOffsets := endOffsetsResp.Offsets()
 	endOffsets := allPartitionEndOffsets["ingest"]
 
+	// Build a set of offsets to start reading from.
+	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
 	totalOffsetDiff := int64(0)
 	for partition, endOffset := range endOffsets {
-		startOffset, ok := offsets["ingest"][partition]
+		// If we never committed an offset for this partition yet, we skip it to avoid processing a week of data.
+		committedOffset, ok := committedOffsets["ingest"][partition]
 		if !ok {
 			continue
 		}
 
-		diff := endOffset.At - startOffset.At
+		// If there are a huge number of records written to a partition, skip it.
+		diff := endOffset.At - committedOffset.At
 		if diff > int64(t.cfg.MaxJumpLimitPerPartition) {
 			level.Warn(t.logger).Log(
 				"msg", "skipping partition because it jumped by an amount greater than the limit per run",
@@ -155,6 +161,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 			continue
 		}
 		totalOffsetDiff += diff
+		startOffsets["ingest"][partition] = kgo.NewOffset().At(committedOffset.At)
 	}
 
 	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
@@ -163,13 +170,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		recordsRemainingInBatch = int64(t.cfg.MaxRecordsPerRun)
 	}
 
-	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
-	for _, partitionOffsets := range offsets {
-		for partition, offset := range partitionOffsets {
-			startOffsets["ingest"][partition] = kgo.NewOffset().At(offset.At)
-		}
-	}
-
+	t.client.AddConsumeTopics("ingest")
 	t.client.AddConsumePartitions(startOffsets)
 
 	const numWorkers = 4
@@ -211,6 +212,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff, "time", timeTaken)
 
 	// Update to the end.
+	// Seek to the end of all partitions, including the ones we skipped this run.
 	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
 
 	return nil
