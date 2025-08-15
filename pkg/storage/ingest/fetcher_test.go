@@ -263,7 +263,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
 
-			offsetR := newGenericOffsetReader(func(_ context.Context) (int64, error) {
+			offsetR := NewGenericOffsetReader(func(_ context.Context) (int64, error) {
 				return testCase.lso, nil
 			}, time.Millisecond, logger)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), offsetR))
@@ -742,11 +742,11 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
 
-		startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+		startOffsetsReader := NewGenericOffsetReader(func(ctx context.Context) (int64, error) {
 			return offsetReader.FetchPartitionStartOffset(ctx, partitionID)
 		}, time.Second, logger)
 
-		_, err := newConcurrentFetchers(
+		_, err := NewConcurrentFetchers(
 			ctx,
 			client,
 			logger,
@@ -959,7 +959,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 		partitionID = 1
 	)
 
-	setup := func(t *testing.T) (*concurrentFetchers, *kfake.Cluster, context.Context, prometheus.Gatherer) {
+	setup := func(t *testing.T) (*ConcurrentFetchers, *kfake.Cluster, context.Context, prometheus.Gatherer) {
 		var (
 			ctx                  = context.Background()
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
@@ -1203,7 +1203,7 @@ func TestFetchResult_Merge(t *testing.T) {
 	})
 }
 
-func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32, start bool) (*concurrentFetchers, prometheus.Gatherer) {
+func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32, start bool) (*ConcurrentFetchers, prometheus.Gatherer) {
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1215,11 +1215,11 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 
 	offsetReader := newPartitionOffsetClient(client, topic, reg, logger)
 
-	startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+	startOffsetsReader := NewGenericOffsetReader(func(ctx context.Context) (int64, error) {
 		return offsetReader.FetchPartitionStartOffset(ctx, partition)
 	}, time.Second, logger)
 
-	f, err := newConcurrentFetchers(
+	f, err := NewConcurrentFetchers(
 		ctx,
 		client,
 		logger,
@@ -1246,7 +1246,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 }
 
 // longPollFetches polls fetches until the timeout is reached or the number of records is at least minRecords.
-func longPollFetches(fetchers *concurrentFetchers, minRecords int, timeout time.Duration) kgo.Fetches {
+func longPollFetches(fetchers *ConcurrentFetchers, minRecords int, timeout time.Duration) kgo.Fetches {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -1266,7 +1266,7 @@ func longPollFetches(fetchers *concurrentFetchers, minRecords int, timeout time.
 // no buffered records in fetchers. Since some records are discarded in the PollFetches(),
 // we may have to call it multiple times to process all buffered records that need to be
 // discarded.
-func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
+func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *ConcurrentFetchers) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
