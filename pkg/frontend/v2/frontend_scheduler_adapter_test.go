@@ -139,7 +139,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 				httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
 				require.NoError(t, err)
 
-				additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
+				additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensionsForHTTPRequest(
 					ctx, httpgrpcReq, now,
 				)
 				require.NoError(t, err)
@@ -182,7 +182,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			httpgrpcReq, err := httpgrpc.FromHTTPRequest(instantHTTPReq)
 			require.NoError(t, err)
 
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
+			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensionsForHTTPRequest(
 				ctx, httpgrpcReq, now,
 			)
 			require.NoError(t, err)
@@ -232,7 +232,7 @@ func TestQueryDecoding(t *testing.T) {
 			httpgrpcReq, err := httpgrpc.FromHTTPRequest(labelValuesHTTPReq)
 			require.NoError(t, err)
 
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
+			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensionsForHTTPRequest(
 				ctx, httpgrpcReq, now,
 			)
 			require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestQueryDecoding(t *testing.T) {
 	t.Run("malformed httpgrpc requests fail decoding", func(t *testing.T) {
 		reqFailsHTTPDecode := &httpgrpc.HTTPRequest{Method: ";"}
 
-		_, errHTTPDecode := adapter.extractAdditionalQueueDimensions(context.Background(), reqFailsHTTPDecode, time.Now())
+		_, errHTTPDecode := adapter.extractAdditionalQueueDimensionsForHTTPRequest(context.Background(), reqFailsHTTPDecode, time.Now())
 		require.Error(t, errHTTPDecode)
 		require.Contains(t, errHTTPDecode.Error(), "net/http")
 	})
