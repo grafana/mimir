@@ -30,6 +30,8 @@ runs:
       shell: bash
       run: |
         OUTPUT_DIR=/tmp/images
+        mkdir "$OUTPUT_DIR"
+        
         DIRNAME="$(dirname "$TARGET")"
         NAME="$(basename "$DIRNAME")"
         make \
