@@ -5,6 +5,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -64,4 +65,8 @@ func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ type
 
 func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeString, nil
+}
+
+func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
 }

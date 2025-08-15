@@ -5,6 +5,7 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -118,4 +119,14 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 	}
 
 	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
+}
+
+func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	timeRange := planning.NoDataQueried()
+
+	for _, arg := range f.Args {
+		timeRange = timeRange.Union(arg.QueriedTimeRange(queryTimeRange, lookbackDelta))
+	}
+
+	return timeRange
 }

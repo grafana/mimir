@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -154,4 +155,13 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 
 func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	innerRange := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if a.Param == nil {
+		return innerRange
+	}
+
+	return innerRange.Union(a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta))
 }

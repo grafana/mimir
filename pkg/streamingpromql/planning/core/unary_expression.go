@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -86,4 +87,8 @@ func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Mater
 
 func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
 	return u.Inner.ResultType()
+}
+
+func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return u.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }

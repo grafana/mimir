@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -230,6 +231,12 @@ func (b *BinaryExpression) ResultType() (parser.ValueType, error) {
 	}
 
 	return parser.ValueTypeVector, nil
+}
+
+func (b *BinaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	lhs := b.LHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	rhs := b.RHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	return lhs.Union(rhs)
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {
