@@ -266,7 +266,7 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 		if enabledMetrics.IsAllowed(metricName) {
 			field, found := fieldRegistry.GetField(metricName)
 			if !found {
-				panic("couldn't find fields that fields registry returned, this shouldn't happen")
+				panic(fmt.Sprintf("couldn't find fields that the fields registry returned, this shouldn't happen (metric name: %s)", metricName))
 			}
 			fieldName := field.Name
 
