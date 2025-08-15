@@ -11,8 +11,10 @@ runs:
   using: composite
   steps:
     - name: Run Git Config
+      shell: bash
       run: git config --global --add safe.directory '*'
     - name: Install Docker Client
+      shell: bash
       run: ./.github/workflows/scripts/install-docker.sh
     - name: Set up QEMU
       uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
@@ -20,13 +22,16 @@ runs:
       id: buildx
       uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
     - name: Symlink Expected Path to Workspace
+      shell: bash
       run: |
         mkdir -p /go/src/github.com/grafana/mimir
         ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
     - name: Build Docker Image
+      shell: bash
       run: |
         ./.github/workflows/scripts/build-images.sh /tmp/images ${{ inputs.target }}
     - name: Create Archive With Docker Images
+      shell: bash
       run: |
         tar cvf images.tar -C /tmp/images
     - name: Upload Archive with Docker Images
