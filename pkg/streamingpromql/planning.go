@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -50,11 +49,14 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
+	if opts.EnablePruneToggles {
+		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
+	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
 	}
 
 	if opts.EnableSkippingHistogramDecoding {
@@ -344,7 +346,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_TIMESTAMP:
 			vs, isVectorSelector := args[0].(*core.VectorSelector)
 			if isVectorSelector {
-				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
+				vs.ReturnSampleTimestamps = true
 			}
 		}
 
@@ -436,57 +438,6 @@ func findFunction(name string) (functions.Function, bool) {
 	}
 
 	return functions.FUNCTION_UNKNOWN, false
-}
-
-// Materialize converts a query plan into an executable query.
-func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
-	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
-	if err != nil {
-		return nil, err
-	}
-
-	defer e.activeQueryTracker.Delete(queryID)
-
-	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
-	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
-	// So we pass plan.OriginalExpression, which is good enough for now, but something to revisit later - perhaps
-	// we can use some kind of request ID?
-	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange, plan.OriginalExpression)
-	if err != nil {
-		return nil, err
-	}
-
-	q.operatorFactories = make(map[planning.Node]planning.OperatorFactory)
-	q.operatorParams = &planning.OperatorParameters{
-		Queryable:                q.queryable,
-		MemoryConsumptionTracker: q.memoryConsumptionTracker,
-		Annotations:              q.annotations,
-		LookbackDelta:            q.lookbackDelta,
-		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
-	}
-
-	q.statement = &parser.EvalStmt{
-		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
-		Start:         timestamp.Time(plan.TimeRange.StartT),
-		End:           timestamp.Time(plan.TimeRange.EndT),
-		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
-		LookbackDelta: q.lookbackDelta,
-	}
-
-	if plan.TimeRange.IsInstant {
-		q.statement.Interval = 0
-	}
-
-	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	return q, nil
 }
 
 type AnalysisResult struct {

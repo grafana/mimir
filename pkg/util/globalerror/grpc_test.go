@@ -198,16 +198,16 @@ func TestWrapErrorWithGRPCStatus(t *testing.T) {
 	}{
 		"new ErrorWithStatus backed by a genericErr contains ErrorDetails": {
 			originErr:            genericErr,
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"new ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			doNotLog:             true,
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"new ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
@@ -279,15 +279,15 @@ func TestErrorWithStatus_Err(t *testing.T) {
 	}{
 		"Err() of an ErrorWithStatus backed by a genericErr contains ErrorDetails": {
 			originErr:            genericErr,
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"Err() of an ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"Err() of an ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},

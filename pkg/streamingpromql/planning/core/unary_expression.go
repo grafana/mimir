@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -62,27 +63,32 @@ func (u *UnaryExpression) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (u *UnaryExpression) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	if len(children) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 child for UnaryExpression, got %v", len(children))
+func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(u.Inner, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("could not create inner operator for UnaryExpression: %w", err)
 	}
 
 	if u.Op != UNARY_SUB {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", u.Op))
 	}
 
-	switch child := children[0].(type) {
+	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
-		o := functions.UnaryNegationOfInstantVectorOperatorFactory(child, params.MemoryConsumptionTracker, u.ExpressionPosition.ToPrometheusType(), timeRange)
+		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params.MemoryConsumptionTracker, u.ExpressionPosition.ToPrometheusType(), timeRange)
 		return planning.NewSingleUseOperatorFactory(o), nil
 	case types.ScalarOperator:
-		o := scalars.NewUnaryNegationOfScalar(child, u.ExpressionPosition.ToPrometheusType())
+		o := scalars.NewUnaryNegationOfScalar(inner, u.ExpressionPosition.ToPrometheusType())
 		return planning.NewSingleUseOperatorFactory(o), nil
 	default:
-		return nil, fmt.Errorf("expected InstantVectorOperator or ScalarOperator as child of UnaryExpression, got %T", children[0])
+		return nil, fmt.Errorf("expected InstantVectorOperator or ScalarOperator as child of UnaryExpression, got %T", inner)
 	}
 }
 
 func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
 	return u.Inner.ResultType()
+}
+
+func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return u.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }

@@ -14,7 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -748,7 +748,9 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 							headers := append(expectedStruct.GetHeaders(), &PrometheusHeader{"Content-Type", []string{"application/x-www-form-urlencoded"}})
 
 							// Decoding headers also sorts them. We sort here to be able to make assertions on the slice of headers.
-							sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+							slices.SortFunc(headers, func(a, b *PrometheusHeader) int {
+								return strings.Compare(a.Name, b.Name)
+							})
 							expectedStruct, err = expectedStruct.WithHeaders(headers)
 							require.NoError(t, err)
 						}
@@ -1761,28 +1763,6 @@ func Test_DecodeOptions(t *testing.T) {
 				ShardingDisabled: true,
 			},
 		},
-		{
-			name: "custom instant query splitting",
-			input: &http.Request{
-				Header: http.Header{
-					instantSplitControlHeader: []string{"1h"},
-				},
-			},
-			expected: &Options{
-				InstantSplitInterval: time.Hour.Nanoseconds(),
-			},
-		},
-		{
-			name: "disable instant query splitting",
-			input: &http.Request{
-				Header: http.Header{
-					instantSplitControlHeader: []string{"0"},
-				},
-			},
-			expected: &Options{
-				InstantSplitDisabled: true,
-			},
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -1811,14 +1791,6 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 		{
 			name:    "shard count disabled via header",
 			headers: http.Header{totalShardsControlHeader: []string{"0"}},
-		},
-		{
-			name:    "split interval header",
-			headers: http.Header{instantSplitControlHeader: []string{"1h0m0s"}},
-		},
-		{
-			name:    "split interval disabled via header",
-			headers: http.Header{instantSplitControlHeader: []string{"0"}},
 		},
 		{
 			name:    "cache disabled via header",

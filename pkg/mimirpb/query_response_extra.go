@@ -13,75 +13,75 @@ const QueryResponseMimeType = QueryResponseMimeTypeType + "/" + QueryResponseMim
 const QueryResponseMimeTypeType = "application"
 const QueryResponseMimeTypeSubType = "vnd.mimir.queryresponse+protobuf"
 
-func (s QueryResponse_Status) ToPrometheusString() (string, error) {
+func (s QueryStatus) ToPrometheusString() (string, error) {
 	switch s {
-	case QueryResponse_SUCCESS:
+	case QUERY_STATUS_SUCCESS:
 		return "success", nil
-	case QueryResponse_ERROR:
+	case QUERY_STATUS_ERROR:
 		return "error", nil
 	default:
-		return "", fmt.Errorf("unknown QueryResponse_ErrorType value: %v (%v)", int32(s), s.String())
+		return "", fmt.Errorf("unknown QueryErrorType value: %v (%v)", int32(s), s.String())
 	}
 }
 
-func StatusFromPrometheusString(s string) (QueryResponse_Status, error) {
+func StatusFromPrometheusString(s string) (QueryStatus, error) {
 	switch s {
 	case "success":
-		return QueryResponse_SUCCESS, nil
+		return QUERY_STATUS_SUCCESS, nil
 	case "error":
-		return QueryResponse_ERROR, nil
+		return QUERY_STATUS_ERROR, nil
 	default:
-		return QueryResponse_ERROR, fmt.Errorf("unknown Prometheus status value: '%v'", s)
+		return QUERY_STATUS_ERROR, fmt.Errorf("unknown Prometheus status value: '%v'", s)
 	}
 }
 
-func (t QueryResponse_ErrorType) ToPrometheusString() (string, error) {
+func (t QueryErrorType) ToPrometheusString() (string, error) {
 	switch t {
-	case QueryResponse_NONE:
+	case QUERY_ERROR_TYPE_NONE:
 		return "", nil
-	case QueryResponse_TIMEOUT:
+	case QUERY_ERROR_TYPE_TIMEOUT:
 		return "timeout", nil
-	case QueryResponse_CANCELED:
+	case QUERY_ERROR_TYPE_CANCELED:
 		return "canceled", nil
-	case QueryResponse_EXECUTION:
+	case QUERY_ERROR_TYPE_EXECUTION:
 		return "execution", nil
-	case QueryResponse_BAD_DATA:
+	case QUERY_ERROR_TYPE_BAD_DATA:
 		return "bad_data", nil
-	case QueryResponse_INTERNAL:
+	case QUERY_ERROR_TYPE_INTERNAL:
 		return "internal", nil
-	case QueryResponse_UNAVAILABLE:
+	case QUERY_ERROR_TYPE_UNAVAILABLE:
 		return "unavailable", nil
-	case QueryResponse_NOT_FOUND:
+	case QUERY_ERROR_TYPE_NOT_FOUND:
 		return "not_found", nil
-	case QueryResponse_NOT_ACCEPTABLE:
+	case QUERY_ERROR_TYPE_NOT_ACCEPTABLE:
 		return "not_acceptable", nil
 	default:
-		return "", fmt.Errorf("unknown QueryResponse_ErrorType value: %v (%v)", int32(t), t.String())
+		return "", fmt.Errorf("unknown QueryErrorType value: %v (%v)", int32(t), t.String())
 	}
 }
 
-func ErrorTypeFromPrometheusString(s string) (QueryResponse_ErrorType, error) {
+func ErrorTypeFromPrometheusString(s string) (QueryErrorType, error) {
 	switch s {
 	case "":
-		return QueryResponse_NONE, nil
+		return QUERY_ERROR_TYPE_NONE, nil
 	case "timeout":
-		return QueryResponse_TIMEOUT, nil
+		return QUERY_ERROR_TYPE_TIMEOUT, nil
 	case "canceled":
-		return QueryResponse_CANCELED, nil
+		return QUERY_ERROR_TYPE_CANCELED, nil
 	case "execution":
-		return QueryResponse_EXECUTION, nil
+		return QUERY_ERROR_TYPE_EXECUTION, nil
 	case "bad_data":
-		return QueryResponse_BAD_DATA, nil
+		return QUERY_ERROR_TYPE_BAD_DATA, nil
 	case "internal":
-		return QueryResponse_INTERNAL, nil
+		return QUERY_ERROR_TYPE_INTERNAL, nil
 	case "unavailable":
-		return QueryResponse_UNAVAILABLE, nil
+		return QUERY_ERROR_TYPE_UNAVAILABLE, nil
 	case "not_found":
-		return QueryResponse_NOT_FOUND, nil
+		return QUERY_ERROR_TYPE_NOT_FOUND, nil
 	case "not_acceptable":
-		return QueryResponse_NOT_ACCEPTABLE, nil
+		return QUERY_ERROR_TYPE_NOT_ACCEPTABLE, nil
 	default:
-		return QueryResponse_NONE, fmt.Errorf("unknown Prometheus error type value: '%v'", s)
+		return QUERY_ERROR_TYPE_NONE, fmt.Errorf("unknown Prometheus error type value: '%v'", s)
 	}
 }
 

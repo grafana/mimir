@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -100,64 +101,43 @@ func (a *AggregateExpression) ChildrenLabels() []string {
 	return []string{"expression", "parameter"}
 }
 
-func (a *AggregateExpression) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	if len(children) < 1 {
-		return nil, fmt.Errorf("expected at least 1 child for AggregateExpression, got %v", len(children))
-	}
-
-	inner, ok := children[0].(types.InstantVectorOperator)
-	if !ok {
-		return nil, fmt.Errorf("expected InstantVectorOperator as expression child of AggregateExpression, got %T", children[0])
+func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(a.Inner, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("could not create inner operator for AggregateExpression: %w", err)
 	}
 
 	var o types.InstantVectorOperator
 
 	switch a.Op {
 	case AGGREGATION_TOPK, AGGREGATION_BOTTOMK:
-		if len(children) != 2 {
-			return nil, fmt.Errorf("expected exactly 2 children for AggregateExpression with operation %s, got %v", a.Op.String(), len(children))
-		}
-
-		param, ok := children[1].(types.ScalarOperator)
-		if !ok {
-			return nil, fmt.Errorf("expected ScalarOperator as parameter child of AggregateExpression with operation %s, got %T", a.Op.String(), children[0])
+		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
 		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition.ToPrometheusType())
 
 	case AGGREGATION_QUANTILE:
-		if len(children) != 2 {
-			return nil, fmt.Errorf("expected exactly 2 children for AggregateExpression with operation %s, got %v", a.Op.String(), len(children))
+		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		param, ok := children[1].(types.ScalarOperator)
-		if !ok {
-			return nil, fmt.Errorf("expected ScalarOperator as parameter child of AggregateExpression with operation %s, got %T", a.Op.String(), children[0])
-		}
-
-		var err error
 		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition.ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
 
 	case AGGREGATION_COUNT_VALUES:
-		if len(children) != 2 {
-			return nil, fmt.Errorf("expected exactly 2 children for AggregateExpression with operation %s, got %v", a.Op.String(), len(children))
-		}
-
-		param, ok := children[1].(types.StringOperator)
-		if !ok {
-			return nil, fmt.Errorf("expected StringOperator as parameter child of AggregateExpression with operation %s, got %T", a.Op.String(), children[0])
+		param, err := materializer.ConvertNodeToStringOperator(a.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
 		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.ExpressionPosition.ToPrometheusType())
 
 	default:
-		if len(children) != 1 {
-			return nil, fmt.Errorf("expected exactly 1 child for AggregateExpression with operation %s, got %v", a.Op.String(), len(children))
-		}
-
 		itemType, ok := a.Op.ToItemType()
 		if !ok {
 			return nil, fmt.Errorf("unknown aggregation operation %s", a.Op.String())
@@ -175,4 +155,13 @@ func (a *AggregateExpression) OperatorFactory(children []types.Operator, timeRan
 
 func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	innerRange := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if a.Param == nil {
+		return innerRange
+	}
+
+	return innerRange.Union(a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta))
 }

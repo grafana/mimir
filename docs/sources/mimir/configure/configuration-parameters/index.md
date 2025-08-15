@@ -772,7 +772,7 @@ grpc_tls_config:
 
 # Comma separated list of headers to exclude from tracing spans. Only used if
 # server.trace-request-headers is true. The following headers are always
-# excluded: Authorization, Cookie, X-Csrf-Token.
+# excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.
 # CLI flag: -server.trace-request-headers-exclude-list
 [trace_request_exclude_headers_list: <string> | default = ""]
 
@@ -813,6 +813,11 @@ cluster_validation:
     # the cluster validation check.
     # CLI flag: -server.cluster-validation.http.excluded-paths
     [excluded_paths: <string> | default = ""]
+
+    # (experimental) Comma-separated list of user agents that are excluded from
+    # the cluster validation check.
+    # CLI flag: -server.cluster-validation.http.excluded-user-agents
+    [excluded_user_agents: <string> | default = ""]
 ```
 
 ### distributor
@@ -901,15 +906,6 @@ ha_tracker:
       # (advanced) Timeout for storing value to secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout.
-  [ha_tracker_update_timeout: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.
-  [ha_tracker_update_timeout_jitter_max: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_failover_timeout.
-  [ha_tracker_failover_timeout: <duration> | default = ]
 
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
@@ -1644,10 +1640,21 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
+  # (experimental) Enable pruning query expressions that are toggled off with
+  # constants.
+  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
+  [enable_prune_toggles: <boolean> | default = true]
+
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
+
+  # (experimental) Enable common subexpression elimination for range vector
+  # expressions when evaluating instant queries. This has no effect if common
+  # subexpression elimination is disabled.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
+  [enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries: <boolean> | default = true]
 
   # (experimental) Enable skipping decoding native histograms when evaluating
   # queries that do not require full histograms.
@@ -1683,18 +1690,6 @@ The `frontend` block configures the query-frontend.
 # from `-server.http-write-timeout` is used.
 # CLI flag: -query-frontend.active-series-write-timeout
 [active_series_write_timeout: <duration> | default = 5m]
-
-# (advanced) Maximum number of outstanding requests per tenant per frontend;
-# requests beyond this error with HTTP 429.
-# CLI flag: -querier.max-outstanding-requests-per-tenant
-[max_outstanding_per_tenant: <int> | default = 100]
-
-# (experimental) If a querier disconnects without sending notification about
-# graceful shutdown, the query-frontend will keep the querier in the tenant's
-# shard until the forget delay has passed. This feature is useful to reduce the
-# blast radius when shuffle-sharding is enabled.
-# CLI flag: -query-frontend.querier-forget-delay
-[querier_forget_delay: <duration> | default = 0s]
 
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
@@ -1747,7 +1742,7 @@ The `frontend` block configures the query-frontend.
 
 results_cache:
   # Backend for query-frontend results cache, if not empty. Supported values:
-  # memcached, redis.
+  # memcached.
   # CLI flag: -query-frontend.results-cache.backend
   [backend: <string> | default = ""]
 
@@ -1755,11 +1750,6 @@ results_cache:
   # The CLI flags prefix for this block configuration is:
   # query-frontend.results-cache
   [memcached: <memcached>]
-
-  # The redis block configures the Redis-based caching backend.
-  # The CLI flags prefix for this block configuration is:
-  # query-frontend.results-cache
-  [redis: <redis>]
 
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
@@ -1789,12 +1779,6 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# (experimental) True to enable pruning dead code (eg. expressions that cannot
-# produce any results) and simplifying expressions (eg. expressions that can be
-# evaluated immediately) in queries.
-# CLI flag: -query-frontend.prune-queries
-[prune_queries: <boolean> | default = false]
-
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1811,6 +1795,12 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (advanced) Comma-separated list of request header names to allow to pass
+# through to the rest of the query path. This is in addition to a list of
+# required headers that the read path needs.
+# CLI flag: -query-frontend.extra-propagated-headers
+[extra_propagated_headers: <string> | default = ""]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -1820,10 +1810,6 @@ results_cache:
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 
-# (advanced) URL of downstream Prometheus.
-# CLI flag: -query-frontend.downstream-url
-[downstream_url: <string> | default = ""]
-
 client_cluster_validation:
   # (experimental) Optionally define the cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
@@ -1831,7 +1817,7 @@ client_cluster_validation:
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -query-frontend.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
@@ -2302,17 +2288,13 @@ local:
 
 cache:
   # Backend for ruler storage cache, if not empty. The cache is supported for
-  # any storage backend except "local". Supported values: memcached, redis.
+  # any storage backend except "local". Supported values: memcached.
   # CLI flag: -ruler-storage.cache.backend
   [backend: <string> | default = ""]
 
   # The memcached block configures the Memcached-based caching backend.
   # The CLI flags prefix for this block configuration is: ruler-storage.cache
   [memcached: <memcached>]
-
-  # The redis block configures the Redis-based caching backend.
-  # The CLI flags prefix for this block configuration is: ruler-storage.cache
-  [redis: <redis>]
 ```
 
 ### alertmanager
@@ -2884,13 +2866,6 @@ cluster_validation:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. If multiple
-# query-frontends are running, the host should be a DNS resolving to all
-# query-frontend instances. This option should be set only when query-scheduler
-# component is not in use.
-# CLI flag: -querier.frontend-address
-[frontend_address: <string> | default = ""]
-
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and
@@ -3661,11 +3636,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
-# (experimental) Split instant queries by an interval and execute in parallel. 0
-# to disable it.
-# CLI flag: -query-frontend.split-instant-queries-by-interval
-[split_instant_queries_by_interval: <duration> | default = 0s]
-
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
@@ -3781,10 +3751,10 @@ blocked_requests:
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
-# (experimental) Enable certain experimental PromQL functions, which are subject
-# to being changed or removed at any time, on a per-tenant basis. Defaults to
-# empty which means all experimental functions are disabled. Set to 'all' to
-# enable all experimental functions.
+# Enable certain experimental PromQL functions, which are subject to being
+# changed or removed at any time, on a per-tenant basis. Defaults to empty which
+# means all experimental functions are disabled. Set to 'all' to enable all
+# experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
@@ -4245,6 +4215,15 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-native-delta-ingestion
 [otel_native_delta_ingestion: <boolean> | default = false]
 
+# (experimental) Translation strategy to apply in OTLP endpoint for metric and
+# label names. If unspecified (the default), the strategy is derived from
+# -validation.name-validation-scheme and
+# -distributor.otel-metric-suffixes-enabled. Supported values: "",
+# UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes,
+# NoUTF8EscapingWithSuffixes, NoTranslation.
+# CLI flag: -distributor.otel-translation-strategy
+[otel_translation_strategy: <string> | default = ""]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -4256,6 +4235,13 @@ ruler_alertmanager_client_config:
 # partitions.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
+
+# (experimental) Validation scheme to use for metric and label names.
+# Distributors reject time series that do not adhere to this scheme. Rulers
+# reject rules with unsupported metric or label names. Supported values: legacy,
+# utf8.
+# CLI flag: -validation.name-validation-scheme
+[name_validation_scheme: <int> | default = legacy]
 ```
 
 ### ingest_storage
@@ -4544,8 +4530,7 @@ bucket_store:
   [meta_sync_concurrency: <int> | default = 20]
 
   index_cache:
-    # The index cache backend type. Supported values: inmemory, memcached,
-    # redis.
+    # The index cache backend type. Supported values: inmemory, memcached.
     # CLI flag: -blocks-storage.bucket-store.index-cache.backend
     [backend: <string> | default = "inmemory"]
 
@@ -4554,11 +4539,6 @@ bucket_store:
     # blocks-storage.bucket-store.index-cache
     [memcached: <memcached>]
 
-    # The redis block configures the Redis-based caching backend.
-    # The CLI flags prefix for this block configuration is:
-    # blocks-storage.bucket-store.index-cache
-    [redis: <redis>]
-
     inmemory:
       # Maximum size in bytes of in-memory index cache used to speed up blocks
       # index lookups (shared between all tenants).
@@ -4566,8 +4546,7 @@ bucket_store:
       [max_size_bytes: <int> | default = 1073741824]
 
   chunks_cache:
-    # Backend for chunks cache, if not empty. Supported values: memcached,
-    # redis.
+    # Backend for chunks cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
     [backend: <string> | default = ""]
 
@@ -4575,11 +4554,6 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.chunks-cache
     [memcached: <memcached>]
-
-    # The redis block configures the Redis-based caching backend.
-    # The CLI flags prefix for this block configuration is:
-    # blocks-storage.bucket-store.chunks-cache
-    [redis: <redis>]
 
     # (advanced) Maximum number of sub-GetRange requests that a single GetRange
     # request can be split into when fetching chunks. Zero or negative value =
@@ -4604,8 +4578,7 @@ bucket_store:
     [subrange_ttl: <duration> | default = 24h]
 
   metadata_cache:
-    # Backend for metadata cache, if not empty. Supported values: memcached,
-    # redis.
+    # Backend for metadata cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
     [backend: <string> | default = ""]
 
@@ -4613,11 +4586,6 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.metadata-cache
     [memcached: <memcached>]
-
-    # The redis block configures the Redis-based caching backend.
-    # The CLI flags prefix for this block configuration is:
-    # blocks-storage.bucket-store.metadata-cache
-    [redis: <redis>]
 
     # (advanced) How long to cache list of tenants in the bucket.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl
@@ -4906,6 +4874,23 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
   [out_of_order_capacity_max: <int> | default = 32]
 
+  # (experimental) Whether postings for matchers cache should be shared across
+  # blocks, as opposed to instantiated per block. With a shared cache, one cache
+  # is created for head blocks, and one for compacted blocks.
+  # CLI flag: -blocks-storage.tsdb.shared-postings-for-matchers-cache
+  [shared_postings_for_matchers_cache: <boolean> | default = false]
+
+  # (experimental) Whether head block postings should be tracked and invalidated
+  # when they change, allowing higher TTLs to be used. When not using
+  # invalidation, cache entries will be used until removed.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
+  [head_postings_for_matchers_cache_invalidation: <boolean> | default = false]
+
+  # (experimental) The size of the metric versions cache in each ingester when
+  # invalidation is enabled.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
+  [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
+
   # (experimental) How long to cache postings for matchers in the Head and
   # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
@@ -4970,6 +4955,12 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Controls the collection of statistics and whether to defer
+  # some vector selector matchers to sequential scans. This leads to better
+  # performance.
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
+  [index_lookup_planning_enabled: <boolean> | default = false]
 ```
 
 ### compactor
@@ -5071,6 +5062,11 @@ The `compactor` block configures the compactor component.
 # = no limit.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
+
+# (advanced) Number of Go routines to use when updating blocks metadata during
+# bucket index updates.
+# CLI flag: -compactor.update-blocks-concurrency
+[update_blocks_concurrency: <int> | default = 1]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise
@@ -5373,11 +5369,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 
-# (experimental) DNS provider used for resolving memcached addresses. Available
-# providers golang, miekgdns, miekgdns2
-# CLI flag: -<prefix>.memcached.addresses-provider
-[addresses_provider: <string> | default = "miekgdns"]
-
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]
@@ -5491,165 +5482,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # (experimental) Allow client creation even if initial DNS resolution fails.
 # CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
 [dns_ignore_startup_failures: <boolean> | default = true]
-```
-
-### redis
-
-The `redis` block configures the Redis-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
-
-- `blocks-storage.bucket-store.chunks-cache`
-- `blocks-storage.bucket-store.index-cache`
-- `blocks-storage.bucket-store.metadata-cache`
-- `query-frontend.results-cache`
-- `ruler-storage.cache`
-
-&nbsp;
-
-```yaml
-# (deprecated) Redis Server or Cluster configuration endpoint to use for
-# caching. A comma-separated list of endpoints for Redis Cluster or Redis
-# Sentinel.
-# CLI flag: -<prefix>.redis.endpoint
-[endpoint: <string> | default = ""]
-
-# (deprecated) Username to use when connecting to Redis.
-# CLI flag: -<prefix>.redis.username
-[username: <string> | default = ""]
-
-# (deprecated) Password to use when connecting to Redis.
-# CLI flag: -<prefix>.redis.password
-[password: <string> | default = ""]
-
-# (deprecated) Database index.
-# CLI flag: -<prefix>.redis.db
-[db: <int> | default = 0]
-
-# (deprecated) Redis Sentinel master name. An empty string for Redis Server or
-# Redis Cluster.
-# CLI flag: -<prefix>.redis.master-name
-[master_name: <string> | default = ""]
-
-# (deprecated) Client dial timeout.
-# CLI flag: -<prefix>.redis.dial-timeout
-[dial_timeout: <duration> | default = 5s]
-
-# (deprecated) Client read timeout.
-# CLI flag: -<prefix>.redis.read-timeout
-[read_timeout: <duration> | default = 3s]
-
-# (deprecated) Client write timeout.
-# CLI flag: -<prefix>.redis.write-timeout
-[write_timeout: <duration> | default = 3s]
-
-# (deprecated) Maximum number of connections in the pool.
-# CLI flag: -<prefix>.redis.connection-pool-size
-[connection_pool_size: <int> | default = 100]
-
-# (deprecated) Maximum duration to wait to get a connection from pool.
-# CLI flag: -<prefix>.redis.connection-pool-timeout
-[connection_pool_timeout: <duration> | default = 4s]
-
-# (deprecated) Minimum number of idle connections.
-# CLI flag: -<prefix>.redis.min-idle-connections
-[min_idle_connections: <int> | default = 10]
-
-# (deprecated) Amount of time after which client closes idle connections.
-# CLI flag: -<prefix>.redis.idle-timeout
-[idle_timeout: <duration> | default = 5m]
-
-# (deprecated) Close connections older than this duration. If the value is zero,
-# then the pool does not close connections based on age.
-# CLI flag: -<prefix>.redis.max-connection-age
-[max_connection_age: <duration> | default = 0s]
-
-# (deprecated) The maximum size of an item stored in Redis. Bigger items are not
-# stored. If set to 0, no maximum size is enforced.
-# CLI flag: -<prefix>.redis.max-item-size
-[max_item_size: <int> | default = 16777216]
-
-# (deprecated) The maximum number of concurrent asynchronous operations can
-# occur.
-# CLI flag: -<prefix>.redis.max-async-concurrency
-[max_async_concurrency: <int> | default = 50]
-
-# (deprecated) The maximum number of enqueued asynchronous operations allowed.
-# CLI flag: -<prefix>.redis.max-async-buffer-size
-[max_async_buffer_size: <int> | default = 25000]
-
-# (deprecated) The maximum number of concurrent connections running get
-# operations. If set to 0, concurrency is unlimited.
-# CLI flag: -<prefix>.redis.max-get-multi-concurrency
-[max_get_multi_concurrency: <int> | default = 100]
-
-# (deprecated) The maximum size per batch for mget operations.
-# CLI flag: -<prefix>.redis.max-get-multi-batch-size
-[max_get_multi_batch_size: <int> | default = 100]
-
-# (deprecated) Enable connecting to Redis with TLS.
-# CLI flag: -<prefix>.redis.tls-enabled
-[tls_enabled: <boolean> | default = false]
-
-# (deprecated) Path to the client certificate, which will be used for
-# authenticating with the server. Also requires the key path to be configured.
-# CLI flag: -<prefix>.redis.tls-cert-path
-[tls_cert_path: <string> | default = ""]
-
-# (deprecated) Path to the key for the client certificate. Also requires the
-# client certificate to be configured.
-# CLI flag: -<prefix>.redis.tls-key-path
-[tls_key_path: <string> | default = ""]
-
-# (deprecated) Path to the CA certificates to validate server certificate
-# against. If not set, the host's root CA certificates are used.
-# CLI flag: -<prefix>.redis.tls-ca-path
-[tls_ca_path: <string> | default = ""]
-
-# (deprecated) Override the expected name on the server certificate.
-# CLI flag: -<prefix>.redis.tls-server-name
-[tls_server_name: <string> | default = ""]
-
-# (deprecated) Skip validating server certificate.
-# CLI flag: -<prefix>.redis.tls-insecure-skip-verify
-[tls_insecure_skip_verify: <boolean> | default = false]
-
-# (deprecated) Override the default cipher suite list (separated by commas).
-# Allowed values:
-#
-# Secure Ciphers:
-# - TLS_AES_128_GCM_SHA256
-# - TLS_AES_256_GCM_SHA384
-# - TLS_CHACHA20_POLY1305_SHA256
-# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
-# - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
-# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
-# - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
-# - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-# - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-# - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-# - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-# - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
-# Insecure Ciphers:
-# - TLS_RSA_WITH_RC4_128_SHA
-# - TLS_RSA_WITH_3DES_EDE_CBC_SHA
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_CBC_SHA256
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
-# - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
-# - TLS_ECDHE_RSA_WITH_RC4_128_SHA
-# - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
-# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-# CLI flag: -<prefix>.redis.tls-cipher-suites
-[tls_cipher_suites: <string> | default = ""]
-
-# (deprecated) Override the default minimum TLS version. Allowed values:
-# VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-# CLI flag: -<prefix>.redis.tls-min-version
-[tls_min_version: <string> | default = ""]
 ```
 
 ### s3_storage_backend

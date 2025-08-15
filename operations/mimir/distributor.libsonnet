@@ -59,7 +59,7 @@
       std.ceil(
         std.max(
           8,  // Always run on at least 8 gothreads, so that at least 2 of them (25%) are dedicated to GC.
-          $.util.parseCPU($.distributor_container.resources.requests.cpu) * 2
+          $.util.parseCPU($.distributor_container.resources.requests.cpu) + 2
         ),
       )
     ),

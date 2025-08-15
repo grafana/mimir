@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
@@ -193,7 +194,6 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
-	SplitInstantQueriesByInterval         model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
@@ -209,7 +209,7 @@ type Limits struct {
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
-	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
+	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
 	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
@@ -287,17 +287,21 @@ type Limits struct {
 	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
-	OTelCreatedTimestampZeroIngestionEnabled bool                   `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
-	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
-	OTelKeepIdentifyingResourceAttributes    bool                   `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
-	OTelConvertHistogramsToNHCB              bool                   `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
-	OTelPromoteScopeMetadata                 bool                   `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
-	OTelNativeDeltaIngestion                 bool                   `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTelMetricSuffixesEnabled                bool                         `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelCreatedTimestampZeroIngestionEnabled bool                         `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
+	PromoteOTelResourceAttributes            flagext.StringSliceCSV       `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
+	OTelKeepIdentifyingResourceAttributes    bool                         `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
+	OTelConvertHistogramsToNHCB              bool                         `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
+	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
+	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
 	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
+
+	// NameValidationScheme is the validation scheme for metric and label names.
+	NameValidationScheme ValidationSchemeValue `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
 
 	extensions map[string]interface{}
 }
@@ -342,12 +346,16 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
 	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series", "Target ingestion delay to apply to tenants with configured max global series to a value lower than -distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than should be applied.")
 	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than", "Target ingestion delay to apply to tenants with a numeric ID whose value is greater than -distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than.")
+
+	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
+	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -389,7 +397,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
-	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 
@@ -531,7 +538,7 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
-	if err = l.validate(); err != nil {
+	if err = l.Validate(); err != nil {
 		return err
 	}
 
@@ -556,11 +563,67 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 	return limitsToStructWithExtensionFields(l), nil
 }
 
-func (l *Limits) validate() error {
+// Validate the Limits.
+func (l *Limits) Validate() error {
+	switch model.ValidationScheme(l.NameValidationScheme) {
+	case model.UTF8Validation, model.LegacyValidation:
+	case model.UnsetValidation:
+		l.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+	default:
+		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
+	}
+
+	validationScheme := model.ValidationScheme(l.NameValidationScheme)
+	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
+	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.UnderscoreEscapingWithSuffixes:
+		if validationScheme != model.LegacyValidation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.LegacyValidation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoUTF8EscapingWithSuffixes:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if !l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
+		}
+	case otlptranslator.NoTranslation:
+		if validationScheme != model.UTF8Validation {
+			return fmt.Errorf(
+				"OTLP translation strategy %s is not allowed unless validation scheme is %s",
+				l.OTelTranslationStrategy, model.UTF8Validation,
+			)
+		}
+		if l.OTelMetricSuffixesEnabled {
+			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
+		}
+	case "":
+	default:
+		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
+	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
+		cfg.MetricNameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -878,12 +941,6 @@ func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
 }
 
-// SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query
-// via the query-frontend. 0 to disable limit.
-func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
-}
-
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 // 0 means all queries are sent to ingester.
 func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
@@ -1056,7 +1113,12 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
-	return o.getOverridesForUser(userID).MetricRelabelConfigs
+	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
+	validationScheme := o.NameValidationScheme(userID)
+	for i := range relabelConfigs {
+		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+	}
+	return relabelConfigs
 }
 
 func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
@@ -1365,6 +1427,33 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
 }
 
+func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	if strategy != "" {
+		return strategy
+	}
+
+	// Generate translation strategy based on other settings.
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
+	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	case model.LegacyValidation:
+		if suffixesEnabled {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case model.UTF8Validation:
+		if suffixesEnabled {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.NoTranslation
+		}
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
+	}
+	return strategy
+}
+
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.
 func (o *Overrides) DistributorIngestionArtificialDelay(tenantID string) time.Duration {
 	overrides := o.getOverridesForUser(tenantID)
@@ -1410,6 +1499,11 @@ func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 // LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
 func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
+}
+
+// NameValidationScheme returns the name validation scheme to use for a particular tenant.
+func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
+	return model.ValidationScheme(o.getOverridesForUser(userID).NameValidationScheme)
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that

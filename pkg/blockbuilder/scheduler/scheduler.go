@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -169,7 +168,14 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
-	s.populateInitialJobs(ctx)
+
+	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
+		return
+	}
+
+	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger))
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -251,7 +257,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offset, end)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -355,20 +361,15 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore) {
 	// Note that the lock is already held because we're in startup mode.
-	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, time.Now().Add(-s.cfg.LookbackOnNoCommit))
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
-		return
-	}
 
-	offFinder := newOffsetFinder(s.adminClient, s.logger)
+	endTime := time.Now()
+	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
 	for _, off := range consumeOffs {
-		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
-			off.start, off.resume, off.end, time.Now(), s.cfg.JobSize,
-			time.Now().Add(-s.cfg.MaxScanAge), s.logger)
+		o, err := probeInitialJobOffsets(ctx, offStore, off.topic, off.partition,
+			off.start, off.resume, off.end, endTime, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
@@ -401,11 +402,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
 			name:    "planned",
+			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
 			name:    "committed",
+			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
@@ -520,8 +523,9 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var resumeOffset int64
 
-			if planned := ps.planned.offset(); planned > 0 {
-				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(planned))
+			if !ps.planned.empty() {
+				planned := ps.planned.offset()
+				s.metrics.partitionPlannedOffset.WithLabelValues(partStr).Set(float64(planned))
 				resumeOffset = planned
 			} else {
 				// Nothing planned offset for this partition. Resume from fallback offset instead.
@@ -653,35 +657,44 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	return kadm.Offsets{}, lastErr
 }
 
-func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
+// snapOffsets returns a snapshot of the committed and planned offsets for all partitions.
+func (s *BlockBuilderScheduler) snapOffsets() (kadm.Offsets, kadm.Offsets) {
 	cp := make(kadm.Offsets)
+	pp := make(kadm.Offsets)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, ps := range s.partState {
-		cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		if !ps.committed.empty() {
+			cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		}
+		if !ps.planned.empty() {
+			pp.AddOffset(ps.topic, ps.partition, ps.planned.offset(), 0)
+		}
 	}
 
-	return cp
+	return cp, pp
 }
 
 // flushOffsetsToKafka flushes the committed offsets to Kafka and updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
-	offsets := s.snapCommitted()
+	committed, planned := s.snapOffsets()
 
-	offsets.Each(func(o kadm.Offset) {
+	committed.Each(func(o kadm.Offset) {
 		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 	})
+	planned.Each(func(o kadm.Offset) {
+		s.metrics.partitionPlannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+	})
 
-	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed)
 	if err != nil {
 		return fmt.Errorf("commit offsets: %w", err)
 	}
 
-	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(offsets))
-
+	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(committed))
 	return nil
 }
 
@@ -860,8 +873,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		}
 
 		// Sort observations by start offset
-		sort.Slice(observations, func(i, j int) bool {
-			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
+		slices.SortFunc(observations, func(a, b *observation) int {
+			return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
 		})
 
 		// Find the highest contiguous coverage by processing jobs in order.
@@ -958,6 +971,8 @@ type advancingOffset struct {
 	logger  log.Logger
 }
 
+const offsetEmpty int64 = -1
+
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
@@ -988,13 +1003,19 @@ func (o *advancingOffset) set(offset int64) {
 	o.off = offset
 }
 
+// empty returns true if the offset is empty and uninitialized.
+func (o *advancingOffset) empty() bool {
+	return o.off == offsetEmpty
+}
+
 // validNextSpec returns true if the given job spec is valid to be added to the
 // offset. It is valid if the start offset is the same as the current offset.
+// We also allow transitioning out of an empty offset without calling it a gap.
 func (o *advancingOffset) validNextSpec(spec schedulerpb.JobSpec) bool {
-	return o.off == spec.StartOffset
+	return o.off == spec.StartOffset || o.empty()
 }
 
 // beyondSpec returns true if the offset is beyond the given job spec.
 func (o *advancingOffset) beyondSpec(spec schedulerpb.JobSpec) bool {
-	return spec.EndOffset <= o.off
+	return !o.empty() && spec.EndOffset <= o.off
 }

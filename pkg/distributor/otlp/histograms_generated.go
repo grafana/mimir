@@ -39,8 +39,7 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, metadata mimirpb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -56,16 +55,20 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return nil, err
+		}
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
@@ -256,8 +259,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, metadata mimirpb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -274,16 +276,20 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return nil, err
+		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)

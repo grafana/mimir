@@ -1084,6 +1084,10 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
 
+			status, err := c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, status)
+
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
 			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders, smtpConfig)
@@ -1093,6 +1097,12 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.NoError(t, err)
 			require.Equal(t, now, cfg.CreatedAt)
+
+			status, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, cfg.CreatedAt, status.CreatedAt)
+			require.Equal(t, cfg.Promoted, status.Promoted)
+			require.Equal(t, cfg.Hash, status.Hash)
 		}
 
 		// Let's store config for a different user as well.
@@ -1123,6 +1133,9 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
+
+			_, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		}
 	}
 

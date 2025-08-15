@@ -853,7 +853,7 @@ spec:
               (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[1h] offset 4h)) > 0)
               # And only if blocks aren't shipped by the block-builder.
               unless on (cluster, namespace)
-              (max by (cluster, namespace) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
+              (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
             for: 15m
             labels:
               severity: critical
@@ -867,7 +867,7 @@ spec:
               (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
               # Only if blocks aren't shipped by the block-builder.
               unless on (cluster, namespace)
-              (max by (cluster, namespace) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
+              (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
             for: 4h
             labels:
               severity: critical
@@ -881,7 +881,7 @@ spec:
               (cortex_ingester_oldest_unshipped_block_timestamp_seconds > 0)
               # Only if blocks aren't shipped by the block-builder.
               unless on (cluster, namespace)
-              (max by (cluster, namespace) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
+              (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
             for: 15m
             labels:
               severity: critical

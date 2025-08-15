@@ -24,7 +24,6 @@ const (
 )
 
 type subquerySpinOffMapper struct {
-	ctx             context.Context
 	defaultStepFunc func(rangeMillis int64) int64
 
 	logger log.Logger
@@ -32,10 +31,9 @@ type subquerySpinOffMapper struct {
 }
 
 // NewSubquerySpinOffMapper creates a new instant query mapper.
-func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
+func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
-			ctx:             ctx,
 			defaultStepFunc: defaultStepFunc,
 			logger:          logger,
 			stats:           stats,
@@ -56,11 +54,7 @@ func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMil
 // so we remap them into a "__downstream_query__" selector.
 //
 // See sharding.go and embedded.go for another example of mapping into a fake metric selector.
-func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := m.ctx.Err(); err != nil {
-		return nil, false, err
-	}
-
+func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {

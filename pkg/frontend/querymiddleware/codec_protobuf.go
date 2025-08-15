@@ -220,7 +220,7 @@ func (f protobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse,
 
 func (f protobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
 	if resp.Data == nil {
-		if resp.Status != mimirpb.QueryResponse_SUCCESS {
+		if resp.Status != mimirpb.QUERY_STATUS_SUCCESS {
 			return nil, nil
 		}
 

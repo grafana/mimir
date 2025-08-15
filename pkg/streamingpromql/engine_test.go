@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -1482,8 +1483,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 
-			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
-			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
 			expr:          "sum(some_histogram)",
@@ -1501,9 +1502,9 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			//  - the running total for the sum() (a histogram pointer),
 			//  - the next series from the selector,
 			//  - and the output sample.
-			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
-			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize + types.HistogramPointerSize - 1,
+			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
+			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + types.HistogramPointerSize,
+			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
 		},
 	}
 
@@ -1532,13 +1533,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			require.NotEmpty(t, span.Events, "There should be events in the span.")
 
 			logEvents := filter(span.Events, func(e tracesdk.Event) bool {
-				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "query stats"))
+				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
 			})
 			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
 			logEvent := logEvents[0]
 			expectedFields := []attribute.KeyValue{
 				attribute.String("level", "info"),
-				attribute.String("msg", "query stats"),
+				attribute.String("msg", "evaluation stats"),
 				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
 				attribute.String("expr", testCase.expr),
 				attribute.String("queryType", queryType),
@@ -4115,4 +4116,22 @@ func TestInstantQueryDurationExpression(t *testing.T) {
 	t.Cleanup(mimirQuery.Close)
 
 	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
+}
+
+func TestEngine_RegisterNodeMaterializer(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	nodeType := planning.NodeType(1234)
+	materializer := dummyMaterializer{}
+	require.NoError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "should not fail to register new node type")
+
+	require.EqualError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "materializer for node type 1234 already registered", "should fail to register materializer again if already registered")
+}
+
+type dummyMaterializer struct{}
+
+func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	panic("not implemented")
 }

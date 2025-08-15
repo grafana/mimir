@@ -60,13 +60,20 @@ blocks_storage:
     ignore_blocks_within: 2m
 
     index_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
 
     chunks_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
 
     metadata_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+      bucket_index_content_ttl: 10s
 
   s3:
     endpoint:          minio:9000
@@ -88,7 +95,9 @@ ruler_storage:
   backend: s3
 
   cache:
-    # Cache is configured via CLI flags. See docker-compose.jsonnet
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
 
   s3:
     bucket_name:       mimir-ruler
@@ -139,6 +148,7 @@ frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
   cache_results: true
+  cache_errors: true
   shard_active_series_queries: true
   cache_samples_processed_stats: true
 
@@ -146,8 +156,10 @@ frontend:
   # scheduler_address: "query-scheduler:9011"
 
   results_cache:
-    # Cache is configured via CLI flags. See docker-compose.jsonnet
     compression: snappy
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
 
 frontend_worker:
   response_streaming_enabled: true

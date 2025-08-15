@@ -45,19 +45,19 @@ message WriteRequest {
 message WriteResponse {}
 
 enum ErrorCause {
-  UNKNOWN_CAUSE = 0;
-  REPLICAS_DID_NOT_MATCH = 1;
-  TOO_MANY_CLUSTERS = 2;
-  BAD_DATA = 3;
-  INGESTION_RATE_LIMITED = 4;
-  REQUEST_RATE_LIMITED = 5;
-  INSTANCE_LIMIT = 6;
-  SERVICE_UNAVAILABLE = 7;
-  TSDB_UNAVAILABLE = 8;
-  TOO_BUSY = 9;
-  CIRCUIT_BREAKER_OPEN = 10;
-  METHOD_NOT_ALLOWED = 11;
-  TENANT_LIMIT = 12;
+  ERROR_CAUSE_UNKNOWN = 0;
+  ERROR_CAUSE_REPLICAS_DID_NOT_MATCH = 1;
+  ERROR_CAUSE_TOO_MANY_CLUSTERS = 2;
+  ERROR_CAUSE_BAD_DATA = 3;
+  ERROR_CAUSE_INGESTION_RATE_LIMITED = 4;
+  ERROR_CAUSE_REQUEST_RATE_LIMITED = 5;
+  ERROR_CAUSE_INSTANCE_LIMIT = 6;
+  ERROR_CAUSE_SERVICE_UNAVAILABLE = 7;
+  ERROR_CAUSE_TSDB_UNAVAILABLE = 8;
+  ERROR_CAUSE_TOO_BUSY = 9;
+  ERROR_CAUSE_CIRCUIT_BREAKER_OPEN = 10;
+  ERROR_CAUSE_METHOD_NOT_ALLOWED = 11;
+  ERROR_CAUSE_TENANT_LIMIT = 12;
 }
 
 message ErrorDetails {
@@ -67,7 +67,7 @@ message ErrorDetails {
 message TimeSeries {
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
@@ -114,7 +114,7 @@ message MetricMetadata {
 message Metric {
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
 }
 
@@ -122,7 +122,7 @@ message Exemplar {
   // Exemplar labels, different than series labels
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
   double value = 2;
   int64 timestamp_ms = 3;
@@ -250,30 +250,28 @@ message SampleHistogramPair {
   SampleHistogram histogram = 1;
 }
 
+// These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryStatus {
+  QUERY_STATUS_ERROR = 0;
+  QUERY_STATUS_SUCCESS = 1;
+}
+
+// These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+enum QueryErrorType {
+  QUERY_ERROR_TYPE_NONE = 0;
+  QUERY_ERROR_TYPE_TIMEOUT = 1;
+  QUERY_ERROR_TYPE_CANCELED = 2;
+  QUERY_ERROR_TYPE_EXECUTION = 3;
+  QUERY_ERROR_TYPE_BAD_DATA = 4;
+  QUERY_ERROR_TYPE_INTERNAL = 5;
+  QUERY_ERROR_TYPE_UNAVAILABLE = 6;
+  QUERY_ERROR_TYPE_NOT_FOUND = 7;
+  QUERY_ERROR_TYPE_NOT_ACCEPTABLE = 8;
+}
+
 message QueryResponse {
-  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum Status {
-    option (gogoproto.goproto_enum_prefix) = true;
-    ERROR = 0;
-    SUCCESS = 1;
-  }
-
-  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
-  enum ErrorType {
-    option (gogoproto.goproto_enum_prefix) = true;
-    NONE = 0;
-    TIMEOUT = 1;
-    CANCELED = 2;
-    EXECUTION = 3;
-    BAD_DATA = 4;
-    INTERNAL = 5;
-    UNAVAILABLE = 6;
-    NOT_FOUND = 7;
-    NOT_ACCEPTABLE = 8;
-  }
-
-  Status status = 1;
-  ErrorType error_type = 2;
+  QueryStatus status = 1;
+  QueryErrorType error_type = 2;
   string error = 3;
 
   oneof data {

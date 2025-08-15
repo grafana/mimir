@@ -6,9 +6,10 @@
 package querier
 
 import (
+	"cmp"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -457,8 +458,8 @@ func createAggrChunkWithSamples(samples ...promql.FPoint) storepb.AggrChunk {
 
 func createAggrChunk(minTime, maxTime int64, samples ...promql.FPoint) storepb.AggrChunk {
 	// Ensure samples are sorted by timestamp.
-	sort.Slice(samples, func(i, j int) bool {
-		return samples[i].T < samples[j].T
+	slices.SortFunc(samples, func(a, b promql.FPoint) int {
+		return cmp.Compare(a.T, b.T)
 	})
 
 	chunk := chunkenc.NewXORChunk()
@@ -487,8 +488,8 @@ func createAggrChunkWithFloatHistogramSamples(samples ...promql.HPoint) storepb.
 
 func createAggrFloatHistogramChunk(minTime, maxTime int64, samples ...promql.HPoint) storepb.AggrChunk {
 	// Ensure samples are sorted by timestamp.
-	sort.Slice(samples, func(i, j int) bool {
-		return samples[i].T < samples[j].T
+	slices.SortFunc(samples, func(a, b promql.HPoint) int {
+		return cmp.Compare(a.T, b.T)
 	})
 
 	chunk := chunkenc.NewFloatHistogramChunk()

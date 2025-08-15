@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r350-d2a17f27
+  tag: r355-9337d98a
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -262,7 +262,7 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+      {{- if not .Values.federation_frontend.disableOtherComponents }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
@@ -272,11 +272,7 @@ mimir:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
-      {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- else }}
-      frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- end }}
 
     {{- if and .Values.enterprise.enabled }}
     gateway:
@@ -2218,6 +2214,12 @@ store_gateway:
     #
     enabled: true
 
+    # additional settings for emptyDir like medium or sizeLimit
+    #
+    emptyDir: {}
+    #  medium: Memory
+    #  sizeLimit: 1Gi
+
     # Store-gateway data Persistent Volume Claim template name
     #
     name: storage
@@ -2533,7 +2535,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.38-alpine
+    tag: 1.6.39-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -3579,6 +3581,8 @@ gateway:
     nameOverride: ""
     # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
     ingressClassName: ""
+    # -- Labels for the Ingress
+    labels: {}
     # -- Annotations for the Ingress
     annotations: {}
     # -- Hosts configuration for the Ingress
@@ -3843,7 +3847,7 @@ metaMonitoring:
     labels:
       grafana_dashboard: "1"
 
-  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator, Grafana Agent (deprecated), and/or Grafana Alloy
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
@@ -3912,7 +3916,9 @@ metaMonitoring:
   #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
 
-  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  # -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+  # Users are recommended to switch to Grafana k8s-monitoring, that orchestrates the lifecycle of Grafana Alloy instances, and comes with built-in support for monitoring Grafana LGTM stacks (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
+  # metaMonitoring.grafanaAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
@@ -4110,6 +4116,8 @@ metaMonitoring:
         # matchLabelKeys:
         #   - pod-template-hash
 
+# -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+# Users are recommended to switch to Grafana k8s-monitoring (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
   podSecurityContext:
@@ -4142,7 +4150,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r350-05f08dfd
+    tag: r355-33dacf0f
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics

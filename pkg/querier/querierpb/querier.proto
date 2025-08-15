@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package querierpb;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "querierpb";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message EvaluateQueryRequest {
+  planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
+  repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluationNode {
+  int64 nodeIndex = 1;
+  planning.EncodedQueryTimeRange timeRange = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluateQueryResponse {
+  oneof message {
+    EvaluateQueryResponseSeriesMetadata seriesMetadata = 1;
+    EvaluateQueryResponseStringValue stringValue = 2;
+    EvaluateQueryResponseScalarValue scalarValue = 3;
+    EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 4;
+    EvaluateQueryResponseRangeVectorStepData rangeVectorStepData = 5;
+    EvaluateQueryResponseEvaluationCompleted evaluationCompleted = 6;
+  }
+}
+
+message EvaluateQueryResponseSeriesMetadata {
+  int64 nodeIndex = 1;
+  repeated SeriesMetadata series = 2 [(gogoproto.nullable) = false];
+}
+
+message SeriesMetadata {
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+}
+
+message EvaluateQueryResponseStringValue {
+  int64 nodeIndex = 1;
+  string value = 2;
+}
+
+message EvaluateQueryResponseScalarValue {
+  int64 nodeIndex = 1;
+  repeated cortexpb.Sample values = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluateQueryResponseInstantVectorSeriesData {
+  int64 nodeIndex = 1;
+  repeated cortexpb.Sample floats = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
+}
+
+message EvaluateQueryResponseRangeVectorStepData {
+  int64 nodeIndex = 1;
+  int64 seriesIndex = 2;
+
+  // These timestamps have the same meaning as the corresponding fields on RangeVectorStepData.
+  int64 step_t = 3;
+  int64 range_start = 4;
+  int64 range_end = 5;
+
+  repeated cortexpb.Sample floats = 6 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 7 [(gogoproto.nullable) = false];
+}
+
+message Error {
+  cortexpb.QueryErrorType type = 1;
+  string message = 2;
+}
+
+message EvaluateQueryResponseEvaluationCompleted {
+  Annotations annotations = 1 [(gogoproto.nullable) = false];
+  QueryStats stats = 2 [(gogoproto.nullable) = false];
+}
+
+message Annotations {
+  repeated string warnings = 1;
+  repeated string infos = 2;
+}
+
+message QueryStats {
+  int64 totalSamples = 1;
+  repeated int64 totalSamplesPerStep = 2;
+}

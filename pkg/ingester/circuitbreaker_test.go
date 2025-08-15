@@ -61,7 +61,7 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
 		stat := status.New(codes.Unavailable, "broken!")
-		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
+		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE})
 		require.NoError(t, err)
 		err = stat.Err()
 		require.False(t, cb.tryRecordFailure(err))

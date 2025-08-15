@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -640,7 +641,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		// Estimate the size of each record written in this test.
-		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit)
+		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, writeReqRecords, 1)
 		estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -887,29 +888,41 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 }
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {
-	req := &mimirpb.WriteRequest{
-		Source:              mimirpb.RULE,
-		SkipLabelValidation: true,
-		Timeseries: []mimirpb.PreallocTimeseries{
-			mockPreallocTimeseries("series_1"),
-			mockPreallocTimeseries("series_2"),
-			mockPreallocTimeseries("series_3"),
-		},
-		Metadata: []*mimirpb.MetricMetadata{
-			{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
-			{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
-			{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
-		},
+	testReq := func(t *testing.T) *mimirpb.WriteRequest {
+		t.Helper()
+		req := &mimirpb.WriteRequest{
+			Source:              mimirpb.RULE,
+			SkipLabelValidation: true,
+			Timeseries: []mimirpb.PreallocTimeseries{
+				mockPreallocTimeseries("series_1"),
+				mockPreallocTimeseries("series_2"),
+				mockPreallocTimeseries("series_3"),
+			},
+			Metadata: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+		// Pre-requisite check: WriteRequest fields are set to non-zero values.
+		require.NotZero(t, req.Source)
+		require.NotZero(t, req.SkipLabelValidation)
+		require.NotZero(t, req.Timeseries)
+		require.NotZero(t, req.Metadata)
+		return req
 	}
 
-	// Pre-requisite check: WriteRequest fields are set to non-zero values.
-	require.NotZero(t, req.Source)
-	require.NotZero(t, req.SkipLabelValidation)
-	require.NotZero(t, req.Timeseries)
-	require.NotZero(t, req.Metadata)
+	testReqV2 := func(t *testing.T) *mimirpb.WriteRequest {
+		t.Helper()
+		rw1 := testReq(t)
+		rw2, err := mimirpb.FromWriteRequestToRW2Request(rw1, V2CommonSymbols, V2RecordSymbolOffset)
+		require.NoError(t, err)
+		return rw2
+	}
 
 	t.Run("should return 1 record if the input WriteRequest size is less than the size limit", func(t *testing.T) {
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2)
+		req := testReq(t)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -920,10 +933,71 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		assert.Equal(t, req, actual)
 	})
 
+	t.Run("should return 1 record if the input WriteRequest in RW2 size is less than the size limit", func(t *testing.T) {
+		req := testReqV2(t)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2, splitRequestVersionTwo)
+		require.NoError(t, err)
+		require.Len(t, records, 1)
+
+		actual := &mimirpb.PreallocWriteRequest{
+			UnmarshalFromRW2: true,
+			RW2SymbolOffset:  V2RecordSymbolOffset,
+			RW2CommonSymbols: V2CommonSymbols,
+		}
+		require.NoError(t, actual.Unmarshal(records[0].Value))
+
+		actual.ClearTimeseriesUnmarshalData()
+		assert.Equal(t, mimirpb.RULE, actual.Source)
+		assert.Equal(t, true, actual.SkipLabelValidation)
+		expMetadata := []*mimirpb.MetricMetadata{
+			{
+				Type:             mimirpb.COUNTER,
+				MetricFamilyName: "series_1",
+				Help:             "This is the first test metric.",
+			},
+			{
+				Type:             mimirpb.COUNTER,
+				MetricFamilyName: "series_2",
+				Help:             "This is the second test metric.",
+			},
+			{
+				Type:             mimirpb.COUNTER,
+				MetricFamilyName: "series_3",
+				Help:             "This is the third test metric.",
+			},
+		}
+		assert.ElementsMatch(t, expMetadata, actual.Metadata)
+		expTimeseries := []mimirpb.PreallocTimeseries{
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars: []mimirpb.Exemplar{},
+				},
+			},
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars: []mimirpb.Exemplar{},
+				},
+			},
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars: []mimirpb.Exemplar{},
+				},
+			},
+		}
+		assert.Equal(t, expTimeseries, actual.Timeseries)
+	})
+
 	t.Run("should return multiple records if the input WriteRequest size is bigger than the size limit", func(t *testing.T) {
 		const limit = 100
+		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 4)
 
@@ -963,10 +1037,100 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		}, partials)
 	})
 
+	t.Run("should return multiple records if the input RW2 WriteRequest size is bigger than the size limit", func(t *testing.T) {
+		const limit = 100
+		req := testReqV2(t)
+
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, splitRequestVersionTwo)
+		require.NoError(t, err)
+		require.Len(t, records, 3)
+
+		// Assert each record, and decode all partial WriteRequests.
+		partials := make([]*mimirpb.WriteRequest, 0, len(records))
+
+		for _, rec := range records {
+			assert.Equal(t, int32(1), rec.Partition)
+			assert.Equal(t, "user-1", string(rec.Key))
+			assert.LessOrEqual(t, len(rec.Value), limit)
+
+			actual := &mimirpb.PreallocWriteRequest{
+				UnmarshalFromRW2: true,
+				RW2SymbolOffset:  V2RecordSymbolOffset,
+				RW2CommonSymbols: V2CommonSymbols,
+			}
+			require.NoError(t, actual.Unmarshal(rec.Value))
+
+			actual.ClearTimeseriesUnmarshalData()
+			partials = append(partials, &actual.WriteRequest)
+		}
+
+		assert.Equal(t, []*mimirpb.WriteRequest{
+			{
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_1",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the first test metric.",
+					},
+				},
+			}, {
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_2",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the second test metric.",
+					},
+				},
+			}, {
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars: []mimirpb.Exemplar{},
+						},
+					},
+				},
+				Metadata: []*mimirpb.MetricMetadata{
+					{
+						MetricFamilyName: "series_3",
+						Type:             mimirpb.COUNTER,
+						Help:             "This is the third test metric.",
+					},
+				},
+			},
+		}, partials)
+	})
+
 	t.Run("should return multiple records, larger than the limit, if the Timeseries and Metadata entries in the WriteRequest are bigger than limit", func(t *testing.T) {
 		const limit = 1
+		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 6)
 
@@ -1023,10 +1187,11 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 	for i := 0; i < len(req.Timeseries); i++ {
 		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
 	}
+	requestSplitter := mimirpb.SplitWriteRequestByMaxMarshalSize
 
 	b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024)
+			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024, requestSplitter)
 			if err != nil {
 				b.Fatal(err)
 			}

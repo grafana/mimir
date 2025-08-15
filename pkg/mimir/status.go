@@ -9,7 +9,8 @@ import (
 	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -37,8 +38,8 @@ func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
 			Status: s.State().String(),
 		})
 	}
-	sort.Slice(svcs, func(i, j int) bool {
-		return svcs[i].Name < svcs[j].Name
+	slices.SortFunc(svcs, func(a, b renderService) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	// TODO: this could be extended to also print sub-services, if given service has any

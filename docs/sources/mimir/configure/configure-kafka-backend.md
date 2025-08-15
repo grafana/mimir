@@ -4,7 +4,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to use Kafka for ingest storage.
 menuTitle: Kafka
 title: Configure the Grafana Mimir Kafka backend
-weight: 66
+weight: 130
 ---
 
 # Configure the Grafana Mimir Kafka backend
