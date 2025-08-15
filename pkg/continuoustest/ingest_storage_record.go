@@ -95,7 +95,10 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 	kc, err := ingest.NewKafkaReaderClient(
 		t.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "record-continuous-test", t.reg),
-		t.logger)
+		t.logger,
+		kgo.ConsumeTopics("ingest"),
+		kgo.ConsumerGroup(t.cfg.ConsumerGroup),
+	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
@@ -170,7 +173,6 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		recordsRemainingInBatch = int64(t.cfg.MaxRecordsPerRun)
 	}
 
-	t.client.AddConsumeTopics("ingest")
 	t.client.AddConsumePartitions(startOffsets)
 
 	const numWorkers = 4
