@@ -1974,18 +1974,19 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
 							continue
 						}
+						t.Run(engineName, func(t *testing.T) {
+							query, err := generator(engine)
+							require.NoError(t, err)
+							t.Cleanup(query.Close)
 
-						query, err := generator(engine)
-						require.NoError(t, err)
-						t.Cleanup(query.Close)
+							res := query.Exec(context.Background())
+							require.NoError(t, res.Err)
+							results = append(results, res)
 
-						res := query.Exec(context.Background())
-						require.NoError(t, res.Err)
-						results = append(results, res)
-
-						warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-						require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-						require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
+							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
+							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
+						})
 					}
 
 					// If both results are available, compare them (sometimes we skip prometheus)
@@ -2819,7 +2820,7 @@ func TestHistogramAnnotations(t *testing.T) {
 		"bad bucket label warning": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="c"})`,
-			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" (1:25)`},
 		},
 		"invalid quantile warning": {
 			data:                       mixedClassicHistograms,
@@ -2829,19 +2830,19 @@ func TestHistogramAnnotations(t *testing.T) {
 		"mixed classic and native histogram warning": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="a"})`,
-			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
+			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms (1:25)`},
 		},
 		"forced monotonicity info": {
 			data:                               mixedClassicHistograms,
 			expr:                               `histogram_quantile(0.5, series{host="d"})`,
-			expectedInfoAnnotations:            []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
+			expectedInfoAnnotations:            []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
 			skipComparisonWithPrometheusReason: "Prometheus does not output any series name: https://github.com/prometheus/prometheus/issues/15411",
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
 			expr: `histogram_quantile(9, series{host="a"})`,
 			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
+				`PromQL warning: vector contains a mix of classic and native histograms (1:23)`,
 				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
 			},
 		},
@@ -2855,7 +2856,7 @@ func TestHistogramAnnotations(t *testing.T) {
 				series  2
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
-			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
 		},
 		"extra entry in series without le label": {
 			data: `
@@ -2863,7 +2864,7 @@ func TestHistogramAnnotations(t *testing.T) {
 				series  2
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
-			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
 		},
 	}
 
