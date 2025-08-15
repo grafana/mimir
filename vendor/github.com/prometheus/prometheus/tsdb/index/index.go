@@ -960,6 +960,12 @@ type ReaderCacheProvider interface {
 	SeriesHashCache() *hashcache.BlockSeriesHashCache
 }
 
+type Statistics interface {
+	TotalSeries() uint64
+	LabelValuesCount(ctx context.Context, name string) (uint64, error)
+	LabelValuesCardinality(ctx context.Context, name string, values ...string) (uint64, error)
+}
+
 type Reader struct {
 	b   ByteSlice
 	toc *TOC

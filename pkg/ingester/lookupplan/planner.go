@@ -24,15 +24,15 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats Statistics
+	statistician Statistician
 
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistician Statistician) *CostBasedPlanner {
 	return &CostBasedPlanner{
-		metrics: metrics,
-		stats:   statistics,
+		metrics:      metrics,
+		statistician: statistician,
 	}
 }
 
@@ -44,6 +44,12 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		p.recordPlanningOutcome(ctx, start, abortedEarly, retErr, allPlans)
 	}(time.Now())
 
+	// Obtain a copy of the statistics and use the same statistics for the entire planning process.
+	stats, err := p.statistician.Statistics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error obtaining statistics: %w", err)
+	}
+
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
@@ -51,8 +57,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	var err error
-	allPlans, err = p.generatePlans(ctx, matchers)
+	allPlans, err = p.generatePlans(ctx, stats, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating plans: %w", err)
 	}
@@ -74,8 +79,8 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, matchers, p.stats)
+func (p CostBasedPlanner) generatePlans(ctx context.Context, stats Statistics, matchers []*labels.Matcher) ([]plan, error) {
+	noopPlan, err := newScanOnlyPlan(ctx, matchers, stats)
 	if err != nil {
 		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
 	}

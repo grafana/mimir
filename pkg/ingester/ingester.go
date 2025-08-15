@@ -366,6 +366,21 @@ type Ingester struct {
 	reactiveLimiter *ingesterReactiveLimiter
 }
 
+func (i *Ingester) Statistics(ctx context.Context) (lookupplan.Statistics, error) {
+	user, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get tenant ID from context")
+	}
+
+	db := i.getTSDB(user)
+	if db == nil {
+		// TODO dimitarvdimitrov technically it is valid to receive a query for a non-existent tenant.
+		// We should just return empty statistics in that case.
+		return nil, fmt.Errorf("no TSDB found for user %s", user)
+	}
+	return db.Head().Statistics(ctx)
+}
+
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
@@ -2732,9 +2747,9 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
 // which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+func (i *Ingester) getIndexLookupPlanner(reg *prometheus.Registry) index.LookupPlanner {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return &index.ScanEmptyMatchersLookupPlanner{}
+		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(reg), i)
 	}
 	return lookupplan.NoopPlanner{}
 }
@@ -2879,7 +2894,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(),
+		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

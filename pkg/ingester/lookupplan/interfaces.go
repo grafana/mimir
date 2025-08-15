@@ -15,3 +15,8 @@ type Statistics interface {
 	// LabelValuesCardinality should return 0 if the label doesn't exist
 	LabelValuesCardinality(ctx context.Context, name string, values ...string) (uint64, error)
 }
+
+type Statistician interface {
+	// Statistics returns the statistics for the given label names.
+	Statistics(ctx context.Context) (Statistics, error)
+}
