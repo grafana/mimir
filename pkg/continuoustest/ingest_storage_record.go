@@ -39,9 +39,13 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type IngestStorageRecordTestMetrics struct {
-	recordsProcessedTotal               *prometheus.CounterVec
-	recordsWithMetadataProcessedTotal   *prometheus.CounterVec
-	recordsWithTimeseriesProcessedTotal *prometheus.CounterVec
+	recordsProcessedTotal    *prometheus.CounterVec
+	metadataProcessedTotal   *prometheus.CounterVec
+	timeseriesProcessedTotal *prometheus.CounterVec
+	exemplarsProcessedTotal  *prometheus.CounterVec
+	histogramsProcessedTotal *prometheus.CounterVec
+	avgCompressionRatio      prometheus.Gauge
+	avgBytesPerSample        prometheus.Gauge
 }
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
@@ -50,14 +54,30 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 			Name: "mimir_continuous_test_ingest_storage_records_processed_total",
 			Help: "Number of records analyzed by the tool per tenant.",
 		}, []string{"user"}),
-		recordsWithMetadataProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		metadataProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_metadata_processed_total",
 			Help: "Number of metadata analyzed by the tool per tenant.",
 		}, []string{"user"}),
-		recordsWithTimeseriesProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		timeseriesProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_timeseries_processed_total",
 			Help: "Number of timeseries analyzed by the tool per tenant.",
 		}, []string{"user"}),
+		exemplarsProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_exemplars_processed_total",
+			Help: "Number of exemplars analyzed by the tool per tenant.",
+		}, []string{"user"}),
+		histogramsProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_histograms_processed_total",
+			Help: "Number of histograms analyzed by the tool per tenant.",
+		}, []string{"user"}),
+		avgCompressionRatio: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "mimir_continuous_test_ingest_storage_avg_compression_ratio",
+			Help: "Gauge of the average compression ratio by batch of records.",
+		}),
+		avgBytesPerSample: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "mimir_continuous_test_ingest_storage_avg_bytes_per_sample",
+			Help: "Gauge of the average vtes-per-sample by batch of records.",
+		}),
 	}
 }
 
@@ -223,52 +243,85 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 }
 
 func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
-	var batchErr error
+	report := batchReport{}
 	fetches.EachRecord(func(rec *kgo.Record) {
 		// Only log the first failure in a batch, to keep the logs from being spammed.
-		if batchErr != nil {
+		if report.err != nil {
 			return
 		}
 
 		tenantID := string(rec.Key)
 		t.metrics.recordsProcessedTotal.WithLabelValues(tenantID).Inc()
-		err := t.testRec(rec)
-		if err != nil {
-			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "err", err)
-			batchErr = err
+		report = t.testRec(rec, report)
+		if report.err != nil {
+			level.Error(t.logger).Log("msg", "a record failed the test", "user", tenantID, "err", report.err)
 		}
 	})
 
-	return batchErr
+	report.Observe(t.metrics)
+	return report.err
 }
 
-func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
+type batchReport struct {
+	err                 error
+	avgCompressionRatio float64
+	avgBytesPerSample   float64
+	recordsSeen         int
+}
+
+func (b batchReport) Error(err error) batchReport {
+	b.err = err
+	return b
+}
+
+func (b batchReport) Track(v1buf, v2buf []byte, numSamples int) batchReport {
+	ratio := float64(len(v1buf)) / float64(len(v2buf))
+	bytesPerSample := float64(len(v2buf)) / float64(numSamples)
+
+	// assume x is the current running avg, y is the number of values processed, and z is the new value.
+	// then xy is the total sum of values processed, meaning (xy+z) is the updated sum and (y+1) is the updated count.
+	// thus the updated running average is  (xy+z)/(y+1).
+	b.avgCompressionRatio = ((b.avgCompressionRatio * float64(b.recordsSeen)) + ratio) / float64(b.recordsSeen+1)
+	b.avgBytesPerSample = ((b.avgBytesPerSample * float64(b.recordsSeen)) + bytesPerSample) / float64(b.recordsSeen+1)
+	b.recordsSeen++
+
+	return b
+}
+
+func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
+	if b.err != nil {
+		metrics.avgCompressionRatio.Set(b.avgCompressionRatio)
+		metrics.avgBytesPerSample.Set(b.avgBytesPerSample)
+	}
+}
+
+func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) batchReport {
 	tenantID := string(rec.Key)
 	req := mimirpb.PreallocWriteRequest{}
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	version := ingest.ParseRecordVersion(rec)
 	if version > ingest.LatestRecordVersion {
-		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion)
+		return report.Error(fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion))
 	}
 
 	err := ingest.DeserializeRecordContent(rec.Value, &req, version)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal record from ingest topic: %w", err)
+		return report.Error(fmt.Errorf("failed to unmarshal record from ingest topic: %w", err))
 	}
 
 	ser := ingest.VersionTwoRecordSerializer{}
 	v2Records, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
 	if len(v2Records) == 0 {
-		return fmt.Errorf("no records returned after v2 conversion")
+		return report.Error(fmt.Errorf("no records returned after v2 conversion"))
 	}
 	if len(v2Records) > 1 {
-		return fmt.Errorf("A V1 record was split when converted to its smaller V2 counterpart. This is highly unusual")
+		return report.Error(fmt.Errorf("A V1 record was split when converted to its smaller V2 counterpart. This is highly unusual"))
 	}
 	v2Rec := v2Records[0]
 
 	if string(rec.Key) != string(v2Rec.Key) {
-		return fmt.Errorf("Key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key))
+		return report.Error(fmt.Errorf("Key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key)))
 	}
 
 	if version != 2 {
@@ -281,50 +334,54 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record) error {
 	defer mimirpb.ReuseSlice(v2Req.Timeseries)
 	err = ingest.DeserializeRecordContent(v2Rec.Value, &v2Req, 2)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal V2 record: %w", err)
+		return report.Error(fmt.Errorf("failed to unmarshal V2 record: %w", err))
 	}
 
 	if v2Req.SkipLabelValidation != req.SkipLabelValidation {
-		return fmt.Errorf("SkipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation)
+		return report.Error(fmt.Errorf("SkipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation))
 	}
 	if v2Req.SkipLabelCountValidation != req.SkipLabelCountValidation {
-		return fmt.Errorf("SkipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation)
+		return report.Error(fmt.Errorf("SkipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation))
 	}
 	if v2Req.Source != req.Source {
-		return fmt.Errorf("Source did not match, original: %d, v2: %d", req.Source, v2Req.Source)
+		return report.Error(fmt.Errorf("Source did not match, original: %d, v2: %d", req.Source, v2Req.Source))
 	}
 	if v2Req.SymbolsRW2 != nil {
-		return fmt.Errorf("v2 record had a SymbolsRW2 unmarshalling field left populated")
+		return report.Error(fmt.Errorf("v2 record had a SymbolsRW2 unmarshalling field left populated"))
 	}
 	if v2Req.TimeseriesRW2 != nil {
-		return fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated")
+		return report.Error(fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated"))
 	}
 
 	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
-		t.metrics.recordsWithMetadataProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Metadata)))
+		t.metrics.metadataProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Metadata)))
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
 		if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
 			diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
-			return fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff)
+			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff))
 		}
 	}
 
+	numSamples := 0
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
-		t.metrics.recordsWithTimeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
+		t.metrics.timeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
 		if len(req.Timeseries) != len(v2Req.Timeseries) {
-			return fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries))
+			return report.Error(fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
 		}
 		for i := range req.Timeseries {
+			numSamples += len(req.Timeseries[i].Samples)
+			t.metrics.exemplarsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Exemplars)))
+			t.metrics.histogramsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Histograms)))
 			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
-				return fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
+				return report.Error(fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries))
 			}
 		}
 	}
 
-	return nil
+	return report.Track(rec.Value, v2Rec.Value, numSamples)
 }
 
 // TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
