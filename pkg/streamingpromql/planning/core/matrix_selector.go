@@ -81,7 +81,9 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
-
+	if m.SampleCountFactor != 0 {
+		selector.SetSampleCountFactor(m.SampleCountFactor)
+	}
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
