@@ -313,7 +313,7 @@ jobs:
         with:
           name: mimirtool Docker Image
       - name: Extract Docker Image from Archive
-        run: tar xvf image.tar -C /
+        run: tar xvf image.tar -C / && ls -laR /tmp/image
       - name: Load Mimirtool Image into Docker
         run: |
           export IMAGE_TAG=$(make image-tag)
