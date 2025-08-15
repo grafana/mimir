@@ -42,10 +42,11 @@ type IngestStorageRecordTestMetrics struct {
 	recordsProcessedTotal    *prometheus.CounterVec
 	metadataProcessedTotal   *prometheus.CounterVec
 	timeseriesProcessedTotal *prometheus.CounterVec
+	samplesProcessedTotal    *prometheus.CounterVec
 	exemplarsProcessedTotal  *prometheus.CounterVec
 	histogramsProcessedTotal *prometheus.CounterVec
 	avgCompressionRatio      prometheus.Gauge
-	avgBytesPerSample        prometheus.Gauge
+	throughputBytes          prometheus.Counter
 }
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
@@ -62,6 +63,10 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 			Name: "mimir_continuous_test_ingest_storage_timeseries_processed_total",
 			Help: "Number of timeseries analyzed by the tool per tenant.",
 		}, []string{"user"}),
+		samplesProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_samples_processed_total",
+			Help: "Number of samples analyzed by the tool per tenant.",
+		}, []string{"user"}),
 		exemplarsProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_exemplars_processed_total",
 			Help: "Number of exemplars analyzed by the tool per tenant.",
@@ -74,9 +79,9 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 			Name: "mimir_continuous_test_ingest_storage_avg_compression_ratio",
 			Help: "Gauge of the average compression ratio by batch of records.",
 		}),
-		avgBytesPerSample: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "mimir_continuous_test_ingest_storage_avg_bytes_per_sample",
-			Help: "Gauge of the average vtes-per-sample by batch of records.",
+		throughputBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_v2_throughput_bytes_total",
+			Help: "The total number of bytes of v2 records generated.",
 		}),
 	}
 }
@@ -265,7 +270,7 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 type batchReport struct {
 	err                 error
 	avgCompressionRatio float64
-	avgBytesPerSample   float64
+	throughputBytes     int64
 	recordsSeen         int
 }
 
@@ -274,16 +279,16 @@ func (b batchReport) Error(err error) batchReport {
 	return b
 }
 
-func (b batchReport) Track(v1buf, v2buf []byte, numSamples int) batchReport {
+func (b batchReport) Track(v1buf, v2buf []byte) batchReport {
 	ratio := float64(len(v1buf)) / float64(len(v2buf))
-	bytesPerSample := float64(len(v2buf)) / float64(numSamples)
 
 	// assume x is the current running avg, y is the number of values processed, and z is the new value.
 	// then xy is the total sum of values processed, meaning (xy+z) is the updated sum and (y+1) is the updated count.
 	// thus the updated running average is  (xy+z)/(y+1).
 	b.avgCompressionRatio = ((b.avgCompressionRatio * float64(b.recordsSeen)) + ratio) / float64(b.recordsSeen+1)
-	b.avgBytesPerSample = ((b.avgBytesPerSample * float64(b.recordsSeen)) + bytesPerSample) / float64(b.recordsSeen+1)
 	b.recordsSeen++
+
+	b.throughputBytes += int64(len(v2buf))
 
 	return b
 }
@@ -291,7 +296,7 @@ func (b batchReport) Track(v1buf, v2buf []byte, numSamples int) batchReport {
 func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
 	if b.err == nil {
 		metrics.avgCompressionRatio.Set(b.avgCompressionRatio)
-		metrics.avgBytesPerSample.Set(b.avgBytesPerSample)
+		metrics.throughputBytes.Add(float64(b.throughputBytes))
 	}
 }
 
@@ -364,7 +369,6 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		}
 	}
 
-	numSamples := 0
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
 		t.metrics.timeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
@@ -372,7 +376,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 			return report.Error(fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
 		}
 		for i := range req.Timeseries {
-			numSamples += len(req.Timeseries[i].Samples)
+			t.metrics.samplesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Samples)))
 			t.metrics.exemplarsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Exemplars)))
 			t.metrics.histogramsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Histograms)))
 			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
@@ -381,7 +385,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		}
 	}
 
-	return report.Track(rec.Value, v2Rec.Value, numSamples)
+	return report.Track(rec.Value, v2Rec.Value)
 }
 
 // TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
