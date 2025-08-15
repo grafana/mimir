@@ -29,7 +29,9 @@ runs:
     - name: Build Docker Image
       shell: bash
       run: |
-        ./.github/workflows/scripts/build-images.sh /tmp/images ${{ inputs.target }}
+        ./.github/workflows/scripts/build-images.sh /tmp/images "$TARGET"
+      env:
+        TARGET: ${{ inputs.target }}
     - name: Create Archive With Docker Images
       shell: bash
       run: |
