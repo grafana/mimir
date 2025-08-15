@@ -10,6 +10,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -83,7 +84,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Matchers:                 matchers,
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
-		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
+		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
@@ -98,4 +99,8 @@ func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, l
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
 
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
+func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
+	return v.GetExpressionPosition().ToPrometheusType()
 }

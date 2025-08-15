@@ -10,6 +10,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -105,7 +106,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
+	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition(), timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -129,4 +130,8 @@ func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, loo
 	}
 
 	return timeRange
+}
+
+func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
+	return f.GetExpressionPosition().ToPrometheusType()
 }

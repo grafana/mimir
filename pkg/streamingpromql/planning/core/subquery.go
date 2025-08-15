@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -125,7 +126,7 @@ func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeR
 		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}
 
-	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -139,4 +140,8 @@ func (s *Subquery) ResultType() (parser.ValueType, error) {
 
 func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
 	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
+}
+
+func (s *Subquery) ExpressionPosition() posrange.PositionRange {
+	return s.GetExpressionPosition().ToPrometheusType()
 }
