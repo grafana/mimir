@@ -3,15 +3,71 @@
 package ingester
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+// listActiveSeries is used for testing purposes, builds the whole array of active series in memory.
+func listActiveSeries(ctx context.Context, db *userTSDB, matchers []*labels.Matcher) (series *Series, err error) {
+	idx, err := db.Head().Index()
+	if err != nil {
+		return nil, fmt.Errorf("error getting index: %w", err)
+	}
+	postings, err := getPostings(ctx, db, idx, matchers, false)
+	if err != nil {
+		return nil, err
+	}
+	return newSeries(postings, idx), nil
+}
+
+// Series is a wrapper around index.Postings and tsdb.IndexReader. It implements
+// the generic iterator interface to list all series in the index that are
+// contained in the given postings.
+type Series struct {
+	postings index.Postings
+	idx      tsdb.IndexReader
+	buf      labels.ScratchBuilder
+	err      error
+}
+
+func newSeries(postings index.Postings, index tsdb.IndexReader) *Series {
+	return &Series{
+		postings: postings,
+		idx:      index,
+		buf:      labels.NewScratchBuilder(10),
+	}
+}
+
+func (s *Series) Next() bool {
+	return s.postings.Next()
+}
+
+func (s *Series) At() labels.Labels {
+	s.buf.Reset()
+	err := s.idx.Series(s.postings.At(), &s.buf, nil)
+	if err != nil {
+		s.err = fmt.Errorf("error getting series: %w", err)
+		return labels.Labels{}
+	}
+	return s.buf.Labels()
+}
+
+func (s *Series) Err() error {
+	if s.err != nil {
+		return fmt.Errorf("error listing series: %w", multierror.MultiError{s.err, s.postings.Err()}.Err())
+	}
+	return s.postings.Err()
+}
 
 func TestSeries(t *testing.T) {
 	seriesInIndex := []labels.Labels{
@@ -66,7 +122,7 @@ func TestSeries(t *testing.T) {
 			idx := &mockIndex{}
 			test.expectOnIndex(idx)
 
-			series := NewSeries(index.NewListPostings(test.storageRefs), idx)
+			series := newSeries(index.NewListPostings(test.storageRefs), idx)
 
 			var seriesSet []labels.Labels
 			for series.Next() {

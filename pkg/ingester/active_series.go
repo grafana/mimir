@@ -134,19 +134,6 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, nil
 }
 
-// listActiveSeries is used for testing purposes, builds the whole array of active series in memory.
-func listActiveSeries(ctx context.Context, db *userTSDB, matchers []*labels.Matcher) (series *Series, err error) {
-	idx, err := db.Head().Index()
-	if err != nil {
-		return nil, fmt.Errorf("error getting index: %w", err)
-	}
-	postings, err := getPostings(ctx, db, idx, matchers, false)
-	if err != nil {
-		return nil, err
-	}
-	return NewSeries(postings, idx), nil
-}
-
 type ZeroBucketCountPostings struct {
 	activeseries.Postings
 }
