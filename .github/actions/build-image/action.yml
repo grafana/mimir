@@ -29,7 +29,14 @@ runs:
     - name: Build Docker Image
       shell: bash
       run: |
-        ./.github/workflows/scripts/build-images.sh /tmp/images "$TARGET"
+        OUTPUT_DIR=/tmp/images
+        DIRNAME="$(dirname "$TARGET")"
+        NAME="$(basename "$DIRNAME")"
+        make \
+          BUILD_IN_CONTAINER=false \
+          PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT_DIR/$NAME.oci" \
+          PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST="type=oci,dest=$OUTPUT_DIR/$NAME\-continuous\-test.oci" \
+          push-multiarch-$TARGET
       env:
         TARGET: ${{ inputs.target }}
     - name: Create Archive With Docker Images
