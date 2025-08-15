@@ -174,6 +174,8 @@ func TestQueriedTimeRange_Union(t *testing.T) {
 			require.Equal(t, testCase.expected, result)
 
 			// Swapping the order should produce the same result.
+			// This doesn't hold true if either is invalid with AnyDataQueried=false and non-zero MinT or MaxT,
+			// but if either is invalid then garbage in-garbage out applies.
 			result = testCase.second.Union(testCase.first)
 			require.Equal(t, testCase.expected, result)
 		})
