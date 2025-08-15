@@ -305,7 +305,8 @@ jobs:
       - name: Upload archive with race-enabled Mimir
         uses: actions/upload-artifact@v4
         with:
-          name: docker-image-race-enabled-mimir
+          # We deliberately don't use the "docker-image" prefix here, as that is used to find all images published as part of a release, and we don't want this image included in the release.
+          name: test-docker-image-race-enabled-mimir
           path: |
             ./mimir_race_image_distroless
 
@@ -351,7 +352,7 @@ jobs:
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
-          name: docker-image-race-enabled-mimir
+          name: test-docker-image-race-enabled-mimir
       - name: Load race-enabled mimir into Docker
         run: |
           export IMAGE_TAG_RACE=$(make image-tag-race)
@@ -424,7 +425,11 @@ jobs:
           path: built-images
           merge-multiple: false
       - name: Extract Docker Images from Archive
-        run: mkdir /tmp/images && tar xvf built-images/**/images.tar -C /tmp/images
+        run: |
+          mkdir /tmp/images
+          for f in built-images/**/images.tar; do
+            tar xvf $f -C /tmp/images
+          done
       - name: Login to DockerHub
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
       - name: Push Docker Images
@@ -465,6 +470,10 @@ jobs:
           path: built-images
           merge-multiple: false
       - name: Extract Docker Images from Archive
-        run: mkdir /tmp/images && tar xvf built-images/**/images.tar -C /tmp/images
+        run: |
+          mkdir /tmp/images
+          for f in built-images/**/images.tar; do
+            tar xvf $f -C /tmp/images
+          done
       - name: Dump directory layout
         run: tree /tmp/images
