@@ -1381,6 +1381,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
+  -include-tenant-id-in-profile-labels
+    	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int

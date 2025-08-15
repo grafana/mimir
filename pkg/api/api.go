@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -300,23 +301,8 @@ func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus
 	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
-// Ingester is defined as an interface to allow for alternative implementations
-// of ingesters to be passed into the API.RegisterIngester() method.
-type Ingester interface {
-	client.IngesterServer
-	FlushHandler(http.ResponseWriter, *http.Request)
-	ShutdownHandler(http.ResponseWriter, *http.Request)
-	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
-	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
-	PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request)
-	UserRegistryHandler(http.ResponseWriter, *http.Request)
-	TenantsHandler(http.ResponseWriter, *http.Request)
-	TenantTSDBHandler(http.ResponseWriter, *http.Request)
-	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
-}
-
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i Ingester) {
+func (a *API) RegisterIngester(i ingester.IngesterAPI) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
