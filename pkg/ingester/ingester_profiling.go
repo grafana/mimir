@@ -10,17 +10,16 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ProfilingWrapper is a wrapper around Ingester that adds tenant ID to pprof labels.
 type ProfilingWrapper struct {
-	ing api.Ingester
+	ing IngesterAPI
 }
 
-func NewIngesterProfilingWrapper(ing api.Ingester) *ProfilingWrapper {
+func NewIngesterProfilingWrapper(ing IngesterAPI) *ProfilingWrapper {
 	return &ProfilingWrapper{
 		ing: ing,
 	}

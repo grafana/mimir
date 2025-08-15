@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
@@ -191,7 +192,7 @@ func TestApiGzip(t *testing.T) {
 }
 
 type MockIngester struct {
-	Ingester
+	ingester.IngesterAPI
 }
 
 func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {

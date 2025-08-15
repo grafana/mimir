@@ -734,7 +734,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
-	var ing api.Ingester
+	var ing ingester.IngesterAPI
 
 	ing = t.Ingester
 	if t.ActivityTracker != nil {

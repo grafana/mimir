@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
 
-	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -20,11 +19,11 @@ import (
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
 type ActivityTrackerWrapper struct {
-	ing     api.Ingester
+	ing     IngesterAPI
 	tracker *activitytracker.ActivityTracker
 }
 
-func NewIngesterActivityTracker(ing api.Ingester, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
+func NewIngesterActivityTracker(ing IngesterAPI, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
 	return &ActivityTrackerWrapper{
 		ing:     ing,
 		tracker: tracker,
