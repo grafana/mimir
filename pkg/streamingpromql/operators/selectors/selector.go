@@ -5,6 +5,7 @@ package selectors
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -121,9 +122,9 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 	return nil
 }
 
-func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, rng time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
-	if lookbackDelta != 0 && rng != 0 {
-		panic("both lookback delta and range are non-zero")
+func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
+	if lookbackDelta != 0 && selectorRange != 0 {
+		panic(fmt.Sprintf("both lookback delta (%s) and selector range (%s) are non-zero", lookbackDelta, selectorRange))
 	}
 
 	startTimestamp := timeRange.StartT
@@ -136,7 +137,7 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, r
 	}
 
 	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
-	rangeMilliseconds := rng.Milliseconds()
+	rangeMilliseconds := selectorRange.Milliseconds()
 	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
 	endTimestamp = endTimestamp - offset
 
