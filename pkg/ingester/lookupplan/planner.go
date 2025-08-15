@@ -129,7 +129,11 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	default:
 		outcome = "success"
 		const topKPlans = 3
-		logKvs := make([]any, 0, 2 /* msg */ +topKPlans*2 /* key+value */ *(5 /* cost */ +len(allPlans[0].predicates) /* matchers */))
+		numPredicates := 0
+		if len(allPlans) > 0 {
+			numPredicates = len(allPlans[0].predicates)
+		}
+		logKvs := make([]any, 0, 2 /* msg */ +topKPlans*2 /* key+value */ *(5 /* cost */ +numPredicates /* matchers */))
 		logKvs = append(logKvs,
 			"msg", "selected lookup plan",
 		)
