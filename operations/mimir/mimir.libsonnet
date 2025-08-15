@@ -55,5 +55,8 @@
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
 (import 'ingest-storage-migration.libsonnet') +
 
+// Support for ZoneAwarePodDisruptionBudget objects.
+(import 'zone-aware-pod-disruption-budget.libsonnet') +
+
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet')

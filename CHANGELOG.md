@@ -37,6 +37,9 @@
 
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
+* [CHANGE] Use `irate()` when calculating CPU scaling metric. Using `irate()` prevents underestimating CPU utilization when scraping fails. #12384
+* [CHANGE] Remove `vector(0)` when calculating memory scaling metric to prevent underestimating memory usage when scraping fails. #12386
+* [CHANGE] Rollout-operator: Support for zone and partition aware pod disruption budgets, enabling finer control over pod eviction policies. #12315
 
 ### Documentation
 
