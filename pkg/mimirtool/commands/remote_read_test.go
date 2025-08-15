@@ -20,11 +20,24 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// parseSelectors converts string selectors to matchers for testing
+func parseSelectors(t *testing.T, selectors ...string) [][]*labels.Matcher {
+	var result [][]*labels.Matcher
+	for _, selector := range selectors {
+		matchers, err := parser.ParseMetricSelector(selector)
+		require.NoError(t, err)
+		result = append(result, matchers)
+	}
+	return result
+}
 
 type exportTestCase struct {
 	queryFrom      time.Time
@@ -257,7 +270,7 @@ func TestExport(t *testing.T) {
 					c := &RemoteReadCommand{
 						address:       server.URL,
 						tsdbPath:      tsdbPath,
-						selector:      metricName,
+						selectors:     parseSelectors(t, metricName),
 						from:          testCase.queryFrom.Format(time.RFC3339Nano),
 						to:            testCase.queryTo.Format(time.RFC3339Nano),
 						readTimeout:   30 * time.Second,
@@ -480,4 +493,132 @@ func sampleCountInAllBlocks(db *tsdb.DB) uint64 {
 	}
 
 	return total
+}
+
+func TestRemoteReadCommand_prepare(t *testing.T) {
+	tests := []struct {
+		name        string
+		selectors   []string
+		from        string
+		to          string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "single selector",
+			selectors:   []string{"up"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "multiple selectors",
+			selectors:   []string{"up", "go_memstats_alloc_bytes", "prometheus_build_info"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "empty selectors",
+			selectors:   []string{},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: true,
+			errorMsg:    "at least one selector must be specified",
+		},
+		{
+			name:        "invalid from time",
+			selectors:   []string{"up"},
+			from:        "invalid-time",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: true,
+			errorMsg:    "error parsing from",
+		},
+		{
+			name:        "invalid to time",
+			selectors:   []string{"up"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "invalid-time",
+			expectError: true,
+			errorMsg:    "error parsing to",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &RemoteReadCommand{
+				address:        "invalid.com", // we only test validation
+				remoteReadPath: "/api/v1/read",
+				selectors:      parseSelectors(t, tt.selectors...),
+				from:           tt.from,
+				to:             tt.to,
+				readTimeout:    30 * time.Second,
+				useChunks:      true,
+			}
+
+			_, _, _, err := cmd.parseArgsAndPrepareClient()
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSelectorFlag(t *testing.T) {
+	tests := []struct {
+		name           string
+		selectors      []string
+		expectError    bool
+		expectedString string
+	}{
+		{
+			name:           "single simple selector",
+			selectors:      []string{"up"},
+			expectError:    false,
+			expectedString: "{__name__=\"up\"}",
+		},
+		{
+			name:           "multiple selectors",
+			selectors:      []string{"up", "go_memstats_alloc_bytes"},
+			expectError:    false,
+			expectedString: "{__name__=\"up\"},{__name__=\"go_memstats_alloc_bytes\"}",
+		},
+		{
+			name:           "complex selector",
+			selectors:      []string{`{__name__="http_requests_total", job="prometheus"}`},
+			expectError:    false,
+			expectedString: `{__name__="http_requests_total",job="prometheus"}`,
+		},
+		{
+			name:        "invalid selector",
+			selectors:   []string{"invalid{selector"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var selectors [][]*labels.Matcher
+			flag := &selectorFlag{selectors: &selectors}
+
+			var err error
+			for _, selector := range tt.selectors {
+				err = flag.Set(selector)
+				if tt.expectError {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "error parsing selector")
+					return
+				}
+				require.NoError(t, err)
+			}
+
+			if !tt.expectError {
+				assert.Equal(t, len(tt.selectors), len(selectors))
+				assert.Equal(t, tt.expectedString, flag.String())
+			}
+		})
+	}
 }
