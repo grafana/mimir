@@ -686,8 +686,11 @@ var errStopIter = errors.New("stop iteration")
 // stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
 func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
 	var lastModified time.Time
-
 	var err error
+
+	instrumentedBucket := userBucket.WithExpectedErrs(func(err error) bool {
+		return errors.Is(err, errStopIter) // sentinel error
+	})
 
 	checkModifiedTime := func(modified time.Time) error {
 		if modified.After(partialDeletionCutoffTime) {
@@ -701,10 +704,8 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 
 	// If bucket supports UpdatedAt IterOptionType, use IterWithAttributes
 	// to reduce the amount of object attributes calls.
-	if slices.Contains(userBucket.SupportedIterOptions(), objstore.UpdatedAt) {
-		err = userBucket.WithExpectedErrs(func(err error) bool {
-			return errors.Is(err, errStopIter) // sentinel error
-		}).IterWithAttributes(ctx, blockID.String(), func(attrs objstore.IterObjectAttributes) error {
+	if slices.Contains(instrumentedBucket.SupportedIterOptions(), objstore.UpdatedAt) {
+		err = instrumentedBucket.IterWithAttributes(ctx, blockID.String(), func(attrs objstore.IterObjectAttributes) error {
 			if strings.HasSuffix(attrs.Name, objstore.DirDelim) {
 				return nil
 			}
@@ -712,9 +713,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			return checkModifiedTime(modified)
 		}, objstore.WithRecursiveIter(), objstore.WithUpdatedAt())
 	} else {
-		err = userBucket.WithExpectedErrs(func(err error) bool {
-			return errors.Is(err, errStopIter) // sentinel error
-		}).Iter(ctx, blockID.String(), func(name string) error {
+		err = instrumentedBucket.Iter(ctx, blockID.String(), func(name string) error {
 			if strings.HasSuffix(name, objstore.DirDelim) {
 				return nil
 			}
