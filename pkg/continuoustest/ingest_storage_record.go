@@ -193,18 +193,20 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	}
 
 	recordsProcessedThisBatch := 0
+	numFetches := 0
 	for recordsRemainingInBatch > 0 {
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			level.Error(t.logger).Log("fetch errors", "err", fetches.Err())
 			break
 		}
-
+		numFetches++
 		recordsRemainingInBatch -= int64(fetches.NumRecords())
 		recordsProcessedThisBatch += fetches.NumRecords()
 
 		jobs <- fetches
 	}
+	level.Info(t.logger).Log("msg", "fetches for run complete, waiting for workers to finish processing", "count", numFetches)
 	close(jobs)
 	wg.Wait()
 
