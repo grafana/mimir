@@ -350,11 +350,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 			selector: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           startT.Add(-lookbackDelta).Add(excludeLowerBoundary),
-				MaxT:           endT,
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-lookbackDelta).Add(excludeLowerBoundary), endT),
 		},
 		"timestamp set, no offset": {
 			selector: &VectorSelector{
@@ -362,11 +358,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 					Timestamp: &ts,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           ts.Add(-lookbackDelta).Add(excludeLowerBoundary),
-				MaxT:           ts,
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(excludeLowerBoundary), ts),
 		},
 		"offset set, no timestamp": {
 			selector: &VectorSelector{
@@ -374,11 +366,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 					Offset: offset,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           startT.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary),
-				MaxT:           endT.Add(-offset),
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
 		},
 		"both timestamp and offset set": {
 			selector: &VectorSelector{
@@ -387,11 +375,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 					Timestamp: &ts,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           ts.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary),
-				MaxT:           ts.Add(-offset),
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
 		},
 	}
 

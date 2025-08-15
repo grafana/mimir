@@ -364,11 +364,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 					Range: rng,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           startT.Add(-rng).Add(excludeLowerBoundary),
-				MaxT:           endT,
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(excludeLowerBoundary), endT),
 		},
 		"timestamp set, no offset": {
 			selector: &MatrixSelector{
@@ -377,11 +373,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 					Timestamp: &ts,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           ts.Add(-rng).Add(excludeLowerBoundary),
-				MaxT:           ts,
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(excludeLowerBoundary), ts),
 		},
 		"offset set, no timestamp": {
 			selector: &MatrixSelector{
@@ -390,11 +382,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 					Offset: offset,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary),
-				MaxT:           endT.Add(-offset),
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
 		},
 		"both timestamp and offset set": {
 			selector: &MatrixSelector{
@@ -404,11 +392,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 					Timestamp: &ts,
 				},
 			},
-			expected: planning.QueriedTimeRange{
-				MinT:           ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary),
-				MaxT:           ts.Add(-offset),
-				AnyDataQueried: true,
-			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
 		},
 	}
 

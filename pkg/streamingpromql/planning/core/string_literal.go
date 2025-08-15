@@ -68,5 +68,5 @@ func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 }
 
 func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.QueriedTimeRange{AnyDataQueried: false}
+	return planning.NoDataQueried()
 }

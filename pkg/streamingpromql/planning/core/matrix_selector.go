@@ -95,9 +95,5 @@ func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _
 	// Matrix selectors do not use the lookback delta, so we don't pass it below.
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
 
-	return planning.QueriedTimeRange{
-		MinT:           timestamp.Time(minT),
-		MaxT:           timestamp.Time(maxT),
-		AnyDataQueried: true,
-	}
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
 }

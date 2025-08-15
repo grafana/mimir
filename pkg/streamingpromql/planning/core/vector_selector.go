@@ -97,9 +97,5 @@ func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
 
-	return planning.QueriedTimeRange{
-		MinT:           timestamp.Time(minT),
-		MaxT:           timestamp.Time(maxT),
-		AnyDataQueried: true,
-	}
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
 }

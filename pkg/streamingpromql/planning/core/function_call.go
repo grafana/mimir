@@ -122,7 +122,7 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 }
 
 func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	timeRange := planning.QueriedTimeRange{}
+	timeRange := planning.NoDataQueried()
 
 	for _, arg := range f.Args {
 		timeRange = timeRange.Union(arg.QueriedTimeRange(queryTimeRange, lookbackDelta))

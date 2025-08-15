@@ -132,39 +132,39 @@ func TestQueriedTimeRange_Union(t *testing.T) {
 		expected QueriedTimeRange
 	}{
 		"neither queries any data": {
-			first:    QueriedTimeRange{AnyDataQueried: false},
-			second:   QueriedTimeRange{AnyDataQueried: false},
-			expected: QueriedTimeRange{AnyDataQueried: false},
+			first:    NoDataQueried(),
+			second:   NoDataQueried(),
+			expected: NoDataQueried(),
 		},
 		"only one queries any data": {
-			first:    QueriedTimeRange{AnyDataQueried: false},
-			second:   QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
+			first:    NoDataQueried(),
+			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and are the same": {
-			first:    QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			second:   QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and don't overlap": {
-			first:    QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			second:   QueriedTimeRange{MinT: timestamp.Time(4000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(4000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 		"both query data and don't overlap, but the end of one aligns with the start of the other": {
-			first:    QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			second:   QueriedTimeRange{MinT: timestamp.Time(3000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(3000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 		"both query data and one is entirely contained by the other": {
-			first:    QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			second:   QueriedTimeRange{MinT: timestamp.Time(2000), MaxT: timestamp.Time(2500), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(2500)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and overlap": {
-			first:    QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(3000), AnyDataQueried: true},
-			second:   QueriedTimeRange{MinT: timestamp.Time(2000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
-			expected: QueriedTimeRange{MinT: timestamp.Time(1000), MaxT: timestamp.Time(5000), AnyDataQueried: true},
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 	}
 

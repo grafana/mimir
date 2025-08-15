@@ -95,9 +95,26 @@ type Node interface {
 }
 
 type QueriedTimeRange struct {
-	MinT           time.Time
-	MaxT           time.Time
+	// The earliest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MinT time.Time
+
+	// The latest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MaxT time.Time
+
+	// If false, the node does not query any data (eg. a number literal).
 	AnyDataQueried bool
+}
+
+func NewQueriedTimeRange(minT time.Time, maxT time.Time) QueriedTimeRange {
+	return QueriedTimeRange{
+		MinT:           minT,
+		MaxT:           maxT,
+		AnyDataQueried: true,
+	}
+}
+
+func NoDataQueried() QueriedTimeRange {
+	return QueriedTimeRange{AnyDataQueried: false}
 }
 
 func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
@@ -120,11 +137,7 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 		maxT = other.MaxT
 	}
 
-	return QueriedTimeRange{
-		MinT:           minT,
-		MaxT:           maxT,
-		AnyDataQueried: true,
-	}
+	return NewQueriedTimeRange(minT, maxT)
 }
 
 type OperatorParameters struct {
