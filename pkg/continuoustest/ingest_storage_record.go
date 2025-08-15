@@ -289,7 +289,7 @@ func (b batchReport) Track(v1buf, v2buf []byte, numSamples int) batchReport {
 }
 
 func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
-	if b.err != nil {
+	if b.err == nil {
 		metrics.avgCompressionRatio.Set(b.avgCompressionRatio)
 		metrics.avgBytesPerSample.Set(b.avgBytesPerSample)
 	}
