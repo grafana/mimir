@@ -476,4 +476,4 @@ jobs:
             tar xvf $f -C /tmp/images
           done
       - name: Dump directory layout
-        run: tree /tmp/images
+        run: ls -laR /tmp/images
