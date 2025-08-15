@@ -2005,6 +2005,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="alertmanager", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="alertmanager", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "9556302233"
@@ -2076,6 +2077,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="distributor", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="distributor", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "3058016714"
@@ -2190,6 +2192,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="query-frontend", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="query-frontend", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "559939584"
@@ -2251,6 +2254,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "5733781340"
@@ -2312,6 +2316,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler-querier", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler-querier", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "955630223"
@@ -2381,6 +2386,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler-query-frontend", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler-query-frontend", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "559939584"
