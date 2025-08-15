@@ -340,7 +340,7 @@ jobs:
         with:
           name: docker-image-mimirtool
       - name: Extract Docker Image from Archive
-        run: tar xvf images.tar -C /tmp/images
+        run: mkdir /tmp/images && tar xvf images.tar -C /tmp/images
       - name: Load Mimirtool Image into Docker
         run: |
           export IMAGE_TAG=$(make image-tag)
@@ -424,7 +424,7 @@ jobs:
           path: built-images
           merge-multiple: false
       - name: Extract Docker Images from Archive
-        run: tar xvf built-images/**/images.tar -C /tmp/images
+        run: mkdir /tmp/images && tar xvf built-images/**/images.tar -C /tmp/images
       - name: Login to DockerHub
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
       - name: Push Docker Images
@@ -465,6 +465,6 @@ jobs:
           path: built-images
           merge-multiple: false
       - name: Extract Docker Images from Archive
-        run: tar xvf built-images/**/images.tar -C /tmp/images
+        run: mkdir /tmp/images && tar xvf built-images/**/images.tar -C /tmp/images
       - name: Dump directory layout
         run: tree /tmp/images
