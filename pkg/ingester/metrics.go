@@ -532,6 +532,9 @@ type tsdbMetrics struct {
 	tsdbWalReplayUnknownRefsTotal *prometheus.Desc
 	tsdbWblReplayUnknownRefsTotal *prometheus.Desc
 
+	tsdbHeadStatisticsLastUpdate   *prometheus.Desc
+	tsdbHeadStatisticsTimeToUpdate *prometheus.Desc
+
 	headPostingsForMatchersCacheMetrics  *tsdb.PostingsForMatchersCacheMetrics
 	blockPostingsForMatchersCacheMetrics *tsdb.PostingsForMatchersCacheMetrics
 
@@ -723,6 +726,14 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_tsdb_wbl_replay_unknown_refs_total",
 			"Total number of unknown series references encountered during WBL replay.",
 			[]string{"user", "type"}, nil),
+		tsdbHeadStatisticsLastUpdate: prometheus.NewDesc(
+			"cortex_ingester_tsdb_head_statistics_last_updated",
+			"Timestamp of the last update for head statistics",
+			[]string{"user"}, nil),
+		tsdbHeadStatisticsTimeToUpdate: prometheus.NewDesc(
+			"cortex_ingester_tsdb_head_statistics_time_to_update_seconds",
+			"Time spent updating head statistics",
+			[]string{"user"}, nil),
 
 		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
 		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
@@ -782,6 +793,9 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.tsdbWalReplayUnknownRefsTotal
 	out <- sm.tsdbWblReplayUnknownRefsTotal
+
+	out <- sm.tsdbHeadStatisticsLastUpdate
+	out <- sm.tsdbHeadStatisticsTimeToUpdate
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -830,6 +844,9 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWalReplayUnknownRefsTotal, "prometheus_tsdb_wal_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
+
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbHeadStatisticsTimeToUpdate, "prometheus_tsdb_head_statistics_time_to_update_seconds")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {

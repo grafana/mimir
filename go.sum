@@ -256,6 +256,8 @@ github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/cpuguy83/go-md2man/v2 v2.0.3/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
+github.com/d4l3k/messagediff v1.2.1 h1:ZcAIMYsUg0EAp9X+tt8/enBE/Q8Yd5kzPynLyKptt9U=
+github.com/d4l3k/messagediff v1.2.1/go.mod h1:Oozbb1TVXFac9FtSIxHBMnBCq2qeH/2KkEQxENCrlLo=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
@@ -569,8 +571,8 @@ github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkB
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96 h1:kq5zJVW9LyFOB5xCeQPTON2HNjwwEkefhegZXGIhQPk=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250731093547-bc16853f6143 h1:bgbjXFhi/RKSqAc8V4f7mk3+VU+00e6JkHClSNVSiyY=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250731093547-bc16853f6143/go.mod h1:Pe/2vVv91zryCeOwLSjIFJFsw4Pvd2VNHbTUGu6kUls=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250815012934-9923eca0e5c1 h1:/vLSaWTBa58IVt4r96eMvIRzuOdEGG38gonn5NNsf1E=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250815012934-9923eca0e5c1/go.mod h1:sf0qqtxeqkHFTjECmsKfWg5/oF9d+Vi5ZkUpEGKc4N0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
@@ -1033,6 +1035,8 @@ github.com/twmb/franz-go/plugin/kotel v1.5.0 h1:TiPfGUbQK384OO7ZYGdo7JuPCbJn+/8n
 github.com/twmb/franz-go/plugin/kotel v1.5.0/go.mod h1:wRXzRo76x1myOUMaVHAyraXoGBdEcvlLChGTVv5+DWU=
 github.com/twmb/franz-go/plugin/kprom v1.1.0 h1:grGeIJbm4llUBF8jkDjTb/b8rKllWSXjMwIqeCCcNYQ=
 github.com/twmb/franz-go/plugin/kprom v1.1.0/go.mod h1:cTDrPMSkyrO99LyGx3AtiwF9W6+THHjZrkDE2+TEBIU=
+github.com/tylertreat/BoomFilters v0.0.0-20250630160909-db6545748bc4 h1:NY8dlg1XXMOf6B7rTYTESijQt5eZQTSRnSiM+eydx/o=
+github.com/tylertreat/BoomFilters v0.0.0-20250630160909-db6545748bc4/go.mod h1:OYRfF6eb5wY9VRFkXJH8FFBi3plw2v+giaIu7P054pM=
 github.com/uber/jaeger-client-go v2.30.0+incompatible h1:D6wyKGCecFaSRUpo8lCVbaOOb6ThwMmTEbhRwtKR97o=
 github.com/uber/jaeger-client-go v2.30.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.4.1+incompatible h1:td4jdvLcExb4cBISKIpHuGoVXh+dVKhn2Um6rjCsSsg=

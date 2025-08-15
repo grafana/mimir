@@ -773,6 +773,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
+  -blocks-storage.tsdb.collect-head-statistics
+    	[experimental] Enable periodic collection of head statistics for optimization of query execution purposes.
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage int
@@ -801,6 +803,8 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+  -blocks-storage.tsdb.head-statistics-collection-frequency duration
+    	[experimental] How frequently to collect head statistics. Must enable collect-head-statistics to take effect. (default 10m0s)
   -blocks-storage.tsdb.index-lookup-planning-enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
   -blocks-storage.tsdb.memory-snapshot-on-shutdown

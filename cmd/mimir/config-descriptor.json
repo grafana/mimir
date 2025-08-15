@@ -10381,6 +10381,28 @@
             },
             {
               "kind": "field",
+              "name": "collect_head_statistics",
+              "required": false,
+              "desc": "Enable periodic collection of head statistics for optimization of query execution purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.collect-head-statistics",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_statistics_collection_frequency",
+              "required": false,
+              "desc": "How frequently to collect head statistics. Must enable collect-head-statistics to take effect.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",

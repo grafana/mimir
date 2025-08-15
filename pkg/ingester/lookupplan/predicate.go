@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const costPerPostingListRetrieval = 10.0
@@ -74,7 +75,7 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
 }
 
-func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (uint64, error) {
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) (uint64, error) {
 	var (
 		seriesBehindSelectedValues uint64
 		err                        error
