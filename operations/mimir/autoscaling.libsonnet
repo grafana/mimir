@@ -397,7 +397,7 @@
             )
           |||
     ) + (
-      // Add pods that were terminated due to an OOM in the memory calculation. We use `or vector(0)` here unlike in the main memory 
+      // Add pods that were terminated due to an OOM in the memory calculation. We use `or vector(0)` here unlike in the main memory
       // query because we want to ensure this part of the calculation always returns a value even when no OOM killed pods are found.
       // This prevents the entire memory metric from becoming unavailable.
       |||
