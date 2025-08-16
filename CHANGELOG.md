@@ -40,7 +40,7 @@
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
 * [CHANGE] Rollout-operator: Add `watch` permission to the rollout-operators's cluster role. #12360. See [rollout-operator#262](https://github.com/grafana/rollout-operator/pull/262)
-* [CHANGE] Use `irate()` when calculating CPU scaling metric. Using `irate()` prevents underestimating CPU utilization when scraping fails. #12406
+* [CHANGE] Updates to CPU and memory scaling metric. Use `irate()` when calculating the CPU metric and remove `or vector(0)` from a leg of the memory query. These changes prevent downscaling deployments when scraping fails.
 
 ### Documentation
 
