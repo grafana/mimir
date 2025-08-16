@@ -5,6 +5,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -56,7 +57,7 @@ func (s *StringLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func (s *StringLiteral) OperatorFactory(_ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition.ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
@@ -64,4 +65,8 @@ func (s *StringLiteral) OperatorFactory(_ *planning.Materializer, _ types.QueryT
 
 func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeString, nil
+}
+
+func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
 }
