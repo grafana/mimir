@@ -7391,6 +7391,17 @@
         },
         {
           "kind": "field",
+          "name": "rewrite_propagate_matchers",
+          "required": false,
+          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.rewrite-propagate-matchers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
