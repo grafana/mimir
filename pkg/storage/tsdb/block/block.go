@@ -365,6 +365,16 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 	}
 	res = append(res, mf)
 
+	// sparse index headers are best effort, skip if file does not exist
+	sparseInfo, err := os.Stat(filepath.Join(blockDir, SparseIndexHeaderFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SparseIndexHeaderFilename))
+		}
+	} else {
+		res = append(res, File{RelPath: sparseInfo.Name(), SizeBytes: sparseInfo.Size()})
+	}
+
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
 	if err != nil {
 		return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, MetaFilename))
