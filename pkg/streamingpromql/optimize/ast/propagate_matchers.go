@@ -41,7 +41,7 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 // expressions and the expressions that contain them.
 type enrichedVectorSelector struct {
 	vs          *parser.VectorSelector
-	labelsSet   map[string]struct{}
+	labelsSet   stringSet
 	include     bool
 	containsAgg bool
 }
@@ -52,15 +52,15 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 
 	vssL, matchersL := mapper.extractVectorSelectors(e.LHS)
-	okL := len(vssL) > 0
+	hasVectorSelectorsL := len(vssL) > 0
 	vssR, matchersR := mapper.extractVectorSelectors(e.RHS)
-	okR := len(vssR) > 0
+	hasVectorSelectorsR := len(vssR) > 0
 	switch {
-	case !okL && !okR:
+	case !hasVectorSelectorsL && !hasVectorSelectorsR:
 		return nil, nil
-	case !okL:
+	case !hasVectorSelectorsL:
 		return vssR, matchersR
-	case !okR:
+	case !hasVectorSelectorsR:
 		return vssL, matchersL
 	}
 
@@ -68,10 +68,11 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		return nil, nil
 	}
 
-	matchingLabelsSet := makeStringSet(e.VectorMatching.MatchingLabels)
+	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
 	var newMatchersL []*labels.Matcher
 	if e.Op == parser.LUNLESS {
 		// For LUNLESS, we do not propagate matchers from the right-hand side to the left-hand side.
+		// e.g. `up unless down{foo="bar"}` would remain unchanged but `up{foo="bar"} unless down` would become `up{foo="bar"} unless down{foo="bar"}`.
 		newMatchersL = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
@@ -90,7 +91,7 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		}
 	}
 	vss := append(vssL, vssR...)
-	matchers, _ := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
+	matchers, _ := combineMatchers(newMatchersL, newMatchersR, stringSet{}, false)
 	return vss, matchers
 }
 
@@ -117,8 +118,7 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return mapper.propagateMatchersInBinaryExpr(e)
 	// Explicitly define what is not handled to avoid confusion.
 	case *parser.StepInvariantExpr:
-		// Used only for optimizations and not produced directly by parser, and should not contain
-		// any vector selectors anyway.
+		// Used only for optimizations and not produced directly by parser.
 		return nil, nil
 	case *parser.SubqueryExpr:
 		// We do not support subqueries for now due to complexity.
@@ -129,6 +129,9 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 }
 
 func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
+	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
+		return nil, nil
+	}
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
 		// Shortcut if there are no labels allowed to propagate inwards or outwards.
@@ -138,7 +141,7 @@ func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *pars
 	if len(vss) == 0 {
 		return nil, nil
 	}
-	groupingSet := makeStringSet(e.Grouping)
+	groupingSet := newStringSet(e.Grouping)
 	for _, vs := range vss {
 		updateVectorSelectorWithAggregationInfo(vs, groupingSet, include)
 	}
@@ -146,7 +149,7 @@ func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *pars
 	return vss, newMatchers
 }
 
-func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupingSet map[string]struct{}, include bool) {
+func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupingSet stringSet, include bool) {
 	if vs.containsAgg {
 		switch {
 		case vs.include && include:
@@ -166,37 +169,6 @@ func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupin
 	vs.containsAgg = true
 }
 
-func getIntersection(set1, set2 map[string]struct{}) map[string]struct{} {
-	overlap := make(map[string]struct{}, len(set1))
-	for key := range set1 {
-		if _, exists := set2[key]; exists {
-			overlap[key] = struct{}{}
-		}
-	}
-	return overlap
-}
-
-func getUnion(set1, set2 map[string]struct{}) map[string]struct{} {
-	union := make(map[string]struct{}, len(set1)+len(set2))
-	for key := range set1 {
-		union[key] = struct{}{}
-	}
-	for key := range set2 {
-		union[key] = struct{}{}
-	}
-	return union
-}
-
-func getDifference(set1, set2 map[string]struct{}) map[string]struct{} {
-	diff := make(map[string]struct{}, len(set1))
-	for key := range set1 {
-		if _, exists := set2[key]; !exists {
-			diff[key] = struct{}{}
-		}
-	}
-	return diff
-}
-
 // TODO: Consider more functions, and add tests for these.
 func vectorSelectorArgumentIndex(funcName string) int {
 	// If the function is eligible for matcher propagation, return the index of the argument
@@ -212,26 +184,27 @@ func vectorSelectorArgumentIndex(funcName string) int {
 	// Differences between samples (using matrix selectors)
 	case "rate", "delta", "increase", "idelta", "irate":
 		return 0
+	// Aggregation over time
+	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time":
+		return 0
+	case "quantile_over_time":
+		return 1
+	// Explicitly not supported
+	case "scalar":
+		return -1
 	default:
 		return -1
 	}
 }
 
-func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet map[string]struct{}, include bool) []*labels.Matcher {
-	matchersToAdd := make([]*labels.Matcher, 0, len(labelsSet))
+func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet stringSet, include bool) []*labels.Matcher {
+	matchersToAdd := make([]*labels.Matcher, 0, len(matchersSrc))
 	for _, m := range matchersSrc {
 		if isMetricNameMatcher(m) {
 			continue
 		}
-		_, exists := labelsSet[m.Name]
-		if include {
-			if !exists {
-				continue
-			}
-		} else {
-			if exists {
-				continue
-			}
+		if include != labelsSet.Contains(m.Name) {
+			continue
 		}
 		matchersToAdd = append(matchersToAdd, m)
 	}
@@ -239,40 +212,75 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	return matchersToAdd
 }
 
-func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, include bool) ([]*labels.Matcher, bool) {
+// Note that this function mutates the matchers slice, so be careful where it is used.
+func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet stringSet, include bool) ([]*labels.Matcher, bool) {
 	matchersMap := makeMatchersMap(matchers)
-	newMatchers := make([]*labels.Matcher, 0, len(matchers)+len(matchersToAdd))
-	newMatchers = append(newMatchers, matchers...)
 	changed := false
 	for _, m := range matchersToAdd {
-		if _, ok := matchersMap[m.String()]; !ok {
-			_, exists := labelsSet[m.Name]
-			if include {
-				if !exists {
-					continue
-				}
-			} else {
-				if exists {
-					continue
-				}
-			}
-			newMatchers = append(newMatchers, m)
-			changed = true
+		if _, ok := matchersMap[m.String()]; ok {
+			continue
 		}
+		if include != labelsSet.Contains(m.Name) {
+			continue
+		}
+		matchers = append(matchers, m)
+		changed = true
 	}
-	return newMatchers, changed
+	return matchers, changed
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
 	return m.Name == labels.MetricName
 }
 
-func makeStringSet(list []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(list))
+type stringSet map[string]struct{}
+
+func newStringSet(list []string) stringSet {
+	set := make(stringSet, len(list))
 	for _, l := range list {
-		set[l] = struct{}{}
+		set.Add(l)
 	}
 	return set
+}
+
+func (s stringSet) Add(key string) {
+	s[key] = struct{}{}
+}
+
+func (s stringSet) Contains(key string) bool {
+	_, exists := s[key]
+	return exists
+}
+
+func getIntersection(set1, set2 stringSet) stringSet {
+	overlap := make(stringSet, len(set1))
+	for key := range set1 {
+		if set2.Contains(key) {
+			overlap.Add(key)
+		}
+	}
+	return overlap
+}
+
+func getUnion(set1, set2 stringSet) stringSet {
+	union := make(stringSet, len(set1)+len(set2))
+	for key := range set1 {
+		union.Add(key)
+	}
+	for key := range set2 {
+		union.Add(key)
+	}
+	return union
+}
+
+func getDifference(set1, set2 stringSet) stringSet {
+	diff := make(stringSet, len(set1))
+	for key := range set1 {
+		if !set2.Contains(key) {
+			diff.Add(key)
+		}
+	}
+	return diff
 }
 
 func makeMatchersMap(matchers []*labels.Matcher) map[string]*labels.Matcher {
