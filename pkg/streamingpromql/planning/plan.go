@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -85,6 +86,10 @@ type Node interface {
 	//
 	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
 	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+
+	// ExpressionPosition returns the position of the subexpression this node represents in the original
+	// expression.
+	ExpressionPosition() posrange.PositionRange
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }

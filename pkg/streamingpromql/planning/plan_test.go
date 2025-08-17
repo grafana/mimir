@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -118,6 +119,10 @@ func (t *testNode) ResultType() (parser.ValueType, error) {
 }
 
 func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange {
+	panic("not supported")
+}
+
+func (t *testNode) ExpressionPosition() posrange.PositionRange {
 	panic("not supported")
 }
 
