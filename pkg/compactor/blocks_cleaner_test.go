@@ -1208,7 +1208,16 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lastModified, err := stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
+			// Create a BlocksCleaner with the appropriate bucket to test the correct path
+			var baseBucket objstore.Bucket
+			if tc.bucket == userBucketWithUpdatedAt {
+				baseBucket = b
+			} else {
+				baseBucket = bucketWithoutUpdatedAt
+			}
+
+			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, log.NewNopLogger(), nil)
+			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
