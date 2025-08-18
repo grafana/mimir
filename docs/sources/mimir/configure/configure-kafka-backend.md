@@ -26,7 +26,7 @@ Set the following configuration flags to enable Grafana Mimir to use ingest stor
   The `<name>` is the name of the Kafka topic that is used for ingesting data.
 - `-ingest-storage.kafka.auto-create-topic-default-partitions=<number>`<br />
   If the configured topic doesn't exist in the Kafka backend, the Mimir components, either consumers or producers,
- create the topic on first access. The `<number>` parameter sets the number of partitions to create when the topic is automatically created. The number of partitions must be at least the number of ingesters in one zone.
+  create the topic on first access. The `<number>` parameter sets the number of partitions to create when the topic is automatically created. The number of partitions must be at least the number of ingesters in one zone.
 
 Additionally, you can use these recommended configuration options when running Grafana Mimir with ingest storage architecture:
 
