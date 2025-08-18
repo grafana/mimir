@@ -2416,7 +2416,7 @@ This error occurs when the number of active series for a given tenant exceeds th
 This limit is applied before the series are ingested into Kafka.
 
 The limit is used to protect ingesters from overloading in case a tenant writes a high number of active series, as well as to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-distributor.max-active-series-per-user` option (or `max_active_series_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-distributor.max-active-series-per-user` option or `max_active_series_per_user` in the runtime configuration.
 
 How to **fix** it:
 
