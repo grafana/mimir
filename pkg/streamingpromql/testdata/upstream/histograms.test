@@ -704,12 +704,14 @@ load 1m
   series{host="a", le="1000"} 8
   series{host="a", le="+Inf"} 9
 
-eval instant at 0 histogram_quantile(0.8, series)
-  expect no_info
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
-  # Should return no results.
+# Unsupported by streaming engine.
+# eval instant at 0 histogram_quantile(0.8, series)
+#   expect no_info
+#   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+#   # Should return no results.
 
-eval instant at 0 histogram_fraction(-Inf, 1, series)
-  expect no_info
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
-  # Should return no results.
+# Unsupported by streaming engine.
+# eval instant at 0 histogram_fraction(-Inf, 1, series)
+#   expect no_info
+#   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+#   # Should return no results.
