@@ -21,7 +21,7 @@ The synchronization between multiple availability-zones is eventually consistent
 This service is not designed to be meant as a cost-control mechanism but a system protection.
 
 The consistency of decisions is considered more important than the precision of the limiting algorithm,
-so in some scenarios the system will accept more series than the configured limit, but it will reject series that were already accepted and are still active.
+so in some scenarios the system will accept more series than the configured limit, but it will never reject series that were already accepted and are still active.
 
 ### Timestamps and space optimization
 
