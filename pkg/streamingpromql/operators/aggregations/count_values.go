@@ -154,7 +154,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(c.resolvedLabelName) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 

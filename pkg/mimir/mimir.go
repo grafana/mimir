@@ -35,7 +35,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
@@ -56,7 +55,6 @@ import (
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -334,18 +332,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
 
-	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
-		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
-	}
-	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
-		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
-	}
-	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
-		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
-		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
-	}
 	// validate the default limits
 	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
 		return err
@@ -786,13 +772,13 @@ type Mimir struct {
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
 	Flusher                          *flusher.Flusher
-	FrontendV1                       *frontendv1.Frontend
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
@@ -1051,15 +1037,6 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 		if t.Ingester != nil {
 			if err := t.Ingester.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Ingester not ready: "+err.Error(), http.StatusServiceUnavailable)
-				return
-			}
-		}
-
-		// Query Frontend has a special check that makes sure that a querier is attached before it signals
-		// itself as ready
-		if t.FrontendV1 != nil {
-			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
-				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}

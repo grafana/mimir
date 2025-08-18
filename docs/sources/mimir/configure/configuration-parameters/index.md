@@ -440,16 +440,8 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
-  # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay,
-  # max_global_series_per_user, max_global_series_per_metric,
-  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
-  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
-  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
-  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
-  # request_burst_size, alertmanager_notification_rate_limit,
-  # alertmanager_max_dispatcher_aggregation_groups,
-  # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
+  # Comma-separated list of metrics to include in the exporter. Metric names
+  # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
   [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
 
@@ -906,15 +898,6 @@ ha_tracker:
       # (advanced) Timeout for storing value to secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout.
-  [ha_tracker_update_timeout: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.
-  [ha_tracker_update_timeout_jitter_max: <duration> | default = ]
-
-  # (advanced) Deprecated. Use limits.ha_tracker_failover_timeout.
-  [ha_tracker_failover_timeout: <duration> | default = ]
 
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
@@ -1649,6 +1632,11 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
+  # (experimental) Enable pruning query expressions that are toggled off with
+  # constants.
+  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
+  [enable_prune_toggles: <boolean> | default = true]
+
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
@@ -1694,18 +1682,6 @@ The `frontend` block configures the query-frontend.
 # from `-server.http-write-timeout` is used.
 # CLI flag: -query-frontend.active-series-write-timeout
 [active_series_write_timeout: <duration> | default = 5m]
-
-# (advanced) Maximum number of outstanding requests per tenant per frontend;
-# requests beyond this error with HTTP 429.
-# CLI flag: -querier.max-outstanding-requests-per-tenant
-[max_outstanding_per_tenant: <int> | default = 100]
-
-# (experimental) If a querier disconnects without sending notification about
-# graceful shutdown, the query-frontend will keep the querier in the tenant's
-# shard until the forget delay has passed. This feature is useful to reduce the
-# blast radius when shuffle-sharding is enabled.
-# CLI flag: -query-frontend.querier-forget-delay
-[querier_forget_delay: <duration> | default = 0s]
 
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
@@ -1795,12 +1771,6 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# (experimental) True to enable pruning dead code (eg. expressions that cannot
-# produce any results) and simplifying expressions (eg. expressions that can be
-# evaluated immediately) in queries.
-# CLI flag: -query-frontend.prune-queries
-[prune_queries: <boolean> | default = false]
-
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1839,7 +1809,7 @@ client_cluster_validation:
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -query-frontend.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
@@ -2888,13 +2858,6 @@ cluster_validation:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. If multiple
-# query-frontends are running, the host should be a DNS resolving to all
-# query-frontend instances. This option should be set only when query-scheduler
-# component is not in use.
-# CLI flag: -querier.frontend-address
-[frontend_address: <string> | default = ""]
-
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and
@@ -3780,10 +3743,10 @@ blocked_requests:
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
-# (experimental) Enable certain experimental PromQL functions, which are subject
-# to being changed or removed at any time, on a per-tenant basis. Defaults to
-# empty which means all experimental functions are disabled. Set to 'all' to
-# enable all experimental functions.
+# Enable certain experimental PromQL functions, which are subject to being
+# changed or removed at any time, on a per-tenant basis. Defaults to empty which
+# means all experimental functions are disabled. Set to 'all' to enable all
+# experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
@@ -4903,6 +4866,23 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
   [out_of_order_capacity_max: <int> | default = 32]
 
+  # (experimental) Whether postings for matchers cache should be shared across
+  # blocks, as opposed to instantiated per block. With a shared cache, one cache
+  # is created for head blocks, and one for compacted blocks.
+  # CLI flag: -blocks-storage.tsdb.shared-postings-for-matchers-cache
+  [shared_postings_for_matchers_cache: <boolean> | default = false]
+
+  # (experimental) Whether head block postings should be tracked and invalidated
+  # when they change, allowing higher TTLs to be used. When not using
+  # invalidation, cache entries will be used until removed.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
+  [head_postings_for_matchers_cache_invalidation: <boolean> | default = false]
+
+  # (experimental) The size of the metric versions cache in each ingester when
+  # invalidation is enabled.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
+  [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
+
   # (experimental) How long to cache postings for matchers in the Head and
   # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
@@ -5347,7 +5327,7 @@ dynamic_replication:
   # (experimental) Multiple of the default replication factor that should be
   # used for recent blocks. Minimum value is 2
   # CLI flag: -store-gateway.dynamic-replication.multiple
-  [multiple: <int> | default = 2]
+  [multiple: <int> | default = 5]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by

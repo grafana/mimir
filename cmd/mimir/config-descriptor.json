@@ -1284,36 +1284,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": null,
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -2307,6 +2277,17 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enable_prune_toggles",
+              "required": false,
+              "desc": "Enable pruning query expressions that are toggled off with constants.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-prune-toggles",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
             {
               "kind": "field",
               "name": "enable_common_subexpression_elimination",
@@ -5134,8 +5115,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -6070,16 +6050,6 @@
       "blockEntries": [
         {
           "kind": "field",
-          "name": "frontend_address",
-          "required": false,
-          "desc": "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "querier.frontend-address",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
@@ -6753,28 +6723,6 @@
         },
         {
           "kind": "field",
-          "name": "max_outstanding_per_tenant",
-          "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429.",
-          "fieldValue": null,
-          "fieldDefaultValue": 100,
-          "fieldFlag": "querier.max-outstanding-requests-per-tenant",
-          "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "querier_forget_delay",
-          "required": false,
-          "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.querier-forget-delay",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
@@ -7443,17 +7391,6 @@
         },
         {
           "kind": "field",
-          "name": "prune_queries",
-          "required": false,
-          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.prune-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -7543,7 +7480,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "query-frontend.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -10414,6 +10351,39 @@
             },
             {
               "kind": "field",
+              "name": "shared_postings_for_matchers_cache",
+              "required": false,
+              "desc": "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.shared-postings-for-matchers-cache",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_invalidation",
+              "required": false,
+              "desc": "Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_versions",
+              "required": false,
+              "desc": "The size of the metric versions cache in each ingester when invalidation is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2097152,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-versions",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
               "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
@@ -11817,7 +11787,7 @@
               "required": false,
               "desc": "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2",
               "fieldValue": null,
-              "fieldDefaultValue": 2,
+              "fieldDefaultValue": 5,
               "fieldFlag": "store-gateway.dynamic-replication.multiple",
               "fieldType": "int",
               "fieldCategory": "experimental"
@@ -18682,7 +18652,7 @@
           "kind": "field",
           "name": "enabled_metrics",
           "required": false,
-          "desc": "Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.",
+          "desc": "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration.",
           "fieldValue": null,
           "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
           "fieldFlag": "overrides-exporter.enabled-metrics",
