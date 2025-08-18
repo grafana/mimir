@@ -7,7 +7,7 @@
 In Mimir's ingest architecture, the max series limit enforcement creates three critical challenges when performed by the ingesters (like in classic architecture):
 
 1. **Ingestion cost** - Series over-the-limit are ingested into Kafka/Warpstream before being rejected, generating cost for data that cannot be used.
-2. **Block-builder inconsistency** - Block-builder must independently enforce limits, potentially making different decisions than ingesters.
+2. **Block-builder inconsistency** - Block-builder must independently enforce limits, potentially making them each storing an inconsistent view of the data.
 3. **Client error feedback** - Errors are not reported back to clients in HTTP responses.
 
 Usage tracker service solves these by enforcing per-tenant max series limits before Kafka ingestion.
