@@ -53,7 +53,7 @@ The middleware is positioned last in the chain to enforce limits after all filte
 
 ### Partitions
 
-Usage tracker service uses a fixed number of **partitions** (default: 64) this number is configurable but cannot be changed when the system is running without undesirable side effects.
+Usage tracker service uses a fixed number of **partitions** (default: 64). This number is configurable but cannot be changed when the system is running without undesirable side effects.
 
 - Each partition is usually owned by at least one replica in each zone.
 - During scaling, partitions are reassigned to new replicas and multiple replicas can own the same partition in the same zone.
