@@ -313,7 +313,7 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
 lint: ## Run lints to check for style issues.
-lint: check-makefiles
+lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
@@ -539,6 +539,10 @@ license: ## Add license header to files.
 check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
+
+.PHONY: check-merge-conflicts
+check-merge-conflicts: ## Check for git merge conflict markers in source files.
+	@./tools/check-merge-conflicts.sh
 
 dist: ## Generates binaries for a Mimir release.
 	echo "Cleaning up dist/"
