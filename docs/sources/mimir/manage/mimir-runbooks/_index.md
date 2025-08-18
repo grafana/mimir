@@ -2421,7 +2421,7 @@ To configure the limit on a per-tenant basis, use the `-distributor.max-active-s
 How to **fix** it:
 
 - Ensure the actual number of active series written by the affected tenant is legit.
-- Consider increasing the per-tenant limit by using the `-distributor.max-active-series-per-user` option (or `max_active_series_per_user` in the runtime configuration).
+- Consider increasing the per-tenant limit by using the `-distributor.max-active-series-per-user` option or `max_active_series_per_user` in the runtime configuration.
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
