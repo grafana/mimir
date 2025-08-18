@@ -14965,7 +14965,7 @@
           "kind": "field",
           "name": "state_read_timeout",
           "required": false,
-          "desc": "Timeout for reading the state from object storage during the initial sync.",
+          "desc": "Timeout for reading the state from object storage during the initial sync. 0 = no timeout.",
           "fieldValue": null,
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "alertmanager.state-read-timeout",

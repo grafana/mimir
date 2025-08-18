@@ -228,11 +228,15 @@ func (s *state) starting(ctx context.Context) error {
 	}
 
 	level.Info(s.logger).Log("msg", "reading state from storage")
-	// Attempt to read the state from persistent storage instead.
-	storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
-	defer cancel()
 
-	fullState, err := s.store.GetFullState(storeReadCtx, s.userID)
+	// Attempt to read the state from persistent storage instead.
+	if s.storeReadTimeout != 0 {
+		storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
+		defer cancel()
+		ctx = storeReadCtx
+	}
+
+	fullState, err := s.store.GetFullState(ctx, s.userID)
 	if errors.Is(err, alertspb.ErrNotFound) {
 		level.Info(s.logger).Log("msg", "no state for user in storage; proceeding")
 		s.initialSyncCompleted.WithLabelValues(syncUserNotFound).Inc()
