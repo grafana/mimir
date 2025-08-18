@@ -1191,7 +1191,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.14.0
 ## explicit; go 1.22
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/otlptranslator v0.0.0-20250801145339-10a0f69acb3a => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
+# github.com/prometheus/otlptranslator v0.0.2 => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
 ## explicit; go 1.23.0
 github.com/prometheus/otlptranslator
 # github.com/prometheus/procfs v0.17.0
