@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -48,11 +49,6 @@ func (s *Subquery) Describe() string {
 }
 
 func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	return SubqueryTimeRange(timeRange, s.Range, s.Step, s.Timestamp, s.Offset)
-}
-
-// FIXME: inline this into the method above once we no longer support directly converting from PromQL expressions to operators
-func SubqueryTimeRange(parentTimeRange types.QueryTimeRange, rng time.Duration, step time.Duration, ts *time.Time, offset time.Duration) types.QueryTimeRange {
 	// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
 	// They are not evaluated as queries aligned to the individual step timestamps.
 	// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
@@ -67,24 +63,23 @@ func SubqueryTimeRange(parentTimeRange types.QueryTimeRange, rng time.Duration, 
 	// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
 	// could be smarter about this if it turns out to be a big problem.
 
-	start := parentTimeRange.StartT
-	end := parentTimeRange.EndT
-	stepMilliseconds := step.Milliseconds()
+	start := timeRange.StartT
+	end := timeRange.EndT
+	stepMilliseconds := s.Step.Milliseconds()
 
-	if ts != nil {
-		start = timestamp.FromTime(*ts)
+	if s.Timestamp != nil {
+		start = timestamp.FromTime(*s.Timestamp)
 		end = start
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
-	alignedStart := stepMilliseconds * ((start - offset.Milliseconds() - rng.Milliseconds()) / stepMilliseconds)
-	if alignedStart < start-offset.Milliseconds()-rng.Milliseconds() {
+	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds()) / stepMilliseconds)
+	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds() {
 		alignedStart += stepMilliseconds
 	}
 
-	end = end - offset.Milliseconds()
-
-	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), step)
+	end = end - s.Offset.Milliseconds()
+	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), s.Step)
 }
 
 func (s *Subquery) Details() proto.Message {
@@ -124,16 +119,14 @@ func (s *Subquery) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (s *Subquery) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	if len(children) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 child for Subquery, got %v", len(children))
+func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	innerTimeRange := s.ChildrenTimeRange(timeRange)
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(s.Inner, innerTimeRange)
+	if err != nil {
+		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}
 
-	inner, ok := children[0].(types.InstantVectorOperator)
-	if !ok {
-		return nil, fmt.Errorf("expected InstantVectorOperator as child of Subquery, got %T", children[0])
-	}
-	o, err := operators.NewSubquery(inner, timeRange, s.ChildrenTimeRange(timeRange), TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -143,4 +136,12 @@ func (s *Subquery) OperatorFactory(children []types.Operator, timeRange types.Qu
 
 func (s *Subquery) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
+}
+
+func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
+}
+
+func (s *Subquery) ExpressionPosition() posrange.PositionRange {
+	return s.GetExpressionPosition().ToPrometheusType()
 }

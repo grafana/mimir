@@ -906,7 +906,7 @@ func TestConsumptionRanges(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end}
+			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
 			j, err := probeInitialJobOffsets(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
@@ -916,11 +916,13 @@ func TestConsumptionRanges(t *testing.T) {
 
 // Create an offset finder that we can prepopulate with offset scenarios.
 type mockOffsetFinder struct {
-	offsets []*offsetTime
-	end     int64
+	offsets       []*offsetTime
+	end           int64
+	distinctTimes map[time.Time]struct{}
 }
 
 func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, error) {
+	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	maxt := time.Time{}
@@ -944,6 +946,33 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
+
+func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
+	// Ensure that the probe times are reused across partitions, which is a
+	// necessary condition for cached offset reuse in the offsetFinder.
+	sched, _ := mustScheduler(t, 4)
+	sched.cfg.MaxScanAge = 1 * time.Hour
+
+	finder := &mockOffsetFinder{
+		offsets: []*offsetTime{
+			{offset: 100, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+			{offset: 200, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+			{offset: 300, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+		},
+		end:           1000,
+		distinctTimes: make(map[time.Time]struct{}),
+	}
+
+	consumeOffs := []partitionOffsets{
+		{topic: "topic", partition: 0, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 1, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 2, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
+	}
+
+	sched.populateInitialJobs(context.Background(), consumeOffs, finder)
+	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
+}
 
 func TestLimitNPolicy(t *testing.T) {
 	allow1 := limitPerPartitionJobCreationPolicy{partitionLimit: 1}

@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -68,6 +69,8 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 	if err != nil {
 		return nil, err
 	}
+
+	client.Transport = otelhttp.NewTransport(client.Transport)
 
 	return &notifyHooksNotifier{
 		upstream: upstream,

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -19,33 +20,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
-	allowedMetricNames = []string{
-		ingestionRate,
-		ingestionBurstSize,
-		ingestionArtificialDelay,
-		maxGlobalSeriesPerUser,
-		maxGlobalSeriesPerMetric,
-		maxGlobalExemplarsPerUser,
-		maxChunksPerQuery,
-		maxFetchedSeriesPerQuery,
-		maxFetchedChunkBytesPerQuery,
-		rulerMaxRulesPerRuleGroup,
-		rulerMaxRuleGroupsPerTenant,
-		maxGlobalMetricsWithMetadataPerUser,
-		maxGlobalMetadataPerMetric,
-		requestRate,
-		requestBurstSize,
-		notificationRateLimit,
-		alertmanagerMaxDispatcherAggregationGroups,
-		alertmanagerMaxAlertsCount,
-		alertmanagerMaxAlertsSizeBytes,
-	}
 	defaultEnabledMetricNames = []string{
 		ingestionRate,
 		ingestionBurstSize,
@@ -105,7 +86,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Keep existing default metrics
 	c.EnabledMetrics = defaultEnabledMetricNames
-	f.Var(&c.EnabledMetrics, "overrides-exporter.enabled-metrics", "Comma-separated list of metrics to include in the exporter. Allowed metric names: "+strings.Join(allowedMetricNames, ", ")+".")
+	f.Var(&c.EnabledMetrics, "overrides-exporter.enabled-metrics", "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration.")
 }
 
 // Validate validates the configuration for an overrides-exporter.
@@ -113,9 +94,10 @@ func (c *Config) Validate() error {
 	if err := c.Ring.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter.ring config")
 	}
+	fieldRegistry := newLimitsFieldRegistry()
 	for _, metricName := range c.EnabledMetrics {
-		if !util.StringsContain(allowedMetricNames, metricName) {
-			return fmt.Errorf("enabled-metrics: unknown metric name '%s'", metricName)
+		if err := fieldRegistry.ValidateMetricName(metricName); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -180,79 +162,132 @@ func NewOverridesExporter(
 	return exporter, nil
 }
 
+// convertToFloat64 converts various types to float64 for metric export
+func convertToFloat64(value reflect.Value) (float64, error) {
+	float64Type := reflect.TypeOf(float64(0))
+
+	// Handle special case: model.Duration should be converted to seconds
+	if value.Type().String() == "model.Duration" {
+		duration := value.Interface().(model.Duration)
+		return time.Duration(duration).Seconds(), nil
+	}
+
+	// Handle boolean: convert to 1.0 or 0.0
+	if value.Kind() == reflect.Bool {
+		if value.Bool() {
+			return 1.0, nil
+		}
+		return 0.0, nil
+	}
+
+	// Try to convert to float64 directly
+	if value.CanConvert(float64Type) {
+		converted := value.Convert(float64Type)
+		return converted.Float(), nil
+	}
+
+	// Return error if conversion is not possible
+	return 0.0, fmt.Errorf("cannot convert type %s to float64", value.Type())
+}
+
+// LimitsFieldRegistry provides efficient field lookup and validation for validation.Limits struct
+type LimitsFieldRegistry struct {
+	limitsType         reflect.Type
+	fieldsByYamlTag    map[string]reflect.StructField
+	allowedMetricNames []string
+	defaultLimitsValue reflect.Value
+}
+
+// newLimitsFieldRegistry creates a new registry for validation.Limits struct field operations
+func newLimitsFieldRegistry() *LimitsFieldRegistry {
+	limitsType := reflect.TypeOf(validation.Limits{})
+	defaultLimits := &validation.Limits{}
+	defaultLimitsValue := reflect.ValueOf(defaultLimits).Elem()
+
+	fieldsByTag := make(map[string]reflect.StructField)
+	var metricNames []string
+
+	for i := 0; i < limitsType.NumField(); i++ {
+		field := limitsType.Field(i)
+		tag := field.Tag.Get("yaml")
+		if tag != "" && tag != "-" {
+			// Remove any options like ",omitempty"
+			tagValue := strings.Split(tag, ",")[0]
+			if tagValue != "" {
+				fieldsByTag[tagValue] = field
+				metricNames = append(metricNames, tagValue)
+			}
+		}
+	}
+
+	return &LimitsFieldRegistry{
+		limitsType:         limitsType,
+		fieldsByYamlTag:    fieldsByTag,
+		allowedMetricNames: metricNames,
+		defaultLimitsValue: defaultLimitsValue,
+	}
+}
+
+// GetField returns the struct field for a given yaml tag name
+func (r *LimitsFieldRegistry) GetField(yamlTag string) (reflect.StructField, bool) {
+	field, found := r.fieldsByYamlTag[yamlTag]
+	return field, found
+}
+
+// ValidateMetricName validates that a metric name exists and can be converted to float64
+func (r *LimitsFieldRegistry) ValidateMetricName(metricName string) error {
+	field, found := r.fieldsByYamlTag[metricName]
+	if !found {
+		return fmt.Errorf("enabled-metrics: unknown metric name '%s' - must match a yaml tag in the Limits struct", metricName)
+	}
+
+	// Attempt to convert the field type to float64 to ensure it's supported
+	fieldValue := r.defaultLimitsValue.FieldByName(field.Name)
+	if _, err := convertToFloat64(fieldValue); err != nil {
+		return fmt.Errorf("enabled-metrics: metric '%s' has unsupported type %s - %v", metricName, fieldValue.Type(), err)
+	}
+
+	return nil
+}
+
+// GetAllowedMetricNames returns all available metric names
+func (r *LimitsFieldRegistry) GetAllowedMetricNames() []string {
+	return r.allowedMetricNames
+}
+
 func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []ExportedMetric) []ExportedMetric {
-	var exportedMetrics []ExportedMetric
+	var (
+		exportedMetrics []ExportedMetric
+		fieldRegistry   = newLimitsFieldRegistry()
+	)
 
-	// Write path limits
-	if enabledMetrics.IsAllowed(ingestionRate) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionRate, func(limits *validation.Limits) float64 { return limits.IngestionRate }})
-	}
-	if enabledMetrics.IsAllowed(ingestionBurstSize) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionBurstSize, func(limits *validation.Limits) float64 { return float64(limits.IngestionBurstSize) }})
-	}
-	if enabledMetrics.IsAllowed(ingestionArtificialDelay) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionArtificialDelay, func(limits *validation.Limits) float64 {
-			return time.Duration(limits.IngestionArtificialDelay).Seconds()
-		}})
-	}
-	if enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalSeriesPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerUser) }})
-	}
-	if enabledMetrics.IsAllowed(maxGlobalSeriesPerMetric) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalSeriesPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerMetric) }})
-	}
-	if enabledMetrics.IsAllowed(maxGlobalExemplarsPerUser) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalExemplarsPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalExemplarsPerUser) }})
-	}
-	if enabledMetrics.IsAllowed(maxGlobalMetricsWithMetadataPerUser) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalMetricsWithMetadataPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetricsWithMetadataPerUser) }})
-	}
-	if enabledMetrics.IsAllowed(maxGlobalMetadataPerMetric) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalMetadataPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetadataPerMetric) }})
-	}
-	if enabledMetrics.IsAllowed(requestRate) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{requestRate, func(limits *validation.Limits) float64 { return limits.RequestRate }})
-	}
-	if enabledMetrics.IsAllowed(requestBurstSize) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{requestBurstSize, func(limits *validation.Limits) float64 { return float64(limits.RequestBurstSize) }})
-	}
+	// Get all possible metric names from global registry and check if each is enabled
+	for _, metricName := range fieldRegistry.GetAllowedMetricNames() {
+		if enabledMetrics.IsAllowed(metricName) {
+			field, found := fieldRegistry.GetField(metricName)
+			if !found {
+				panic(fmt.Sprintf("couldn't find fields that the fields registry returned, this shouldn't happen (metric name: %s)", metricName))
+			}
+			fieldName := field.Name
 
-	// Read path limits
-	if enabledMetrics.IsAllowed(maxChunksPerQuery) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxChunksPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxChunksPerQuery) }})
-	}
-	if enabledMetrics.IsAllowed(maxFetchedSeriesPerQuery) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedSeriesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedSeriesPerQuery) }})
-	}
-	if enabledMetrics.IsAllowed(maxFetchedChunkBytesPerQuery) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedChunkBytesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedChunkBytesPerQuery) }})
-	}
-	if enabledMetrics.IsAllowed(maxEstimatedChunksPerQueryMultiplier) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{maxEstimatedChunksPerQueryMultiplier, func(limits *validation.Limits) float64 { return limits.MaxEstimatedChunksPerQueryMultiplier }})
-	}
-
-	// Ruler limits
-	if enabledMetrics.IsAllowed(rulerMaxRulesPerRuleGroup) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{rulerMaxRulesPerRuleGroup, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRulesPerRuleGroup) }})
-	}
-	if enabledMetrics.IsAllowed(rulerMaxRuleGroupsPerTenant) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{rulerMaxRuleGroupsPerTenant, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRuleGroupsPerTenant) }})
-	}
-
-	// Alertmanager limits
-	if enabledMetrics.IsAllowed(notificationRateLimit) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{notificationRateLimit, func(limits *validation.Limits) float64 { return limits.NotificationRateLimit }})
-	}
-	if enabledMetrics.IsAllowed(alertmanagerMaxDispatcherAggregationGroups) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxDispatcherAggregationGroups, func(limits *validation.Limits) float64 {
-			return float64(limits.AlertmanagerMaxDispatcherAggregationGroups)
-		}})
-	}
-	if enabledMetrics.IsAllowed(alertmanagerMaxAlertsCount) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxAlertsCount, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsCount) }})
-	}
-	if enabledMetrics.IsAllowed(alertmanagerMaxAlertsSizeBytes) {
-		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxAlertsSizeBytes, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsSizeBytes) }})
+			// Create a getter function for this field using a closure that captures fieldName
+			exportedMetrics = append(exportedMetrics, ExportedMetric{
+				Name: metricName,
+				Get: func(fName string) func(*validation.Limits) float64 {
+					return func(limits *validation.Limits) float64 {
+						limitsValue := reflect.ValueOf(limits).Elem()
+						fieldValue := limitsValue.FieldByName(fName)
+						value, err := convertToFloat64(fieldValue)
+						if err != nil {
+							// Return 0.0 as fallback to avoid breaking metrics collection
+							// This should not happen in practice if the reflection setup is correct
+							return 0.0
+						}
+						return value
+					}
+				}(fieldName),
+			})
+		}
 	}
 
 	// Add extra exported metrics

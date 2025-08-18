@@ -288,7 +288,7 @@
       // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
       // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
       //
-      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
       // of containers there are running at any given time, without suffering the PromQL lookback period.
       |||
