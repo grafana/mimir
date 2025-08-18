@@ -69,7 +69,7 @@ func isTraceSampled(ctx context.Context) bool {
 func (i *ProfilingWrapper) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.Push", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -82,7 +82,7 @@ func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server clie
 	ctx := server.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.QueryStream", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -95,7 +95,7 @@ func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server clie
 func (i *ProfilingWrapper) QueryExemplars(ctx context.Context, request *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.QueryExemplars", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -107,7 +107,7 @@ func (i *ProfilingWrapper) QueryExemplars(ctx context.Context, request *client.E
 func (i *ProfilingWrapper) LabelValues(ctx context.Context, request *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.LabelValues", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -119,7 +119,7 @@ func (i *ProfilingWrapper) LabelValues(ctx context.Context, request *client.Labe
 func (i *ProfilingWrapper) LabelNames(ctx context.Context, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.LabelNames", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -131,7 +131,7 @@ func (i *ProfilingWrapper) LabelNames(ctx context.Context, request *client.Label
 func (i *ProfilingWrapper) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.UserStats", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -143,7 +143,7 @@ func (i *ProfilingWrapper) UserStats(ctx context.Context, request *client.UserSt
 func (i *ProfilingWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.AllUserStats", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -155,7 +155,7 @@ func (i *ProfilingWrapper) AllUserStats(ctx context.Context, request *client.Use
 func (i *ProfilingWrapper) MetricsForLabelMatchers(ctx context.Context, request *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.MetricsForLabelMatchers", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -167,7 +167,7 @@ func (i *ProfilingWrapper) MetricsForLabelMatchers(ctx context.Context, request 
 func (i *ProfilingWrapper) MetricsMetadata(ctx context.Context, request *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.MetricsMetadata", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -180,7 +180,7 @@ func (i *ProfilingWrapper) LabelNamesAndValues(request *client.LabelNamesAndValu
 	ctx := server.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.LabelNamesAndValues", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -194,7 +194,7 @@ func (i *ProfilingWrapper) LabelValuesCardinality(request *client.LabelValuesCar
 	ctx := server.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.LabelValuesCardinality", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -208,7 +208,7 @@ func (i *ProfilingWrapper) ActiveSeries(request *client.ActiveSeriesRequest, ser
 	ctx := server.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.ActiveSeries", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -222,7 +222,7 @@ func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.FlushHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -236,7 +236,7 @@ func (i *ProfilingWrapper) PrepareShutdownHandler(w http.ResponseWriter, r *http
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.PrepareShutdownHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -250,7 +250,7 @@ func (i *ProfilingWrapper) PreparePartitionDownscaleHandler(w http.ResponseWrite
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.PreparePartitionDownscaleHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -264,7 +264,7 @@ func (i *ProfilingWrapper) PrepareInstanceRingDownscaleHandler(w http.ResponseWr
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.PrepareInstanceRingDownscaleHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -278,7 +278,7 @@ func (i *ProfilingWrapper) PrepareUnregisterHandler(w http.ResponseWriter, r *ht
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.PrepareUnregisterHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -292,7 +292,7 @@ func (i *ProfilingWrapper) ShutdownHandler(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.ShutdownHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -306,7 +306,7 @@ func (i *ProfilingWrapper) UserRegistryHandler(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.UserRegistryHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -320,7 +320,7 @@ func (i *ProfilingWrapper) TenantsHandler(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.TenantsHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
@@ -334,7 +334,7 @@ func (i *ProfilingWrapper) TenantTSDBHandler(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
-		labels := pprof.Labels("method", "Ingester.TenantTSDBHandler", "userID", userID)
+		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
