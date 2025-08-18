@@ -5195,6 +5195,14 @@ sharding_ring:
 # CLI flag: -compactor.scheduler-endpoint
 [scheduler_address: <string> | default = ""]
 
+# (advanced) Interval between scheduler job lease updates.
+# CLI flag: -compactor.scheduler-update-interval
+[scheduler_update_interval: <duration> | default = 15s]
+
+# (advanced) Maximum age of completed jobs to continue sending to the scheduler.
+# CLI flag: -compactor.scheduler-max-update-age
+[scheduler_max_update_age: <duration> | default = 1h]
+
 # The grpc_client block configures the gRPC client used to communicate between
 # two Mimir components.
 # The CLI flags prefix for this block configuration is: compactor.scheduler

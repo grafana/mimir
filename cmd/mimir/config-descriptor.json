@@ -11253,6 +11253,28 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "scheduler_update_interval",
+          "required": false,
+          "desc": "Interval between scheduler job lease updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "compactor.scheduler-update-interval",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "scheduler_max_update_age",
+          "required": false,
+          "desc": "Maximum age of completed jobs to continue sending to the scheduler.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3600000000000,
+          "fieldFlag": "compactor.scheduler-max-update-age",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "grpc_client_config",
           "required": false,
