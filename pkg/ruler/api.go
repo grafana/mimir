@@ -513,7 +513,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "retrieving rule groups with namespace", "userID", userID, "namespace", namespace)
 	// Disable any caching when getting list of all rule groups since listing results
 	// are cached and not invalidated and this API is expected to be strongly consistent.
-	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, rulestore.WithCacheDisabled())
+	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, a.ruler.NameValidationScheme(userID), rulestore.WithCacheDisabled())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -600,7 +600,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	rg, err := a.store.GetRuleGroup(ctx, userID, namespace, groupName)
+	rg, err := a.store.GetRuleGroup(ctx, userID, namespace, groupName, a.ruler.NameValidationScheme(userID))
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -696,7 +696,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
 		// Disable any caching when getting list of all rule groups since listing results
 		// are cached and not invalidated and we need the most up-to-date number.
-		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
+		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", a.ruler.NameValidationScheme(userID), rulestore.WithCacheDisabled())
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -760,7 +760,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	err = a.store.DeleteNamespace(ctx, userID, namespace)
+	err = a.store.DeleteNamespace(ctx, userID, namespace, a.ruler.NameValidationScheme(userID))
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)

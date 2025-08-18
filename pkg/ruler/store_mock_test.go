@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
@@ -94,7 +95,7 @@ func (m *mockRuleStore) ListAllUsers(_ context.Context, _ ...rulestore.Option) (
 	return result, nil
 }
 
-func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, userID, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, userID, namespace string, _ model.ValidationScheme, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -142,7 +143,7 @@ func (m *mockRuleStore) LoadRuleGroups(_ context.Context, groupsToLoad map[strin
 	return m.missingRules, nil
 }
 
-func (m *mockRuleStore) GetRuleGroup(_ context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
+func (m *mockRuleStore) GetRuleGroup(_ context.Context, userID, namespace, group string, _ model.ValidationScheme) (*rulespb.RuleGroupDesc, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -213,7 +214,7 @@ func (m *mockRuleStore) DeleteRuleGroup(_ context.Context, userID string, namesp
 	return nil
 }
 
-func (m *mockRuleStore) DeleteNamespace(_ context.Context, userID, namespace string) error {
+func (m *mockRuleStore) DeleteNamespace(_ context.Context, userID, namespace string, _ model.ValidationScheme) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
