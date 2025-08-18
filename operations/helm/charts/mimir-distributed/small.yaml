@@ -25,7 +25,6 @@
 # object storage service such as S3 or GCS.
 
 alertmanager:
-  revisionHistoryLimit: 5
   persistentVolume:
     enabled: true
   replicas: 2
