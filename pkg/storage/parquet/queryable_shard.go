@@ -5,7 +5,10 @@ package parquet
 import (
 	"context"
 	"sort"
+	"strings"
 
+	"github.com/efficientgo/core/errors"
+	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/search"
@@ -68,18 +71,43 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 				return nil
 			}
 
-			seriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
+			b.shard.TSDBSchema()
+
+			labelsSlices, err := b.m.MaterializeAllLabels(ctx, rgi, rr)
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "error materializing labels")
 			}
-			defer func() { _ = seriesSetIter.Close() }()
-			for seriesSetIter.Next() {
-				results[rgi] = append(results[rgi], seriesSetIter.At())
+
+			labels, rr := b.m.FilterSeriesLabels(ctx, sp, labelsSlices, rr)
+			_, rrGroups, err := groupBySortingColumns(b.shard.LabelsFile().RowGroups()[rgi].SortingColumns(), labels, rr)
+			if err != nil {
+				return errors.Wrapf(err, "error grouping by sorting columns")
 			}
+
+			// WIP
+			for groupIdx, groupRR := range rrGroups {
+				if len(groupRR) == 0 {
+					continue
+				}
+
+				groupSeriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, groupRR)
+				if err != nil {
+					return errors.Wrapf(err, "error materializing group %d", groupIdx)
+				}
+
+				defer func() { _ = groupSeriesSetIter.Close() }()
+				for groupSeriesSetIter.Next() {
+					results[rgi] = append(results[rgi], groupSeriesSetIter.At())
+				}
+				if err := groupSeriesSetIter.Err(); err != nil {
+					return err
+				}
+			}
+
 			if sorted {
 				sort.Sort(byLabels(results[rgi]))
 			}
-			return seriesSetIter.Err()
+			return nil
 		})
 	}
 
@@ -101,6 +129,93 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 	}
 
 	return convert.NewChunksSeriesSet(resultsFlattened), nil
+}
+
+func groupBySortingColumns(sortingColumns []parquet.SortingColumn, lbls []labels.Labels, rr []search.RowRange) ([][]labels.Labels, [][]search.RowRange, error) {
+	sortingLabels := make([]string, 0, len(sortingColumns))
+	for _, col := range sortingColumns {
+
+		path := col.Path()
+		column := path[len(path)-1]
+
+		label, ok := schema.ExtractLabelFromColumn(column)
+		if !ok {
+			return nil, nil, errors.Newf("cannot extract label from sorting column %q", column)
+		}
+		sortingLabels = append(sortingLabels, label)
+	}
+
+	if len(sortingLabels) == 0 || len(lbls) == 0 {
+		if len(lbls) == 0 {
+			return nil, nil, nil
+		}
+		return [][]labels.Labels{lbls}, [][]search.RowRange{rr}, nil
+	}
+
+	groupMap := make(map[string]int)
+	var labelsGroups [][]labels.Labels
+	var rrGroups [][]search.RowRange
+	keyValues := make([]string, len(sortingLabels)) // Reuse this slice to avoid allocations
+
+	labelIdx := 0
+	for _, rowRange := range rr {
+		currentRow := rowRange.From
+		rangeStart := currentRow
+		var currentGroupKey string
+		var currentGroupIndex int
+
+		for i := int64(0); i < rowRange.Count; i++ {
+			if labelIdx >= len(lbls) {
+				return nil, nil, errors.Newf("label index %d exceeds labels length %d", labelIdx, len(lbls))
+			}
+
+			lbl := lbls[labelIdx]
+			// Build group key
+			for j, sortingLabel := range sortingLabels {
+				keyValues[j] = lbl.Get(sortingLabel)
+			}
+			key := strings.Join(keyValues, "\x00")
+
+			groupIndex, exists := groupMap[key]
+			if !exists {
+				// New group
+				groupIndex = len(labelsGroups)
+				groupMap[key] = groupIndex
+				labelsGroups = append(labelsGroups, make([]labels.Labels, 0))
+				rrGroups = append(rrGroups, make([]search.RowRange, 0))
+			}
+
+			if i == 0 {
+				// First row in range - initialize group
+				currentGroupKey = key
+				currentGroupIndex = groupIndex
+			} else if key != currentGroupKey {
+				// Group change - finish current range and start new one
+				rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
+					From:  rangeStart,
+					Count: currentRow - rangeStart,
+				})
+
+				// Start new group
+				currentGroupKey = key
+				currentGroupIndex = groupIndex
+				rangeStart = currentRow
+			}
+
+			// Add label to current group
+			labelsGroups[currentGroupIndex] = append(labelsGroups[currentGroupIndex], lbl)
+			labelIdx++
+			currentRow++
+		}
+
+		// Finish the last range in this RowRange
+		rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
+			From:  rangeStart,
+			Count: currentRow - rangeStart,
+		})
+	}
+
+	return labelsGroups, rrGroups, nil
 }
 
 func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []*labels.Matcher) ([]string, error) {
