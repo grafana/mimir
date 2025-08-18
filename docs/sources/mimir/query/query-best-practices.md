@@ -25,7 +25,7 @@ For more information about how to query metric labels, refer to [Query metric la
 
 ## Narrow down your time range
 
-Limit your query to a specific time period to reduce the number of metrics Mimir needs to process. As a best practice, query the shortest feasible time range to narrow down your results. Larger time ranges require more computing resources and increase query latency.
+Limit your query to a specific time period to reduce the number of metrics and samples Mimir needs to process. As a best practice, query the shortest feasible time range to narrow down your results. Larger time ranges require more computing resources and increase query latency.
 
 Follow these guidelines for setting a time range based on your query type:
 
