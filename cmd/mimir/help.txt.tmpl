@@ -904,7 +904,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-tracker.created-series-events-publish-concurrency int
     	Number of concurrent workers publishing created series events. (default 10)
   -usage-tracker.do-not-apply-series-limits
-    	If true, the usage-tracker service will track all series and will not apply series limits.
+    	If true, the usage-tracker service tracks all series and does not apply series limits.
   -usage-tracker.enabled
     	True to enable the usage-tracker.
   -usage-tracker.events-storage.reader.address string
@@ -1268,7 +1268,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-tracker.target-snapshot-file-size-bytes int
     	Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0. (default 104857600)
   -usage-tracker.use-global-series-limits
-    	If true, the usage-tracker service will use global in-memory series limits instead of the active series limits. This is useful for testing purposes only.
+    	If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

@@ -353,12 +353,12 @@ usage_tracker:
   # CLI flag: -usage-tracker.enabled
   [enabled: <boolean> | default = false]
 
-  # If true, the usage-tracker service will track all series and will not apply
+  # If true, the usage-tracker service tracks all series and does not apply
   # series limits.
   # CLI flag: -usage-tracker.do-not-apply-series-limits
   [do_not_apply_series_limits: <boolean> | default = false]
 
-  # If true, the usage-tracker service will use global in-memory series limits
+  # If true, the usage-tracker service uses global in-memory series limits
   # instead of the active series limits. This is useful for testing purposes
   # only.
   # CLI flag: -usage-tracker.use-global-series-limits

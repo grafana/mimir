@@ -90,8 +90,8 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
-	f.BoolVar(&c.DoNotApplySeriesLimits, "usage-tracker.do-not-apply-series-limits", false, "If true, the usage-tracker service will track all series and will not apply series limits.")
-	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service will use global in-memory series limits instead of the active series limits. This is useful for testing purposes only.")
+	f.BoolVar(&c.DoNotApplySeriesLimits, "usage-tracker.do-not-apply-series-limits", false, "If true, the usage-tracker service tracks all series and does not apply series limits.")
+	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.") // TODO: Remove in Mimir 3.0
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
 	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
