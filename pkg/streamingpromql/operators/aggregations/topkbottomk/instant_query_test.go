@@ -14,11 +14,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
@@ -363,7 +363,7 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 			require.ElementsMatch(t, allExpectedOutputSeries, testCase.inputSeries, "invalid test case: list of input series and all output series do not match")
 
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
 			data := make([]types.InstantVectorSeriesData, 0, len(testCase.inputSeries))
 			for idx := range testCase.inputSeries {
@@ -383,7 +383,7 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 			})
 
 			o := New(
-				&operators.TestOperator{Series: testCase.inputSeries, Data: data},
+				&operators.TestOperator{Series: testCase.inputSeries, Data: data, MemoryConsumptionTracker: memoryConsumptionTracker},
 				&scalars.ScalarConstant{Value: 2, TimeRange: timeRange, MemoryConsumptionTracker: memoryConsumptionTracker},
 				timeRange,
 				testCase.grouping,

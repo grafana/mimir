@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -23,6 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -50,6 +50,7 @@ type record struct {
 	ctx      context.Context
 	tenantID string
 	content  []byte
+	version  int
 }
 
 type recordConsumer interface {
@@ -316,7 +317,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
 	fetches, fetchCtx := r.getFetcher().PollFetches(ctx)
 	// Propagate the fetching span to consuming the records.
-	ctx = opentracing.ContextWithSpan(ctx, opentracing.SpanFromContext(fetchCtx))
+	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(fetchCtx))
 	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
@@ -531,8 +532,8 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "PartitionReader.consumeFetches")
-	defer span.Finish()
+	ctx, span := tracer.Start(ctx, "PartitionReader.consumeFetches")
+	defer span.End()
 
 	if fetches.NumRecords() == 0 {
 		return nil
@@ -552,6 +553,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 			ctx:      rec.Context,
 			tenantID: string(rec.Key),
 			content:  rec.Value,
+			version:  ParseRecordVersion(rec),
 		})
 	})
 

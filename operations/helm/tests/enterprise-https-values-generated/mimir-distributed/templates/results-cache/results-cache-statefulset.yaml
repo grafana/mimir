@@ -50,7 +50,7 @@ spec:
             secretName: tls-certs
       containers:
         - name: memcached
-          image: memcached:1.6.38-alpine
+          image: memcached:1.6.39-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -79,7 +79,7 @@ spec:
               name: tls-certs
               readOnly: true
         - name: exporter
-          image: prom/memcached-exporter:v0.15.2
+          image: prom/memcached-exporter:v0.15.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150
@@ -88,8 +88,11 @@ spec:
             - "--memcached.address=localhost:11211"
             - "--web.listen-address=0.0.0.0:9150"
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 250Mi
+            requests:
+              cpu: 50m
+              memory: 50Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

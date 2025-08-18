@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -99,4 +100,60 @@ func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor
 	}
 
 	return result
+}
+
+func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWithSameTimestamp(t *testing.T) {
+	metric := labels.FromStrings(labels.MetricName, "test")
+
+	first := NewChunkMergeIterator(nil, metric, []chunk.Chunk{
+		createEncodedChunk(t, metric,
+			model.SamplePair{Timestamp: 1720588148418, Value: 23084.411222},
+			model.SamplePair{Timestamp: 1720588152848, Value: 169084.077208}, // Clashing sample.
+		),
+		createEncodedChunk(t, metric,
+			model.SamplePair{Timestamp: 1720588092946, Value: 875741.198983},
+			model.SamplePair{Timestamp: 1720588152848, Value: 30455667.651284}, // Clashing sample.
+		),
+	})
+
+	second := NewChunkMergeIterator(nil, metric, []chunk.Chunk{
+		createEncodedChunk(t, metric,
+			model.SamplePair{Timestamp: 1720588152848, Value: 169084.077208}, // Clashing sample.
+		),
+		createEncodedChunk(t, metric,
+			model.SamplePair{Timestamp: 1720588092946, Value: 875741.198983},
+			model.SamplePair{Timestamp: 1720588148418, Value: 23084.411222},
+			model.SamplePair{Timestamp: 1720588152848, Value: 30455667.651284}, // Clashing sample.
+		),
+	})
+
+	assert.Equal(t, iterateEncodedChunks(t, first), iterateEncodedChunks(t, second))
+}
+
+func createEncodedChunk(t *testing.T, metric labels.Labels, samples ...model.SamplePair) chunk.Chunk {
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+	require.NoError(t, err)
+
+	for _, sample := range samples {
+		_, err = promChunk.Add(sample)
+		require.NoError(t, err)
+	}
+
+	return chunk.NewChunk(metric, promChunk, samples[0].Timestamp, samples[len(samples)-1].Timestamp)
+}
+
+func iterateEncodedChunks(t *testing.T, it chunkenc.Iterator) []model.SamplePair {
+	var actualSamples []model.SamplePair
+
+	for it.Next() != chunkenc.ValNone {
+		ts, value := it.At()
+		actualSamples = append(actualSamples, model.SamplePair{
+			Timestamp: model.Time(ts),
+			Value:     model.SampleValue(value),
+		})
+	}
+
+	require.NoError(t, it.Err())
+
+	return actualSamples
 }

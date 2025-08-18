@@ -15,16 +15,18 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/user"
-	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -33,8 +35,10 @@ import (
 
 type DefaultMultiTenantManager struct {
 	cfg            Config
-	notifierCfg    *config.Config
 	managerFactory ManagerFactory
+	limits         RulesLimits
+	dnsResolver    AddressProvider
+	refreshMetrics discovery.RefreshMetricsManager
 
 	mapper *mapper
 
@@ -59,12 +63,8 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	ncfg, err := buildNotifierConfig(cfg.AlertmanagerURL, cfg.Notifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
-	if err != nil {
-		return nil, err
-	}
 
 	userManagerMetrics := NewManagerMetrics(logger)
 	if reg != nil {
@@ -73,8 +73,10 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 
 	return &DefaultMultiTenantManager{
 		cfg:                cfg,
-		notifierCfg:        ncfg,
 		managerFactory:     managerFactory,
+		limits:             limits,
+		dnsResolver:        dnsResolver,
+		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
 		mapper:             newMapper(cfg.RulePath, logger),
 		userManagers:       map[string]RulesManager{},
@@ -304,11 +306,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
 				return nil, err
 			}
-			// Jaeger complains the passed-in context has an invalid span ID, so start a new root span
-			sp := ot.GlobalTracer().StartSpan("notify", ot.Tag{Key: "organization", Value: userID})
-			defer sp.Finish()
-			ctx = ot.ContextWithSpan(ctx, sp)
-			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
+
+			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("organization", userID)))
+			defer sp.End()
+
+			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
 	}, log.With(r.logger, "user", userID)); err != nil {
@@ -317,8 +319,14 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	n.run()
 
+	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
+	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
+	if err != nil {
+		return nil, err
+	}
+
 	// This should never fail, unless there's a programming mistake.
-	if err := n.applyConfig(r.notifierCfg); err != nil {
+	if err := n.applyConfig(notifierCfg); err != nil {
 		return nil, err
 	}
 
@@ -408,7 +416,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -431,8 +439,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
+	validationScheme := r.limits.NameValidationScheme(userID)
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i]) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

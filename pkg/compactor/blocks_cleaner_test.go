@@ -429,6 +429,10 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	))
 }
 
+func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
+	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger)
+}
+
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
@@ -449,25 +453,34 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	// We will simulate change of "ownUser" by counting number of replies per user. First reply will be "true",
-	// all subsequent replies will be false.
-
-	userSeen := map[string]bool{}
+	// We will simulate change of "ownUser" by updating the "ownUser" function.
 	ownUser := func(user string) (bool, error) {
-		if userSeen[user] {
-			return false, nil
-		}
-		userSeen[user] = true
 		return true, nil
 	}
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, ownUser, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.StartAsync(ctx))
+	require.NoError(t, cleaner.AwaitRunning(ctx))
+
+	// Verify that we have seen the users while in services.Starting
+	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+		# TYPE cortex_bucket_blocks_count gauge
+		cortex_bucket_blocks_count{user="user-1"} 1
+		cortex_bucket_blocks_count{user="user-2"} 1
+	`),
+		"cortex_bucket_blocks_count",
+	))
+
+	// Simulate another BlocksCleaner taking ownership of these tenants by changing "ownUser"
+	updateOwnershipFunc(cleaner, func(user string) (bool, error) {
+		return false, nil
+	})
+	require.Equal(t, cleaner.State(), services.Running)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
-	// Verify that we have seen the users
-	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
-
-	// But there are no metrics for any user, because we did not in fact clean them.
+	// Expect no metrics for any user, we did not in fact clean them on the second run.
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
@@ -490,7 +503,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, 2, nil)
 	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, 2, nil)
 
-	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, 16, logger)
+	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, 16, 16, logger)
 	idx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 
@@ -1601,7 +1614,10 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	idx := bucketindex.Index{UpdatedAt: 1}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
 
-	cleaner.instrumentBucketIndexUpdate(ctx)
+	users, err := cleaner.refreshOwnedUsers(ctx)
+	require.NoError(t, err)
+
+	cleaner.instrumentBucketIndexUpdate(ctx, users.all)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
@@ -1791,10 +1807,10 @@ func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
 }
 
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
-	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
+	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		return err
 	}
 
-	return c.cleanUsers(ctx, allUsers, isDeleted, log.NewNopLogger())
+	return c.cleanUsers(ctx, users, log.NewNopLogger())
 }

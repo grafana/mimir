@@ -761,10 +761,10 @@ type successResult struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.RuleGroup, string, error) {
+func (c *Client) GetPrometheusRules(maxGroups int, token string) (*http.Response, []*promv1.RuleGroup, string, error) {
 	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if token != "" {
 		q := url.Query()
@@ -781,7 +781,7 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 	// Create HTTP request
 	req, err := http.NewRequest("GET", url.String(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -789,15 +789,15 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
-	defer res.Body.Close()
+	defer resp.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 
 	// Decode the response.
@@ -811,14 +811,14 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 
 	decoded := response{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, "", err
+		return resp, nil, "", err
 	}
 
 	if decoded.Status != "success" {
-		return nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
+		return resp, nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
 	}
 
-	return decoded.Data.RuleGroups, decoded.Data.NextToken, nil
+	return resp, decoded.Data.RuleGroups, decoded.Data.NextToken, nil
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
@@ -1158,7 +1158,43 @@ func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanage
 	return ugc, err
 }
 
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string) error {
+func (c *Client) GetGrafanaAlertmanagerConfigStatus(ctx context.Context) (*alertmanager.UserGrafanaConfigStatus, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config/status", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugc *alertmanager.UserGrafanaConfigStatus
+	err = json.Unmarshal(sr.Data, &ugc)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugc, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string, smtpConfig *alertmanager.SmtpConfig) error {
 	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
 		return err
@@ -1172,7 +1208,10 @@ func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTime
 		Default:                   isDefault,
 		Promoted:                  isPromoted,
 		ExternalURL:               externalURL,
-		StaticHeaders:             staticHeaders,
+		SmtpConfig:                smtpConfig,
+
+		// TODO: Remove once it's sent in SmtpConfig.
+		StaticHeaders: staticHeaders,
 	})
 	if err != nil {
 		return err
@@ -1222,8 +1261,16 @@ func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) GetFullState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
+	return c.getState(ctx, "/api/v1/grafana/full_state")
+}
+
 func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+	return c.getState(ctx, "/api/v1/grafana/state")
+}
+
+func (c *Client) getState(ctx context.Context, path string) (*alertmanager.UserGrafanaState, error) {
+	u := c.alertmanagerClient.URL(path, nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {

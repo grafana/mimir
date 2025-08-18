@@ -12,7 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,8 +30,10 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v3"
 
+	rulernotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	testutil "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
@@ -46,7 +49,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -132,7 +135,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -269,6 +272,116 @@ func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
 	}
 }
 
+func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
+	// We have two alertmanagers.
+	alertmanager1ReceivedRequest := make(chan struct{}, 2)
+	alertmanager1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		alertmanager1ReceivedRequest <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		alertmanager1.Close()
+	}()
+
+	alertmanager2ReceivedRequest := make(chan struct{}, 2)
+	alertmanager2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		alertmanager2ReceivedRequest <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		alertmanager2.Close()
+	}()
+
+	ctx := context.Background()
+	logger := testutil.NewTestingLogger(t)
+
+	// We have two users with rules.
+	const user1 = "user-1"
+	user1Group := createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	const user2 = "user-2"
+	user2Group := createRuleGroup("group-1", user2, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	// The ruler config points at alertmanager 1.
+	cfg := Config{
+		RulePath:                  t.TempDir(),
+		NotificationQueueCapacity: 1000,
+		NotificationTimeout:       10 * time.Second,
+	}
+
+	// By default, tenants use alertmanager 1.
+	// user-2's tenant configuration is overridden to point at alertmanager 2.
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: alertmanager1.URL,
+		}
+
+		// tenantLimits[user1] = validation.MockDefaultLimits()
+		tenantLimits[user2] = validation.MockDefaultLimits()
+		tenantLimits[user2].RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: alertmanager2.URL,
+		}
+	})
+
+	// Start a manager.
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides)
+	require.NoError(t, err)
+	defer m.Stop()
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+		user1: {user1Group},
+		user2: {user2Group},
+	})
+	m.Start()
+
+	t.Run("creating notifier with global alertmanager settings sends to correct alertmanager", func(t *testing.T) {
+		_ = assertManagerMockRunningForUser(t, m, user1)
+		userNotifier := assertNotifierRunningForUser(t, m, user1)
+		waitForAlertmanagerToBeDiscovered(t, userNotifier.notifier)
+
+		require.Equal(t, 1, len(userNotifier.notifier.Alertmanagers()))
+		require.Contains(t, userNotifier.notifier.Alertmanagers()[0].String(), alertmanager1.URL)
+
+		// Send an alert.
+		userNotifier.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+		// Wait for the Alertmanager to receive the request.
+		select {
+		case <-alertmanager1ReceivedRequest:
+			// We can continue.
+		case <-alertmanager2ReceivedRequest:
+			require.FailNow(t, "wrong alertmanager received the alert")
+		case <-time.After(time.Second):
+			require.FailNow(t, "gave up waiting for first notification request to be sent")
+		}
+	})
+
+	// Clear out anything potentially leftover
+	clearStructChannel(alertmanager1ReceivedRequest)
+	clearStructChannel(alertmanager2ReceivedRequest)
+
+	t.Run("creating notifier with tenant-overridden alertmanager settings sends to correct alertmanager", func(t *testing.T) {
+		_ = assertManagerMockRunningForUser(t, m, user2)
+		userNotifier := assertNotifierRunningForUser(t, m, user2)
+		waitForAlertmanagerToBeDiscovered(t, userNotifier.notifier)
+
+		require.Equal(t, 1, len(userNotifier.notifier.Alertmanagers()))
+		require.Contains(t, userNotifier.notifier.Alertmanagers()[0].String(), alertmanager2.URL)
+
+		// Send an alert.
+		userNotifier.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+		// Wait for the Alertmanager to receive the request.
+		select {
+		case <-alertmanager1ReceivedRequest:
+			require.FailNow(t, "wrong alertmanager received the alert")
+		case <-alertmanager2ReceivedRequest:
+			// We can continue.
+		case <-time.After(time.Second):
+			require.FailNow(t, "gave up waiting for first notification request to be sent")
+		}
+	})
+}
+
 func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
@@ -304,11 +417,15 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 
 	cfg := Config{
 		RulePath:                  t.TempDir(),
-		AlertmanagerURL:           server.URL,
 		NotificationQueueCapacity: 1000,
 		NotificationTimeout:       10 * time.Second,
 	}
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil)
+	limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
+	})
+
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits)
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -377,6 +494,12 @@ func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
 	return m.userManagers[user]
 }
 
+func getNotifier(m *DefaultMultiTenantManager, user string) *rulerNotifier {
+	m.notifiersMtx.Lock()
+	defer m.notifiersMtx.Unlock()
+	return m.notifiers[user]
+}
+
 func assertManagerMockRunningForUser(t *testing.T, m *DefaultMultiTenantManager, userID string) *managerMock {
 	t.Helper()
 
@@ -407,6 +530,13 @@ func assertManagerMockStopped(t *testing.T, m *managerMock) {
 	})
 }
 
+func assertNotifierRunningForUser(t *testing.T, m *DefaultMultiTenantManager, userID string) *rulerNotifier {
+	t.Helper()
+	n := getNotifier(m, userID)
+	require.NotNil(t, n)
+	return n
+}
+
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
 	t.Helper()
 
@@ -424,8 +554,8 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 	for namespace, expectedFormattedRuleGroups := range expectedRuleGroups.Formatted() {
 		// The mapper sort groups by name in reverse order, so we apply the same sorting
 		// here to expected groups.
-		sort.Slice(expectedFormattedRuleGroups, func(i, j int) bool {
-			return expectedFormattedRuleGroups[i].Name > expectedFormattedRuleGroups[j].Name
+		slices.SortFunc(expectedFormattedRuleGroups, func(a, b rulefmt.RuleGroup) int {
+			return strings.Compare(b.Name, a.Name)
 		})
 
 		expectedYAML, err := yaml.Marshal(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})
@@ -440,6 +570,12 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 		assert.Equal(t, string(expectedYAML), string(content))
 
 		require.NoError(t, file.Close())
+	}
+}
+
+func clearStructChannel(ch chan struct{}) {
+	for len(ch) > 0 {
+		<-ch
 	}
 }
 

@@ -6,10 +6,10 @@
 package mimirpb
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -66,6 +66,13 @@ type PreallocWriteRequest struct {
 
 	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
 	UnmarshalFromRW2 bool
+
+	// RW2SymbolOffset is an optimization used for RW2-adjacent applications where typical symbol refs are shifted by an offset.
+	// This allows certain symbols to be reserved without being present in the symbols list.
+	RW2SymbolOffset uint32
+	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
+	// These symbols are never sent in the request to begin with.
+	RW2CommonSymbols []string
 }
 
 // Unmarshal implements proto.Message.
@@ -75,6 +82,8 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
+	p.rw2symbols.offset = p.RW2SymbolOffset
+	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
@@ -116,13 +125,21 @@ func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string
 	}
 }
 
-func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
-	for idx := range p.Timeseries {
-		p.Timeseries[idx].clearUnmarshalData()
+func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range m.Timeseries {
+		m.Timeseries[idx].clearUnmarshalData()
 	}
+	m.rw2symbols = rw2PagedSymbols{}
+	m.unmarshalFromRW2 = false
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
+//
+// # DO NOT SHALLOW-COPY
+//
+// Data referenced from a PreallocTimeseries may change once the timeseries is
+// returned to the shared pool. This includes usually immutable references, like
+// strings. If needed, use DeepCopyTimeseries instead.
 type PreallocTimeseries struct {
 	*TimeSeries
 
@@ -175,7 +192,7 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.
 func (p *PreallocTimeseries) SortLabelsIfNeeded() {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// no need to run slices.SortFunc, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
 	last := ""
@@ -192,14 +209,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	p.clearUnmarshalData()
 }
@@ -243,8 +253,8 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 }
 
 func (p *PreallocTimeseries) SortExemplars() {
-	sort.Slice(p.Exemplars, func(i, j int) bool {
-		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	slices.SortFunc(p.Exemplars, func(a, b Exemplar) int {
+		return cmp.Compare(a.TimestampMs, b.TimestampMs)
 	})
 	p.clearUnmarshalData()
 }
@@ -261,7 +271,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
@@ -305,7 +315,9 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
-type LabelAdapter labels.Label
+type LabelAdapter struct {
+	Name, Value unsafeMutableString
+}
 
 // Marshal implements proto.Marshaller.
 func (bs *LabelAdapter) Marshal() ([]byte, error) {
@@ -499,6 +511,25 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 	return strings.Compare(bs.Value, other.Value)
 }
 
+// UnsafeMutableLabel is an alias of LabelAdapter meant to highlight its unsafety.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When an UnsafeMutableLabel is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type UnsafeMutableLabel = LabelAdapter
+
+// A unsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of unsafeMutableString may
+// later refer to different data than it originally did: it's effectively
+// a []byte with a string-like (and thus read-only) API and implicit capacity.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When a LabelAdapter is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type unsafeMutableString = string
+
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.
 func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
@@ -515,6 +546,13 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
+	ReuseSliceOnly(ts)
+}
+
+// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
+// Only use this if you have another means of reusing the individual timeseries contained within.
+// Most times, you want to use ReuseSlice instead.
+func ReuseSliceOnly(ts []PreallocTimeseries) {
 	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
@@ -767,7 +805,7 @@ func copyHistogram(src Histogram) Histogram {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
-func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
@@ -782,17 +820,17 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
-			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
+			metadata = append(metadata, m.Metadata[i-initialMetadataIndex])
 		} else {
-			timeseries = append(timeseries, p.Timeseries[i])
+			timeseries = append(timeseries, m.Timeseries[i])
 		}
 	}
 
 	return &WriteRequest{
 		Timeseries:          timeseries,
 		Metadata:            metadata,
-		Source:              p.Source,
-		SkipLabelValidation: p.SkipLabelValidation,
+		Source:              m.Source,
+		SkipLabelValidation: m.SkipLabelValidation,
 	}
 }
 
@@ -801,4 +839,18 @@ func preallocSliceIfNeeded[T any](size int) []T {
 		return make([]T, 0, size)
 	}
 	return nil
+}
+
+// MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
+func (ts *TimeSeries) MakeReferencesSafeToRetain() {
+	for i, l := range ts.Labels {
+		ts.Labels[i].Name = strings.Clone(l.Name)
+		ts.Labels[i].Value = strings.Clone(l.Value)
+	}
+	for i, e := range ts.Exemplars {
+		for j, l := range e.Labels {
+			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+		}
+	}
 }

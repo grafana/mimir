@@ -7,20 +7,20 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // AggregationGroup accumulates series that have been grouped together and computes the output series data.
 type AggregationGroup interface {
 	// AccumulateSeries takes in a series as part of the group
 	// remainingSeriesInGroup includes the current series (ie if data is the last series, then remainingSeriesInGroup is 1)
-	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
-	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
 	// Close releases any resources held by the group.
 	// Close is guaranteed to be called at most once per group.
-	Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker)
+	Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker)
 }
 
 type AggregationGroupFactory func() AggregationGroup

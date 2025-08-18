@@ -11,10 +11,12 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sns"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
-	"github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -25,15 +27,13 @@ const subjectSizeLimit = 100
 // alert notifications to Amazon SNS.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	tmpl     *templates.Template
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		tmpl:     template,
 		settings: cfg,
 	}
@@ -41,10 +41,11 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, logg
 
 // Notify sends the alert notification to sns.
 func (s *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := s.GetLogger(ctx)
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, s.tmpl, as, s.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, s.tmpl, as, l, &tmplErr)
 
-	s.log.Info("Sending notification")
+	level.Info(l).Log("msg", "Sending notification")
 
 	publishInput, err := s.createPublishInput(ctx, tmpl)
 	if err != nil {
@@ -58,16 +59,16 @@ func (s *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 
 	// check template error after we use them
 	if tmplErr != nil {
-		s.log.Warn("failed to template message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template message", "err", tmplErr.Error())
 	}
 
 	publishOutput, err := snsClient.Publish(publishInput)
 	if err != nil {
-		s.log.Error("Failed to publish to Amazon SNS. ", "error", err)
+		level.Error(l).Log("msg", "Failed to publish to Amazon SNS. ", "err", err)
 		return true, err
 	}
 
-	s.log.Debug("Message successfully published", "messageId", publishOutput.MessageId, "sequenceNumber", publishOutput.SequenceNumber)
+	level.Debug(l).Log("msg", "Message successfully published", "messageId", publishOutput.MessageId, "sequenceNumber", publishOutput.SequenceNumber)
 	return true, nil
 }
 

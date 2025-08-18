@@ -6,12 +6,13 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -104,7 +105,7 @@ func newShipper(
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "Ingester.Shipper.Sync")
+	log, ctx := spanlogger.New(ctx, s.logger, tracer, "Ingester.Shipper.Sync")
 	defer log.Finish()
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
@@ -234,8 +235,8 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		}
 		metas = append(metas, m)
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
+	slices.SortFunc(metas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return metas, nil
 }

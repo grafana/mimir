@@ -14,7 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,21 +29,32 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
+	ring_client "github.com/grafana/dskit/ring/client"
 	dskit_server "github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/services"
+	dskit_test "github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -119,7 +130,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			res := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
+			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
+				addSuffixes: tc.enableSuffixes,
+			})
+			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
@@ -549,10 +563,11 @@ func createMalformedRW1Request(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
+func createPrometheusRemoteWriteProtobuf(t testing.TB, timeseries ...prompb.TimeSeries) []byte {
 	t.Helper()
-	input := prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
+
+	if len(timeseries) == 0 {
+		timeseries = []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
 					{Name: "__name__", Value: "foo"},
@@ -563,29 +578,36 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 				Histograms: []prompb.Histogram{
 					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))},
 			},
-		},
+		}
+	}
+
+	input := prompb.WriteRequest{
+		Timeseries: timeseries,
 	}
 	inputBytes, err := input.Marshal()
 	require.NoError(t, err)
 	return inputBytes
 }
 
-func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool) []byte {
+func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool, timeseries ...mimirpb.PreallocTimeseries) []byte {
 	t.Helper()
 	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
-	ts := mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
+
+	if len(timeseries) == 0 {
+		timeseries = []mimirpb.PreallocTimeseries{{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+				},
+				Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
 			},
-			Samples: []mimirpb.Sample{
-				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
-			},
-			Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
-		},
+		}}
 	}
 	input := mimirpb.WriteRequest{
-		Timeseries:               []mimirpb.PreallocTimeseries{ts},
+		Timeseries:               timeseries,
 		Source:                   mimirpb.RULE,
 		SkipLabelValidation:      skipLabelNameValidation,
 		SkipLabelCountValidation: skipLabelCountValidation,
@@ -1039,63 +1061,63 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 		},
 		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID),
 			expectedHTTPStatus: http.StatusNotImplemented,
 		},
 		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID)},
 			expectedHTTPStatus: http.StatusNotImplemented,
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
-			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
+			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 	}
@@ -1251,6 +1273,301 @@ func TestRetryConfig_Validate(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
+		})
+	}
+}
+
+const MiB = 1024 * 1024
+
+func setupTestDistributor(t *testing.T) (*Distributor, func()) {
+	ctx := context.Background()
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	kvCleanup := func() { require.NoError(t, closer.Close()) }
+
+	err := kvStore.CAS(ctx, ingester.IngesterRingKey,
+		func(_ interface{}) (interface{}, bool, error) {
+			d := &ring.Desc{}
+			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+			return d, true, nil
+		},
+	)
+	require.NoError(t, err)
+
+	ingestersRing, err := ring.New(ring.Config{
+		KVStore:           kv.Config{Mock: kvStore},
+		HeartbeatTimeout:  60 * time.Minute,
+		ReplicationFactor: 1,
+	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
+	ringCleanup := func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing)) }
+
+	dskit_test.Poll(t, time.Second, 1, func() interface{} {
+		return ingestersRing.InstancesCount()
+	})
+
+	var distributorConfig Config
+	var clientConfig client.Config
+	limits := validation.Limits{}
+	flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
+
+	distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
+	distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+	distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+		return &noopIngester{}, nil
+	})
+
+	overrides := validation.NewOverrides(limits, nil)
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
+
+	cleanup := func() {
+		ringCleanup()
+		kvCleanup()
+	}
+	return distributor, cleanup
+}
+
+func dummyPushFunc(ctx context.Context, pushReq *Request) error {
+	return nil
+}
+
+func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
+	inoutBytes := snappy.Encode(nil, createPrometheusRemoteWriteProtobuf(t))
+	reqLen := int64(len(inoutBytes))
+
+	uncompBytesMetrics := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 101
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
+	cases := map[string]struct {
+		startingInflightBytes int64
+		expectedStatusCode    int
+		metrics               string
+	}{
+		"starts_below_threshold_stays_below_threshold": {
+			startingInflightBytes: MiB - 10*reqLen,
+			expectedStatusCode:    http.StatusOK,
+			metrics:               uncompBytesMetrics,
+		},
+		"starts_below_threshold_estimated_over_threshold": {
+			startingInflightBytes: MiB - 3*reqLen,
+			expectedStatusCode:    http.StatusInternalServerError,
+		},
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + reqLen,
+			expectedStatusCode:    http.StatusInternalServerError,
+		},
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedStatusCode:    http.StatusInternalServerError,
+		},
+	}
+
+	for tn, tc := range cases {
+		t.Run(tn, func(t *testing.T) {
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
+
+			reg := prometheus.NewRegistry()
+			handler := Handler(MiB, nil, nil, false, false, distr.limits, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
+		})
+	}
+}
+
+func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
+	inoutBytes := []byte("measurement,t1=v1 f1=2 1465839830100400200")
+	reqLen := int64(len(inoutBytes))
+
+	cases := map[string]struct {
+		startingInflightBytes int64
+		expectedStatusCode    int
+	}{
+		"starts_below_threshold_stays_below_threshold": {
+			startingInflightBytes: MiB - 10*reqLen,
+			expectedStatusCode:    http.StatusNoContent,
+		},
+		"starts_below_threshold_estimated_over_threshold": {
+			startingInflightBytes: MiB - 6*reqLen,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + reqLen,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+	}
+
+	for tn, tc := range cases {
+		t.Run(tn, func(t *testing.T) {
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			req := httptest.NewRequest("POST", "/api/v1/push/influx/write", bytes.NewReader(inoutBytes)).WithContext(ctx)
+
+			handler := InfluxHandler(MiB, distr.RequestBufferPool, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+		})
+	}
+}
+
+func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
+	jsonReq := &httpgrpc.HTTPRequest{
+		Method: "POST",
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/json"}},
+		},
+		Url:  "/otlp",
+		Body: []byte(`{"resourceMetrics": [{"scopeMetrics": [{"metrics": [{"name": "metric", "gauge": {"dataPoints": [{"timeUnixNano": "1679912463340000000", "asDouble": 10.66}]}}]}]}]}`),
+	}
+
+	var samples []prompb.Sample
+	for i := 0; i < 10; i++ {
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
+		samples = append(samples, prompb.Sample{
+			Value:     1,
+			Timestamp: ts.UnixNano(),
+		})
+	}
+
+	sampleSeries := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "foo"},
+			},
+			Samples: samples,
+			Histograms: []prompb.Histogram{
+				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
+			},
+		},
+	}
+
+	sampleMetadata := []mimirpb.MetricMetadata{
+		{
+			Help: "metric_help",
+			Unit: "metric_unit",
+		},
+	}
+	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
+	protoReqBody, err := exportReq.MarshalProto()
+	require.NoError(t, err)
+
+	protoReq := &httpgrpc.HTTPRequest{
+		Method: "POST",
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+		},
+		Url:  "/otlp",
+		Body: protoReqBody,
+	}
+
+	okMetrics := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 163
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
+	okMetricsProto := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 376
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
+	cases := map[string]struct {
+		startingInflightBytes int64
+		expectedHTTPStatus    int
+		metrics               string
+		request               *httpgrpc.HTTPRequest
+	}{
+		"starts_below_threshold_stays_below_threshold": {
+			startingInflightBytes: 0.5 * MiB,
+			expectedHTTPStatus:    http.StatusOK,
+			metrics:               okMetrics,
+			request:               jsonReq,
+		},
+		"starts_below_threshold_stays_below_threshold_protoreq": {
+			startingInflightBytes: 0.5 * MiB,
+			expectedHTTPStatus:    http.StatusOK,
+			metrics:               okMetricsProto,
+			request:               protoReq,
+		},
+		"starts_above_threshold_requests_rejected": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+		"starts_above_threshold_requests_rejected_protoreq": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_below_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB - 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+		"starts_below_threshold_incoming_request_exceeds_threshold_protorq": {
+			startingInflightBytes: MiB - 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+	}
+
+	for tn, tc := range cases {
+		t.Run(tn, func(t *testing.T) {
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			req, err := httpgrpc.ToHTTPRequest(ctx, tc.request)
+			require.NoError(t, err)
+
+			reg := prometheus.NewRegistry()
+			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, tc.expectedHTTPStatus, resp.Code)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
 		})
 	}
 }
@@ -1468,8 +1785,8 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			}
 
 			// Before comparing response, we sort headers, to keep comparison stable.
-			sort.Slice(resp.Headers, func(i, j int) bool {
-				return resp.Headers[i].Key < resp.Headers[j].Key
+			slices.SortFunc(resp.Headers, func(a, b *httpgrpc.Header) int {
+				return strings.Compare(a.Key, b.Key)
 			})
 			require.Equal(t, tc.expectedResponse, resp)
 		})
@@ -1540,6 +1857,20 @@ func (o otlpLimitsMock) OTelKeepIdentifyingResourceAttributes(string) bool {
 }
 
 func (o otlpLimitsMock) OTelConvertHistogramsToNHCB(string) bool { return false }
+
+func (o otlpLimitsMock) OTelPromoteScopeMetadata(string) bool {
+	return false
+}
+
+func (o otlpLimitsMock) OTelNativeDeltaIngestion(string) bool { return false }
+
+func (o otlpLimitsMock) OTelTranslationStrategy(string) otlptranslator.TranslationStrategyOption {
+	return otlptranslator.UnderscoreEscapingWithoutSuffixes
+}
+
+func (o otlpLimitsMock) NameValidationScheme(string) model.ValidationScheme {
+	return model.LegacyValidation
+}
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))

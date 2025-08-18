@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -25,16 +26,25 @@ import (
 )
 
 func TestOTLPIngestion(t *testing.T) {
-	t.Run("enabling OTel suffixes", func(t *testing.T) {
-		testOTLPIngestion(t, true)
+	t.Run("with metric suffixes, with escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes})
 	})
-
-	t.Run("disabling OTel suffixes", func(t *testing.T) {
-		testOTLPIngestion(t, false)
+	t.Run("without metric suffixes, with escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes})
+	})
+	t.Run("with metric suffixes, without escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes})
+	})
+	t.Run("without metric suffixes, without escaped metric and label names", func(t *testing.T) {
+		testOTLPIngestion(t, testOTLPIngestionOpts{translationStrategy: otlptranslator.NoTranslation})
 	})
 }
 
-func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
+type testOTLPIngestionOpts struct {
+	translationStrategy otlptranslator.TranslationStrategyOption
+}
+
+func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	t.Helper()
 
 	s, err := e2e.NewScenario(networkName)
@@ -42,7 +52,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -50,12 +60,20 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
+	validationScheme := model.LegacyValidation
+	if !opts.translationStrategy.ShouldEscape() {
+		// Without the UTF-8 validation scheme, unescaped names will be rejected.
+		validationScheme = model.UTF8Validation
+	}
 	flags := mergeFlags(
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
-			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(enableSuffixes),
+			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(opts.translationStrategy.ShouldAddSuffixes()),
+			"-distributor.otel-translation-strategy":    string(opts.translationStrategy),
+			"-validation.name-validation-scheme":        validationScheme.String(),
 		},
 	)
 
@@ -66,16 +84,21 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 
 	sfx := ""
-	if enableSuffixes {
+	if opts.translationStrategy.ShouldAddSuffixes() {
 		sfx = "_bytes"
+	}
+
+	convertedMetricName := fmt.Sprintf("series_1%s", sfx)
+	if !opts.translationStrategy.ShouldEscape() {
+		convertedMetricName = fmt.Sprintf("series.1%s", sfx)
 	}
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateFloatSeries("series.1", now, prompb.Label{Name: "foo", Value: "bar"})
 	// Fix up the expectation wrt. suffix
 	for _, s := range expectedVector {
-		s.Metric[model.LabelName("__name__")] = model.LabelValue(fmt.Sprintf("series_1%s", sfx))
+		s.Metric[model.LabelName("__name__")] = model.LabelValue(convertedMetricName)
 	}
 	metadata := []mimirpb.MetricMetadata{
 		{
@@ -92,8 +115,11 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
+	// UTF-8 format names have to be in quotes.
+	metricQuery := fmt.Sprintf(`{"%s"}`, convertedMetricName)
+
 	// Query the series.
-	result, err := c.Query(fmt.Sprintf("series_1%s", sfx), now)
+	result, err := c.Query(metricQuery, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -106,7 +132,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange(fmt.Sprintf("series_1%s", sfx), now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange(metricQuery, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -123,7 +149,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	{
 	   "status":"success",
 	   "data":{
-		  "series_1%s":[
+		  "%s":[
 			 {
 				"type":"gauge",
 				"help":"foo",
@@ -132,12 +158,17 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		  ]
 	   }
 	}
-	`, sfx)
+	`, convertedMetricName)
 
 	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 
+	convertedHistogramName := fmt.Sprintf("series_histogram%s", sfx)
+	if !opts.translationStrategy.ShouldEscape() {
+		convertedHistogramName = fmt.Sprintf("series.histogram%s", sfx)
+	}
+
 	// Push series with histograms to Mimir
-	series, expectedVector, _ = generateHistogramSeries("series", now)
+	series, expectedVector, _ = generateHistogramSeries("series.histogram", now)
 	res, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
@@ -146,7 +177,9 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
-	result, err = c.Query(fmt.Sprintf("series%s", sfx), now)
+	// UTF-8 format names have to be in quotes.
+	histogramQuery := fmt.Sprintf(`{"%s"}`, convertedHistogramName)
+	result, err = c.Query(histogramQuery, now)
 	require.NoError(t, err)
 
 	want := expectedVector[0]
@@ -161,14 +194,14 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		{
 		   "status":"success",
 		   "data":{
-			  "series%s":[
+			  "%s":[
 				 {
 					"type":"histogram",
 					"help":"foo",
 					"unit":"By"
 				 }
 			  ],
-			  "series_1%s":[
+			  "%s":[
 				 {
 					"type":"gauge",
 					"help":"foo",
@@ -177,7 +210,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 			  ]
 		   }
 		}
-	`, sfx, sfx)
+	`, convertedHistogramName, convertedMetricName)
 
 	metadataResult, err = c.GetPrometheusMetadata("")
 	require.NoError(t, err)
@@ -206,7 +239,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -218,6 +251,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.otel-convert-histograms-to-nhcb": strconv.FormatBool(enableExplicitHistogramToNHCB),
 		},

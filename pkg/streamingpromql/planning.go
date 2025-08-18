@@ -18,12 +18,14 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -41,6 +43,34 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+
+	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
+	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
+	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
+	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
+	if opts.EnablePruneToggles {
+		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
+	}
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+
+	if opts.EnableCommonSubexpressionElimination {
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
+	}
+
+	if opts.EnableSkippingHistogramDecoding {
+		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	}
+
+	return planner
+}
+
+// NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
+//
+// This is intended for use in tests only.
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		activeQueryTracker = &NoopQueryTracker{}
@@ -98,7 +128,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT)), nil
+		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+
+		if timeRange.IsInstant {
+			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
+			step = 0
+		}
+
+		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
 	})
 
 	if err != nil {
@@ -177,7 +214,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	duration := timeSince(start)
-	p.planStageLatency.WithLabelValues("plan", stageName).Observe(duration.Seconds())
+	p.planStageLatency.WithLabelValues("Plan", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
 		return nil, err
@@ -195,6 +232,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
+				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
+				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
+				// with merging selectors that can and can't skip histogram buckets.
 			},
 		}, nil
 
@@ -211,6 +252,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
 
@@ -273,7 +315,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
-		if !isKnownFunction(expr.Func.Name) {
+		fnc, ok := findFunction(expr.Func.Name)
+
+		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
 
@@ -291,13 +335,19 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		f := &core.FunctionCall{
 			Args: args,
 			FunctionCallDetails: &core.FunctionCallDetails{
-				FunctionName:       expr.Func.Name,
+				Function:           fnc,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}
 
-		if expr.Func.Name == "absent" || expr.Func.Name == "absent_over_time" {
+		switch fnc {
+		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
+		case functions.FUNCTION_TIMESTAMP:
+			vs, isVectorSelector := args[0].(*core.VectorSelector)
+			if isVectorSelector {
+				vs.ReturnSampleTimestamps = true
+			}
 		}
 
 		return f, nil
@@ -377,68 +427,17 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	}
 }
 
-func isKnownFunction(name string) bool {
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[name]; ok {
-		return true
+func findFunction(name string) (functions.Function, bool) {
+	f, ok := functions.FromPromQLName(name)
+	if !ok {
+		return functions.FUNCTION_UNKNOWN, false
 	}
 
-	if _, ok := functions.ScalarFunctionOperatorFactories[name]; ok {
-		return true
+	if _, ok := functions.RegisteredFunctions[f]; ok {
+		return f, true
 	}
 
-	return name == "absent" || name == "absent_over_time"
-}
-
-// Materialize converts a query plan into an executable query.
-func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
-	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
-	if err != nil {
-		return nil, err
-	}
-
-	defer e.activeQueryTracker.Delete(queryID)
-
-	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	q.operatorFactories = make(map[planning.Node]planning.OperatorFactory)
-	q.operatorParams = &planning.OperatorParameters{
-		Queryable:                q.queryable,
-		MemoryConsumptionTracker: q.memoryConsumptionTracker,
-		Annotations:              q.annotations,
-		Stats:                    q.stats,
-		LookbackDelta:            q.lookbackDelta,
-	}
-
-	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
-	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
-	// This is good enough for now, but something to revisit later - perhaps we can use some kind of request ID?
-	q.originalExpression = plan.OriginalExpression
-
-	q.statement = &parser.EvalStmt{
-		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
-		Start:         timestamp.Time(plan.TimeRange.StartT),
-		End:           timestamp.Time(plan.TimeRange.EndT),
-		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
-		LookbackDelta: q.lookbackDelta,
-	}
-
-	if plan.TimeRange.IsInstant {
-		q.statement.Interval = 0
-	}
-
-	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	return q, nil
+	return functions.FUNCTION_UNKNOWN, false
 }
 
 type AnalysisResult struct {

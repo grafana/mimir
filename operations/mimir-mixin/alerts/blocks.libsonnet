@@ -21,6 +21,9 @@
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[1h] offset 4h)) > 0)
+            # And only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
@@ -43,6 +46,9 @@
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[4h])) > 0)
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
@@ -66,7 +72,12 @@
             (time() - cortex_ingester_oldest_unshipped_block_timestamp_seconds > 3600)
             and
             (cortex_ingester_oldest_unshipped_block_timestamp_seconds > 0)
-          |||,
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
           labels: {
             severity: 'critical',
           },
@@ -223,16 +234,31 @@
           // Alert if the bucket index has not been updated for a given user. The default update interval is 900 seconds
           // so we alert if we've missed two updates plus a 300 second buffer to avoid false-positives. It's important
           // that this alert fire before queriers start to return errors because the bucket index is too old (3600 seconds
-          // by default).
+          // by default). Allow a 15m lookback (the default compactor.cleanup-interval) to include compactors that may have recently updated the index and then been terminated.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
+            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
           ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
+          },
+        },
+        {
+          // Alert if there's sustained querying of level 1 blocks, which indicates the compactor
+          // is not keeping up and the store-gateway is serving blocks that aren't well compacted.
+          alert: $.alertName('HighVolumeLevel1BlocksQueried'),
+          'for': '6h',
+          expr: |||
+            sum by(%s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%s}[%s])) > 0
+          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
           },
         },
       ],

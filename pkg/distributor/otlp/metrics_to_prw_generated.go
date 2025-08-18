@@ -23,30 +23,43 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/prometheus/otlptranslator"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/annotations"
 )
+
+type PromoteResourceAttributes struct {
+	promoteAll bool
+	attrs      map[string]struct{}
+}
 
 type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
 	DisableTargetInfo                 bool
-	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	SendMetadata                      bool
 	AllowUTF8                         bool
-	PromoteResourceAttributes         []string
+	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
+	AllowDeltaTemporality             bool
+	// LookbackDelta is the PromQL engine lookback delta.
+	LookbackDelta time.Duration
+	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
+	PromoteScopeMetadata    bool
+	EnableTypeAndUnitLabels bool
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
@@ -75,8 +88,55 @@ func NewMimirConverter() *MimirConverter {
 	}
 }
 
+func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+	m := otlptranslator.Metric{
+		Name: metric.Name(),
+		Unit: metric.Unit(),
+		Type: otlptranslator.MetricTypeUnknown,
+	}
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		m.Type = otlptranslator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().IsMonotonic() {
+			m.Type = otlptranslator.MetricTypeMonotonicCounter
+		} else {
+			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
+		}
+	case pmetric.MetricTypeSummary:
+		m.Type = otlptranslator.MetricTypeSummary
+	case pmetric.MetricTypeHistogram:
+		m.Type = otlptranslator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		m.Type = otlptranslator.MetricTypeExponentialHistogram
+	}
+	return m
+}
+
+type scope struct {
+	name       string
+	version    string
+	schemaURL  string
+	attributes pcommon.Map
+}
+
+func newScopeFromScopeMetrics(scopeMetrics pmetric.ScopeMetrics) scope {
+	s := scopeMetrics.Scope()
+	return scope{
+		name:       s.Name(),
+		version:    s.Version(),
+		schemaURL:  scopeMetrics.SchemaUrl(),
+		attributes: s.Attributes(),
+	}
+}
+
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
 func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
+	namer := otlptranslator.MetricNamer{
+		Namespace:          settings.Namespace,
+		WithMetricSuffixes: settings.AddMetricSuffixes,
+		UTF8Allowed:        settings.AllowUTF8,
+	}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -93,11 +153,14 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-		// keep track of the most recent timestamp in the ResourceMetrics for
+		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
-		var mostRecentTimestamp pcommon.Timestamp
+		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
+		latestTimestamp := pcommon.Timestamp(0)
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metricSlice := scopeMetricsSlice.At(j).Metrics()
+			scopeMetrics := scopeMetricsSlice.At(j)
+			scope := newScopeFromScopeMetrics(scopeMetrics)
+			metricSlice := scopeMetrics.Metrics()
 
 			// TODO: decide if instrumentation library information should be exported as labels
 			for k := 0; k < metricSlice.Len(); k++ {
@@ -107,25 +170,35 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 				}
 
 				metric := metricSlice.At(k)
-				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
+				temporality, hasTemporality, err := aggregationTemporality(metric)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 
-				if !isValidAggregationTemporality(metric) {
+				if hasTemporality &&
+					// Cumulative temporality is always valid.
+					// Delta temporality is also valid if AllowDeltaTemporality is true.
+					// All other temporality values are invalid.
+					(temporality != pmetric.AggregationTemporalityCumulative &&
+						(!settings.AllowDeltaTemporality || temporality != pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
 
-				var promName string
-				if settings.AllowUTF8 {
-					promName = otlptranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
-				} else {
-					promName = otlptranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
 				}
-				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
+				metadata := mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
-				})
+				}
+				c.metadata = append(c.metadata, metadata)
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -136,7 +209,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, metadata, scope); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -148,7 +221,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, logger); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, metadata, scope, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -161,7 +234,9 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
-						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName)
+						ws, err := c.addCustomBucketsHistogramDataPoints(
+							ctx, dataPoints, resource, settings, metadata, temporality, scope,
+						)
 						annots.Merge(ws)
 						if err != nil {
 							errs = multierr.Append(errs, err)
@@ -170,7 +245,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -188,7 +263,9 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						dataPoints,
 						resource,
 						settings,
-						promName,
+						metadata,
+						temporality,
+						scope,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -203,7 +280,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -214,7 +291,14 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
+		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
+			// We have at least one metric sample for this resource.
+			// Generate a corresponding target_info series.
+			err := addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+			if err != nil {
+				errs = multierr.Append(errs, err)
+			}
+		}
 	}
 
 	return annots, errs
@@ -276,6 +360,49 @@ func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelA
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
+	attrs := otlpCfg.PromoteResourceAttributes
+	if otlpCfg.PromoteAllResourceAttributes {
+		attrs = otlpCfg.IgnoreResourceAttributes
+	}
+	attrsMap := make(map[string]struct{}, len(attrs))
+	for _, s := range attrs {
+		attrsMap[s] = struct{}{}
+	}
+	return &PromoteResourceAttributes{
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
+	}
+}
+
+// promotedAttributes returns labels for promoted resourceAttributes.
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []mimirpb.LabelAdapter {
+	if s == nil {
+		return nil
+	}
+
+	var promotedAttrs []mimirpb.LabelAdapter
+	if s.promoteAll {
+		promotedAttrs = make([]mimirpb.LabelAdapter, 0, resourceAttributes.Len())
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	} else {
+		promotedAttrs = make([]mimirpb.LabelAdapter, 0, len(s.attrs))
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; exists {
+				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	}
+	sort.Stable(ByLabelName(promotedAttrs))
+	return promotedAttrs
 }
 
 type labelsStringer []mimirpb.LabelAdapter

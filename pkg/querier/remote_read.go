@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -43,11 +44,11 @@ const (
 )
 
 // RemoteReadHandler handles Prometheus remote read requests.
-func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger) http.Handler {
-	return remoteReadHandler(q, maxRemoteReadFrameBytes, logger)
+func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger, cfg Config) http.Handler {
+	return remoteReadHandler(q, maxRemoteReadFrameBytes, cfg.MaxConcurrentRemoteReadQueries, logger)
 }
 
-func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, lg log.Logger) http.Handler {
+func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, maxConcurrency int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		var req prompb.ReadRequest
@@ -66,9 +67,9 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 
 		switch respType {
 		case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-			remoteReadStreamedXORChunks(ctx, q, w, &req, maxBytesInFrame, logger)
+			remoteReadStreamedXORChunks(ctx, q, w, &req, maxBytesInFrame, maxConcurrency, logger)
 		default:
-			remoteReadSamples(ctx, q, w, &req, logger)
+			remoteReadSamples(ctx, q, w, &req, maxConcurrency, logger)
 		}
 	})
 }
@@ -78,50 +79,49 @@ func remoteReadSamples(
 	q storage.Queryable,
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
+	maxConcurrency int,
 	logger log.Logger,
 ) {
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
-	// Fetch samples for all queries in parallel.
-	errCh := make(chan error)
 
-	for i, qr := range req.Queries {
-		go func(i int, qr *prompb.Query) {
-			start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
-			if err != nil {
-				errCh <- err
-				return
+	closers := make([]io.Closer, len(req.Queries))
+	defer func() {
+		for _, closer := range closers {
+			if closer != nil {
+				_ = closer.Close()
 			}
+		}
+	}()
 
-			querier, err := q.Querier(int64(start), int64(end))
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			seriesSet := querier.Select(ctx, false, hints, matchers...)
-
-			// We can over-read when querying, but we don't need to return samples
-			// outside the queried range, so can filter them out.
-			resp.Results[i], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
-			errCh <- err
-		}(i, qr)
-	}
-
-	var lastErr error
-	for range req.Queries {
-		err := <-errCh
+	run := func(_ context.Context, idx int) error {
+		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(req.Queries[idx])
 		if err != nil {
-			lastErr = err
+			return err
 		}
+
+		querier, err := q.Querier(int64(start), int64(end))
+		if err != nil {
+			return err
+		}
+		closers[idx] = querier
+
+		seriesSet := querier.Select(ctx, false, hints, matchers...)
+
+		// We can over-read when querying, but we don't need to return samples
+		// outside the queried range, so can filter them out.
+		resp.Results[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		return err
 	}
-	if lastErr != nil {
-		code := remoteReadErrorStatusCode(lastErr)
+
+	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
+	if err != nil {
+		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
-			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 		}
-		http.Error(w, lastErr.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
+		http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
 	w.Header().Add("Content-Type", "application/x-protobuf")
@@ -138,6 +138,7 @@ func remoteReadStreamedXORChunks(
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
 	maxBytesInFrame int,
+	maxConcurrency int,
 	logger log.Logger,
 ) {
 	f, ok := w.(http.Flusher)
@@ -147,17 +148,76 @@ func remoteReadStreamedXORChunks(
 	}
 	w.Header().Set("Content-Type", api.ContentTypeRemoteReadStreamedChunks)
 
-	for i, qr := range req.Queries {
-		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
+	// Process all queries concurrently and collect their ChunkSeriesSet results
+	type queryResult struct {
+		series  storage.ChunkSeriesSet
+		querier io.Closer
+	}
+
+	results := make([]queryResult, len(req.Queries))
+
+	// Ensure all queriers are closed when the function exits
+	defer func() {
+		for _, result := range results {
+			if result.querier != nil {
+				result.querier.Close()
+			}
+		}
+	}()
+
+	run := func(_ context.Context, idx int) error {
+		qr := req.Queries[idx]
+		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
+		if err != nil {
+			return err
+		}
+
+		querier, err := q.ChunkQuerier(int64(start), int64(end))
+		if err != nil {
+			return err
+		}
+
+		// The streaming API has to provide the series sorted.
+		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
+		// but we need the SeriesSet to remain valid for streaming later.
+		seriesSet := querier.Select(ctx, true, hints, matchers...)
+		results[idx] = queryResult{series: seriesSet, querier: querier}
+		return nil
+	}
+
+	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
+	// If any query failed, return the error
+	if err != nil {
+		code := remoteReadErrorStatusCode(err)
+		if code/100 != 4 {
+			level.Error(logger).Log("msg", "error while processing streaming remote read request", "err", err)
+		}
+		http.Error(w, err.Error(), code)
+		return
+	}
+
+	// We can't send the header after we've streamed the responses.
+	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
+	// In case of an error, we will break the stream below.
+
+	for i, result := range results {
+		if err := streamChunkedReadResponses(
+			prom_remote.NewChunkedWriter(w, f),
+			result.series,
+			i,
+			maxBytesInFrame,
+		); err != nil {
 			code := remoteReadErrorStatusCode(err)
 			if code/100 != 4 {
-				level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
+				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
 			}
+
+			// Unless we encountered the error before we called Write(), most of this http.Error() call won't have an effect.
+			// But we do it on a best-effort basis, since the remote read protocol doesn't have native error handling.
 			http.Error(w, err.Error(), code)
 			return
 		}
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func remoteReadErrorStatusCode(err error) int {
@@ -173,34 +233,6 @@ func remoteReadErrorStatusCode(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
-}
-
-func processReadStreamedQueryRequest(
-	ctx context.Context,
-	idx int,
-	queryReq *prompb.Query,
-	q storage.ChunkQueryable,
-	w http.ResponseWriter,
-	f http.Flusher,
-	maxBytesInFrame int,
-) error {
-	start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
-	if err != nil {
-		return err
-	}
-
-	querier, err := q.ChunkQuerier(int64(start), int64(end))
-	if err != nil {
-		return err
-	}
-
-	return streamChunkedReadResponses(
-		prom_remote.NewChunkedWriter(w, f),
-		// The streaming API has to provide the series sorted.
-		querier.Select(ctx, true, hints, matchers...),
-		idx,
-		maxBytesInFrame,
-	)
 }
 
 func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {

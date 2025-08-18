@@ -9,6 +9,10 @@ memcached {
 
   memcached+:: {
     cpu_limits:: null,
+    exporter_cpu_requests:: '0.05',
+    exporter_cpu_limits:: null,
+    exporter_memory_requests:: '50Mi',
+    exporter_memory_limits:: '250Mi',
     deployment: {},
     statefulSet+:
       (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
@@ -18,31 +22,6 @@ memcached {
       service.mixin.spec.withClusterIp('None'),
 
     podDisruptionBudget: $.newMimirPdb(self.name),
-  },
-
-  // Optionally configure Memcached to use mTLS for authenticating clients
-  memcached_mtls:: {
-    // CA and server credentials
-    statefulSet+: statefulSet.mixin.spec.template.spec.withVolumesMixin([
-      volume.fromSecret($._config.memcached_mtls_ca_cert_secret, $._config.memcached_mtls_ca_cert_secret),
-      volume.fromSecret($._config.memcached_mtls_server_cert_secret, $._config.memcached_mtls_server_cert_secret),
-      volume.fromSecret($._config.memcached_mtls_server_key_secret, $._config.memcached_mtls_server_key_secret),
-    ]),
-
-    // Increase requested CPU, mount the credentials, and adjust server config
-    memcached_container+: $.util.resourcesRequestsMixin('1', null) + container.withVolumeMountsMixin([
-      mount.new($._config.memcached_mtls_ca_cert_secret, $._config.memcached_ca_cert_path, true),
-      mount.new($._config.memcached_mtls_server_cert_secret, $._config.memcached_server_cert_path, true),
-      mount.new($._config.memcached_mtls_server_key_secret, $._config.memcached_server_key_path, true),
-    ]) + container.withArgsMixin([
-      '--listen=notls:127.0.0.1:11211,0.0.0.0:11212',  // No TLS on the local interface for the exporter and debugging
-      '--enable-ssl',
-      '--extended=' +
-      'ssl_ca_cert=' + $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem,' +
-      'ssl_chain_cert=' + $._config.memcached_server_cert_path + $._config.memcached_mtls_server_cert_secret + '.pem,' +
-      'ssl_key=' + $._config.memcached_server_key_path + $._config.memcached_mtls_server_key_secret + '.pem,' +
-      'ssl_kernel_tls,ssl_verify_mode=2',  // "2" means "require client cert"
-    ]),
   },
 
   // Dedicated memcached instance used to cache query results.
@@ -56,7 +35,7 @@ memcached {
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas),
-      } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
+      }
     else {},
 
   // Dedicated memcached instance used to temporarily cache index lookups.
@@ -70,7 +49,7 @@ memcached {
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas),
-      } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
+      }
     else {},
 
   // Memcached instance used to cache chunks.
@@ -87,7 +66,7 @@ memcached {
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas),
-      } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
+      }
     else {},
 
   // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
@@ -104,6 +83,6 @@ memcached {
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas),
-      } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
+      }
     else {},
 }

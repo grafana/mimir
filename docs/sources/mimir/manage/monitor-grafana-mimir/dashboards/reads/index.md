@@ -17,6 +17,12 @@ The Reads dashboard shows health metrics for the read path and object storage me
 
 The dashboard isolates each service on the read path into its own section and displays the order in which a read request flows.
 
+Use this dashboard for the following use cases:
+
+- Isolate components on the read path to help identify performance issues.
+- Review health metrics for components such as the store-gateway, query-frontend, and querier.
+- Asses whether object storage interactions are contributing to performance issues.
+
 ## Example
 
 The following example shows a Reads dashboard from a demo cluster.

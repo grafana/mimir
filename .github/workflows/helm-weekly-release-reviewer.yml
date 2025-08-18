@@ -8,20 +8,38 @@ on:
     paths:
       - operations/helm/charts/**
 
-permissions:
-  pull-requests: write
-  contents: write
-  id-token: write
+permissions: {}
 
 jobs:
   auto-reviewer:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
-    if: ${{ ! github.event.pull_request.head.repo.fork && github.event.pull_request.user.login == 'mimir-github-bot[bot]' }}
+    if: ${{ ! github.event.pull_request.head.repo.fork && github.event.pull_request.user.login == 'mimir-vendoring[bot]' }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b # get-vault-secrets-v1.2.0
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: Approve and auto-merge
         id: auto-merge
@@ -32,7 +50,7 @@ jobs:
           --approve -b "**I'm approving** this pull request, since it is a helm release."
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Manual review is required
         if: steps.auto-merge.conclusion != 'success'

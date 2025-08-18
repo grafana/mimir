@@ -59,7 +59,7 @@ type Bucket interface {
 
 	// Upload the contents of the reader as an object into the bucket.
 	// Upload should be idempotent.
-	Upload(ctx context.Context, name string, r io.Reader) error
+	Upload(ctx context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error
 
 	// Delete removes the object with the given name.
 	// If object does not exist in the moment of deletion, Delete should throw error.
@@ -205,6 +205,7 @@ config:
     kms_encryption_context: {}
     encryption_key: ""
   sts_endpoint: ""
+  max_retries: 0
 prefix: ""
 ```
 
@@ -390,6 +391,7 @@ config:
       insecure_skip_verify: false
     disable_compression: false
   chunk_size_bytes: 0
+  max_retries: 0
 prefix: ""
 ```
 
@@ -460,6 +462,9 @@ Config file format is the following:
 ```yaml mdox-exec="go run scripts/cfggen/main.go --name=azure.Config"
 type: AZURE
 config:
+  az_tenant_id: ""
+  client_id: ""
+  client_secret: ""
   storage_account: ""
   storage_account_key: ""
   storage_connection_string: ""
@@ -572,6 +577,7 @@ config:
   endpoint: ""
   secret_key: ""
   secret_id: ""
+  max_retries: 0
   http_config:
     idle_conn_timeout: 1m30s
     response_header_timeout: 2m
@@ -670,6 +676,7 @@ config:
     max_conns_per_host: 0         // Optional maximum total number of connections per host.
     disable_compression: false    // Optional. If true, prevents the Transport from requesting compression.
     client_timeout: 90s           // Optional time limit for requests made by the HTTP Client.
+prefix: ""
 ```
 
 #### Instance Principal Provider
@@ -682,6 +689,7 @@ config:
   provider: "instance-principal"
   bucket: ""
   compartment_ocid: ""
+prefix: ""
 ```
 
 You can also include any of the optional configuration just like the example in `Default Provider`.
@@ -702,6 +710,7 @@ config:
   fingerprint: ""
   privatekey: ""
   passphrase: ""         // Optional passphrase to encrypt the private API Signing key
+prefix: ""
 ```
 
 You can also include any of the optional configuration just like the example in `Default Provider`.
@@ -716,6 +725,7 @@ config:
   provider: "oke-workload-identity"
   bucket: ""
   region: ""
+prefix: ""
 ```
 
 The `bucket` and `region` fields are required. The `region` field identifies the bucket region.
@@ -733,6 +743,7 @@ config:
   endpoint: ""
   access_key: ""
   secret_key: ""
+  max_retries: 0
   http_config:
     idle_conn_timeout: 1m30s
     response_header_timeout: 2m

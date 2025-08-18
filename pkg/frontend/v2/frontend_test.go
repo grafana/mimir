@@ -38,11 +38,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -76,7 +76,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
+	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
-		Stats:        &stats.Stats{},
+		Stats:        &stats.SafeStats{},
 	})
 }
 
@@ -532,7 +532,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			})
 
 			req := httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=metric", nil)
-			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
+			rt := httpgrpcutil.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
 
 			resp, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(context.Background(), userID)))
 			require.NoError(t, err)
@@ -565,7 +565,7 @@ func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, heade
 		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
 			Code:    int32(statusCode),
 			Headers: headers,
-			Stats:   &stats.Stats{},
+			Stats:   &stats.SafeStats{},
 		}},
 	}
 }

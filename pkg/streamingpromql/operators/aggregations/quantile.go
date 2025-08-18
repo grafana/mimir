@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -26,7 +26,7 @@ import (
 type QuantileAggregation struct {
 	Param                    types.ScalarOperator
 	Aggregation              *Aggregation
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 }
 
@@ -36,7 +36,7 @@ func NewQuantileAggregation(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*QuantileAggregation, error) {
@@ -85,10 +85,18 @@ func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVect
 	return q.Aggregation.NextSeries(ctx)
 }
 
+func (q *QuantileAggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := q.Aggregation.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return q.Param.Prepare(ctx, params)
+}
+
 func (q *QuantileAggregation) Close() {
 	if q.Aggregation.ParamData.Samples != nil {
-		types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
-		q.Aggregation.ParamData.Samples = nil
+		types.FPointSlicePool.Put(&q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
 	}
 
 	if q.Param != nil {
@@ -116,12 +124,14 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(maxExpectedQuantileGroups, func(size int) []qGroup {
 		return make([]qGroup, 0, size)
 	}),
+	limiter.QuantileGroupSlices,
 	uint64(unsafe.Sizeof(qGroup{})),
 	false,
 	nil,
+	nil,
 )
 
-func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
+func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
 	if len(data.Histograms) > 0 {
@@ -159,7 +169,7 @@ func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeri
 	return nil
 }
 
-func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	quantilePoints, err := types.FPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, false, err
@@ -179,12 +189,10 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 	return types.InstantVectorSeriesData{Floats: quantilePoints}, false, nil
 }
 
-func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
-	for i, qGroup := range q.qGroups {
-		types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
-		q.qGroups[i].points = nil
+func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	for i := range q.qGroups {
+		types.Float64SlicePool.Put(&q.qGroups[i].points, memoryConsumptionTracker)
 	}
 
-	qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
-	q.qGroups = nil
+	qGroupPool.Put(&q.qGroups, memoryConsumptionTracker)
 }

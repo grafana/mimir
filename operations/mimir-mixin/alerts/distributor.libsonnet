@@ -15,7 +15,7 @@
                 -
                 sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[%(range_interval)s]))
               )
-            ) * 100) > 10
+            ) * 100) > %(distributor_gc_cpu_threshold)s
 
             # Alert only for namespaces with Mimir clusters.
             and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)

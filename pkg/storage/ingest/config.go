@@ -40,6 +40,7 @@ var (
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
+	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 
@@ -108,6 +109,8 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
+	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
@@ -138,6 +141,9 @@ type KafkaConfig struct {
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
+
+	// Disable producer linger. This setting is just used in tests.
+	disableLinger bool `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -177,6 +183,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+"producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
+
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
@@ -221,6 +229,10 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.MaxConsumerLagAtStartup < cfg.TargetConsumerLagAtStartup {
 		return ErrInvalidMaxConsumerLagAtStartup
+	}
+
+	if err := ValidateRecordVersion(cfg.ProducerRecordVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
 	}
 
 	if cfg.FetchMaxWait < 5*time.Second || cfg.FetchMaxWait > 30*time.Second {
@@ -268,7 +280,9 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be
 // set for any other reason.
 type MigrationConfig struct {
-	DistributorSendToIngestersEnabled bool `yaml:"distributor_send_to_ingesters_enabled"`
+	DistributorSendToIngestersEnabled bool          `yaml:"distributor_send_to_ingesters_enabled"`
+	IgnoreIngestStorageErrors         bool          `yaml:"ignore_ingest_storage_errors"`
+	IngestStorageMaxWaitTime          time.Duration `yaml:"ingest_storage_max_wait_time"`
 }
 
 func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
@@ -277,4 +291,6 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
+	f.BoolVar(&cfg.IgnoreIngestStorageErrors, prefix+"ignore-ingest-storage-errors", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.")
+	f.DurationVar(&cfg.IngestStorageMaxWaitTime, prefix+"ingest-storage-max-wait-time", 0, "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.")
 }

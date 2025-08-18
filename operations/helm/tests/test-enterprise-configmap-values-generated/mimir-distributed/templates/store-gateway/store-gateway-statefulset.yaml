@@ -68,7 +68,8 @@ spec:
           configMap:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -78,6 +79,7 @@ spec:
             - "-target=store-gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -115,8 +117,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"
+            []
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

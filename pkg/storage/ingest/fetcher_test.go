@@ -310,13 +310,18 @@ func TestConcurrentFetchers(t *testing.T) {
 	)
 
 	waitForStableBufferedRecords := func(t *testing.T, f fetcher) {
-		previousBufferedRecords := int64(0)
-		assert.Eventually(t, func() bool {
+		// Initialise the previous buffered records with an invalid value, so that at least
+		// we wait 1 tick before comparing values. If we would have initialised this value to 0
+		// and the first reading is 0, this function would return immediately without doing
+		// any real comparison.
+		previousBufferedRecords := int64(-1)
+
+		require.Eventually(t, func() bool {
 			bufferedRecords := f.BufferedRecords()
 			stabilized := bufferedRecords == previousBufferedRecords
 			previousBufferedRecords = bufferedRecords
 			return stabilized
-		}, 2*time.Second, 100*time.Millisecond)
+		}, 5*time.Second, 100*time.Millisecond)
 	}
 
 	t.Run("respect context cancellation", func(t *testing.T) {
@@ -710,7 +715,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		mockErr := kerr.BrokerNotAvailable
-		cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.Metadata.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			respTopic := kmsg.NewMetadataResponseTopic()
@@ -721,7 +726,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			resp := kmsg.NewPtrMetadataResponse()
 			resp.Topics = append(resp.Topics, respTopic)
-			resp.Version = 12
+			resp.Version = req.GetVersion()
 			return resp, nil, true
 		})
 
@@ -793,7 +798,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("respect maximum buffered bytes limit", func(t *testing.T) {
-		t.Parallel()
+		// This test produces a large number of large records. Do NOT run it concurrently because it may cause
+		// some flakyness, due to assertion timeouts being hit, if slowed down excessively.
 
 		const (
 			topicName        = "test-topic"
@@ -801,8 +807,14 @@ func TestConcurrentFetchers(t *testing.T) {
 			concurrency      = 3
 			maxInflightBytes = 10_000_000
 
-			recordSizeBytes      = 100_000 // sizable records so that our lower limit of 1MB per fetch request doesn't just include all records
-			totalProducedRecords = 6000    // produce a lot of records so that the client is forced to split them into multiple fetches
+			// Create records with a size equal to the initial estimation, to get predictable concurrency.
+			recordSizeBytes = initialBytesPerRecord
+
+			// Produce a lot of records so that the client is forced to split them into multiple fetches.
+			totalProducedRecords = 6000
+
+			// produce records in batches to simulate a real world case.
+			produceRecordsBatchSize = forcedMinValueForMaxBytes / recordSizeBytes
 		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -811,11 +823,21 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		// Produce records
+		// Produce records in batches.
+		t.Logf("Producing %d records", totalProducedRecords)
+
 		recordValue := bytes.Repeat([]byte{'a'}, recordSizeBytes)
-		for i := 0; i < totalProducedRecords; i++ {
-			produceRecord(ctx, t, client, topicName, partitionID, recordValue)
+		for i := 0; i < totalProducedRecords; i += produceRecordsBatchSize {
+			batchSize := min(totalProducedRecords-i, produceRecordsBatchSize)
+			records := make([]*kgo.Record, 0, batchSize)
+			for r := 0; r < batchSize; r++ {
+				records = append(records, createRecord(topicName, partitionID, recordValue, 0))
+			}
+
+			client.ProduceSync(ctx, records...)
 		}
+
+		t.Logf("Produced %d records", totalProducedRecords)
 
 		// Create fetchers with tracking of uncompressed bytes
 		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true)
@@ -916,7 +938,6 @@ func TestConcurrentFetchers(t *testing.T) {
 		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(maxInflightBytes/2), "Should still buffer a decent number of records")
 
 		// Consume the rest of the small records.
-		// Consume half of the small records. This should be enough to stabilize the records size estimation.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
 		t.Log("Consumed rest of the small records")

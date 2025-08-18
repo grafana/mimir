@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -20,7 +22,6 @@ import (
 // alert notifications as webhooks.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	tmpl     *templates.Template
@@ -30,11 +31,10 @@ type Notifier struct {
 
 // New is the constructor for
 // the WebHook notifier.
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, orgID int64) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, orgID int64) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		orgID:    orgID,
-		log:      logger,
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -58,6 +58,7 @@ type webhookMessage struct {
 
 // Notify implements the Notifier interface.
 func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := wn.GetLogger(ctx)
 	groupKey, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return false, err
@@ -65,7 +66,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	as, numTruncated := truncateAlerts(wn.settings.MaxAlerts, as)
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, wn.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, l, &tmplErr)
 	data.TruncatedAlerts = &numTruncated
 
 	// Fail early if we can't template the URL.
@@ -75,7 +76,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	// Augment our Alert data with ImageURLs if available.
-	_ = images.WithStoredImages(ctx, wn.log, wn.images,
+	_ = images.WithStoredImages(ctx, l, wn.images,
 		func(index int, image images.Image) error {
 			if len(image.URL) != 0 {
 				data.Alerts[index].ImageURL = image.URL
@@ -105,12 +106,12 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		// Otherwise, if Title fails Message will not be templated either.
 		title := tmpl(wn.settings.Title)
 		if tmplErr != nil {
-			wn.log.Warn("failed to template webhook title", "error", tmplErr.Error())
+			level.Warn(l).Log("msg", "failed to template webhook title", "err", tmplErr.Error())
 			tmplErr = nil // Reset the error for the next template.
 		}
 		message := tmpl(wn.settings.Message)
 		if tmplErr != nil {
-			wn.log.Warn("failed to template webhook message", "error", tmplErr.Error())
+			level.Warn(l).Log("msg", "failed to template webhook message", "err", tmplErr.Error())
 			tmplErr = nil // Reset the error for the next template.
 		}
 		payload, err := json.Marshal(webhookMessage{
@@ -132,7 +133,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	headers, removed := OmitRestrictedHeaders(wn.settings.ExtraHeaders)
 	if len(removed) > 0 {
-		wn.log.Debug("removed restricted headers", "headers", removed)
+		level.Debug(l).Log("msg", "removed restricted headers", "headers", removed)
 	}
 
 	if wn.settings.AuthorizationScheme != "" && wn.settings.AuthorizationCredentials != "" {
@@ -157,7 +158,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		HMACConfig: wn.settings.HMACConfig,
 	}
 
-	if err := wn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := wn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, err
 	}
 

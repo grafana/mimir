@@ -63,6 +63,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
           {{- end }}
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
           {{- range $key, $value := .Values.ruler_querier.extraArgs }}
             - -{{ $key }}={{ $value }}
           {{- end }}
@@ -104,32 +105,14 @@ spec:
             {{- toYaml .Values.ruler_querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler_querier.containerSecurityContext | nindent 12 }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler_querier.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.ruler_querier.resources }}
-            {{- if $cpu_request }}
-              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
-              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
-            - name: "GOMAXPROCS"
-              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
-            {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.querier }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
-            {{- end }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler_querier.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- $defaultEnv := list }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.ruler_querier.resources }}
+          {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled $cpu_request_plus_four | toString)) }}
+          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler-querier" "env" $defaultEnv) | nindent 10 }}
 {{- if .Values.ruler_querier.extraContainers }}
 {{ toYaml .Values.ruler_querier.extraContainers | indent 8}}
 {{- end }}

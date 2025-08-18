@@ -6,18 +6,18 @@
 syntax = "proto3";
 
 package alertmanagerpb;
+
+import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
+import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "alertmanagerpb";
 
-import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
-import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
-
 // Alertmanager interface exposed to the Alertmanager Distributor and other Alertmanagers
 service Alertmanager {
-  rpc HandleRequest(httpgrpc.HTTPRequest) returns(httpgrpc.HTTPResponse) {};
-  rpc UpdateState(clusterpb.Part) returns (UpdateStateResponse) {};
-  rpc ReadState(ReadStateRequest) returns (ReadStateResponse) {};
+  rpc HandleRequest(httpgrpc.HTTPRequest) returns (httpgrpc.HTTPResponse) {}
+  rpc UpdateState(clusterpb.Part) returns (UpdateStateResponse) {}
+  rpc ReadState(ReadStateRequest) returns (ReadStateResponse) {}
 }
 enum UpdateStateStatus {
   OK = 0;
@@ -30,8 +30,7 @@ message UpdateStateResponse {
   string error = 2;
 }
 
-message ReadStateRequest {
-}
+message ReadStateRequest {}
 
 enum ReadStateStatus {
   READ_UNSPECIFIED = 0;
@@ -48,4 +47,3 @@ message ReadStateResponse {
   string error = 2;
   clusterpb.FullState state = 3;
 }
-

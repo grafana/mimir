@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -66,10 +67,21 @@ func TestPartitionReader(t *testing.T) {
 
 	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 1"))
 	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 2"))
+	produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, []byte("record 3"), 0)
+	produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, []byte("record 4"), 2)
 
-	records, err := consumer.waitRecords(2, 5*time.Second, 0)
+	records, err := consumer.waitRecordsAndMetadata(4, 5*time.Second, 0)
+
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{[]byte("record 1"), []byte("record 2")}, records)
+	assert.Len(t, records, 4)
+	assert.Equal(t, []byte("record 1"), records[0].content)
+	assert.Equal(t, 1, records[0].version)
+	assert.Equal(t, []byte("record 2"), records[1].content)
+	assert.Equal(t, 1, records[1].version)
+	assert.Equal(t, []byte("record 3"), records[2].content)
+	assert.Equal(t, 0, records[2].version)
+	assert.Equal(t, []byte("record 4"), records[3].content)
+	assert.Equal(t, 2, records[3].version)
 }
 
 func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
@@ -728,12 +740,18 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return nil
 				})
 
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 					listOffsetsRequestsCount.Inc()
 
 					if listOffsetsShouldFail.Load() {
-						return nil, errors.New("mocked error"), true
+						req := kreq.(*kmsg.ListOffsetsRequest)
+						res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+						res.Default()
+						res.Topics = []kmsg.ListOffsetsResponseTopic{
+							{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+						}
+						return res, nil, true
 					}
 
 					return nil, nil, false
@@ -767,7 +785,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
 				// catched up yet, and it's still in Starting state.
-				assert.Equal(t, services.Starting, reader.State())
+				assert.Equal(t, services.Starting.String(), reader.State().String())
 				assert.Equal(t, int64(0), consumedRecordsCount.Load())
 
 				// Unblock the ListOffsets requests. Now they will succeed.
@@ -1490,14 +1508,30 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
 					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
 					listOffsetsRequestsCount = atomic.NewInt64(0)
+					contextCancelled         = atomic.NewBool(false)
 				)
 
 				// Mock Kafka to always fail the ListOffsets request.
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 
 					listOffsetsRequestsCount.Inc()
-					return nil, errors.New("mocked error"), true
+
+					// If context has been cancelled, we want to make sure we return an error
+					// that will allow the client to detect the cancellation faster.
+					if contextCancelled.Load() {
+						return nil, context.Canceled, true
+					}
+
+					// Return a proper Kafka error response instead of a raw error
+					// to ensure franz-go will retry this error
+					req := kreq.(*kmsg.ListOffsetsRequest)
+					res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+					res.Default()
+					res.Topics = []kmsg.ListOffsetsResponseTopic{
+						{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+					}
+					return res, nil, true
 				})
 
 				// Create and start the reader.
@@ -1514,13 +1548,17 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
 				})
 
-				// Wait until the Kafka cluster received at least 1 ListOffsets request.
+				// Wait until the Kafka cluster received at least 2 ListOffsets requests.
+				// This ensures the reader is actively trying to fetch offsets and retrying.
 				test.Poll(t, 5*time.Second, true, func() interface{} {
-					return listOffsetsRequestsCount.Load() > 0
+					return listOffsetsRequestsCount.Load() > 1
 				})
 
 				// Cancelling the context should cause the service to switch to a terminal state.
 				assert.Equal(t, services.Starting, reader.State())
+
+				// Mark that context is being cancelled so subsequent requests fail faster
+				contextCancelled.Store(true)
 				cancelReaderCtx()
 
 				// franz-go has internal retries that can last up to 10s
@@ -1819,7 +1857,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 		"without concurrency": {
 			concurrencyVariant:                []readerTestCfgOpt{withFetchConcurrency(0)},
 			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             8,
+			expectedBufferedBytes:             19,
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with fetch concurrency": {
@@ -1859,6 +1897,10 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				if blocked.Load() {
 					blockedTicker := time.NewTicker(100 * time.Millisecond)
 					defer blockedTicker.Stop()
+
+					timeoutTimer := time.NewTimer(3 * time.Second)
+					defer timeoutTimer.Stop()
+
 				outer:
 					for {
 						select {
@@ -1866,7 +1908,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 							if !blocked.Load() {
 								break outer
 							}
-						case <-time.After(3 * time.Second):
+						case <-timeoutTimer.C:
 							// This is basically a test failure as we never finish the test in time.
 							t.Log("failed to finish unblocking the consumer in time")
 							return nil
@@ -2610,23 +2652,41 @@ func TestPartitionCommitter_commit(t *testing.T) {
 }
 
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs),
-		kgo.WithLogger(NewKafkaLogger(testingLogger.WithT(t))),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
+	// Configure it close to the writer client we use in the real producers, but
+	// do not configure the linger to keep tests running fast.
+	cfg := KafkaConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.Address = addrs
+	cfg.disableLinger = true
+
+	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
+
 	require.NoError(t, err)
 	t.Cleanup(writeClient.Close)
 	return writeClient
 }
 
-func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
+func createRecord(topicName string, partitionID int32, content []byte, version int) *kgo.Record {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
 		Partition: partitionID,
 	}
+	if version == 0 {
+		rec.Headers = nil
+	} else {
+		rec.Headers = []kgo.RecordHeader{RecordVersionHeader(version)}
+	}
+
+	return rec
+}
+
+func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
+	return produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, content, 1)
+}
+
+func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
+	rec := createRecord(topicName, partitionID, content, version)
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 
@@ -2872,12 +2932,12 @@ func TestPartitionReader_Commit(t *testing.T) {
 }
 
 type testConsumer struct {
-	records chan []byte
+	records chan record
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		records: make(chan []byte, capacity),
+		records: make(chan record, capacity),
 	}
 }
 
@@ -2887,7 +2947,7 @@ func (t testConsumer) Consume(ctx context.Context, records []record) error {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case t.records <- r.content:
+		case t.records <- r:
 			// Nothing to do.
 		}
 	}
@@ -2898,7 +2958,16 @@ func (t testConsumer) Consume(ctx context.Context, records []record) error {
 // waitRecords waits for an additional drainPeriod after receiving numRecords records to ensure that no more records are received.
 // waitRecords returns an error if a different number of records is received.
 func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.Duration) ([][]byte, error) {
-	var records [][]byte
+	recs, err := t.waitRecordsAndMetadata(numRecords, waitTimeout, drainPeriod)
+	var content [][]byte
+	for _, rec := range recs {
+		content = append(content, rec.content)
+	}
+	return content, err
+}
+
+func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]record, error) {
+	var records []record
 	timeout := time.After(waitTimeout)
 	for {
 		select {
@@ -2976,7 +3045,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		require.Equal(t, 1, len(res.Topics[0].Partitions))
 
 		// Parse the response, just to check how many records we got.
-		parseOptions := kgo.ProcessFetchPartitionOptions{
+		parseOptions := kgo.ProcessFetchPartitionOpts{
 			KeepControlRecords: false,
 			Offset:             offset,
 			IsolationLevel:     kgo.ReadUncommitted(),
@@ -2985,7 +3054,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		}
 
 		rawPartitionResp := res.Topics[0].Partitions[0]
-		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
+		partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor(), func(_ kgo.FetchBatchMetrics) {})
 
 		// Ensure we got a low number of records, otherwise the premise of this test is wrong
 		// because we want a single fetchWatch to be fulfilled in many Fetch requests.

@@ -5,17 +5,18 @@ package planning
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type QueryPlan struct {
@@ -29,6 +30,9 @@ type QueryPlan struct {
 type Node interface {
 	// Details returns the properties of this node that should be encoded during serialization.
 	Details() proto.Message
+
+	// NodeType returns the identifier of this node that should be used during serialization.
+	NodeType() NodeType
 
 	// Children returns a slice of all children of this node, if any.
 	//
@@ -72,23 +76,76 @@ type Node interface {
 	// Most nodes will return timeRange as is, with the exception of subqueries.
 	ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange
 
-	// OperatorFactory returns a factory that produces operators for this node.
-	OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
-
 	// ResultType returns the kind of result this node produces.
 	//
 	// May return an error if the kind of result cannot be determined (eg. because the node references an unknown function).
 	ResultType() (parser.ValueType, error)
 
+	// QueriedTimeRange returns the range of data queried from ingesters and store-gateways by this node
+	// and its children.
+	//
+	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+
+	// ExpressionPosition returns the position of the subexpression this node represents in the original
+	// expression.
+	ExpressionPosition() posrange.PositionRange
+
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+type QueriedTimeRange struct {
+	// The earliest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MinT time.Time
+
+	// The latest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MaxT time.Time
+
+	// If false, the node does not query any data (eg. a number literal).
+	AnyDataQueried bool
+}
+
+func NewQueriedTimeRange(minT time.Time, maxT time.Time) QueriedTimeRange {
+	return QueriedTimeRange{
+		MinT:           minT,
+		MaxT:           maxT,
+		AnyDataQueried: true,
+	}
+}
+
+func NoDataQueried() QueriedTimeRange {
+	return QueriedTimeRange{AnyDataQueried: false}
+}
+
+func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
+	if !t.AnyDataQueried {
+		return other
+	}
+
+	if !other.AnyDataQueried {
+		return t
+	}
+
+	minT := t.MinT
+	maxT := t.MaxT
+
+	if other.MinT.Before(t.MinT) {
+		minT = other.MinT
+	}
+
+	if other.MaxT.After(t.MaxT) {
+		maxT = other.MaxT
+	}
+
+	return NewQueriedTimeRange(minT, maxT)
 }
 
 type OperatorParameters struct {
 	Queryable                storage.Queryable
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	Stats                    *types.QueryStats
 	LookbackDelta            time.Duration
+	EagerLoadSelectors       bool
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
@@ -117,7 +174,7 @@ func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 	}
 }
 
-func fromEncodedTimeRange(e EncodedQueryTimeRange) types.QueryTimeRange {
+func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
 	if e.IsInstant {
 		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
 	}
@@ -167,15 +224,16 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	if e.includeDetails {
+		encoded.NodeType = n.NodeType()
 		var err error
-		encoded.Details, err = prototypes.MarshalAny(n.Details())
+		encoded.Details, err = proto.Marshal(n.Details())
 		if err != nil {
 			return -1, err
 		}
 	}
 
 	if e.includeDescriptions {
-		encoded.Type = reflect.TypeOf(n).Elem().Name()
+		encoded.Type = NodeTypeName(n)
 		encoded.Description = n.Describe()
 		encoded.ChildrenLabels = n.ChildrenLabels()
 	}
@@ -187,23 +245,41 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	return idx, nil
 }
 
-func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
+// NodeTypeName returns the human-readable name of the type of n.
+//
+// This should not be used in performance-sensitive code.
+func NodeTypeName(n Node) string {
+	return reflect.TypeOf(n).Elem().Name()
+}
+
+// ToDecodedPlan converts this encoded plan to its decoded form.
+// It returns references to the specified nodeIndices.
+func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
 	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
 	root, err := decoder.decodeNode(p.RootNode)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	nodes := make([]Node, 0, len(nodeIndices))
+	for _, idx := range nodeIndices {
+		n, err := decoder.decodeNode(idx)
+		if err != nil {
+			return nil, nil, err
+		}
+		nodes = append(nodes, n)
 	}
 
 	return &QueryPlan{
-		TimeRange:          fromEncodedTimeRange(p.TimeRange),
+		TimeRange:          p.TimeRange.ToDecodedTimeRange(),
 		Root:               root,
 		OriginalExpression: p.OriginalExpression,
-	}, nil
+	}, nodes, nil
 }
 
 type queryPlanDecoder struct {
@@ -238,22 +314,13 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 		children = append(children, child)
 	}
 
-	if encodedNode.Details == nil {
-		return nil, fmt.Errorf("node %v has no details (was the encoded query plan created with includeDetails = false?)", idx)
-	}
-
-	name, err := prototypes.AnyMessageName(encodedNode.Details)
-	if err != nil {
-		return nil, err
-	}
-
-	nodeFactory, exists := knownNodeTypes[name]
+	nodeFactory, exists := knownNodeTypes[encodedNode.NodeType]
 	if !exists {
-		return nil, fmt.Errorf("unknown node type: %s", name)
+		return nil, fmt.Errorf("unknown node type: %d", encodedNode.NodeType)
 	}
 
 	node := nodeFactory()
-	if err := prototypes.UnmarshalAny(encodedNode.Details, node.Details()); err != nil {
+	if err := proto.Unmarshal(encodedNode.Details, node.Details()); err != nil {
 		return nil, err
 	}
 
@@ -268,27 +335,97 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 
 type NodeFactory func() Node
 
-// Map of details message type (eg. "planning.SubqueryDetails") to a factory method that returns a new instance of that type of node (eg. Subquery).
-var knownNodeTypes = map[string]NodeFactory{}
+// Map of node type to a factory method that returns a new instance of that type of node (eg. Subquery).
+var knownNodeTypes = map[NodeType]NodeFactory{}
 
 // RegisterNodeFactory registers a NodeFactory used during deserialization of a query plan.
 func RegisterNodeFactory(f NodeFactory) {
-	n := f()
-	details := n.Details()
-	if details == nil {
-		panic("RegisterNodeFactory called with factory that returns node with nil Details()")
+	node := f()
+	id := node.NodeType()
+
+	if _, exists := knownNodeTypes[id]; exists {
+		panic(fmt.Sprintf("RegisterNodeFactory already registered node type %d", id))
 	}
 
-	name := proto.MessageName(details)
+	knownNodeTypes[id] = f
+}
 
-	if name == "" {
-		// If you're seeing the message below, then you likely need to enable the gogoproto.messagename_all option for the .proto file.
-		panic("RegisterNodeFactory called with details type that returns empty name - is the type missing a XXX_MessageName method?")
+// String returns a human-readable representation of the query plan, intended for use during debugging and tests.
+func (p *QueryPlan) String() string {
+	printer := &planPrinter{
+		builder:                     &strings.Builder{},
+		nodeReferenceCounts:         make(map[Node]int),
+		repeatedNodesPrintedAlready: make(map[Node]struct{}),
+		repeatedNodeLabels:          make(map[Node]string),
 	}
 
-	if _, exists := knownNodeTypes[name]; exists {
-		panic(fmt.Sprintf("RegisterNodeFactory already registered name %v", name))
+	printer.identifyRepeatedNodes(p.Root)
+	printer.printNode(p.Root, 0, "")
+
+	return strings.TrimRight(printer.builder.String(), "\n")
+}
+
+type planPrinter struct {
+	builder                     *strings.Builder
+	nodeReferenceCounts         map[Node]int
+	repeatedNodesPrintedAlready map[Node]struct{}
+	repeatedNodeLabels          map[Node]string
+}
+
+func (p *planPrinter) identifyRepeatedNodes(n Node) {
+	if p.nodeReferenceCounts[n] > 1 {
+		// We already know this node is repeated, nothing more to do.
+		return
 	}
 
-	knownNodeTypes[name] = f
+	p.nodeReferenceCounts[n]++
+	if p.nodeReferenceCounts[n] > 1 {
+		// Just saw this node for the second time, assign a label to it and then we are done.
+		p.repeatedNodeLabels[n] = fmt.Sprintf("ref#%v", len(p.repeatedNodeLabels)+1)
+		return
+	}
+
+	for _, child := range n.Children() {
+		p.identifyRepeatedNodes(child)
+	}
+}
+
+func (p *planPrinter) printNode(n Node, indent int, label string) {
+	p.builder.WriteString(strings.Repeat("\t", indent))
+	p.builder.WriteString("- ")
+
+	if label != "" {
+		p.builder.WriteString(label)
+		p.builder.WriteString(": ")
+	}
+
+	ref, repeated := p.repeatedNodeLabels[n]
+	if repeated {
+		_, printedAlready := p.repeatedNodesPrintedAlready[n]
+		p.builder.WriteString(ref)
+		p.builder.WriteRune(' ')
+
+		if printedAlready {
+			p.builder.WriteString(NodeTypeName(n))
+			p.builder.WriteString(" ...\n")
+			return
+		}
+
+		p.repeatedNodesPrintedAlready[n] = struct{}{}
+	}
+
+	p.builder.WriteString(NodeTypeName(n))
+
+	description := n.Describe()
+	if description != "" {
+		p.builder.WriteString(": ")
+		p.builder.WriteString(description)
+	}
+
+	p.builder.WriteRune('\n')
+	childLabels := n.ChildrenLabels()
+
+	for childIdx, child := range n.Children() {
+		p.printNode(child, indent+1, childLabels[childIdx])
+	}
 }

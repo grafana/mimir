@@ -93,6 +93,7 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
+	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
@@ -180,20 +181,14 @@ type LeveledCompactorOptions struct {
 	EnableOverlappingCompaction bool
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
+	// UseUncachedIO allows bypassing the page cache when appropriate.
+	UseUncachedIO bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
-}
-
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
-		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
-		MergeFunc:                   mergeFunc,
-		EnableOverlappingCompaction: true,
-	})
 }
 
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
@@ -235,6 +230,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		useUncachedIO:               opts.UseUncachedIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
@@ -856,7 +852,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		// Populate chunk and index files into temporary directory with
 		// data of all blocks.
 		var chunkw ChunkWriter
-		chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
+		chunkw, err = chunks.NewWriter(chunkDir(tmp), chunks.WithSegmentSize(c.maxBlockChunkSegmentSize), chunks.WithUncachedIO(c.useUncachedIO))
 		if err != nil {
 			return fmt.Errorf("open chunk writer: %w", err)
 		}
@@ -1030,7 +1026,7 @@ type DefaultBlockPopulator struct{}
 // It expects sorted blocks input by mint.
 // If there is more than 1 output block, each output block will only contain series that hash into its shard
 // (based on total number of output blocks).
-func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock, postingsFunc IndexReaderPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block(s) from no readers")
 	}

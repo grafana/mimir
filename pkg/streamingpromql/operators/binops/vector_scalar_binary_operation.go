@@ -13,9 +13,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // VectorScalarBinaryOperation represents a binary operation between an instant vector and a scalar such as "<expr> + 2" or "3 * <expr>".
@@ -25,7 +25,7 @@ type VectorScalarBinaryOperation struct {
 	ScalarIsLeftSide         bool
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	timeRange types.QueryTimeRange
 	opFunc    vectorScalarBinaryOperationFunc
@@ -45,7 +45,7 @@ func NewVectorScalarBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
@@ -235,11 +235,11 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	}
 
 	if returnInputFPointSlice {
-		types.FPointSlicePool.Put(series.Floats, v.MemoryConsumptionTracker)
+		types.FPointSlicePool.Put(&series.Floats, v.MemoryConsumptionTracker)
 	}
 
 	if returnInputHPointSlice {
-		types.HPointSlicePool.Put(series.Histograms, v.MemoryConsumptionTracker)
+		types.HPointSlicePool.Put(&series.Histograms, v.MemoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{
@@ -252,12 +252,19 @@ func (v *VectorScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 	return v.expressionPosition
 }
 
+func (v *VectorScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := v.Scalar.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return v.Vector.Prepare(ctx, params)
+}
+
 func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
 
-	types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
-	v.scalarData.Samples = nil
+	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 }
 
 func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {

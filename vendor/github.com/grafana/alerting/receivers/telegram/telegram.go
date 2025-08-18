@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"mime/multipart"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -30,7 +32,6 @@ const telegramMaxMessageLenRunes = 4096
 // - https://core.telegram.org/bots/api#sendmessage for sending text message
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	images   images.Provider
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
@@ -38,11 +39,10 @@ type Notifier struct {
 }
 
 // New is the constructor for the Telegram notifier
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		tmpl:     template,
-		log:      logger,
 		images:   images,
 		ns:       sender,
 		settings: cfg,
@@ -51,9 +51,10 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify send an alert notification to Telegram.
 func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := tn.GetLogger(ctx)
 	// Create the cmd for sendMessage
 	cmd, err := tn.newWebhookSyncCmd("sendMessage", func(w *multipart.Writer) error {
-		msg, err := tn.buildTelegramMessage(ctx, as)
+		msg, err := tn.buildTelegramMessage(ctx, as, l)
 		if err != nil {
 			return fmt.Errorf("failed to build message: %w", err)
 		}
@@ -67,12 +68,16 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	if err != nil {
 		return false, fmt.Errorf("failed to create telegram message: %w", err)
 	}
-	if err := tn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := tn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, fmt.Errorf("failed to send telegram message: %w", err)
 	}
 
 	// Create the cmd to upload each image
-	_ = images.WithStoredImages(ctx, tn.log, tn.images, func(_ int, image images.Image) error {
+	uploadedImages := make(map[string]struct{})
+	_ = images.WithStoredImages(ctx, l, tn.images, func(_ int, image images.Image) error {
+		if _, ok := uploadedImages[image.ID]; ok && image.ID != "" { // Do not deduplicate if ID is not specified.
+			return nil
+		}
 		cmd, err = tn.newWebhookSyncCmd("sendPhoto", func(w *multipart.Writer) error {
 			f, err := image.RawData(ctx)
 			if err != nil {
@@ -90,24 +95,25 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		if err != nil {
 			return fmt.Errorf("failed to create image: %w", err)
 		}
-		if err := tn.ns.SendWebhook(ctx, cmd); err != nil {
+		if err := tn.ns.SendWebhook(ctx, l, cmd); err != nil {
 			return fmt.Errorf("failed to upload image to telegram: %w", err)
 		}
+		uploadedImages[image.ID] = struct{}{}
 		return nil
 	}, as...)
 
 	return true, nil
 }
 
-func (tn *Notifier) buildTelegramMessage(ctx context.Context, as []*types.Alert) (map[string]string, error) {
+func (tn *Notifier) buildTelegramMessage(ctx context.Context, as []*types.Alert, l log.Logger) (map[string]string, error) {
 	var tmplErr error
 	defer func() {
 		if tmplErr != nil {
-			tn.log.Warn("failed to template Telegram message", "error", tmplErr)
+			level.Warn(l).Log("msg", "failed to template Telegram message", "err", tmplErr)
 		}
 	}()
 
-	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, tn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, l, &tmplErr)
 	// Telegram supports 4096 chars max
 	messageText, truncated := receivers.TruncateInRunes(tmpl(tn.settings.Message), telegramMaxMessageLenRunes)
 	if truncated {
@@ -115,7 +121,7 @@ func (tn *Notifier) buildTelegramMessage(ctx context.Context, as []*types.Alert)
 		if err != nil {
 			return nil, err
 		}
-		tn.log.Warn("Truncated message", "alert", key, "max_runes", telegramMaxMessageLenRunes)
+		level.Warn(l).Log("msg", "Truncated message", "alert", key, "max_runes", telegramMaxMessageLenRunes)
 	}
 
 	m := make(map[string]string)

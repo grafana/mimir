@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -23,7 +25,6 @@ var (
 
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	images   images.Provider
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
@@ -31,10 +32,9 @@ type Notifier struct {
 }
 
 // New is the constructor for the SensuGo notifier
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		images:   images,
 		ns:       sender,
 		tmpl:     template,
@@ -44,10 +44,11 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends an alert notification to Sensu Go
 func (sn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	sn.log.Debug("sending Sensu Go result")
+	l := sn.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending Sensu Go result")
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, sn.tmpl, as, sn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, sn.tmpl, as, l, &tmplErr)
 
 	// Sensu Go alerts require an entity and a check. We set it to the user-specified
 	// value (optional), else we fallback and use the grafana rule anme  and ruleID.
@@ -80,7 +81,7 @@ func (sn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	labels := make(map[string]string)
 
-	_ = images.WithStoredImages(ctx, sn.log, sn.images,
+	_ = images.WithStoredImages(ctx, l, sn.images,
 		func(_ int, image images.Image) error {
 			// If there is an image for this alert and the image has been uploaded
 			// to a public URL then add it to the request. We cannot add more than
@@ -92,7 +93,7 @@ func (sn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			return nil
 		}, as...)
 
-	ruleURL := receivers.JoinURLPath(sn.tmpl.ExternalURL.String(), "/alerting/list", sn.log)
+	ruleURL := receivers.JoinURLPath(sn.tmpl.ExternalURL.String(), "/alerting/list", l)
 	labels["ruleURL"] = ruleURL
 
 	bodyMsgType := map[string]interface{}{
@@ -117,7 +118,7 @@ func (sn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	if tmplErr != nil {
-		sn.log.Warn("failed to template sensugo message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template sensugo message", "err", tmplErr.Error())
 	}
 
 	body, err := json.Marshal(bodyMsgType)
@@ -134,8 +135,8 @@ func (sn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			"Authorization": fmt.Sprintf("Key %s", sn.settings.APIKey),
 		},
 	}
-	if err := sn.ns.SendWebhook(ctx, cmd); err != nil {
-		sn.log.Error("failed to send Sensu Go event", "error", err, "sensugo", sn.Name)
+	if err := sn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "failed to send Sensu Go event", "err", err)
 		return false, err
 	}
 

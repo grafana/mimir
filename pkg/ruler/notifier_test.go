@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -31,7 +32,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		name string
 
 		alertmanagerURL             string
-		notifier                    NotifierConfig
+		notifier                    notifier.Config
 		alertmanagerRefreshInterval time.Duration
 		notificationTimeout         time.Duration
 
@@ -195,7 +196,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with basic authentication URL, no service discovery, and explicit config",
 			alertmanagerURL: "http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
+			notifier: notifier.Config{
 				BasicAuth: util.BasicAuth{
 					Username: "jacob",
 					Password: flagext.SecretWithValue("test"),
@@ -261,7 +262,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with service discovery URL, basic auth, and proxy URL",
 			alertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
+			notifier: notifier.Config{
 				ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
 			},
 			ncfg: &config.Config{
@@ -291,8 +292,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with OAuth2",
 			alertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
-				OAuth2: OAuth2Config{
+			notifier: notifier.Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",
@@ -326,8 +327,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with OAuth2 and optional scopes",
 			alertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
-				OAuth2: OAuth2Config{
+			notifier: notifier.Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",
@@ -363,8 +364,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with OAuth2 and optional endpoint params",
 			alertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
-				OAuth2: OAuth2Config{
+			notifier: notifier.Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",
@@ -406,9 +407,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "with OAuth2 and proxy_url simultaneously, inheriting proxy",
 			alertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
+			notifier: notifier.Config{
 				ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
-				OAuth2: OAuth2Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",
@@ -465,7 +466,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "misspelled proxy URL",
 			alertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
+			notifier: notifier.Config{
 				ProxyURL: "http://example.local" + string(rune(0x7f)),
 			},
 			err: errors.New("parse \"http://example.local\\x7f\": net/url: invalid control character in URL"),
@@ -473,11 +474,11 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "basic auth and oauth provided at the same time",
 			alertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
+			notifier: notifier.Config{
 				BasicAuth: util.BasicAuth{
 					Username: "test-user",
 				},
-				OAuth2: OAuth2Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",
@@ -489,8 +490,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name:            "basic auth via URL and oauth provided at the same time",
 			alertmanagerURL: "http://marco:hunter2@alertmanager.default.svc.cluster.local/alertmanager",
-			notifier: NotifierConfig{
-				OAuth2: OAuth2Config{
+			notifier: notifier.Config{
+				OAuth2: notifier.OAuth2Config{
 					ClientID:     "oauth2-client-id",
 					ClientSecret: flagext.SecretWithValue("test"),
 					TokenURL:     "https://oauth2-token-endpoint.local/token",

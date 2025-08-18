@@ -6,31 +6,26 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type InstantVectorFunctionOperatorFactory func(
+type FunctionOperatorFactory func(
 	args []types.Operator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	absentLabels labels.Labels, // Only used by absent and absent_over_time.
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
-) (types.InstantVectorOperator, error)
-
-type ScalarFunctionOperatorFactory func(
-	args []types.Operator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
-	expressionPosition posrange.PositionRange,
-	timeRange types.QueryTimeRange,
-) (types.ScalarOperator, error)
+) (types.Operator, error)
 
 // SingleInputVectorFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector).
@@ -38,8 +33,8 @@ type ScalarFunctionOperatorFactory func(
 // Parameters:
 //   - name: The name of the function
 //   - f: The function implementation
-func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstantVectorDefinition) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstantVectorDefinition) FunctionOperatorFactory {
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -61,13 +56,13 @@ func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstant
 	}
 }
 
-// InstantVectorTransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// InstantVectorTransformationFunctionOperatorFactory creates an FunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
 //
 // Parameters:
 //   - name: The name of the function
 //   - seriesDataFunc: The function to handle series data
-func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
+func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc InstantVectorSeriesFunction) FunctionOperatorFactory {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         seriesDataFunc,
 		SeriesMetadataFunction: DropSeriesName,
@@ -76,17 +71,17 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 	return SingleInputVectorFunctionOperatorFactory(name, f)
 }
 
-func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
+func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc InstantVectorSeriesFunction) FunctionOperatorFactory {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         seriesDataFunc,
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		var inner types.InstantVectorOperator
 		if len(args) == 0 {
 			// if the argument is not provided, it will default to vector(time())
-			inner = scalars.NewScalarToInstantVector(operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
+			inner = scalars.NewScalarToInstantVector(operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition, memoryConsumptionTracker)
 		} else if len(args) == 1 {
 			// if one argument is provided, it must be an instant vector
 			var ok bool
@@ -117,7 +112,7 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc Insta
 // Parameters:
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
-func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc SeriesMetadataFunctionDefinition) InstantVectorFunctionOperatorFactory {
+func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc SeriesMetadataFunctionDefinition) FunctionOperatorFactory {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         PassthroughData,
 		SeriesMetadataFunction: metadataFunc,
@@ -126,7 +121,7 @@ func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadata
 	return SingleInputVectorFunctionOperatorFactory(name, f)
 }
 
-// FunctionOverRangeVectorOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// FunctionOverRangeVectorOperatorFactory creates an FunctionOperatorFactory for functions
 // that have exactly 1 argument (v range-vector).
 //
 // Parameters:
@@ -135,8 +130,8 @@ func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadata
 func FunctionOverRangeVectorOperatorFactory(
 	name string,
 	f FunctionOverRangeVectorDefinition,
-) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+) FunctionOperatorFactory {
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -158,7 +153,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	}
 }
 
-func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func PredictLinearFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := PredictLinear
 
 	if len(args) != 2 {
@@ -187,7 +182,7 @@ func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limit
 	return o, nil
 }
 
-func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := QuantileOverTime
 
 	if len(args) != 2 {
@@ -216,7 +211,7 @@ func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *li
 	return o, nil
 }
 
-func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func scalarToInstantVectorOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for vector, got %v", len(args))
@@ -228,10 +223,10 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 		return nil, fmt.Errorf("expected a scalar argument for vector, got %T", args[0])
 	}
 
-	return scalars.NewScalarToInstantVector(inner, expressionPosition), nil
+	return scalars.NewScalarToInstantVector(inner, expressionPosition, memoryConsumptionTracker), nil
 }
 
-func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	// It is valid for label_join to have no source label names. ie, only 3 arguments are actually required.
 	if len(args) < 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -279,7 +274,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 5 arguments for label_replace, got %v", len(args))
@@ -328,7 +323,33 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptio
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("expected exactly 1 parameter for 'absent', got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected InstantVectorOperator as parameter of 'absent' function call, got %T", args[0])
+	}
+
+	return NewAbsent(inner, labels, timeRange, memoryConsumptionTracker, expressionPosition), nil
+}
+
+func AbsentOverTimeOperatorFactory(args []types.Operator, labels labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("expected exactly 1 parameter for 'absent_over_time', got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.RangeVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected RangeVectorOperator as parameter of 'absent_over_time' function call, got %T", args[0])
+	}
+
+	return NewAbsentOverTime(inner, labels, timeRange, memoryConsumptionTracker, expressionPosition), nil
+}
+
+func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for clamp, got %v", len(args))
@@ -361,8 +382,8 @@ func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracke
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 2 arguments for %s, got %v", functionName, len(args))
@@ -390,7 +411,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Instant
 	}
 }
 
-func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 && len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected 1 or 2 arguments for round, got %v", len(args))
@@ -422,7 +443,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracke
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 2 arguments for histogram_quantile, got %v", len(args))
@@ -444,7 +465,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsu
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for histogram_fraction, got %v", len(args))
@@ -468,16 +489,11 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsu
 		return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
 	}
 
-	f := FunctionOverInstantVectorDefinition{
-		SeriesDataFunc:         HistogramFraction,
-		SeriesMetadataFunction: DropSeriesName,
-	}
-
-	o := NewFunctionOverInstantVector(inner, []types.ScalarOperator{lower, upper}, memoryConsumptionTracker, f, expressionPosition, timeRange)
+	o := NewHistogramFractionFunction(lower, upper, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for timestamp, got %v", len(args))
@@ -490,10 +506,10 @@ func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	}
 
 	f := Timestamp
-	selector, isSelector := args[0].(*selectors.InstantVectorSelector)
+	_, isSelector := args[0].(*selectors.InstantVectorSelector)
 
 	if isSelector {
-		selector.ReturnSampleTimestamps = true
+		// We'll have already set ReturnSampleTimestamps on the InstantVectorSelector during the planning process, so we don't need to do that here.
 		f.SeriesDataFunc = PassthroughData
 	}
 
@@ -501,14 +517,54 @@ func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
+func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
+	functionName := "sort_by_label"
+	if descending {
+		functionName = "sort_by_label_desc"
+	}
+
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+		if len(args) < 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected at least 1 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		var labels []string
+		for i := 1; i < len(args); i++ {
+			l, ok := args[i].(types.StringOperator)
+			if !ok {
+				// Should be caught by the PromQL parser, but we check here for safety.
+				return nil, fmt.Errorf("expected a string for argument %d, got %T", i+1, args[i])
+			}
+
+			labels = append(labels, l.GetValue())
+		}
+
+		// sort_by_labels and sort_by_labels_desc only affect the results of instant queries
+		// since range query results have a fixed output ordering. However, we still validate
+		// all the arguments as if we were going to sort for consistency.
+		if !timeRange.IsInstant {
+			return inner, nil
+		}
+
+		return NewSortByLabel(inner, descending, labels, memoryConsumptionTracker, expressionPosition), nil
+	}
+}
+
+func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 	functionName := "sort"
 
 	if descending {
 		functionName = "sort_desc"
 	}
 
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
@@ -530,111 +586,38 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 	}
 }
 
-// InstantVectorFunctionOperatorFactories contains operator factories for each function that returns an instant vector.
+// RegisteredFunctions contains information for each registered function.
 //
-// Do not modify this map directly at runtime. Instead, call RegisterInstantVectorFunctionOperatorFactory.
-var InstantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
-	// absent and absent_over_time are handled as special cases.
-	//lint:sorted
-	"abs":                          InstantVectorTransformationFunctionOperatorFactory("abs", Abs),
-	"acos":                         InstantVectorTransformationFunctionOperatorFactory("acos", Acos),
-	"acosh":                        InstantVectorTransformationFunctionOperatorFactory("acosh", Acosh),
-	"asin":                         InstantVectorTransformationFunctionOperatorFactory("asin", Asin),
-	"asinh":                        InstantVectorTransformationFunctionOperatorFactory("asinh", Asinh),
-	"atan":                         InstantVectorTransformationFunctionOperatorFactory("atan", Atan),
-	"atanh":                        InstantVectorTransformationFunctionOperatorFactory("atanh", Atanh),
-	"avg_over_time":                FunctionOverRangeVectorOperatorFactory("avg_over_time", AvgOverTime),
-	"ceil":                         InstantVectorTransformationFunctionOperatorFactory("ceil", Ceil),
-	"changes":                      FunctionOverRangeVectorOperatorFactory("changes", Changes),
-	"clamp":                        ClampFunctionOperatorFactory,
-	"clamp_max":                    ClampMinMaxFunctionOperatorFactory("clamp_max", false),
-	"clamp_min":                    ClampMinMaxFunctionOperatorFactory("clamp_min", true),
-	"cos":                          InstantVectorTransformationFunctionOperatorFactory("cos", Cos),
-	"cosh":                         InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh),
-	"count_over_time":              FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime),
-	"day_of_month":                 TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth),
-	"day_of_week":                  TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek),
-	"day_of_year":                  TimeTransformationFunctionOperatorFactory("day_of_year", DayOfYear),
-	"days_in_month":                TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth),
-	"deg":                          InstantVectorTransformationFunctionOperatorFactory("deg", Deg),
-	"delta":                        FunctionOverRangeVectorOperatorFactory("delta", Delta),
-	"deriv":                        FunctionOverRangeVectorOperatorFactory("deriv", Deriv),
-	"double_exponential_smoothing": DoubleExponentialSmoothingFunctionOperatorFactory,
-	"exp":                          InstantVectorTransformationFunctionOperatorFactory("exp", Exp),
-	"floor":                        InstantVectorTransformationFunctionOperatorFactory("floor", Floor),
-	"histogram_avg":                InstantVectorTransformationFunctionOperatorFactory("histogram_avg", HistogramAvg),
-	"histogram_count":              InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount),
-	"histogram_fraction":           HistogramFractionFunctionOperatorFactory,
-	"histogram_quantile":           HistogramQuantileFunctionOperatorFactory,
-	"histogram_stddev":             InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true)),
-	"histogram_stdvar":             InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false)),
-	"histogram_sum":                InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum),
-	"hour":                         TimeTransformationFunctionOperatorFactory("hour", Hour),
-	"idelta":                       FunctionOverRangeVectorOperatorFactory("idelta", Idelta),
-	"increase":                     FunctionOverRangeVectorOperatorFactory("increase", Increase),
-	"irate":                        FunctionOverRangeVectorOperatorFactory("irate", Irate),
-	"label_join":                   LabelJoinFunctionOperatorFactory,
-	"label_replace":                LabelReplaceFunctionOperatorFactory,
-	"last_over_time":               FunctionOverRangeVectorOperatorFactory("last_over_time", LastOverTime),
-	"ln":                           InstantVectorTransformationFunctionOperatorFactory("ln", Ln),
-	"log10":                        InstantVectorTransformationFunctionOperatorFactory("log10", Log10),
-	"log2":                         InstantVectorTransformationFunctionOperatorFactory("log2", Log2),
-	"max_over_time":                FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime),
-	"min_over_time":                FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime),
-	"minute":                       TimeTransformationFunctionOperatorFactory("minute", Minute),
-	"month":                        TimeTransformationFunctionOperatorFactory("month", Month),
-	"predict_linear":               PredictLinearFactory,
-	"present_over_time":            FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime),
-	"quantile_over_time":           QuantileOverTimeFactory,
-	"rad":                          InstantVectorTransformationFunctionOperatorFactory("rad", Rad),
-	"rate":                         FunctionOverRangeVectorOperatorFactory("rate", Rate),
-	"resets":                       FunctionOverRangeVectorOperatorFactory("resets", Resets),
-	"round":                        RoundFunctionOperatorFactory,
-	"sgn":                          InstantVectorTransformationFunctionOperatorFactory("sgn", Sgn),
-	"sin":                          InstantVectorTransformationFunctionOperatorFactory("sin", Sin),
-	"sinh":                         InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh),
-	"sort":                         SortOperatorFactory(false),
-	"sort_desc":                    SortOperatorFactory(true),
-	"sqrt":                         InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt),
-	"stddev_over_time":             FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime),
-	"stdvar_over_time":             FunctionOverRangeVectorOperatorFactory("stdvar_over_time", StdvarOverTime),
-	"sum_over_time":                FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime),
-	"tan":                          InstantVectorTransformationFunctionOperatorFactory("tan", Tan),
-	"tanh":                         InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh),
-	"timestamp":                    TimestampFunctionOperatorFactory,
-	"vector":                       scalarToInstantVectorOperatorFactory,
-	"year":                         TimeTransformationFunctionOperatorFactory("year", Year),
+// Do not modify this map directly. Instead, call RegisterFunction.
+var RegisteredFunctions = map[Function]FunctionMetadata{}
+
+type FunctionMetadata struct {
+	Name            string
+	OperatorFactory FunctionOperatorFactory
+	ReturnType      parser.ValueType
 }
 
-func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
-	if _, exists := InstantVectorFunctionOperatorFactories[functionName]; exists {
-		return fmt.Errorf("function '%s' has already been registered", functionName)
+func RegisterFunction(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory) error {
+	if _, exists := RegisteredFunctions[function]; exists {
+		return fmt.Errorf("function with ID %d has already been registered", function)
 	}
 
-	InstantVectorFunctionOperatorFactories[functionName] = factory
+	if existing, exists := promQLNamesToFunctions[name]; exists {
+		return fmt.Errorf("function with name '%s' has already been registered with a different ID: %d", name, existing)
+	}
+
+	RegisteredFunctions[function] = FunctionMetadata{
+		Name:            name,
+		ReturnType:      returnType,
+		OperatorFactory: factory,
+	}
+
+	promQLNamesToFunctions[name] = function
+
 	return nil
 }
 
-// ScalarFunctionOperatorFactories contains operator factories for each function that returns a scalar.
-//
-// Do not modify this map directly at runtime. Instead, call RegisterScalarFunctionOperatorFactory.
-var ScalarFunctionOperatorFactories = map[string]ScalarFunctionOperatorFactory{
-	// Please keep this list sorted alphabetically.
-	"pi":     piOperatorFactory,
-	"scalar": instantVectorToScalarOperatorFactory,
-	"time":   timeOperatorFactory,
-}
-
-func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFunctionOperatorFactory) error {
-	if _, exists := ScalarFunctionOperatorFactories[functionName]; exists {
-		return fmt.Errorf("function '%s' has already been registered", functionName)
-	}
-
-	ScalarFunctionOperatorFactories[functionName] = factory
-	return nil
-}
-
-func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func piOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
@@ -643,7 +626,7 @@ func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting
 	return scalars.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func timeOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
@@ -652,7 +635,7 @@ func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiti
 	return operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func instantVectorToScalarOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for scalar, got %v", len(args))
@@ -667,7 +650,7 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 	return scalars.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.InstantVectorOperator {
+func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.Operator {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         UnaryNegation,
 		SeriesMetadataFunction: DropSeriesName,
@@ -677,7 +660,7 @@ func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 
-func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := DoubleExponentialSmoothing
 
 	functionName := "double_exponential_smoothing"
@@ -710,4 +693,89 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, me
 	}
 
 	return o, nil
+}
+
+func init() {
+	//lint:sorted
+	must(RegisterFunction(FUNCTION_ABS, "abs", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("abs", Abs)))
+	must(RegisterFunction(FUNCTION_ABSENT, "absent", parser.ValueTypeVector, AbsentOperatorFactory))
+	must(RegisterFunction(FUNCTION_ABSENT_OVER_TIME, "absent_over_time", parser.ValueTypeVector, AbsentOverTimeOperatorFactory))
+	must(RegisterFunction(FUNCTION_ACOS, "acos", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("acos", Acos)))
+	must(RegisterFunction(FUNCTION_ACOSH, "acosh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("acosh", Acosh)))
+	must(RegisterFunction(FUNCTION_ASIN, "asin", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("asin", Asin)))
+	must(RegisterFunction(FUNCTION_ASINH, "asinh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("asinh", Asinh)))
+	must(RegisterFunction(FUNCTION_ATAN, "atan", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("atan", Atan)))
+	must(RegisterFunction(FUNCTION_ATANH, "atanh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("atanh", Atanh)))
+	must(RegisterFunction(FUNCTION_AVG_OVER_TIME, "avg_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("avg_over_time", AvgOverTime)))
+	must(RegisterFunction(FUNCTION_CEIL, "ceil", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("ceil", Ceil)))
+	must(RegisterFunction(FUNCTION_CHANGES, "changes", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("changes", Changes)))
+	must(RegisterFunction(FUNCTION_CLAMP, "clamp", parser.ValueTypeVector, ClampFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_CLAMP_MAX, "clamp_max", parser.ValueTypeVector, ClampMinMaxFunctionOperatorFactory("clamp_max", false)))
+	must(RegisterFunction(FUNCTION_CLAMP_MIN, "clamp_min", parser.ValueTypeVector, ClampMinMaxFunctionOperatorFactory("clamp_min", true)))
+	must(RegisterFunction(FUNCTION_COS, "cos", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cos", Cos)))
+	must(RegisterFunction(FUNCTION_COSH, "cosh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh)))
+	must(RegisterFunction(FUNCTION_COUNT_OVER_TIME, "count_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime)))
+	must(RegisterFunction(FUNCTION_DAYS_IN_MONTH, "days_in_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth)))
+	must(RegisterFunction(FUNCTION_DAY_OF_MONTH, "day_of_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth)))
+	must(RegisterFunction(FUNCTION_DAY_OF_WEEK, "day_of_week", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek)))
+	must(RegisterFunction(FUNCTION_DAY_OF_YEAR, "day_of_year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_year", DayOfYear)))
+	must(RegisterFunction(FUNCTION_DEG, "deg", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("deg", Deg)))
+	must(RegisterFunction(FUNCTION_DELTA, "delta", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("delta", Delta)))
+	must(RegisterFunction(FUNCTION_DERIV, "deriv", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("deriv", Deriv)))
+	must(RegisterFunction(FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING, "double_exponential_smoothing", parser.ValueTypeVector, DoubleExponentialSmoothingFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_EXP, "exp", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("exp", Exp)))
+	must(RegisterFunction(FUNCTION_FLOOR, "floor", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("floor", Floor)))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_AVG, "histogram_avg", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_avg", HistogramAvg)))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_COUNT, "histogram_count", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount)))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_FRACTION, "histogram_fraction", parser.ValueTypeVector, HistogramFractionFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_QUANTILE, "histogram_quantile", parser.ValueTypeVector, HistogramQuantileFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_STDDEV, "histogram_stddev", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true))))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_STDVAR, "histogram_stdvar", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false))))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_SUM, "histogram_sum", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum)))
+	must(RegisterFunction(FUNCTION_HOUR, "hour", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("hour", Hour)))
+	must(RegisterFunction(FUNCTION_IDELTA, "idelta", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("idelta", Idelta)))
+	must(RegisterFunction(FUNCTION_INCREASE, "increase", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("increase", Increase)))
+	must(RegisterFunction(FUNCTION_IRATE, "irate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("irate", Irate)))
+	must(RegisterFunction(FUNCTION_LABEL_JOIN, "label_join", parser.ValueTypeVector, LabelJoinFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_LABEL_REPLACE, "label_replace", parser.ValueTypeVector, LabelReplaceFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_LAST_OVER_TIME, "last_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("last_over_time", LastOverTime)))
+	must(RegisterFunction(FUNCTION_LN, "ln", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("ln", Ln)))
+	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
+	must(RegisterFunction(FUNCTION_LOG2, "log2", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log2", Log2)))
+	must(RegisterFunction(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime)))
+	must(RegisterFunction(FUNCTION_MINUTE, "minute", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("minute", Minute)))
+	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
+	must(RegisterFunction(FUNCTION_MONTH, "month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("month", Month)))
+	must(RegisterFunction(FUNCTION_PI, "pi", parser.ValueTypeScalar, piOperatorFactory))
+	must(RegisterFunction(FUNCTION_PREDICT_LINEAR, "predict_linear", parser.ValueTypeVector, PredictLinearFactory))
+	must(RegisterFunction(FUNCTION_PRESENT_OVER_TIME, "present_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime)))
+	must(RegisterFunction(FUNCTION_QUANTILE_OVER_TIME, "quantile_over_time", parser.ValueTypeVector, QuantileOverTimeFactory))
+	must(RegisterFunction(FUNCTION_RAD, "rad", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("rad", Rad)))
+	must(RegisterFunction(FUNCTION_RATE, "rate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("rate", Rate)))
+	must(RegisterFunction(FUNCTION_RESETS, "resets", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("resets", Resets)))
+	must(RegisterFunction(FUNCTION_ROUND, "round", parser.ValueTypeVector, RoundFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_SCALAR, "scalar", parser.ValueTypeScalar, instantVectorToScalarOperatorFactory))
+	must(RegisterFunction(FUNCTION_SGN, "sgn", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sgn", Sgn)))
+	must(RegisterFunction(FUNCTION_SIN, "sin", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sin", Sin)))
+	must(RegisterFunction(FUNCTION_SINH, "sinh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh)))
+	must(RegisterFunction(FUNCTION_SORT, "sort", parser.ValueTypeVector, SortOperatorFactory(false)))
+	must(RegisterFunction(FUNCTION_SORT_BY_LABEL, "sort_by_label", parser.ValueTypeVector, SortByLabelOperatorFactory(false)))
+	must(RegisterFunction(FUNCTION_SORT_BY_LABEL_DESC, "sort_by_label_desc", parser.ValueTypeVector, SortByLabelOperatorFactory(true)))
+	must(RegisterFunction(FUNCTION_SORT_DESC, "sort_desc", parser.ValueTypeVector, SortOperatorFactory(true)))
+	must(RegisterFunction(FUNCTION_SQRT, "sqrt", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt)))
+	must(RegisterFunction(FUNCTION_STDDEV_OVER_TIME, "stddev_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime)))
+	must(RegisterFunction(FUNCTION_STDVAR_OVER_TIME, "stdvar_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("stdvar_over_time", StdvarOverTime)))
+	must(RegisterFunction(FUNCTION_SUM_OVER_TIME, "sum_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime)))
+	must(RegisterFunction(FUNCTION_TAN, "tan", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tan", Tan)))
+	must(RegisterFunction(FUNCTION_TANH, "tanh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh)))
+	must(RegisterFunction(FUNCTION_TIME, "time", parser.ValueTypeScalar, timeOperatorFactory))
+	must(RegisterFunction(FUNCTION_TIMESTAMP, "timestamp", parser.ValueTypeVector, TimestampFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_VECTOR, "vector", parser.ValueTypeVector, scalarToInstantVectorOperatorFactory))
+	must(RegisterFunction(FUNCTION_YEAR, "year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("year", Year)))
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
 }

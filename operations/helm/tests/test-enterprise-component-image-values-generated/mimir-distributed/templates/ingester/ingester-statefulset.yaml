@@ -13,8 +13,12 @@ metadata:
     name: "ingester-zone-a"
     rollout-group: ingester
     zone: zone-a
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -96,6 +100,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -135,11 +140,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -155,8 +157,13 @@ metadata:
     name: "ingester-zone-b"
     rollout-group: ingester
     zone: zone-b
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-enterprise-component-image-values-mimir-ingester-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -238,6 +245,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -277,11 +285,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -297,8 +302,13 @@ metadata:
     name: "ingester-zone-c"
     rollout-group: ingester
     zone: zone-c
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-enterprise-component-image-values-mimir-ingester-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -380,6 +390,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -419,8 +430,5 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"

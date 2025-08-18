@@ -38,6 +38,8 @@ const (
 	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
 	minProducerRecordDataBytesLimit = 1024 * 1024
 
+	defaultMaxInflightProduceRequests = 20
+
 	writerMetricsPrefix = "cortex_ingest_storage_writer_"
 )
 
@@ -48,6 +50,10 @@ var (
 	// fails only if bigger than the upper limit.
 	ErrWriteRequestDataItemTooLarge = errors.New(globalerror.DistributorMaxWriteRequestDataItemSize.Message(
 		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
+
+	// ErrWriterNotRunning is the error returned if someone tries to use Writer but the service is not
+	// in the running state.
+	ErrWriterNotRunning = errors.New("the Kafka writer client is not in the running state")
 )
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -60,38 +66,44 @@ type Writer struct {
 
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
-	writersMx sync.RWMutex
-	writers   []*KafkaProducer
+	writersMx  sync.RWMutex
+	writers    []*KafkaProducer
+	serializer recordSerializer
 
 	// Metrics.
-	writeLatency      prometheus.Histogram
-	writeBytesTotal   prometheus.Counter
-	recordsPerRequest prometheus.Histogram
+	writeSuccessLatency prometheus.Observer
+	writeFailureLatency prometheus.Observer
+	writeBytesTotal     prometheus.Counter
+	recordsPerRequest   prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_ingest_storage_writer_latency_seconds",
+		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records. Latency is tracked individually for each partition.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		NativeHistogramMaxBucketNumber:  100,
+		Buckets:                         prometheus.DefBuckets,
+	}, []string{"outcome"})
+
 	w := &Writer{
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
-		maxInflightProduceRequests: 20,
+		serializer:                 recordSerializerFromCfg(kafkaCfg),
+		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
 		// Metrics.
-		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                            "cortex_ingest_storage_writer_latency_seconds",
-			Help:                            "Latency to write an incoming request to the ingest storage.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-			NativeHistogramMaxBucketNumber:  100,
-			Buckets:                         prometheus.DefBuckets,
-		}),
+		writeSuccessLatency: writeLatency.WithLabelValues("success"),
+		writeFailureLatency: writeLatency.WithLabelValues("failure"),
 		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
-			Help: "Total number of bytes sent to the ingest storage.",
+			Help: "Total number of bytes produced to the Kafka backend.",
 		}),
 		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_writer_records_per_write_request",
@@ -139,7 +151,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	records, err := w.serializer.ToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
 	}
@@ -157,10 +169,14 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 	res := writer.ProduceSync(ctx, records)
 
-	// Track latency only for successfully written records.
+	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
+	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
+	// latency but in practice many are very high latency and timing out).
 	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
-		w.writeLatency.Observe(time.Since(startTime).Seconds())
+		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(sizeBytes))
+	} else {
+		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}
 
 	if err := res.FirstErr(); err != nil {
@@ -188,6 +204,12 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
 
+	// Ensure the service is in the Running state. We want to avoid the case where someone tries to
+	// re-create a client after the service has been stopped.
+	if w.State() != services.Running {
+		return nil, ErrWriterNotRunning
+	}
+
 	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
 	writer = w.writers[clientID]
 	if writer != nil {
@@ -212,6 +234,8 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	return newWriter, nil
 }
 
+type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest
+
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
 // The request may be split to multiple records to get that each single Kafka record
 // data size is not bigger than maxSize.
@@ -220,7 +244,7 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
 	reqSize := req.Size()
 
 	if reqSize <= maxSize {
@@ -233,7 +257,7 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 		return []*kgo.Record{rec}, nil
 	}
 
-	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
+	return marshalWriteRequestsToRecords(partitionID, tenantID, split(req, reqSize, maxSize))
 }
 
 func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {

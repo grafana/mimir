@@ -85,7 +85,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
-		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler", util.GRPCProtocol),
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-frontend", util.GRPCProtocol),
 	}
 
 	var err error
@@ -403,7 +403,7 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
-	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
+	spanLogger, _ := spanlogger.New(req.ctx, w.log, tracer, "frontendSchedulerWorker.enqueueRequest")
 	spanLogger.SetTag("scheduler_address", w.conn.Target())
 	defer spanLogger.Finish()
 

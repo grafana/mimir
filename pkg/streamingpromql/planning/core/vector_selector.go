@@ -5,9 +5,12 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -19,7 +22,13 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
+
+	if v.ReturnSampleTimestamps {
+		return d + ", return sample timestamps"
+	}
+
+	return d
 }
 
 func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -28,6 +37,10 @@ func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types
 
 func (v *VectorSelector) Details() proto.Message {
 	return v.VectorSelectorDetails
+}
+
+func (v *VectorSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
 func (v *VectorSelector) Children() []planning.Node {
@@ -48,36 +61,46 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
-		v.Offset == otherVectorSelector.Offset
+		v.Offset == otherVectorSelector.Offset &&
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
+		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	matchers, err := LabelMatchersToPrometheusType(v.Matchers)
 	if err != nil {
 		return nil, err
 	}
-
-	o := &selectors.InstantVectorSelector{
+	selector := &selectors.Selector{
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(v.Timestamp),
+		Offset:                   v.Offset.Milliseconds(),
+		LookbackDelta:            params.LookbackDelta,
+		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     v.SkipHistogramBuckets,
+		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-		Selector: &selectors.Selector{
-			Queryable:          params.Queryable,
-			TimeRange:          timeRange,
-			Timestamp:          TimestampFromTime(v.Timestamp),
-			Offset:             v.Offset.Milliseconds(),
-			LookbackDelta:      params.LookbackDelta,
-			Matchers:           matchers,
-			ExpressionPosition: v.ExpressionPosition.ToPrometheusType(),
-		},
-		Stats: params.Stats,
 	}
 
-	return planning.NewSingleUseOperatorFactory(o), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
+
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
+func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
+	return v.GetExpressionPosition().ToPrometheusType()
 }

@@ -247,9 +247,14 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			expectedErrorMessage: "'limit' param cannot be less than '0'",
 		},
 		{
-			name:                 "expected error if `limit` param is negative",
+			name:                 "expected error if `limit` param is greater than default limit",
 			request:              createRequest("/ignored-url?limit=5000", "team-a"),
 			expectedErrorMessage: "'limit' param cannot be greater than '500'",
+		},
+		{
+			name:                 "expected error if `limit` param is greater than per tenant limit",
+			request:              createRequest("/ignored-url?limit=300", "team-b"),
+			expectedErrorMessage: "'limit' param cannot be greater than '100'",
 		},
 		{
 			name:                 "expected error if tenantId is not defined",
@@ -275,7 +280,17 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			if !data.cardinalityAnalysisDisabled {
 				limits.CardinalityAnalysisEnabled = true
 			}
-			overrides := validation.NewOverrides(limits, nil)
+			teamBLimites := validation.Limits{
+				CardinalityAnalysisEnabled:    true,
+				CardinalityAnalysisMaxResults: 100,
+			}
+			teamALimits := validation.NewMockTenantLimits(
+				map[string]*validation.Limits{
+					"team-b": &teamBLimites,
+				},
+			)
+			overrides := validation.NewOverrides(limits, teamALimits)
+
 			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues([]*client.LabelValues{}, nil), overrides)
 
 			recorder := httptest.NewRecorder()
@@ -691,8 +706,8 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				expectedErrorMessage: "'label_names[]' param is required",
 			},
 			"label_names param is invalid": {
-				url:                  "/label_values?label_names[]=olá",
-				expectedErrorMessage: "invalid 'label_names' param 'olá'",
+				url:                  "/label_values?label_names[]=\xff\xfe",
+				expectedErrorMessage: "invalid 'label_names' param '\xff\xfe'",
 			},
 			"multiple selector params are provided": {
 				url:                  "/label_values?label_names[]=hello&selector=foo&selector=bar",
@@ -1037,7 +1052,7 @@ func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
 
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
 func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
-	limits := validation.Limits{CardinalityAnalysisEnabled: true}
+	limits := validation.Limits{CardinalityAnalysisEnabled: true, CardinalityAnalysisMaxResults: 500}
 	overrides := validation.NewOverrides(limits, nil)
 
 	handler := cardinalityHandler(distributor, overrides)

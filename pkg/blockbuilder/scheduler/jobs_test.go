@@ -3,9 +3,12 @@
 package scheduler
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -17,7 +20,8 @@ type testSpec struct {
 }
 
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	require.NotNil(t, s)
 
 	j0, j0spec, err := s.assign("w0")
 	require.Empty(t, j0.id)
@@ -47,7 +51,8 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	require.NotNil(t, s)
 
 	{
 		err := s.completeJob(jobKey{"rando job", 965}, "w0")
@@ -92,7 +97,9 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	require.NotNil(t, s)
+
 	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	require.NoError(t, e)
 	jk, jspec, err := s.assign("w0")
@@ -131,10 +138,46 @@ func TestLease(t *testing.T) {
 	})
 }
 
+func TestPersistentFailure(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(reg), test.NewTestingLogger(t))
+	require.NotNil(t, s)
+
+	require.NoError(t, s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()}))
+
+	jk, jspec, err := s.assign("w0")
+	require.NotZero(t, jk.id)
+	require.NotZero(t, jspec)
+	require.NoError(t, err)
+
+	j, ok := s.jobs[jk.id]
+	require.True(t, ok)
+	require.Equal(t, "w0", j.assignee)
+
+	for range s.jobFailuresAllowed + 3 {
+		// Expire the lease.
+		j.leaseExpiry = time.Now().Add(-1 * time.Minute)
+		s.clearExpiredLeases()
+
+		a2k, a2spec, err := s.assign("w0")
+		require.Equal(t, jk.id, a2k.id)
+		require.Equal(t, jspec, a2spec)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_persistent_job_failures_total The number of times a job failed persistently beyond the allowed max fail count.
+		# TYPE cortex_blockbuilder_scheduler_persistent_job_failures_total counter
+		cortex_blockbuilder_scheduler_persistent_job_failures_total{} 3
+	`), "cortex_blockbuilder_scheduler_persistent_job_failures_total"), "expect 3 failures in excess of the max fail count")
+}
+
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	require.NotNil(t, s)
+
 	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
 	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
 	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
@@ -152,7 +195,8 @@ func TestImportJob(t *testing.T) {
 
 func TestJobCreationPolicies(t *testing.T) {
 	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+		require.NotNil(t, s)
 
 		// noOp policy should always allow job creation
 		require.NoError(t, s.add("job1", testSpec{topic: "topic1"}))
@@ -165,7 +209,9 @@ func TestJobCreationPolicies(t *testing.T) {
 	})
 
 	t.Run("allowNone", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), allowNoneJobCreationPolicy[testSpec]{})
+		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+		require.NotNil(t, s)
+		s.creationPolicy = allowNoneJobCreationPolicy[testSpec]{}
 
 		// allowNone policy should never allow job creation
 		require.ErrorIs(t, s.add("job1", testSpec{topic: "topic1"}), errJobCreationDisallowed)

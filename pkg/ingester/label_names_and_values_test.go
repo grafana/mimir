@@ -442,7 +442,7 @@ func (i *mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, e
 	return l, nil
 }
 
-func (i *mockIndex) LabelValues(_ context.Context, name string, _ ...*labels.Matcher) ([]string, error) {
+func (i *mockIndex) LabelValues(_ context.Context, name string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}

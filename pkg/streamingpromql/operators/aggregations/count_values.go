@@ -17,8 +17,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type CountValues struct {
@@ -27,7 +27,7 @@ type CountValues struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewCountValues will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 
@@ -49,7 +49,7 @@ func NewCountValues(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
@@ -91,7 +91,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerMetadata)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, c.MemoryConsumptionTracker)
 
 	c.labelsBuilder = labels.NewBuilder(labels.EmptyLabels())
 	c.labelsBytesBuffer = make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
@@ -125,11 +125,18 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		types.PutInstantVectorSeriesData(data, c.MemoryConsumptionTracker)
 	}
 
-	outputMetadata := types.GetSeriesMetadataSlice(len(accumulator))
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(accumulator), c.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
 
 	for _, s := range accumulator {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		outputMetadata, err = types.AppendSeriesMetadata(c.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		if err != nil {
+			return nil, err
+		}
 
 		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {
@@ -138,8 +145,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 		c.series = append(c.series, points)
 
-		types.IntSlicePool.Put(s.count, c.MemoryConsumptionTracker)
-		s.count = nil
+		types.IntSlicePool.Put(&s.count, c.MemoryConsumptionTracker)
 		countValuesSeriesPool.Put(s)
 	}
 
@@ -148,7 +154,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(c.resolvedLabelName) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 
@@ -209,7 +215,7 @@ func (c *CountValues) computeOutputLabels(seriesLabels labels.Labels, value stri
 	return c.labelsBuilder.Labels()
 }
 
-func (s *countValuesSeries) toPoints(memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
+func (s *countValuesSeries) toPoints(memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
 	p, err := types.FPointSlicePool.Get(s.outputPointCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -242,12 +248,16 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 	return c.expressionPosition
 }
 
+func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return c.Inner.Prepare(ctx, params)
+}
+
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()
 
 	for _, d := range c.series {
-		types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
+		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil

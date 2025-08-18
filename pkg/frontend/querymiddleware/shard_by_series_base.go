@@ -13,11 +13,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -157,18 +157,18 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			partialStats.AddShardedQueries(1)
 
-			var span opentracing.Span
-			span, childCtx = opentracing.StartSpanFromContext(childCtx, "shardBySeries.doShardedRequest")
-			defer span.Finish()
+			var span trace.Span
+			childCtx, span = tracer.Start(childCtx, "shardBySeries.doShardedRequest")
+			defer span.End()
 
 			resp, err := next.RoundTrip(r.WithContext(childCtx))
 			if err != nil {
-				span.LogFields(otlog.Error(err))
+				span.RecordError(err)
 				return err
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				span.LogFields(otlog.Int("statusCode", resp.StatusCode))
+				span.SetAttributes(attribute.Int("statusCode", resp.StatusCode))
 				if resp.StatusCode == http.StatusRequestEntityTooLarge {
 					return errShardCountTooLow
 				}
@@ -181,7 +181,7 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 
 			resps[i] = resp
 
-			span.LogFields(otlog.Uint64("seriesCount", partialStats.LoadFetchedSeries()))
+			span.SetAttributes(attribute.Int64("seriesCount", int64(partialStats.LoadFetchedSeries())))
 			queryStats.Merge(partialStats)
 
 			return nil

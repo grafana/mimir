@@ -30,15 +30,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -77,18 +76,15 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -125,8 +121,9 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
 			cfg.ShardedQueries = true
@@ -135,12 +132,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		mockLimits{totalShards: totalShards},
 		codec,
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -457,21 +450,16 @@ func TestTripperware_Metrics(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
 			tw, err := NewTripperware(
 				Config{},
 				log.NewNopLogger(),
-				mockLimits{
-					alignQueriesWithStep: testData.stepAlignEnabled,
-				},
-				newTestPrometheusCodec(),
+				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
+				newTestCodec(),
 				nil,
-				promql.EngineOpts{
-					Logger:     promslog.NewNopLogger(),
-					Reg:        nil,
-					MaxSamples: 1000,
-					Timeout:    time.Minute,
-				},
+				engine,
+				engineOpts,
 				nil,
 				reg,
 			)
@@ -512,13 +500,14 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
 		multiTenantMockLimits{
 			byTenant: map[string]mockLimits{
 				"user-1": {
-					blockedRequests: []*validation.BlockedRequest{
+					blockedRequests: []validation.BlockedRequest{
 						{
 							Path: "/api/v1/series",
 							QueryParams: map[string]validation.BlockedRequestQueryParam{
@@ -529,14 +518,10 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 				},
 			},
 		},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -588,27 +573,25 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
-	cfg.PrunedQueries = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
-	require.NotZero(t, cfg.PrunedQueries)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
-		mockLimits{
-			alignQueriesWithStep: true,
-		},
-		newTestPrometheusCodec(),
+		mockLimits{alignQueriesWithStep: true},
+		newTestCodec(),
 		nil,
 		nil,
 		nil,
-		promql.NewEngine(promql.EngineOpts{}),
-		defaultStepFunc,
+		engine,
+		engineOpts,
+		nil,
 		nil,
 	)
 
@@ -623,24 +606,20 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		"range query": {
 			instances: queryRangeMiddlewares,
 			exceptions: []string{
-				"splitInstantQueryByIntervalMiddleware",
 				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
 			},
 		},
 		"remote read": {
 			instances: remoteReadMiddlewares,
 			exceptions: []string{
-				"instrumentMiddleware",
-				"querySharding", // No query sharding support.
-				"retry",
-				"splitAndCacheMiddleware",               // No time splitting and results cache support.
-				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
-				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
-				"pruneMiddleware",                       // No query pruning support.
-				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
-				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
-				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
-				"queryLimiterMiddleware",                // This middleware is only for instant queries.
+				"querySharding",                   // No query sharding support.
+				"splitAndCacheMiddleware",         // No time splitting and results cache support.
+				"stepAlignMiddleware",             // Not applicable because remote read requests don't take step in account when running in Mimir.
+				"experimentalFunctionsMiddleware", // No blocking for PromQL experimental functions as it is executed remotely.
+				"durationsMiddleware",             // No duration expressions support.
+				"prom2RangeCompatHandler",         // No rewriting Prometheus 2 subqueries to Prometheus 3
+				"spinOffSubqueriesMiddleware",     // This middleware is only for instant queries.
+				"queryLimiterMiddleware",          // This middleware is only for instant queries.
 			},
 		},
 	}
@@ -816,22 +795,21 @@ func TestTripperware_RemoteRead(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
+
 			tw, err := NewTripperware(
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				nil,
-				promql.EngineOpts{
-					Logger:     promslog.NewNopLogger(),
-					Reg:        nil,
-					MaxSamples: 1000,
-					Timeout:    time.Minute,
-				},
+				engine,
+				engineOpts,
 				nil,
 				reg,
 			)
+
 			require.NoError(t, err)
 
 			req := tc.makeRequest()
@@ -919,6 +897,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		},
 	}
 
+	promOpts, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -955,14 +934,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewPrometheusCodec(nil, 0, formatJSON, nil),
+		NewCodec(nil, 0, formatJSON, nil),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		promEngine,
+		promOpts,
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
 		nil,
 	)

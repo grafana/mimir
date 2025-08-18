@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -17,7 +17,7 @@ type AndUnlessBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsUnless                 bool // If true, this operator represents an 'unless', if false, this operator represents an 'and'
 
 	timeRange                  types.QueryTimeRange
@@ -36,7 +36,7 @@ func NewAndUnlessBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
@@ -75,7 +75,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
-		types.PutSeriesMetadataSlice(leftMetadata)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -84,10 +84,11 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(rightMetadata)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, a.MemoryConsumptionTracker)
 
 	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -126,15 +127,10 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		a.rightSeriesGroups = append(a.rightSeriesGroups, group)
 	}
 
-	var metadata []types.SeriesMetadata
-
 	if a.IsUnless {
-		metadata = a.computeUnlessSeriesMetadata(leftMetadata)
-	} else {
-		metadata = a.computeAndSeriesMetadata(leftMetadata)
+		return a.computeUnlessSeriesMetadata(leftMetadata), nil
 	}
-
-	return metadata, nil
+	return a.computeAndSeriesMetadata(leftMetadata), nil
 }
 
 func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types.SeriesMetadata) []types.SeriesMetadata {
@@ -147,12 +143,16 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 			// This series doesn't match any series from the right side.
 			// Discard the group.
 			a.leftSeriesGroups[seriesIdx] = nil
+			a.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(leftMetadata[seriesIdx].Labels)
 		} else {
 			leftMetadata[nextOutputSeriesIndex] = leftMetadata[seriesIdx]
 			nextOutputSeriesIndex++
 			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
+
+	// Clear up labels that we don't need anymore.
+	clear(leftMetadata[nextOutputSeriesIndex:])
 
 	return leftMetadata[:nextOutputSeriesIndex]
 }
@@ -268,9 +268,30 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
+func (a *AndUnlessBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := a.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return a.Right.Prepare(ctx, params)
+}
+
 func (a *AndUnlessBinaryOperation) Close() {
 	a.Left.Close()
 	a.Right.Close()
+
+	for _, group := range a.leftSeriesGroups {
+		if group == nil {
+			continue
+		}
+
+		group.Close(a.MemoryConsumptionTracker)
+	}
+
+	a.leftSeriesGroups = nil
+
+	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
+	a.rightSeriesGroups = nil
 }
 
 type andGroup struct {
@@ -280,7 +301,7 @@ type andGroup struct {
 }
 
 // AccumulateRightSeriesPresence records the presence of samples on the right-hand side.
-func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
+func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
 	if g.rightSamplePresence == nil {
 		var err error
 		g.rightSamplePresence, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -305,10 +326,10 @@ func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesD
 
 // FilterLeftSeries returns leftData filtered based on samples seen for the right-hand side.
 // The return value reuses the slices from leftData, and returns any unused slices to the pool.
-func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
+func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
 	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
-func (g *andGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
+func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.BoolSlicePool.Put(&g.rightSamplePresence, memoryConsumptionTracker)
 }

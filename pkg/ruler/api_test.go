@@ -26,9 +26,11 @@ import (
 	"github.com/grafana/dskit/user"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -437,6 +439,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		expectedStatusCode int
 		expectedErrorType  v1.ErrorType
 		expectedRules      []*RuleGroup
+		expectedWarnings   []string
 		queryParams        string
 	}{
 		"should load and evaluate the configured rules": {
@@ -506,6 +509,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval: 60,
 				},
 			},
+			expectedWarnings: []string{errAlertingRulesEvaluationDisabled},
 		},
 		"should load and evaluate only alerting rules if recording rules evaluation is disabled for the tenant": {
 			configuredRules: rulespb.RuleGroupList{
@@ -540,6 +544,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval: 60,
 				},
 			},
+			expectedWarnings: []string{errRulesEvaluationDisabled},
 		},
 		"should load and evaluate no rules if rules evaluation is disabled for the tenant": {
 			configuredRules: rulespb.RuleGroupList{
@@ -557,7 +562,9 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
 			}),
-			expectedRules: []*RuleGroup{},
+			expectedStatusCode: http.StatusUnprocessableEntity,
+			expectedErrorType:  v1.ErrExec,
+			expectedRules:      []*RuleGroup{},
 		},
 		"should load and evaluate the configured rules with special characters": {
 			configuredRules: rulespb.RuleGroupList{
@@ -1182,11 +1189,14 @@ func TestRuler_PrometheusRules(t *testing.T) {
 
 			r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(tc.limits), withStart())
 
-			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
-			// has been synched.
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups has been synched.
 			test.Poll(t, 5*time.Second, tc.expectedConfigured, func() interface{} {
 				ctx := user.InjectOrgID(context.Background(), userID)
-				rls, _ := r.Rules(ctx, &RulesRequest{})
+				rls, err := r.Rules(ctx, &RulesRequest{})
+				if err != nil {
+					// The test checks for the actual error below.
+					return 0
+				}
 				return len(rls.Groups)
 			})
 
@@ -1221,8 +1231,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				Data: &RuleDiscovery{
 					RuleGroups: tc.expectedRules,
 				},
+				Warnings: tc.expectedWarnings,
 			})
-
 			require.NoError(t, err)
 			require.Equal(t, string(expectedResponse), string(body))
 		})
@@ -1547,6 +1557,85 @@ rules:
 
 }
 
+func TestAPI_CreateRuleGroup_GCSRateLimit_ErrorDetection(t *testing.T) {
+	testCases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "GCS rate limit error",
+			err:      &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."},
+			expected: true,
+		},
+		{
+			name:     "GCS rate limit error with different message",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited in some other way"},
+			expected: false,
+		},
+		{
+			name:     "GCS rate limit error but not 429",
+			err:      &googleapi.Error{Code: 500, Message: "Server down"},
+			expected: false,
+		},
+
+		{
+			name:     "other error",
+			err:      errors.New("pow"),
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isGCSObjectMutationRateLimitError(tc.err)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestCreateRuleGroup_GCSObjectMutationRateLimit(t *testing.T) {
+	const (
+		userID    = "user1"
+		namespace = "test-namespace"
+	)
+
+	store := &gcsObjRateLimitStore{
+		mockRuleStore: newMockRuleStore(make(map[string]rulespb.RuleGroupList)),
+	}
+
+	cfg := defaultRulerConfig(t)
+	r := prepareRuler(t, cfg, store)
+	api := NewAPI(r, store, log.NewNopLogger())
+
+	ruleGroupPayload := `
+name: test-group
+interval: 15s
+rules:
+- record: up_rule
+  expr: up
+`
+
+	req := requestFor(t, "POST", fmt.Sprintf("https://localhost:8080/prometheus/config/v1/rules/%s", namespace), strings.NewReader(ruleGroupPayload), userID)
+	req = mux.SetURLVars(req, map[string]string{"namespace": namespace})
+	w := httptest.NewRecorder()
+
+	api.CreateRuleGroup(w, req)
+
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+
+	responseBody := w.Body.String()
+	assert.Contains(t, responseBody, "per-rule group rate limit exceeded")
+}
+
+type gcsObjRateLimitStore struct {
+	*mockRuleStore
+}
+
+func (r *gcsObjRateLimitStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
+	return &googleapi.Error{Code: 429, Message: "The object /rules/user1/test-namespace/test-group exceeded the rate limit for object mutation operations (create, update, and delete). Please reduce your request rate."}
+}
+
 func TestAPI_DeleteNamespace(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
@@ -1646,7 +1735,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	test.Poll(t, time.Second, 2, func() interface{} {
 		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		return len(actualRuleGroups)
+		return len(actualRuleGroups.Groups)
 	})
 
 	// Delete group-1.
@@ -1664,16 +1753,18 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	test.Poll(t, time.Second, 1, func() interface{} {
 		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		return len(actualRuleGroups)
+		return len(actualRuleGroups.Groups)
 	})
 }
 
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
+	cfg.EvaluationInterval = 1 * time.Minute
 
 	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRuleGroupsPerTenant = 2
 		defaults.RulerMaxRulesPerRuleGroup = 1
+		defaults.RulerMinRuleEvaluationInterval = model.Duration(15 * time.Second)
 	})))
 
 	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
@@ -1703,6 +1794,56 @@ rules:
     test: test
 `,
 			output: "per-user rules per rule group limit (limit: 1 actual: 2) exceeded\n",
+		},
+		{
+			name:   "when exceeding the rule group eval interval limit",
+			status: 400,
+			input: `
+name: test
+interval: 14s
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "per-user minimum rule evaluation interval limit (limit: 15s actual: 14s) exceeded\n",
+		},
+		{
+			name:   "zero interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+interval: 0s
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
+		},
+		{
+			name:   "blank interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
 		},
 	}
 
@@ -1787,6 +1928,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 0
 		defaults.RulerMaxRulesPerRuleGroup = 0
+		defaults.RulerMinRuleEvaluationInterval = 0
 	})))
 
 	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))

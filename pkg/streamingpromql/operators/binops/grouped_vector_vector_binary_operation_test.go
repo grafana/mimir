@@ -8,15 +8,17 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
@@ -294,8 +296,10 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &operators.TestOperator{Series: testCase.leftSeries}
-			right := &operators.TestOperator{Series: testCase.rightSeries}
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
 			o, err := NewGroupedVectorVectorBinaryOperation(
 				left,
@@ -303,7 +307,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 				testCase.matching,
 				testCase.op,
 				testCase.returnBool,
-				limiting.NewMemoryConsumptionTracker(0, nil),
+				memoryConsumptionTracker,
 				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
@@ -311,7 +315,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(context.Background())
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
@@ -462,15 +466,15 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
+			ctx := context.Background()
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
-			ctx := context.Background()
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -509,12 +513,160 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 				}
 			}
 
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
-			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries       []labels.Labels
+		rightSeries      []labels.Labels
+		seriesToRead     int
+		emptyInputSeries bool
+
+		expectedOutputSeries []labels.Labels
+	}{
+		"closed after reading no series: multiple series from 'many' side match to a single 'one' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+			},
+			seriesToRead: 0,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+			},
+		},
+		"closed after reading no series: multiple series from 'one' side match to a single 'many' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+			seriesToRead: 0,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+		"closed after reading first series: multiple series from 'many' side match to a single 'one' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+			},
+			seriesToRead: 1,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+			},
+		},
+		"closed after reading first series: multiple series from 'one' side match to a single 'many' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+			seriesToRead: 1,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+		"closed after reading all 'one' side input series in a match group, but not all output series for that match group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+			seriesToRead:     2,
+			emptyInputSeries: true, // Don't bother populating the input series with data: we run this test as an instant query, so if both 'one' side series have samples, they conflict with each other.
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "test"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			ts := int64(0)
+			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(ts))
+
+			createTestData := func(val float64) types.InstantVectorSeriesData {
+				if testCase.emptyInputSeries {
+					return types.InstantVectorSeriesData{}
+				}
+
+				floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				floats = append(floats, promql.FPoint{T: ts, F: val})
+				return types.InstantVectorSeriesData{Floats: floats}
+			}
+
+			leftData := make([]types.InstantVectorSeriesData, len(testCase.leftSeries))
+			for i := range testCase.leftSeries {
+				leftData[i] = createTestData(float64(i))
+			}
+
+			rightData := make([]types.InstantVectorSeriesData, len(testCase.rightSeries))
+			for i := range testCase.rightSeries {
+				rightData[i] = createTestData(float64(i))
+			}
+
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+
+			for range testCase.seriesToRead {
+				d, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			}
+
+			// Return any unread data to the pool and update the current memory consumption estimate to match.
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+
+			// Close the operator and verify that the intermediate state is released.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 		})
 	}
 }

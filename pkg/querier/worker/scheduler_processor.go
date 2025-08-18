@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
@@ -22,14 +24,19 @@ import (
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -48,13 +55,24 @@ const (
 	maxNotifyFrontendRetries = 5
 )
 
-var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
-var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
+var (
+	tracer = otel.Tracer("querier/worker")
 
-func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
+	errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
+	errQueryEvaluationFinished                       = cancellation.NewErrorf("query evaluation finished")
+	errAlreadyFailed                                 = errors.New("the query-frontend stream has already failed")
+
+	processorBackoffConfig = backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+	}
+)
+
+func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
-		handler:          handler,
+		httpHandler:      httpHandler,
+		protobufHandler:  protobufHandler,
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
@@ -71,7 +89,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-frontend", util.GRPCProtocol),
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler-processor", util.GRPCProtocol),
 	}
 
 	frontendClientsGauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -95,13 +113,14 @@ type frontendResponseStreamer func(
 	c client.PoolClient,
 	queryID uint64,
 	response *httpgrpc.HTTPResponse,
-	stats *querier_stats.Stats,
+	stats *querier_stats.SafeStats,
 	logger log.Logger) error
 
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
-	handler          RequestHandler
+	httpHandler      RequestHandler
+	protobufHandler  ProtobufRequestHandler
 	streamResponse   frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
@@ -228,22 +247,28 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
-			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
-			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
-				defer queueSpan.Finish()
-
-				ctx = spanCtx
-
-				if err := sp.updateTracingHeaders(request.HttpRequest, queueSpan); err != nil {
-					level.Warn(sp.log).Log("msg", "could not update trace headers on httpgrpc request, trace may be malformed", "err", err)
-				}
+			if parentSpanContext, valid := contextWithSpanFromRequest(ctx, request); valid {
+				var queueSpan trace.Span
+				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
+				defer queueSpan.End()
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
-			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest, time.Duration(request.QueueTimeNanos))
+			switch payload := request.Payload.(type) {
+			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
+				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
+			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
+			default:
+				response := &httpgrpc.HTTPResponse{
+					Code: http.StatusBadRequest,
+					Body: []byte(fmt.Sprintf("unknown request payload type %T", request.Payload)),
+				}
+
+				sp.sendHttpResponseToQueryFrontend(ctx, logger, request.QueryID, request.FrontendAddress, nil, response, false)
+			}
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
@@ -264,14 +289,26 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 	}
 }
 
-func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
-	var stats *querier_stats.Stats
+func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.SchedulerToQuerier) (context.Context, bool) {
+	switch request.Payload.(type) {
+	case *schedulerpb.SchedulerToQuerier_HttpRequest:
+		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
+	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
+		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().TraceHeaders))
+		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
+	default:
+		return ctx, false
+	}
+}
+
+func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
+	var stats *querier_stats.SafeStats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
 		stats.AddQueueTime(queueTime)
 	}
 
-	response, err := sp.handler.Handle(ctx, request)
+	response, err := sp.httpHandler.Handle(ctx, request)
 	if err != nil {
 		var ok bool
 		response, ok = httpgrpc.HTTPResponseFromError(err)
@@ -284,24 +321,15 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 
 	// Ensure responses that are too big are not retried.
-	if len(response.Body) >= sp.maxMessageSize {
-		level.Error(logger).Log("msg", "response larger than max message size", "size", len(response.Body), "maxMessageSize", sp.maxMessageSize)
+	if msgSize := response.Size(); msgSize >= sp.maxMessageSize {
+		level.Error(logger).Log("msg", "response larger than max message size", "size", msgSize, "max_message_size", sp.maxMessageSize)
 
-		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", len(response.Body), sp.maxMessageSize)
+		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", msgSize, sp.maxMessageSize)
 		response = &httpgrpc.HTTPResponse{
 			Code: http.StatusRequestEntityTooLarge,
 			Body: []byte(errMsg),
 		}
 	}
-	var c client.PoolClient
-
-	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
-	frontendCtx := context.WithoutCancel(ctx)
-	bof := backoff.New(frontendCtx, backoff.Config{
-		MinBackoff: 5 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
-		MaxRetries: maxNotifyFrontendRetries,
-	})
 
 	var hasStreamHeader bool
 	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
@@ -310,7 +338,17 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	// Protect against not-yet-exited querier handler goroutines that could
 	// still be incrementing stats when sent for marshaling below.
 	stats = stats.Copy()
+	sp.sendHttpResponseToQueryFrontend(ctx, logger, queryID, frontendAddress, stats, response, shouldStream)
+}
 
+func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, response *httpgrpc.HTTPResponse, shouldStream bool) {
+	var c client.PoolClient
+
+	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
+	frontendCtx := context.WithoutCancel(ctx)
+	bof := createFrontendBackoff(frontendCtx)
+
+	var err error
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
@@ -341,6 +379,14 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 }
 
+func createFrontendBackoff(ctx context.Context) *backoff.Backoff {
+	return backoff.New(ctx, backoff.Config{
+		MinBackoff: 5 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: maxNotifyFrontendRetries,
+	})
+}
+
 func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
 	streamEnabledViaHeader := false
 	for i, header := range headers {
@@ -361,7 +407,7 @@ func streamResponse(
 	c client.PoolClient,
 	queryID uint64,
 	response *httpgrpc.HTTPResponse,
-	stats *querier_stats.Stats,
+	stats *querier_stats.SafeStats,
 	logger log.Logger,
 ) error {
 	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
@@ -413,28 +459,126 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
-	// Reset any trace headers on the HTTP request with the new parent span ID: the child span for the HTTP request created
-	// by the HTTP tracing infrastructure uses the trace information in the HTTP request headers, ignoring the trace
-	// information in the Golang context.
-	return span.Tracer().Inject(span.Context(), opentracing.HTTPHeaders, httpGrpcHeaderWriter{request})
+func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
+	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
+
+	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
+	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
+	writer.Close(ctx)
 }
 
-type httpGrpcHeaderWriter struct {
-	request *httpgrpc.HTTPRequest
+type grpcStreamWriter struct {
+	queryID         uint64
+	frontendAddress string
+	clientPool      frontendClientPool
+	logger          log.Logger
+
+	client client.PoolClient
+	stream frontendv2pb.FrontendForQuerier_QueryResultStreamClient
+	failed bool
 }
 
-var _ opentracing.TextMapWriter = httpGrpcHeaderWriter{}
+type frontendClientPool interface {
+	GetClientFor(addr string) (client.PoolClient, error)
+	RemoveClient(c client.PoolClient, addr string)
+}
 
-func (w httpGrpcHeaderWriter) Set(key, val string) {
-	for _, h := range w.request.Headers {
-		if h.Key == key {
-			h.Values = []string{val}
+func newGrpcStreamWriter(queryID uint64, frontendAddress string, clientPool frontendClientPool, logger log.Logger) *grpcStreamWriter {
+	return &grpcStreamWriter{
+		queryID:         queryID,
+		frontendAddress: frontendAddress,
+		clientPool:      clientPool,
+		logger:          logger,
+	}
+}
+
+func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+	if g.failed {
+		return errAlreadyFailed
+	}
+
+	msg.QueryID = g.queryID
+
+	if g.stream != nil {
+		// We already have a stream, use it.
+		// If this fails, don't retry, as we can't know if the message made it to the frontend or not, which could lead to incorrect query results.
+		if err := g.stream.Send(msg); err != nil {
+			g.clientPool.RemoveClient(g.client, g.frontendAddress)
+			g.failed = true
+			return err
+		}
+
+		return nil
+	}
+
+	// This is the first message, try to send the message with retries.
+	// This is safe to do (unlike for subsequent messages), as the query-frontend will reject
+	// the QueryResultStream calls if it has already seen any message for this query.
+	ctx = context.WithoutCancel(ctx) // Even if the request has been cancelled, we want to inform the query-frontend, so that it doesn't wait for a response until it times out.
+	bof := createFrontendBackoff(ctx)
+	var err error
+	for bof.Ongoing() {
+		err = g.tryToStartStreamAndSendFirstMessage(ctx, msg)
+		if err == nil {
+			return nil
+		}
+
+		level.Warn(g.logger).Log("msg", "attempt to send message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID, "attempt", bof.NumRetries()+1)
+		bof.Wait()
+	}
+
+	level.Error(g.logger).Log("msg", "abandoned attempt to send message to query-frontend", "lastErr", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+	g.failed = true
+	return err
+}
+
+func (g *grpcStreamWriter) tryToStartStreamAndSendFirstMessage(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+	client, err := g.clientPool.GetClientFor(g.frontendAddress)
+	if err != nil {
+		return err
+	}
+
+	stream, err := client.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
+	if err != nil {
+		g.clientPool.RemoveClient(client, g.frontendAddress)
+		return err
+	}
+
+	if err := stream.Send(msg); err != nil {
+		g.clientPool.RemoveClient(client, g.frontendAddress)
+		return err
+	}
+
+	g.client = client
+	g.stream = stream
+
+	return nil
+}
+
+func (g *grpcStreamWriter) Close(ctx context.Context) {
+	if !g.failed && g.stream == nil {
+		// We haven't sent anything to the query-frontend yet.
+		// This should never happen, but if it does, send a message to the query-frontend so it's not waiting
+		// for a response that will never come.
+		msg := &frontendv2pb.QueryResultStreamRequest{
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+					Message: "query execution completed without sending any messages (this is a bug)",
+				},
+			},
+		}
+
+		if err := g.Write(ctx, msg); err != nil {
+			level.Warn(g.logger).Log("msg", "could not send message to frontend to notify of request that completed without any messages", "err", err)
 			return
 		}
 	}
 
-	w.request.Headers = append(w.request.Headers, &httpgrpc.Header{Key: key, Values: []string{val}})
+	if g.stream != nil {
+		// If this fails, there's not much we can do.
+		_, _ = g.stream.CloseAndRecv()
+	}
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
@@ -443,6 +587,7 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(addr, opts...)

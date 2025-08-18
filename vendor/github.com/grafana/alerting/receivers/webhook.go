@@ -3,6 +3,8 @@ package receivers
 import (
 	"context"
 	"crypto/tls"
+
+	"github.com/go-kit/log"
 )
 
 type SendWebhookSettings struct {
@@ -22,5 +24,5 @@ type SendWebhookSettings struct {
 }
 
 type WebhookSender interface {
-	SendWebhook(ctx context.Context, cmd *SendWebhookSettings) error
+	SendWebhook(ctx context.Context, l log.Logger, cmd *SendWebhookSettings) error
 }

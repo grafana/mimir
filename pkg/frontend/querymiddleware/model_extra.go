@@ -17,11 +17,12 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -63,6 +64,8 @@ type PrometheusRangeQueryRequest struct {
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
+	// stats controls query engine stats collection for the request.
+	stats string
 }
 
 func NewPrometheusRangeQueryRequest(
@@ -73,6 +76,7 @@ func NewPrometheusRangeQueryRequest(
 	queryExpr parser.Expr,
 	options Options,
 	hints *Hints,
+	stats string,
 ) *PrometheusRangeQueryRequest {
 	r := &PrometheusRangeQueryRequest{
 		path:          urlPath,
@@ -86,6 +90,7 @@ func NewPrometheusRangeQueryRequest(
 		maxT:          end,
 		options:       options,
 		hints:         hints,
+		stats:         stats,
 	}
 	return r.updateMinMaxT()
 }
@@ -155,6 +160,10 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 
 func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
+}
+
+func (r *PrometheusRangeQueryRequest) GetStats() string {
+	return r.stats
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -232,13 +241,22 @@ func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 	return &newRequest, nil
 }
 
+func (r *PrometheusRangeQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.stats = stats
+	return &newRequest, nil
+}
+
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
-	sp.SetTag("step_ms", r.GetStep())
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", r.GetQuery()),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+		attribute.Int64("step_ms", r.GetStep()),
+	)
 }
 
 type PrometheusInstantQueryRequest struct {
@@ -257,6 +275,8 @@ type PrometheusInstantQueryRequest struct {
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
+	// stats controls stats collection for the request.
+	stats string
 }
 
 func NewPrometheusInstantQueryRequest(
@@ -267,6 +287,7 @@ func NewPrometheusInstantQueryRequest(
 	queryExpr parser.Expr,
 	options Options,
 	hints *Hints,
+	stats string,
 ) *PrometheusInstantQueryRequest {
 	r := &PrometheusInstantQueryRequest{
 		path:          urlPath,
@@ -278,6 +299,7 @@ func NewPrometheusInstantQueryRequest(
 		maxT:          time,
 		options:       options,
 		hints:         hints,
+		stats:         stats,
 	}
 	return r.updateMinMaxT()
 }
@@ -353,6 +375,10 @@ func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
 }
 
+func (r *PrometheusInstantQueryRequest) GetStats() string {
+	return r.stats
+}
+
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
@@ -422,11 +448,20 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest, nil
 }
 
+func (r *PrometheusInstantQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.stats = stats
+	return &newRequest, nil
+}
+
 // AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
+func (r *PrometheusInstantQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", r.GetQuery()),
+		attribute.String("time", timestamp.Time(r.GetTime()).String()),
+	)
 }
 
 type Hints struct {
@@ -582,27 +617,33 @@ func (r *PrometheusSeriesQueryRequest) WithHeaders(headers []*PrometheusHeader) 
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("label", fmt.Sprintf("%v", r.GetLabelName()))
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("label", r.GetLabelName()),
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 // AddSpanTags writes query information about the current `PrometheusSeriesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusSeriesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusSeriesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 type PrometheusLabelNamesQueryRequest struct {
@@ -737,6 +778,14 @@ type PrometheusLabelsResponse struct {
 	Infos     []string            `json:"infos,omitempty"`
 }
 
+func (m *PrometheusLabelsResponse) Close() {
+	// Nothing to do
+}
+
+func (m *PrometheusLabelsResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+
 func (m *PrometheusLabelsResponse) GetHeaders() []*PrometheusHeader {
 	if m != nil {
 		return m.Headers
@@ -760,6 +809,14 @@ type PrometheusSeriesResponse struct {
 	Headers   []*PrometheusHeader `json:"-"`
 	Warnings  []string            `json:"warnings,omitempty"`
 	Infos     []string            `json:"infos,omitempty"`
+}
+
+func (m *PrometheusSeriesResponse) Close() {
+	// Nothing to do
+}
+
+func (m *PrometheusSeriesResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
 }
 
 func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {
@@ -1016,21 +1073,25 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	return json.Marshal(stream)
 }
 
-type byFirstTime []*PrometheusResponse
+func (resp *PrometheusResponse) Close() {
+	// Nothing to do
+}
 
-func (a byFirstTime) Len() int           { return len(a) }
-func (a byFirstTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byFirstTime) Less(i, j int) bool { return a[i].minTime() < a[j].minTime() }
+func (resp *PrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return resp, true
+}
 
-func (resp *PrometheusResponse) minTime() int64 {
-	result := resp.Data.Result
-	if len(result) == 0 {
-		return -1
-	}
-	if len(result[0].Samples) == 0 {
-		return -1
-	}
-	return result[0].Samples[0].TimestampMs
+type PrometheusResponseWithFinalizer struct {
+	*PrometheusResponse
+	finalizer func()
+}
+
+func (resp *PrometheusResponseWithFinalizer) Close() {
+	resp.finalizer()
+}
+
+func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return resp.PrometheusResponse, true
 }
 
 // EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.

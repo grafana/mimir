@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -213,6 +215,9 @@ type RulesLimits interface {
 	RulerSyncRulesOnChangesEnabled(userID string) bool
 	RulerProtectedNamespaces(userID string) []string
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
+	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
+	RulerMinRuleEvaluationInterval(userID string) time.Duration
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {

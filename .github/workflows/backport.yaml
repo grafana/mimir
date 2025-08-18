@@ -29,13 +29,14 @@ jobs:
           # pin the version to before https://github.com/grafana/grafana-github-actions/pull/113 because
           # we don't want to have the same strict rules for PR labels
           ref: d284afd314ca3625c23595e9f62b52d215ead7ce
+          persist-credentials: false
 
       - name: Install Actions
         run: npm install --production --prefix ./actions
 
       - name: Retrieve GitHub App Credentials from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
         with:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id

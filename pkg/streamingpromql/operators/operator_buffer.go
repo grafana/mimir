@@ -5,8 +5,8 @@ package operators
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // InstantVectorOperatorBuffer buffers series data until it is needed by an operator.
@@ -26,7 +26,7 @@ type InstantVectorOperatorBuffer struct {
 	seriesUsed          []bool
 	lastSeriesIndexUsed int
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -35,7 +35,7 @@ type InstantVectorOperatorBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
+func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
 	return &InstantVectorOperatorBuffer{
 		source:                   source,
 		seriesUsed:               seriesUsed,
@@ -71,8 +71,8 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
 	defer func() {
 		if b.nextIndexToRead > b.lastSeriesIndexUsed {
-			// If we're not going to read any more series, we can free all resources held by this buffer.
-			b.Close()
+			// If we're not going to read any more series, we can close the inner operator.
+			b.source.Close()
 		}
 	}()
 
@@ -111,6 +111,11 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 func (b *InstantVectorOperatorBuffer) Close() {
 	b.source.Close()
 
-	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
-	b.seriesUsed = nil
+	for _, d := range b.buffer {
+		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
+	}
+	b.buffer = nil
+	b.output = nil
+
+	types.BoolSlicePool.Put(&b.seriesUsed, b.memoryConsumptionTracker)
 }

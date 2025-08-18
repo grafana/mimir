@@ -3,13 +3,12 @@ package notify
 import (
 	"bytes"
 	"context"
-	"net/url"
 	tmpltext "text/template"
 
-	"github.com/go-kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/prometheus/alertmanager/template"
 
 	"github.com/grafana/alerting/templates"
-	"github.com/prometheus/alertmanager/template"
 )
 
 type TestTemplatesConfigBodyParams struct {
@@ -21,6 +20,9 @@ type TestTemplatesConfigBodyParams struct {
 
 	// Name of the template.
 	Name string
+
+	// Kind of template to test. Default is Grafana
+	Kind templates.Kind
 }
 
 type TestTemplatesResults struct {
@@ -92,69 +94,20 @@ func (s TemplateScope) Data(data *templates.ExtendedData) any {
 // If an existing template of the same filename as the one being tested is found, it will not be used as context.
 func (am *GrafanaAlertmanager) TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams) (*TestTemplatesResults, error) {
 	am.reloadConfigMtx.RLock()
-	tmpls := make([]templates.TemplateDefinition, len(am.templates))
-	copy(tmpls, am.templates)
+	templateFactory := am.templates
 	am.reloadConfigMtx.RUnlock()
 
-	return TestTemplate(ctx, c, tmpls, am.ExternalURL(), am.logger)
+	return TestTemplate(ctx, c, templateFactory, log.With(am.logger, "operation", "TestTemplate"))
 }
 
-func (am *GrafanaAlertmanager) GetTemplate() (*template.Template, error) {
+func (am *GrafanaAlertmanager) GetTemplate(kind templates.Kind) (*template.Template, error) {
 	am.reloadConfigMtx.RLock()
-
-	seen := make(map[string]struct{})
-	tmpls := make([]string, 0, len(am.templates))
-	for _, tc := range am.templates {
-		if _, ok := seen[tc.Name]; ok {
-			level.Warn(am.logger).Log("msg", "template with same name is defined multiple times, skipping...", "template_name", tc.Name)
-			continue
-		}
-		tmpls = append(tmpls, tc.Template)
-		seen[tc.Name] = struct{}{}
-	}
-
-	am.reloadConfigMtx.RUnlock()
-
-	tmpl, err := templateFromContent(tmpls, am.ExternalURL())
+	defer am.reloadConfigMtx.RUnlock()
+	t, err := am.templates.GetTemplate(kind)
 	if err != nil {
 		return nil, err
 	}
-
-	return tmpl, nil
-}
-
-// parseTestTemplate parses the test template and returns the top-level definitions that should be interpolated as results.
-func parseTestTemplate(name string, text string) ([]string, error) {
-	tmpl, err := templates.NewRawTemplate()
-	if err != nil {
-		return nil, err
-	}
-
-	tmpl, err = tmpl.New(name).Parse(text)
-	if err != nil {
-		return nil, err
-	}
-
-	topLevel, err := templates.TopTemplates(tmpl)
-	if err != nil {
-		return nil, err
-	}
-
-	return topLevel, nil
-}
-
-// TemplateFromContent returns a *Template based on defaults and the provided template contents.
-func templateFromContent(tmpls []string, externalURL string, options ...template.Option) (*templates.Template, error) {
-	tmpl, err := templates.FromContent(tmpls, options...)
-	if err != nil {
-		return nil, err
-	}
-	extURL, err := url.Parse(externalURL)
-	if err != nil {
-		return nil, err
-	}
-	tmpl.ExternalURL = extURL
-	return tmpl, nil
+	return t, nil
 }
 
 // testTemplateScopes tests the given template with the root scope. If the root scope fails, it tries

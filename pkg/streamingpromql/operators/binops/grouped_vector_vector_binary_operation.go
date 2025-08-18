@@ -17,9 +17,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -31,7 +31,7 @@ type GroupedVectorVectorBinaryOperation struct {
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	VectorMatching parser.VectorMatching
 
@@ -61,6 +61,11 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
+func (g *groupedBinaryOperationOutputSeries) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.manySide.Close(memoryConsumptionTracker)
+	g.oneSide.Close(memoryConsumptionTracker)
+}
+
 type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
@@ -78,8 +83,13 @@ type manySide struct {
 // latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s manySide) latestSeriesIndex() int {
+func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
+}
+
+func (s *manySide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData = types.InstantVectorSeriesData{}
 }
 
 type oneSide struct {
@@ -96,8 +106,17 @@ type oneSide struct {
 // latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s oneSide) latestSeriesIndex() int {
+func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
+}
+
+func (s *oneSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData = types.InstantVectorSeriesData{}
+
+	if s.matchGroup != nil {
+		types.IntSlicePool.Put(&s.matchGroup.presence, memoryConsumptionTracker)
+	}
 }
 
 type matchGroup struct {
@@ -127,7 +146,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -194,9 +213,9 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	}
 
 	if len(allMetadata) == 0 {
-		types.PutSeriesMetadataSlice(allMetadata)
-		types.BoolSlicePool.Put(oneSideSeriesUsed, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(manySideSeriesUsed, g.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
 		g.Close()
 		return nil, nil
 	}
@@ -383,11 +402,19 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	}
 
 	// Finally, construct the list of series that this operator will return.
-	outputMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), g.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, nil, -1, nil, -1, err
+	}
+
 	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, o := range outputSeriesMap {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		outputMetadata, err = types.AppendSeriesMetadata(g.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
 
@@ -571,6 +598,15 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}
 
+	// If this is the last output series for that side, then we've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
+	if isLastOutputSeriesForOneSide {
+		thisSeries.oneSide.mergedData = types.InstantVectorSeriesData{}
+	}
+
+	if isLastOutputSeriesForManySide {
+		thisSeries.manySide.mergedData = types.InstantVectorSeriesData{}
+	}
+
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -649,7 +685,7 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 	matchGroup.oneSideCount--
 
 	if matchGroup.oneSideCount == 0 {
-		types.IntSlicePool.Put(matchGroup.presence, g.MemoryConsumptionTracker)
+		types.IntSlicePool.Put(&matchGroup.presence, g.MemoryConsumptionTracker)
 	}
 
 	return nil
@@ -722,16 +758,21 @@ func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.Posit
 	return g.expressionPosition
 }
 
+func (g *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := g.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return g.Right.Prepare(ctx, params)
+}
+
 func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Left.Close()
 	g.Right.Close()
 	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
 
-	types.PutSeriesMetadataSlice(g.oneSideMetadata)
-	g.oneSideMetadata = nil
-
-	types.PutSeriesMetadataSlice(g.manySideMetadata)
-	g.manySideMetadata = nil
+	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
 	if g.oneSideBuffer != nil {
 		g.oneSideBuffer.Close()
@@ -742,4 +783,10 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 		g.manySideBuffer.Close()
 		g.manySideBuffer = nil
 	}
+
+	for _, s := range g.remainingSeries {
+		s.Close(g.MemoryConsumptionTracker)
+	}
+
+	g.remainingSeries = nil
 }

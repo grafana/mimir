@@ -22,9 +22,11 @@ var (
 )
 
 type jobQueue[T any] struct {
-	leaseExpiry    time.Duration
-	logger         log.Logger
-	creationPolicy jobCreationPolicy[T]
+	leaseExpiry        time.Duration
+	creationPolicy     jobCreationPolicy[T]
+	jobFailuresAllowed int
+	metrics            schedulerMetrics
+	logger             log.Logger
 
 	mu         sync.Mutex
 	epoch      int64
@@ -32,11 +34,13 @@ type jobQueue[T any] struct {
 	unassigned *list.List
 }
 
-func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, jobCreationPolicy jobCreationPolicy[T]) *jobQueue[T] {
+func newJobQueue[T any](leaseExpiry time.Duration, jobCreationPolicy jobCreationPolicy[T], jobFailuresAllowed int, metrics schedulerMetrics, logger log.Logger) *jobQueue[T] {
 	return &jobQueue[T]{
-		leaseExpiry:    leaseExpiry,
-		logger:         logger,
-		creationPolicy: jobCreationPolicy,
+		leaseExpiry:        leaseExpiry,
+		creationPolicy:     jobCreationPolicy,
+		jobFailuresAllowed: jobFailuresAllowed,
+		metrics:            metrics,
+		logger:             logger,
 
 		jobs:       make(map[string]*job[T]),
 		unassigned: list.New(),
@@ -167,11 +171,11 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
@@ -197,11 +201,11 @@ func (s *jobQueue[T]) completeJob(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	delete(s.jobs, key.id)
@@ -227,7 +231,12 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 			// An expired job gets to go to the front of the unassigned list.
 			s.unassigned.PushFront(j)
 
-			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
+			if j.failCount > s.jobFailuresAllowed {
+				s.metrics.persistentJobFailures.Inc()
+				level.Error(s.logger).Log("msg", "job failed in a persistent manner", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee, "fail_count", j.failCount)
+			} else {
+				level.Info(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
+			}
 		}
 	}
 }
@@ -279,6 +288,12 @@ func (s *jobQueue[T]) assigned() int {
 		}
 	}
 	return count
+}
+
+func (s *jobQueue[T]) setEpoch(epoch int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch = epoch
 }
 
 type job[T any] struct {

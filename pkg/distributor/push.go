@@ -23,9 +23,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	promRemote "github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -85,7 +86,7 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -95,7 +96,7 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -139,7 +140,7 @@ func (e distributorMaxOTLPRequestSizeErr) Error() string {
 
 func handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -164,7 +165,12 @@ func handler(
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
+			var rb *util.RequestBuffers
+			if newRequestBuffers != nil {
+				rb = newRequestBuffers()
+			} else {
+				rb = util.NewRequestBuffers(nil)
+			}
 			var req mimirpb.PreallocWriteRequest
 
 			req.UnmarshalFromRW2 = isRW2
@@ -210,6 +216,7 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 		if isRW2 {
 			ctx = contextWithWriteResponseStats(ctx)
 		}
@@ -390,10 +397,11 @@ func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, response
 			retryAttemptHeader := r.Header.Get("Retry-Attempt")
 			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.MinBackoff, retryCfg.MaxBackoff)
 			w.Header().Set("Retry-After", retrySeconds)
-			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
-				sp.SetTag("retry-after", retrySeconds)
-				sp.SetTag("retry-attempt", retryAttemptHeader)
-			}
+			sp := trace.SpanFromContext(r.Context())
+			sp.SetAttributes(
+				attribute.String("retry-after", retrySeconds),
+				attribute.String("retry-attempt", retryAttemptHeader),
+			)
 		}
 	}
 }

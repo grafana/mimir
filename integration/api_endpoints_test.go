@@ -40,6 +40,8 @@ func newMimirSingleBinaryWithLocalFilesytemBucket(t *testing.T, name string, fla
 
 	setFlagIfNotExistingAlready("-blocks-storage.backend", "filesystem")
 	setFlagIfNotExistingAlready("-blocks-storage.filesystem.dir", "./bucket")
+	setFlagIfNotExistingAlready("-ruler-storage.backend", "filesystem")
+	setFlagIfNotExistingAlready("-ruler-storage.local.directory", "./rules")
 
 	mimir := e2emimir.NewSingleBinary(name, flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 

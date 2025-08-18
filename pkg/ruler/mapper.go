@@ -10,7 +10,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -139,8 +140,8 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 }
 
 func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename string, logger log.Logger /* contextual logger with userID */) (bool, error) {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].Name > groups[j].Name
+	slices.SortFunc(groups, func(a, b rulefmt.RuleGroup) int {
+		return strings.Compare(b.Name, a.Name)
 	})
 
 	rgs := rulefmt.RuleGroups{Groups: groups}

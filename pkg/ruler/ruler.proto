@@ -9,26 +9,25 @@
 syntax = "proto3";
 package ruler;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
-import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/ruler/rulespb/rules.proto";
-
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Ruler {
   // Rules returns the currently loaded on the ruler instance for the authenticated tenant.
-  rpc Rules(RulesRequest) returns (RulesResponse) {};
+  rpc Rules(RulesRequest) returns (RulesResponse) {}
 
   // SyncRules requests a ruler to asynchronously re-synchronize the rules of 1+ tenants.
-  rpc SyncRules(SyncRulesRequest) returns (SyncRulesResponse) {};
+  rpc SyncRules(SyncRulesRequest) returns (SyncRulesResponse) {}
 }
 
 message RulesRequest {
-  enum RuleType{
+  enum RuleType {
     AnyRule = 0;
     AlertingRule = 1;
     RecordingRule = 2;
@@ -44,6 +43,7 @@ message RulesRequest {
 
 message RulesResponse {
   repeated GroupStateDesc groups = 1;
+  repeated string warnings = 2;
 }
 
 // SyncRulesRequest is the message sent to request a ruler to re-synchronize the rules of 1+ tenants.
@@ -59,8 +59,14 @@ message SyncRulesResponse {}
 message GroupStateDesc {
   rules.RuleGroupDesc group = 1;
   repeated RuleStateDesc active_rules = 2;
-  google.protobuf.Timestamp evaluationTimestamp = 3 [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Duration evaluationDuration = 4 [(gogoproto.nullable) = false,(gogoproto.stdduration) = true];
+  google.protobuf.Timestamp evaluationTimestamp = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Duration evaluationDuration = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
 }
 
 // RuleStateDesc is a proto representation of a Prometheus Rule
@@ -70,8 +76,14 @@ message RuleStateDesc {
   string health = 3;
   string lastError = 4;
   repeated AlertStateDesc alerts = 5;
-  google.protobuf.Timestamp evaluationTimestamp = 6  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Duration evaluationDuration = 7 [(gogoproto.nullable) = false,(gogoproto.stdduration) = true];
+  google.protobuf.Timestamp evaluationTimestamp = 6 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Duration evaluationDuration = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
+  ];
 }
 
 message AlertStateDesc {
@@ -85,16 +97,28 @@ message AlertStateDesc {
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
   double value = 4;
-  google.protobuf.Timestamp active_at = 5
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Timestamp fired_at = 6
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Timestamp resolved_at = 7
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Timestamp last_sent_at = 8
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Timestamp valid_until = 9
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-  google.protobuf.Timestamp keep_firing_since = 10
-      [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+  google.protobuf.Timestamp active_at = 5 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Timestamp fired_at = 6 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Timestamp resolved_at = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Timestamp last_sent_at = 8 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Timestamp valid_until = 9 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  google.protobuf.Timestamp keep_firing_since = 10 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
 }

@@ -14,20 +14,21 @@
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config
+    $.bucket_index_config +
+    $.querierUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'querier',
 
       'server.http-listen-port': $._config.server_http_port,
       'querier.max-concurrent': $._config.querier_max_concurrency,
 
-      'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
-        'query-frontend-discovery.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
       'mem-ballast-size-bytes': 1 << 28,  // 256M
+
+      'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
     },
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
@@ -40,15 +41,13 @@
     container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
-    $.jaeger_mixin +
+    $.tracing_env_mixin +
     $.util.readinessProbe +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-
     // Dynamically set GOMAXPROCS based on CPU request.
     GOMAXPROCS: std.toString(
       std.ceil(
@@ -78,12 +77,12 @@
     // Set a termination grace period greater than query timeout.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
-  querier_deployment: if !$._config.is_microservices_deployment_mode then null else
+  querier_deployment:
     self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
 
-  querier_service: if !$._config.is_microservices_deployment_mode then null else
+  querier_service:
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 
-  querier_pdb: if !$._config.is_microservices_deployment_mode then null else
+  querier_pdb:
     $.newMimirPdb('querier'),
 }

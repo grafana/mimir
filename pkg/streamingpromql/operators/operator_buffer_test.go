@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) {
@@ -44,10 +44,10 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
-	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, 4, memoryConsumptionTracker)
 	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6, limiter.FPointSlices)) // We have 6 FPoints from the inner series.
+	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, 4, memoryConsumptionTracker)
 
 	// Read first series.
 	series, err := buffer.GetSeries(ctx, []int{0})
@@ -114,10 +114,10 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
-	buffer := NewInstantVectorOperatorBuffer(inner, nil, 6, memoryConsumptionTracker)
 	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6, limiter.FPointSlices)) // We have 6 FPoints from the inner series.
+	buffer := NewInstantVectorOperatorBuffer(inner, nil, 6, memoryConsumptionTracker)
 
 	// Read first series.
 	series, err := buffer.GetSeries(ctx, []int{0})
@@ -159,4 +159,43 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series5Data, series6Data}, series)
 	require.True(t, inner.Closed)
+}
+
+func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	createTestData := func(val float64) types.InstantVectorSeriesData {
+		floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+		require.NoError(t, err)
+		floats = append(floats, promql.FPoint{T: 0, F: val})
+		return types.InstantVectorSeriesData{Floats: floats}
+	}
+
+	series0Data := createTestData(0)
+	series1Data := createTestData(1)
+
+	inner := &TestOperator{
+		Series: []labels.Labels{
+			labels.FromStrings("series", "0"),
+			labels.FromStrings("series", "1"),
+		},
+		Data: []types.InstantVectorSeriesData{
+			series0Data,
+			series1Data,
+		},
+	}
+
+	buffer := NewInstantVectorOperatorBuffer(inner, nil, 1, memoryConsumptionTracker)
+
+	// Read the second series, causing the first to be buffered.
+	series, err := buffer.GetSeries(ctx, []int{1})
+	require.NoError(t, err)
+	require.Equal(t, []types.InstantVectorSeriesData{series1Data}, series)
+	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
+	require.Len(t, buffer.buffer, 1, "should have buffered first series")
+
+	// Close the buffer, which should release the buffered series.
+	buffer.Close()
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

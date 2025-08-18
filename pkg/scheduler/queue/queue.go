@@ -15,10 +15,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
 const (
@@ -27,10 +29,11 @@ const (
 )
 
 var (
-	ErrInvalidTenantID     = errors.New("invalid tenant id")
-	ErrTooManyRequests     = errors.New("too many outstanding requests")
-	ErrStopped             = errors.New("queue is stopped")
-	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
+	ErrInvalidTenantID           = errors.New("invalid tenant id")
+	ErrTooManyRequests           = errors.New("too many outstanding requests")
+	ErrStopped                   = errors.New("queue is stopped")
+	ErrQuerierShuttingDown       = errors.New("querier has informed the scheduler it is shutting down")
+	ErrQuerierWorkerDisconnected = errors.New("querier worker has disconnected")
 )
 
 type RequestKey struct {
@@ -49,7 +52,8 @@ type SchedulerRequest struct {
 	FrontendAddr              string
 	UserID                    string
 	QueryID                   uint64
-	Request                   *httpgrpc.HTTPRequest
+	HttpRequest               *httpgrpc.HTTPRequest
+	ProtobufRequest           *schedulerpb.ProtobufRequest
 	StatsEnabled              bool
 	AdditionalQueueDimensions []string
 
@@ -57,9 +61,9 @@ type SchedulerRequest struct {
 
 	Ctx        context.Context
 	CancelFunc context.CancelCauseFunc
-	QueueSpan  opentracing.Span
+	QueueSpan  trace.Span
 
-	ParentSpanContext opentracing.SpanContext
+	ParentSpanContext trace.SpanContext
 }
 
 func (sr *SchedulerRequest) Key() RequestKey {
@@ -116,12 +120,13 @@ type RequestQueue struct {
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	requestsToEnqueue                chan requestToEnqueue
-	requestsSent                     chan *SchedulerRequest
-	requestsCompleted                chan *SchedulerRequest
-	querierWorkerOperations          chan *querierWorkerOperation
-	waitingDequeueRequests           chan *QuerierWorkerDequeueRequest
-	waitingDequeueRequestsToDispatch *list.List
+	requestsToEnqueue                     chan requestToEnqueue
+	requestsSent                          chan *SchedulerRequest
+	requestsCompleted                     chan *SchedulerRequest
+	querierWorkerOperations               chan *querierWorkerOperation
+	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
+	waitingDequeueRequestsToDispatch      *list.List
+	waitingDequeueRequestsToDispatchCount *atomic.Int64
 
 	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
@@ -237,12 +242,13 @@ func NewRequestQueue(
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 
-		requestsToEnqueue:                make(chan requestToEnqueue),
-		requestsSent:                     make(chan *SchedulerRequest),
-		requestsCompleted:                make(chan *SchedulerRequest),
-		querierWorkerOperations:          make(chan *querierWorkerOperation),
-		waitingDequeueRequests:           make(chan *QuerierWorkerDequeueRequest),
-		waitingDequeueRequestsToDispatch: list.New(),
+		requestsToEnqueue:                     make(chan requestToEnqueue),
+		requestsSent:                          make(chan *SchedulerRequest),
+		requestsCompleted:                     make(chan *SchedulerRequest),
+		querierWorkerOperations:               make(chan *querierWorkerOperation),
+		waitingDequeueRequests:                make(chan *QuerierWorkerDequeueRequest),
+		waitingDequeueRequestsToDispatch:      list.New(),
+		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
 		QueryComponentUtilization: queryComponentCapacity,
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
@@ -309,6 +315,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			requestSent := q.trySendNextRequestForQuerier(waitingDequeueReq)
 			if !requestSent {
 				// No requests available for this querier; add it to the list to try later.
+				q.waitingDequeueRequestsToDispatchCount.Inc()
 				q.waitingDequeueRequestsToDispatch.PushBack(waitingDequeueReq)
 			}
 		}
@@ -321,6 +328,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
 				if q.trySendNextRequestForQuerier(call) {
+					q.waitingDequeueRequestsToDispatchCount.Dec()
 					q.waitingDequeueRequestsToDispatch.Remove(currentElement)
 				}
 
@@ -337,7 +345,10 @@ func (q *RequestQueue) dispatcherLoop() {
 			for currentElement != nil {
 				waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
 				waitingDequeueReq.sendError(ErrStopped)
-				currentElement = currentElement.Next()
+				nextElement := currentElement.Next()
+				q.waitingDequeueRequestsToDispatchCount.Dec()
+				q.waitingDequeueRequestsToDispatch.Remove(currentElement)
+				currentElement = nextElement
 			}
 
 			if !q.queueBroker.isEmpty() {

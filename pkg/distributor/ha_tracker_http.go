@@ -6,10 +6,12 @@
 package distributor
 
 import (
+	"cmp"
 	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -41,6 +43,7 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	var electedReplicas []haTrackerReplica
 	for userID, clusters := range h.clusters {
+		uh := h.forUser(userID)
 		for cluster, entry := range clusters {
 			desc := &entry.elected
 			electedReplicas = append(electedReplicas, haTrackerReplica{
@@ -49,21 +52,18 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Replica:             desc.Replica,
 				LastElectionTime:    timestamp.Time(desc.ElectedAt),
 				ElectedLastSeenTime: timestamp.Time(desc.ReceivedAt),
-				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
-				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
+				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.updateTimeout)),
+				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.failoverTimeout)),
 			})
 		}
 	}
 	h.electedLock.RUnlock()
 
-	sort.Slice(electedReplicas, func(i, j int) bool {
-		first := electedReplicas[i]
-		second := electedReplicas[j]
-
-		if first.UserID != second.UserID {
-			return first.UserID < second.UserID
-		}
-		return first.Cluster < second.Cluster
+	slices.SortFunc(electedReplicas, func(a, b haTrackerReplica) int {
+		return cmp.Or(
+			strings.Compare(a.UserID, b.UserID),
+			strings.Compare(a.Cluster, b.Cluster),
+		)
 	})
 
 	util.RenderHTTPResponse(w, haTrackerStatusPageContents{

@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var Rate = FunctionOverRangeVectorDefinition{
@@ -38,7 +38,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
@@ -85,6 +85,10 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	} else {
 		secondPoint = hTail[0]
 	}
+
+	// Store the original first point count before potential reset.
+	// It's needed to calculate the rate correctly later.
+	fpHistCount := firstPoint.H.Count
 
 	// Ignore the first point if there is a counter reset between the first and second point.
 	// This means we'll ignore any incompatibility between the layout of the first and second point,
@@ -166,7 +170,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
 	return val, err
 }
 
@@ -204,7 +208,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int) *histogram.FloatHistogram {
+func calculateHistogramRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int, fpHistCountBeforeReset float64) *histogram.FloatHistogram {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -212,21 +216,30 @@ func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSecond
 	averageDurationBetweenSamples := sampledInterval / float64(count-1)
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToStart
+	if isCounter && delta.Count > 0 && fpHistCountBeforeReset >= 0 {
+		// Counters cannot be negative. If we have any slope at all
+		// (i.e. delta went up), we can extrapolate the zero point
+		// of the counter. If the duration to the zero point is shorter
+		// than the durationToStart, we take the zero point as the start
+		// of the series, thereby avoiding extrapolation to negative
+		// counter values.
+		// Use the original count before any reset handling.
+		durationToZero := sampledInterval * (fpHistCountBeforeReset / delta.Count)
+		if durationToZero < durationToStart {
+			durationToStart = durationToZero
+		}
+	}
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToEnd
-
-	factor := extrapolateToInterval / sampledInterval
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= rangeSeconds
 	}
@@ -245,7 +258,6 @@ func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rang
 	averageDurationBetweenSamples := sampledInterval / float64(count-1)
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
@@ -264,16 +276,11 @@ func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rang
 		}
 	}
 
-	extrapolateToInterval += durationToStart
-
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToEnd
-
-	factor := extrapolateToInterval / sampledInterval
-
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= rangeSeconds
 	}
@@ -302,7 +309,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -369,6 +376,6 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
 
-	val := calculateHistogramRate(false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, firstPoint.H.Count)
 	return val, nil
 }

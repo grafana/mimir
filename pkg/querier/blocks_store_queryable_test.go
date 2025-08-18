@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -54,6 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -940,6 +942,106 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			`
 			},
 		},
+		"more than 3 store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "2.2.2.2",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "3.3.3.3",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "4.4.4.4",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "5.5.5.5",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "6.6.6.6",
+						mockedSeriesResponses: []*storepb.SeriesResponse{
+							mockSeriesResponse(series1Label, minT, 2),
+							mockHintsResponse(block1),
+						},
+					}: {block1},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: series1Label,
+					values: []valueResult{
+						{t: minT, v: 2},
+					},
+				},
+			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 6
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 5
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 1
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 1
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
+		},
 		"max chunks per query limit greater then the number of chunks fetched": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1},
@@ -1645,14 +1747,15 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
 					q := &blocksStoreQuerier{
-						minT:        minT,
-						maxT:        maxT,
-						finder:      finder,
-						stores:      stores,
-						consistency: NewBlocksConsistency(0, reg),
-						logger:      log.NewNopLogger(),
-						metrics:     newBlocksStoreQueryableMetrics(reg),
-						limits:      testData.limits,
+						minT:               minT,
+						maxT:               maxT,
+						finder:             finder,
+						stores:             stores,
+						dynamicReplication: newDynamicReplication(),
+						consistency:        NewBlocksConsistency(0, reg),
+						logger:             log.NewNopLogger(),
+						metrics:            newBlocksStoreQueryableMetrics(reg),
+						limits:             testData.limits,
 					}
 
 					matchers := []*labels.Matcher{
@@ -1742,6 +1845,55 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	}
 }
 
+func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
+	const minT = int64(10)
+	const maxT = int64(20)
+
+	block := ulid.MustNew(1, nil)
+	storeSetResponses := []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{
+			&storeGatewayClientMock{
+				remoteAddr: "1.1.1.1",
+				mockedSeriesResponses: generateStreamingResponses([]*storepb.SeriesResponse{
+					mockSeriesResponse(labels.FromStrings(labels.MetricName, "some_metric"), minT, 1),
+					mockHintsResponse(block),
+				}),
+			}: {block},
+		},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
+	finder := &blocksFinderMock{}
+	finderResult := bucketindex.Blocks{
+		{ID: block},
+	}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, nil)
+
+	reg := prometheus.NewPedanticRegistry()
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	querier := &blocksStoreQuerier{
+		minT:               minT,
+		maxT:               maxT,
+		finder:             finder,
+		stores:             stores,
+		dynamicReplication: newDynamicReplication(),
+		consistency:        NewBlocksConsistency(0, reg),
+		logger:             log.NewNopLogger(),
+		metrics:            newBlocksStoreQueryableMetrics(reg),
+		limits:             &blocksStoreLimitsMock{},
+	}
+
+	// For simplicity, we close the querier before issuing the Select call, but in the real world,
+	// this would likely happen while the Select call is still in progress (eg. because the query was cancelled).
+	require.NoError(t, querier.Close())
+
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	require.EqualError(t, seriesSet.Err(), "querier already closed")
+
+	// We also expect that the background goroutine launched by the stream reader is either never started or stopped correctly, and this should be
+	// caught by VerifyNoLeak in TestMain().
+}
+
 func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
 	const (
 		tenantID   = "user-1"
@@ -1796,14 +1948,15 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		reg := prometheus.NewPedanticRegistry()
 		q := &blocksStoreQuerier{
-			minT:        minT,
-			maxT:        maxT,
-			finder:      finder,
-			stores:      stores,
-			consistency: NewBlocksConsistency(0, reg),
-			logger:      logger,
-			metrics:     newBlocksStoreQueryableMetrics(reg),
-			limits:      &blocksStoreLimitsMock{},
+			minT:               minT,
+			maxT:               maxT,
+			finder:             finder,
+			stores:             stores,
+			dynamicReplication: newDynamicReplication(),
+			consistency:        NewBlocksConsistency(0, reg),
+			logger:             logger,
+			metrics:            newBlocksStoreQueryableMetrics(reg),
+			limits:             &blocksStoreLimitsMock{},
 		}
 
 		return srv, q, reg
@@ -2024,14 +2177,15 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}, nil)
 
 			q := &blocksStoreQuerier{
-				minT:        minT,
-				maxT:        maxT,
-				finder:      finder,
-				stores:      stores,
-				consistency: NewBlocksConsistency(0, nil),
-				logger:      log.NewNopLogger(),
-				metrics:     newBlocksStoreQueryableMetrics(reg),
-				limits:      &blocksStoreLimitsMock{},
+				minT:               minT,
+				maxT:               maxT,
+				finder:             finder,
+				stores:             stores,
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(reg),
+				limits:             &blocksStoreLimitsMock{},
 			}
 
 			matchers := []*labels.Matcher{
@@ -2076,16 +2230,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 		storeSetResponses   []interface{}
 		expectedLabelNames  []string
 		expectedLabelValues []string // For __name__
-		expectedErr         string
+		expectedErrRegex    string
 		expectedMetrics     string
 	}{
 		"no block in the storage matching the query time range": {
-			finderResult: nil,
-			expectedErr:  "",
+			finderResult:     nil,
+			expectedErrRegex: "",
 		},
 		"error while finding blocks matching the query time range": {
-			finderErr:   errors.New("unable to find blocks"),
-			expectedErr: "unable to find blocks",
+			finderErr:        errors.New("unable to find blocks"),
+			expectedErrRegex: "unable to find blocks",
 		},
 		"error while getting clients to query the store-gateway": {
 			finderResult: bucketindex.Blocks{
@@ -2095,7 +2249,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			storeSetResponses: []interface{}{
 				errors.New("no client found"),
 			},
-			expectedErr: "no client found",
+			expectedErrRegex: "no client found",
 		},
 		"a single store-gateway instance holds the required blocks": {
 			finderResult: bucketindex.Blocks{
@@ -2304,7 +2458,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block2}).Error(),
+			expectedErrRegex: regexp.QuoteMeta(newStoreConsistencyCheckFailedError([]ulid.ULID{block2}).Error()),
 		},
 		"multiple store-gateway instances have some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -2346,7 +2500,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}).Error(),
+			expectedErrRegex: regexp.QuoteMeta(newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}).Error()),
 		},
 		"multiple store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
 			// Block1 has series1
@@ -2513,12 +2667,28 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_count 1
 			`,
 		},
+		"unprocessable entity from store-gateway": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:           "1.1.1.1",
+						mockedLabelNamesErr:  status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
+						mockedLabelValuesErr: status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
+					}: {block1, block2},
+				},
+			},
+			expectedErrRegex: "non-retriable error while fetching label (names|values) from store: rpc error: code = Code\\(422\\) desc = limit exceeded",
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Splitting it because we need a new registry for names and values.
-			// And also the initial expectedErr checking needs to be done for both.
+			// And also the initial expectedErrRegex checking needs to be done for both.
 			for _, testFunc := range []string{"LabelNames", "LabelValues"} {
 				ctx := user.InjectOrgID(context.Background(), "user-1")
 				reg := prometheus.NewPedanticRegistry()
@@ -2527,20 +2697,21 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 				q := &blocksStoreQuerier{
-					minT:        minT,
-					maxT:        maxT,
-					finder:      finder,
-					stores:      stores,
-					consistency: NewBlocksConsistency(0, nil),
-					logger:      log.NewNopLogger(),
-					metrics:     newBlocksStoreQueryableMetrics(reg),
-					limits:      &blocksStoreLimitsMock{},
+					minT:               minT,
+					maxT:               maxT,
+					finder:             finder,
+					stores:             stores,
+					dynamicReplication: newDynamicReplication(),
+					consistency:        NewBlocksConsistency(0, nil),
+					logger:             log.NewNopLogger(),
+					metrics:            newBlocksStoreQueryableMetrics(reg),
+					limits:             &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
 					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
-					if testData.expectedErr != "" {
-						require.Equal(t, testData.expectedErr, err.Error())
+					if testData.expectedErrRegex != "" {
+						require.Regexp(t, testData.expectedErrRegex, err.Error())
 						continue
 					}
 
@@ -2556,8 +2727,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 				if testFunc == "LabelValues" {
 					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
-					if testData.expectedErr != "" {
-						require.Equal(t, testData.expectedErr, err.Error())
+					if testData.expectedErrRegex != "" {
+						require.Regexp(t, testData.expectedErrRegex, err.Error())
 						continue
 					}
 
@@ -2598,14 +2769,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}, nil)
 
 				q := &blocksStoreQuerier{
-					minT:        minT,
-					maxT:        maxT,
-					finder:      finder,
-					stores:      stores,
-					consistency: NewBlocksConsistency(0, nil),
-					logger:      log.NewNopLogger(),
-					metrics:     newBlocksStoreQueryableMetrics(reg),
-					limits:      &blocksStoreLimitsMock{},
+					minT:               minT,
+					maxT:               maxT,
+					finder:             finder,
+					stores:             stores,
+					dynamicReplication: newDynamicReplication(),
+					consistency:        NewBlocksConsistency(0, nil),
+					logger:             log.NewNopLogger(),
+					metrics:            newBlocksStoreQueryableMetrics(reg),
+					limits:             &blocksStoreLimitsMock{},
 				}
 
 				var err error
@@ -2672,15 +2844,16 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
 			q := &blocksStoreQuerier{
-				minT:            testData.queryMinT,
-				maxT:            testData.queryMaxT,
-				finder:          finder,
-				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistency(0, nil),
-				logger:          log.NewNopLogger(),
-				metrics:         newBlocksStoreQueryableMetrics(nil),
-				limits:          &blocksStoreLimitsMock{},
-				queryStoreAfter: testData.queryStoreAfter,
+				minT:               testData.queryMinT,
+				maxT:               testData.queryMaxT,
+				finder:             finder,
+				stores:             &blocksStoreSetMock{},
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(nil),
+				limits:             &blocksStoreLimitsMock{},
+				queryStoreAfter:    testData.queryStoreAfter,
 			}
 
 			sp := &storage.SelectHints{
@@ -2775,13 +2948,14 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
-				minT:        testData.queryMinT,
-				maxT:        testData.queryMaxT,
-				finder:      finder,
-				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistency(0, nil),
-				logger:      log.NewNopLogger(),
-				metrics:     newBlocksStoreQueryableMetrics(nil),
+				minT:               testData.queryMinT,
+				maxT:               testData.queryMaxT,
+				finder:             finder,
+				stores:             &blocksStoreSetMock{},
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
 					maxLabelsQueryLength: testData.maxLabelsQueryLength,
 				},
@@ -2811,6 +2985,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			})
 		})
 	}
+}
+
+func newDynamicReplication() *storegateway.MaxTimeDynamicReplication {
+	cfg := storegateway.Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.DynamicReplication.Enabled = true
+	return storegateway.NewMaxTimeDynamicReplication(cfg, time.Hour)
 }
 
 func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
@@ -2920,7 +3101,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, storegateway.NewNopDynamicReplication(3), finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -3094,9 +3275,24 @@ type storeGatewayClientMock struct {
 }
 
 func (m *storeGatewayClientMock) Series(ctx context.Context, _ *storepb.SeriesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+	// Make an independent copy of the responses, to avoid data races during tests.
+	seriesResponses := slices.Clone(m.mockedSeriesResponses)
+	for i := range seriesResponses {
+		sr := *seriesResponses[i]
+		if s := sr.GetSeries(); s != nil {
+			sr.Result = &storepb.SeriesResponse_Series{
+				Series: &storepb.Series{
+					Labels: slices.Clone(s.Labels),
+					Chunks: slices.Clone(s.Chunks),
+				},
+			}
+		}
+		seriesResponses[i] = &sr
+	}
+
 	seriesClient := &storeGatewaySeriesClientMock{
 		ClientStream:    grpcClientStreamMock{ctx: ctx}, // Required to not panic.
-		mockedResponses: m.mockedSeriesResponses,
+		mockedResponses: seriesResponses,
 	}
 
 	return seriesClient, m.mockedSeriesErr
@@ -3447,15 +3643,15 @@ func TestShouldRetry(t *testing.T) {
 			expected: true,
 		},
 		"should retry stop query on store-gateway instance limit": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}).Err(),
 			expected: true,
 		},
 		"should retry on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}).Err(),
 			expected: true,
 		},
 		"should retry on any other mimirpb error": {
-			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TOO_BUSY}).Err(),
 			expected: true,
 		},
 		"should retry on any unknown error detail": {
@@ -3468,7 +3664,7 @@ func TestShouldRetry(t *testing.T) {
 		},
 		"should retry on multiple error details": {
 			err: func() error {
-				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),

@@ -55,8 +55,6 @@
   local name = 'ingester',
 
   ingester_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
-
     local requests = $.util.parseCPU($.ingester_container.resources.requests.cpu),
     local requestsWithHeadroom = std.ceil(
       // double the requests, but with headroom of at least 3 and at most 6 CPU
@@ -82,7 +80,7 @@
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
@@ -107,7 +105,7 @@
     $.util.podPriority('high') +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
-  ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
+  ingester_statefulset:
     self.newIngesterStatefulSet(
       'ingester',
       $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap(std.prune($.ingester_env_map)) else {}),
@@ -115,12 +113,12 @@
       $.ingester_node_affinity_matchers,
     ),
 
-  ingester_service: if !$._config.is_microservices_deployment_mode then null else
+  ingester_service:
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
   newIngesterPdb(ingesterName)::
     $.newMimirPdb(ingesterName),
 
-  ingester_pdb: if !$._config.is_microservices_deployment_mode then null else
+  ingester_pdb:
     self.newIngesterPdb(name),
 }

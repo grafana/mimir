@@ -8,9 +8,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // OrBinaryOperation represents a logical 'or' between two vectors.
@@ -18,7 +18,7 @@ type OrBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
@@ -44,7 +44,7 @@ func NewOrBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
@@ -73,8 +73,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
 		// Nothing to return.
-		types.PutSeriesMetadataSlice(leftMetadata)
-		types.PutSeriesMetadataSlice(rightMetadata)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 		o.Right.Close()
@@ -86,7 +86,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
 		o.rightSeriesCount = []int{len(rightMetadata)}
-		types.PutSeriesMetadataSlice(leftMetadata)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 
@@ -97,19 +97,19 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the left side.
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
-		types.PutSeriesMetadataSlice(rightMetadata)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Right.Close()
 
 		return leftMetadata, nil
 	}
 
-	defer types.PutSeriesMetadataSlice(leftMetadata)
-	defer types.PutSeriesMetadataSlice(rightMetadata)
+	defer types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 	o.computeGroups(leftMetadata, rightMetadata)
 
-	return o.computeSeriesOutputOrder(leftMetadata, rightMetadata), nil
+	return o.computeSeriesOutputOrder(leftMetadata, rightMetadata)
 }
 
 func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) {
@@ -155,7 +155,7 @@ func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, r
 	}
 }
 
-func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) []types.SeriesMetadata {
+func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) ([]types.SeriesMetadata, error) {
 	// The idea here is to determine the order we should return series in, returning series from the right side as soon as we've seen all
 	// the series from the left that we need.
 	//
@@ -174,7 +174,10 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 	// state on both sides.
 
 	nextLeftSeriesToRead := 0
-	series := types.GetSeriesMetadataSlice(len(leftMetadata) + len(rightMetadata))
+	series, err := types.SeriesMetadataSlicePool.Get(len(leftMetadata)+len(rightMetadata), o.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 
 	for nextRightSeriesToRead, rightGroup := range o.rightSeriesGroups {
 		lastSeriesFromLeft := false
@@ -184,7 +187,12 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-			series = append(series, leftMetadata[nextLeftSeriesToRead:rightGroup.lastLeftSeriesIndex+1]...)
+			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
+			series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, seriesToAppend...)
+			if err != nil {
+				return nil, err
+			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {
@@ -204,18 +212,24 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			o.rightSeriesCount[len(o.rightSeriesCount)-1]++
 		}
 
-		series = append(series, rightMetadata[nextRightSeriesToRead])
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if there are any remaining series on the left side.
 	if nextLeftSeriesToRead < len(leftMetadata) {
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
-		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, leftMetadata[nextLeftSeriesToRead:]...)
+		if err != nil {
+			return nil, err
+		}
 
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
 
-	return series
+	return series, nil
 }
 
 func (o *OrBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -314,9 +328,38 @@ func (o *OrBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return o.expressionPosition
 }
 
+func (o *OrBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := o.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return o.Right.Prepare(ctx, params)
+}
+
 func (o *OrBinaryOperation) Close() {
 	o.Left.Close()
 	o.Right.Close()
+
+	for _, g := range o.leftSeriesGroups {
+		if g == nil {
+			continue
+		}
+
+		g.Close(o.MemoryConsumptionTracker)
+	}
+
+	o.leftSeriesGroups = nil
+
+	for _, g := range o.rightSeriesGroups {
+		if g == nil {
+			continue
+		}
+
+		g.Close(o.MemoryConsumptionTracker)
+	}
+
+	o.rightSeriesGroups = nil
 }
 
 type orGroup struct {
@@ -326,7 +369,7 @@ type orGroup struct {
 }
 
 // AccumulateLeftSeriesPresence records the presence of samples on the left-hand side.
-func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
+func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
 	if g.leftSamplePresence == nil {
 		var err error
 		g.leftSamplePresence, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -351,10 +394,10 @@ func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesDat
 
 // FilterRightSeries returns rightData filtered based on samples seen for the left-hand side.
 // The return value reuses the slices from rightData, and returns any unused slices to the pool.
-func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	return filterSeries(rightData, g.leftSamplePresence, false, memoryConsumptionTracker, timeRange)
 }
 
-func (g *orGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.leftSamplePresence, memoryConsumptionTracker)
+func (g *orGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

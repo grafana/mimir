@@ -6,12 +6,13 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"html/template"
 	"net/http"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -99,11 +100,11 @@ func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 	els := append([]IndexPageLinkGroup(nil), pc.elements...)
 	pc.mu.Unlock()
 
-	sort.Slice(els, func(i, j int) bool {
-		if els[i].weight != els[j].weight {
-			return els[i].weight < els[j].weight
-		}
-		return els[i].Desc < els[j].Desc
+	slices.SortFunc(els, func(a, b IndexPageLinkGroup) int {
+		return cmp.Or(
+			cmp.Compare(a.weight, b.weight),
+			strings.Compare(a.Desc, b.Desc),
+		)
 	})
 
 	return els
@@ -212,6 +213,8 @@ func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
 // server to fulfill the Prometheus query API.
 func NewQuerierHandler(
 	cfg Config,
+	querierCfg querier.Config,
+	dispatcher *querier.Dispatcher,
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
@@ -282,8 +285,11 @@ func NewQuerierHandler(
 		nil,
 		otlpEnabled,
 		false,
+		false,
 		true,
 		0,
+		querierCfg.EngineConfig.LookbackDelta,
+		false,
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -306,9 +312,8 @@ func NewQuerierHandler(
 	router.Use(querierapi.ConsistencyMiddleware().Wrap)
 
 	// Define the prefixes for all routes
-	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)
-
-	promRouter := route.New().WithPrefix(path.Join(prefix, "/api/v1"))
+	promPrefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix, "/api/v1")
+	promRouter := route.New().WithPrefix(path.Join(promPrefix))
 	api.Register(promRouter)
 
 	// Track the requests count in the anonymous usage stats.
@@ -324,19 +329,23 @@ func NewQuerierHandler(
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger)))
-	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
+	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
+	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
+
+	if dispatcher != nil {
+		router.Path("/api/v1/evaluate").Methods("POST").Handler(dispatcher)
+	}
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

@@ -18,7 +18,7 @@ Before a piece of work is finished:
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
-- If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
+- If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 
 ## Grafana Mimir Helm chart
 
@@ -105,6 +105,23 @@ You have to commit the changes to `go.mod` and `go.sum` before submitting the pu
 
 Please see the dedicated "[Design patterns and Code conventions](design-patterns-and-conventions.md)" page.
 
+## ⚠️ Unsafe memory tricks
+
+For performance, buffers used for decompressing gRPC requests into are kept in a pool shared between requests.
+
+Also, when unmarshaling those byte buffers into structured Go values, we construct strings that aren't actually references to immutable memory, but to those same shared buffers. The codebase refers to this trick as `yoloString`, and in some places (but not exhaustively), such strings are denoted as type `unsafeMutableString`, which is an alias of `string`.
+
+This means that innocent-looking string values that outlive the window between taking a request buffer from the pool and releasing it back may actually **refer to another request's buffer**. Given Mimir is multi-tenant, it's likely to result in **cross-tenant data leakage**.
+
+Take into account that copying `string`s around actually moves _references_ around. Make sure strings that must outlive the handling window (e. g. for error messages) are deep-copied, e. g. with `strings.Clone` or `strings.Builder`. Note that, if those strings are within a slice, it is **not enough** to clone the slice with `slices.Clone` or similar, as only the references will be cloned, not the underlying bytes in memory. The same applies if there are inside a struct or array.
+
+There are currently no guardrails around this, beyond tests.
+
+Some (but maybe not all) specific critical areas are:
+
+- In the distributor, those strings must not outlive the `PushFunc` passed to `Handler`.
+  - The `PushFunc` decompresses an incoming request into a reused buffer, then unmarshals the buffer into a `PreallocWriteRequest` that holds `unsafeMutableString`s (indirectly through `unsafeMutableLabel`) into that same buffer, and then, before returning, returns the buffer to the pool to be reused. If any strings from the `PreallocWriteRequest` are still alive at that point, they will be referring to a buffer that could be reused for a new request at any point.
+
 ## Documentation
 
 The Grafana Mimir documentation and the Helm chart _documentation_ for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
@@ -123,6 +140,8 @@ To add a new error:
 - Update the runbook in `docs/sources/mimir/manage/mimir-runbooks/_index.md` with details about why the error happens, and if possible how to address it.
 
 ## Changelog
+
+### Changelog scope
 
 When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
 
@@ -146,3 +165,7 @@ The ENHANCEMENT scope denotes a change that improves upon the current functional
 #### [BUGFIX]
 
 The BUGFIX scope denotes a change that fixes an issue with the project in question. A BUGFIX should align the behaviour of the service with the current expected behaviour of the service. If a BUGFIX introduces new unexpected behaviour to ameliorate the issue, a corresponding FEATURE or ENHANCEMENT scope should also be added to the changelog.
+
+### Referencing the PR number in the changelog entry
+
+When adding an entry to the changelog, the first line of the entry must end with `#<PR>` where `<PR>` is the GitHub pull request ID. You get the next `<PR>` ID right before opening the PR by executing the script `./tools/github-next-pr-number.sh`.

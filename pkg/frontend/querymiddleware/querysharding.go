@@ -39,7 +39,7 @@ const shardingTimeout = 10 * time.Second
 type querySharding struct {
 	limit Limits
 
-	engine            *promql.Engine
+	engine            promql.QueryEngine
 	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
@@ -62,7 +62,7 @@ type queryShardingMetrics struct {
 // Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
 func newQueryShardingMiddleware(
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
@@ -157,7 +157,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
 }
 
-func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
 	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -190,19 +190,22 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		headers = shardedQueryable.getResponseHeaders()
 	}
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  headers,
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  headers,
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }
 
-func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
@@ -221,21 +224,6 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine,
 			nil,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
-		)
-	case *remoteReadQueryRequest:
-		return engine.NewRangeQuery(
-			ctx,
-			queryable,
-			// Lookback period is not applied to remote read queries in the same way
-			// as regular queries. However we cannot set a zero lookback period
-			// because the engine will just use the default 5 minutes instead. So we
-			// set a lookback period of 1ns and add that amount to the start time so
-			// the engine will calculate an effective 0 lookback period.
-			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
-			r.GetQuery(),
-			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
-			util.TimeFromMillis(r.GetEnd()),
-			time.Duration(r.GetStep())*time.Millisecond,
 		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
@@ -289,7 +277,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(totalShards, astmapper.VectorSquasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
@@ -302,7 +290,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 		return "", nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	shardedQuery, err := mapper.Map(expr)
+	shardedQuery, err := mapper.Map(ctx, expr)
 	if err != nil {
 		return "", nil, err
 	}

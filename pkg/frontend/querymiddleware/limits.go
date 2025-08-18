@@ -16,9 +16,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -62,9 +61,6 @@ type Limits interface {
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 
-	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
-	SplitInstantQueriesByInterval(userID string) time.Duration
-
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int
@@ -104,13 +100,13 @@ type Limits interface {
 	Prom2RangeCompat(userID string) bool
 
 	// BlockedQueries returns the blocked queries.
-	BlockedQueries(userID string) []*validation.BlockedQuery
+	BlockedQueries(userID string) []validation.BlockedQuery
 
 	// BlockedRequests returns the blocked http requests.
-	BlockedRequests(userID string) []*validation.BlockedRequest
+	BlockedRequests(userID string) []validation.BlockedRequest
 
 	// LimitedQueries returns the limited queries.
-	LimitedQueries(userID string) []*validation.LimitedQuery
+	LimitedQueries(userID string) []validation.LimitedQuery
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
@@ -123,6 +119,9 @@ type Limits interface {
 
 	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
 	SubquerySpinOffEnabled(userID string) bool
+
+	// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+	LabelsQueryOptimizerEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
@@ -143,7 +142,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) MetricsQueryMiddleware {
 }
 
 func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
+	log, ctx := spanlogger.New(ctx, l.logger, tracer, "limits")
 	defer log.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -235,9 +234,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.AddSpanTags(span)
-	}
+	request.AddSpanTags(trace.SpanFromContext(ctx))
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -269,6 +266,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
+	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
@@ -282,13 +280,12 @@ type roundTripperHandler struct {
 }
 
 func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "roundTripperHandler.Do")
+	defer spanLogger.Finish()
+
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	response, err := rth.next.RoundTrip(request)

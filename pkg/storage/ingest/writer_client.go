@@ -4,12 +4,12 @@ package ingest
 
 import (
 	"context"
-	"errors"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -29,8 +29,19 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kprom.Registerer(reg),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
+	// Allow to disable linger in tests.
+	linger := 50 * time.Millisecond
+	if kafkaCfg.disableLinger {
+		linger = 0
+	}
+
 	opts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
+
+		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
+		// when we produce records. We expect the input prometheus.Registered to be wrapped with a prefix.
+		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
+
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(kafkaCfg.Topic),
 
@@ -51,7 +62,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
 		// issuing new Produce requests until some previous ones complete).
 		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
+		kgo.ProducerLinger(linger),
 		kgo.MaxProduceRequestsInflightPerBroker(maxInflightProduceRequests),
 
 		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
@@ -96,10 +107,12 @@ type KafkaProducer struct {
 	maxBufferedBytes int64
 
 	// Custom metrics.
-	bufferedProduceBytes      prometheus.Summary
-	bufferedProduceBytesLimit prometheus.Gauge
-	produceRequestsTotal      prometheus.Counter
-	produceFailuresTotal      *prometheus.CounterVec
+	bufferedProduceBytes          prometheus.Summary
+	bufferedProduceBytesLimit     prometheus.Gauge
+	produceRecordsEnqueuedTotal   prometheus.Counter
+	produceRecordsFailedTotal     *prometheus.CounterVec
+	produceRecordsEnqueueDuration prometheus.Histogram
+	produceRemainingDeadline      prometheus.Histogram
 }
 
 // NewKafkaProducer returns a new KafkaProducer.
@@ -128,14 +141,30 @@ func NewKafkaProducer(client *kgo.Client, maxBufferedBytes int64, reg prometheus
 				Name: "buffered_produce_bytes_limit",
 				Help: "The bytes limit on buffered produce records. Produce requests fail once this limit is reached.",
 			}),
-		produceRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "produce_requests_total",
-			Help: "Total number of produce requests issued to Kafka.",
+		produceRecordsEnqueuedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "produce_records_enqueued_total",
+			Help: "Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).",
 		}),
-		produceFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "produce_failures_total",
-			Help: "Total number of failed produce requests issued to Kafka.",
+		produceRecordsFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "produce_records_failed_total",
+			Help: "Total number of Kafka records that failed to be sent to the Kafka backend.",
 		}, []string{"reason"}),
+		produceRecordsEnqueueDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "produce_records_enqueue_duration_seconds",
+			Help:                            "How long it takes to enqueue produced Kafka records in the client, appending them to the batches that will sent to the Kafka backend (in seconds).",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
+		}),
+		produceRemainingDeadline: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "produce_remaining_deadline_seconds",
+			Help:                            "The remaining deadline (in seconds) when records are requested to be produced.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
+		}),
 	}
 
 	producer.bufferedProduceBytesLimit.Set(float64(maxBufferedBytes))
@@ -182,7 +211,26 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		res       = make(kgo.ProduceResults, 0, len(records))
 	)
 
-	c.produceRequestsTotal.Add(float64(len(records)))
+	// Keep track of the remaining deadline before producing records.
+	// This could be useful for troubleshooting.
+	if deadline, ok := ctx.Deadline(); ok {
+		c.produceRemainingDeadline.Observe(max(0, time.Until(deadline).Seconds()))
+	}
+
+	// As a safety mechanism, we want to make sure that the context is not already canceled or its deadline exceeded.
+	// The reason is that once we buffer records to the Kafka client (later in this function), these records will be
+	// sent to the Kafka backend regardless the context is canceled or not. There's no way, in the Kafka client, to
+	// pull out records from a batch buffer. So, if the context is canceled, we circuit break instead of buffering
+	// records that may be sent to the Kafka backend, but that the caller will not know about because context is done.
+	if err := ctx.Err(); err != nil {
+		recordsCount := float64(len(records))
+
+		c.produceRecordsEnqueuedTotal.Add(recordsCount)
+		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
+
+		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
+		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done")}}
+	}
 
 	onProduceDone := func(r *kgo.Record, err error) {
 		if c.maxBufferedBytes > 0 {
@@ -194,7 +242,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		resMx.Unlock()
 
 		if err != nil {
-			c.produceFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(err)).Inc()
 		}
 
 		// In case of error we'll wait for all responses anyway before returning from produceSync().
@@ -205,28 +253,39 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		}
 	}
 
-	for _, record := range records {
-		// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
-		if c.maxBufferedBytes > 0 && c.bufferedBytes.Add(int64(len(record.Value))) > c.maxBufferedBytes {
-			onProduceDone(record, kgo.ErrMaxBuffered)
-			continue
+	// Produce all records. We expect this to be quick, because records are just buffered in the Kafka client.
+	// We keep track of how long it takes to "enqueue" all records in the client buffers, in order to have a
+	// data point when we troubleshoot high production latencies.
+	{
+		enqueueStartTime := time.Now()
+		c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
+
+		for _, record := range records {
+			// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
+			if c.maxBufferedBytes > 0 && c.bufferedBytes.Add(int64(len(record.Value))) > c.maxBufferedBytes {
+				onProduceDone(record, kgo.ErrMaxBuffered)
+				continue
+			}
+
+			// We use a new context to avoid that other Produce() may be cancelled when this call's context is
+			// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
+			// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
+			// cases may cause all requests to fail with context cancelled.
+			//
+			// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
+			// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
+			// Produce() should never block for us in practice.
+			c.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 		}
 
-		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
-		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-		// cases may cause all requests to fail with context cancelled.
-		//
-		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
-		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
-		// Produce() should never block for us in practice.
-		c.Produce(context.WithoutCancel(ctx), record, onProduceDone)
+		c.produceRecordsEnqueueDuration.Observe(time.Since(enqueueStartTime).Seconds())
 	}
 
 	// Wait for a response or until the context has done.
 	select {
 	case <-ctx.Done():
-		return kgo.ProduceResults{{Err: context.Cause(ctx)}}
+		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
+		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged")}}
 	case <-done:
 		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
 		return res

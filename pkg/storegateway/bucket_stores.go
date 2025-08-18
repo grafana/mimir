@@ -327,7 +327,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 // Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
+	spanLog, spanCtx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)
@@ -348,7 +348,7 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 
 // LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelNames")
+	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)
@@ -366,7 +366,7 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelValues")
+	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)
@@ -450,7 +450,7 @@ type timeoutGate struct {
 	timeout  time.Duration
 }
 
-var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+var errGateTimeout = staticError{cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
 
 func (t timeoutGate) Start(ctx context.Context) error {
 	if t.timeout == 0 {

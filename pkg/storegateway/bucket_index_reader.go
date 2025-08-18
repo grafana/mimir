@@ -7,12 +7,13 @@ package storegateway
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,14 +22,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -84,13 +84,18 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		cached  bool
 		promise expandedPostingsPromise
 	)
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ExpandedPostings()")
+	ctx, span := tracer.Start(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
+		span.SetAttributes(
+			attribute.Int("returned postings", len(returnRefs)),
+			attribute.Bool("cached", cached),
+			attribute.Bool("promise_loaded", loaded),
+			attribute.Stringer("block_id", r.block.meta.ULID),
+		)
 		if returnErr != nil {
-			span.LogFields(otlog.Error(returnErr))
+			span.RecordError(returnErr)
 		}
-		span.Finish()
+		span.End()
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)
@@ -329,23 +334,25 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	// in the index. We do these checks in a specific order, so we minimize the reads from disk
 	// and/or to minimize the number of label values we keep in memory (assumption being that indexhdr.LabelValues
 	// is likely to return a lot of values).
-	sort.Slice(rawPostingGroups, func(i, j int) bool {
+	slices.SortFunc(rawPostingGroups, func(a, b rawPostingGroup) int {
 		// First we check the non-lazy groups, since for those we only need to call PostingsOffset, which
 		// is less expensive than LabelValues for the lazy groups.
-		ri, rj := rawPostingGroups[i], rawPostingGroups[j]
-		if ri.isLazy != rj.isLazy {
-			return !ri.isLazy
+		if a.isLazy != b.isLazy {
+			if !a.isLazy {
+				return -1
+			}
+			return 1
 		}
 
 		// Within the lazy/non-lazy groups we sort by the number of keys they have.
 		// The idea is that groups with fewer keys are more likely to match no actual series.
-		if len(ri.keys) != len(rj.keys) {
-			return len(ri.keys) < len(rj.keys)
+		if len(a.keys) != len(b.keys) {
+			return len(a.keys) - len(b.keys)
 		}
 
 		// Sort by label name to make this a deterministic-ish sort.
 		// We could still have two matchers for the same name. (`foo!="bar", foo!="baz"`)
-		return ri.labelName < rj.labelName
+		return strings.Compare(a.labelName, b.labelName)
 	})
 
 	postingGroups := make([]postingGroup, 0, len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
@@ -477,8 +484,8 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		ptrs = append(ptrs, postingPtr{ptr: ptr, keyID: ix})
 	}
 
-	sort.Slice(ptrs, func(i, j int) bool {
-		return ptrs[i].ptr.Start < ptrs[j].ptr.Start
+	slices.SortFunc(ptrs, func(a, b postingPtr) int {
+		return cmp.Compare(a.ptr.Start, b.ptr.Start)
 	})
 
 	// TODO(bwplotka): Asses how large in worst case scenario this can be. (e.g fetch for AllPostingsKeys)

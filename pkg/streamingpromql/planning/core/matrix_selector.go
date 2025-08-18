@@ -5,9 +5,12 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -19,7 +22,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -28,6 +31,10 @@ func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types
 
 func (m *MatrixSelector) Details() proto.Message {
 	return m.MatrixSelectorDetails
+}
+
+func (m *MatrixSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
 func (m *MatrixSelector) Children() []planning.Node {
@@ -49,34 +56,49 @@ func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range
+		m.Range == otherMatrixSelector.Range &&
+		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	matchers, err := LabelMatchersToPrometheusType(m.Matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	selector := &selectors.Selector{
-		Queryable:          params.Queryable,
-		TimeRange:          timeRange,
-		Timestamp:          TimestampFromTime(m.Timestamp),
-		Offset:             m.Offset.Milliseconds(),
-		Range:              m.Range,
-		Matchers:           matchers,
-		ExpressionPosition: m.ExpressionPosition.ToPrometheusType(),
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(m.Timestamp),
+		Offset:                   m.Offset.Milliseconds(),
+		Range:                    m.Range,
+		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     m.SkipHistogramBuckets,
+		ExpressionPosition:       m.ExpressionPosition(),
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.Stats)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
 func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
+}
+
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _ time.Duration) planning.QueriedTimeRange {
+	// Matrix selectors do not use the lookback delta, so we don't pass it below.
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
+
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
+func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
+	return m.GetExpressionPosition().ToPrometheusType()
 }

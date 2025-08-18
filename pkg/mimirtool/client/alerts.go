@@ -23,7 +23,7 @@ type configCompat struct {
 }
 
 // CreateAlertmanagerConfig creates a new alertmanager config
-func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, templates map[string]string) error {
+func (c *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, templates map[string]string) error {
 	payload, err := yaml.Marshal(&configCompat{
 		TemplateFiles:      templates,
 		AlertmanagerConfig: cfg,
@@ -32,7 +32,7 @@ func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, 
 		return err
 	}
 
-	res, err := r.doRequest(ctx, alertmanagerAPIPath, "POST", bytes.NewBuffer(payload), int64(len(payload)))
+	res, err := c.doRequest(ctx, alertmanagerAPIPath, "POST", bytes.NewBuffer(payload), int64(len(payload)))
 	if err != nil {
 		return err
 	}
@@ -43,8 +43,8 @@ func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, 
 }
 
 // DeleteAlermanagerConfig deletes the users alertmanagerconfig
-func (r *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
-	res, err := r.doRequest(ctx, alertmanagerAPIPath, "DELETE", nil, -1)
+func (c *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
+	res, err := c.doRequest(ctx, alertmanagerAPIPath, "DELETE", nil, -1)
 	if err != nil {
 		return err
 	}
@@ -55,8 +55,8 @@ func (r *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
 }
 
 // GetAlertmanagerConfig retrieves a Mimir cluster's Alertmanager config.
-func (r *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
-	res, err := r.doRequest(ctx, alertmanagerAPIPath, "GET", nil, -1)
+func (c *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
+	res, err := c.doRequest(ctx, alertmanagerAPIPath, "GET", nil, -1)
 	if err != nil {
 		log.Debugln("no alert config present in response")
 		return "", nil, err

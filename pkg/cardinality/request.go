@@ -3,6 +3,7 @@
 package cardinality
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -65,16 +66,21 @@ func (r *LabelNamesRequest) String() string {
 
 // DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
-func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
+func DecodeLabelNamesRequest(r *http.Request, tenantMaxLimit int) (*LabelNamesRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
 
-	return DecodeLabelNamesRequestFromValues(r.Form)
+	return DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(r.Form, tenantMaxLimit)
 }
 
 // DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
 func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
+	return DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(values, 0)
+}
+
+// DecodeLabelNamesRequestFromValuesWithTenantMaxLimit is like DecodeLabelNamesRequestFromValues but also accepts the tenantMaxLimit
+func DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(values url.Values, tenantMaxLimit int) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
@@ -85,7 +91,7 @@ func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, e
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, tenantMaxLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -140,16 +146,21 @@ func (r *LabelValuesRequest) String() string {
 
 // DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
-func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
+func DecodeLabelValuesRequest(r *http.Request, tenantMaxLimit int) (*LabelValuesRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
 
-	return DecodeLabelValuesRequestFromValues(r.Form)
+	return DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(r.Form, tenantMaxLimit)
 }
 
 // DecodeLabelValuesRequestFromValues is like DecodeLabelValuesRequest but takes url.Values in input.
 func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest, error) {
+	return DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(values, 0)
+}
+
+// DecodeLabelValuesRequestFromValuesWithTenantMaxLimit is like DecodeLabelValuesRequestFromValues but also accepts the tenantMaxLimit
+func DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(values url.Values, tenantMaxLimit int) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
 		err    error
@@ -165,7 +176,7 @@ func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest,
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, tenantMaxLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -194,29 +205,18 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		case a.Type < b.Type:
-			return -1
-		case a.Type > b.Type:
-			return 1
-		case a.Value < b.Value:
-			return -1
-		case a.Value > b.Value:
-			return 1
-		default:
-			return 0
-		}
+		return cmp.Or(
+			strings.Compare(a.Name, b.Name),
+			cmp.Compare(a.Type, b.Type),
+			strings.Compare(a.Value, b.Value),
+		)
 	})
 
 	return matchers, nil
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(values url.Values) (limit int, err error) {
+func extractLimit(values url.Values, tenantMaxLimit int) (limit int, err error) {
 	limitParams := values["limit"]
 	if len(limitParams) == 0 {
 		return defaultLimit, nil
@@ -231,8 +231,14 @@ func extractLimit(values url.Values) (limit int, err error) {
 	if limit < minLimit {
 		return 0, fmt.Errorf("'limit' param cannot be less than '%v'", minLimit)
 	}
-	if limit > maxLimit {
-		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimit)
+
+	// Use the tenant-specific limit from Overrides if available
+	if tenantMaxLimit == 0 {
+		tenantMaxLimit = maxLimit
+	}
+
+	if limit > tenantMaxLimit {
+		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", tenantMaxLimit)
 	}
 	return limit, nil
 }
@@ -245,12 +251,11 @@ func extractLabelNames(values url.Values) ([]model.LabelName, error) {
 	}
 
 	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
-	for _, labelNameParam := range labelNamesParams {
-		labelName := model.LabelName(labelNameParam)
-		if !labelName.IsValid() {
-			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelNameParam)
+	for _, labelName := range labelNamesParams {
+		if !model.UTF8Validation.IsValidLabelName(labelName) {
+			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelName)
 		}
-		labelNames = append(labelNames, labelName)
+		labelNames = append(labelNames, model.LabelName(labelName))
 	}
 
 	// Ensure stable sorting (improves query results cache hit ratio).

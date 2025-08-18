@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,9 +24,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 var (
@@ -119,38 +122,38 @@ type unloadRequest struct {
 // on the local disk at dir location, this function will build it downloading required
 // sections from the full index stored in the bucket. However, this function doesn't load
 // (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
+// NewLazyBinaryReader tries to download the sparse index header from the bucket and save it on disk.
+// It does not try to parse the sparse index header.
 func NewLazyBinaryReader(
 	ctx context.Context,
 	readerFactory func() (Reader, error),
 	logger log.Logger,
-	bkt objstore.BucketReader,
+	bkt objstore.InstrumentedBucketReader,
 	dir string,
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+	indexHeaderPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+	sparseHeaderPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
 
-	// If the index-header doesn't exist we should download it.
-	if _, err := os.Stat(path); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrap(err, "read index header")
-		}
+	g := errgroup.Group{}
+	g.Go(func() error {
+		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+	})
 
-		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", path)
-
-		start := time.Now()
-		if err := WriteBinary(ctx, bkt, id, path); err != nil {
-			return nil, errors.Wrap(err, "write index header")
-		}
-
-		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
+	g.Go(func() error {
+		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
-		filepath:        path,
+		filepath:        indexHeaderPath,
 		metrics:         metrics,
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
@@ -166,6 +169,44 @@ func NewLazyBinaryReader(
 
 	go reader.controlLoop()
 	return reader, nil
+}
+
+func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, sparseHeaderPath string) {
+	_, err := os.Stat(sparseHeaderPath)
+	if err == nil {
+		// The header is already on disk
+		return
+	}
+	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	if err != nil {
+		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
+		return
+	}
+	err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
+	if err != nil {
+		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
+	}
+}
+
+func ensureIndexHeaderOnDisk(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, indexHeaderPath string) error {
+	// If the index-header doesn't exist we should download it.
+	_, err := os.Stat(indexHeaderPath)
+	if err == nil {
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return errors.Wrap(err, "read index header")
+	}
+
+	level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderPath)
+
+	start := time.Now()
+	if err := WriteBinary(ctx, bkt, id, indexHeaderPath); err != nil {
+		return errors.Wrap(err, "write index header")
+	}
+
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
+	return nil
 }
 
 // Close implements Reader.

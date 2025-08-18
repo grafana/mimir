@@ -244,7 +244,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s)"}[30m])
               )
               >= 2
             )
@@ -254,7 +254,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )
           ||| % $._config {
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
           },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
@@ -406,9 +405,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
           alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+            and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
             range_interval: $.alertRangeInterval(5),
           },
@@ -423,9 +422,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
           alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+            and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
             range_interval: $.alertRangeInterval(5),
           },
@@ -699,8 +698,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.65',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -717,8 +714,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.8',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -971,6 +966,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       ],
+    },
+    {
+      name: 'golang_alerts',
+      rules: (
+        [
+          {
+            alert: $.alertName('GoThreadsTooHigh'),
+            expr: |||
+              # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{job=~".*(cortex|mimir).*"} > %(threshold)s)
+
+              # Further filter on namespaces actually running Mimir.
+              and on (%(alert_aggregation_labels)s) (count by (%(alert_aggregation_labels)s) (cortex_build_info))
+            ||| % ($._config + settings),
+            'for': '15m',
+            labels: {
+              severity: settings.severity,
+            },
+            annotations: {
+              message: |||
+                %(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s is running a very high number of Go threads.
+              ||| % $._config,
+            },
+          }
+          for settings in [
+            { severity: 'warning', threshold: 5000 },
+            { severity: 'critical', threshold: 8000 },
+          ]
+        ]
+      ),
     },
   ],
 

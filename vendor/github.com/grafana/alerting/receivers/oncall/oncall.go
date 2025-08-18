@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -19,7 +21,6 @@ import (
 // alert notifications as webhooks.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	tmpl     *templates.Template
@@ -29,11 +30,10 @@ type Notifier struct {
 
 // New is the constructor for
 // the WebHook notifier.
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, orgID int64) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, orgID int64) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		orgID:    orgID,
-		log:      logger,
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -62,6 +62,8 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return false, err
 	}
 
+	l := n.GetLogger(ctx)
+
 	var numFiring, numResolved uint64
 	for _, a := range as {
 		if a.Resolved() {
@@ -73,11 +75,11 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 
 	as, numTruncated := truncateAlerts(n.settings.MaxAlerts, as)
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, n.tmpl, as, n.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, n.tmpl, as, l, &tmplErr)
 	data.TruncatedAlerts = &numTruncated
 
 	// Augment our Alert data with ImageURLs if available.
-	_ = images.WithStoredImages(ctx, n.log, n.images,
+	_ = images.WithStoredImages(ctx, l, n.images,
 		func(index int, image images.Image) error {
 			if len(image.URL) != 0 {
 				data.Alerts[index].ImageURL = image.URL
@@ -102,7 +104,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	}
 
 	if tmplErr != nil {
-		n.log.Warn("failed to template oncall message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template oncall message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
@@ -130,7 +132,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		HTTPHeader: headers,
 	}
 
-	if err := n.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := n.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, err
 	}
 

@@ -15,6 +15,13 @@ weight: 130
 
 The Ruler dashboard shows health and activity metrics for the ruler and object storage metrics for operations triggered by the ruler.
 
+Use this dashboard for the following use cases:
+
+- Monitor rule evaluation performance.
+- Track the operational status of the ruler component.
+- Monitor the ruler's interactions with object storage.
+- Track the operational status of the ruler component, ensuring it's functioning correctly and evaluating rules as expected.
+
 ## Example
 
 The following example shows a Ruler dashboard from a demo cluster.

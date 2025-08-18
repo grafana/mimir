@@ -1,5 +1,7 @@
 name: publish-technical-documentation-release-helm-charts
 
+permissions: {}
+
 on:
   push:
     tags:  # this excludes pre-releases, e.g. mimir-distributed-2.2.0-weekly.192
@@ -10,9 +12,13 @@ on:
       - "docs/sources/helm-charts/**"
       - "operations/helm/charts/mimir-distributed/Chart.yaml"
   workflow_dispatch:
+
 jobs:
   test:
+    permissions:
+      contents: read
     uses: ./.github/workflows/test-docs.yml
+
   sync:
     if: github.repository == 'grafana/mimir'
     needs: test
@@ -26,7 +32,8 @@ jobs:
         with:
           # Full fetch depth is required to fetch tags. The publishing workflow uses tags to prevent publishing a release branch before it has been formally released, as determined by the presence of a matching tag for the release branch.
           fetch-depth: 0
-      - uses: grafana/writers-toolkit/publish-technical-documentation-release@publish-technical-documentation-release/v1
+          persist-credentials: false
+      - uses: grafana/writers-toolkit/publish-technical-documentation-release@39cdc38767184996e25d611923f8ce697e33bc70 # publish-technical-documentation/v1.2.0
         with:
           release_tag_regexp: "^mimir-distributed-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
           release_branch_regexp: "^mimir-distributed-release-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"

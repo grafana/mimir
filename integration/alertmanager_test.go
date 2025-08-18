@@ -646,6 +646,15 @@ func TestAlertmanagerSharding(t *testing.T) {
 				}
 			}
 
+			// Endpoint: GET /api/v1/grafana/full_state
+			{
+				for _, c := range clients {
+					fs, err := c.GetFullState(context.Background())
+					assert.NoError(t, err)
+					assert.NotEmpty(t, fs.State)
+				}
+			}
+
 			// Endpoint: GET /api/v1/grafana/receivers
 			{
 				for _, c := range clients {
@@ -1041,6 +1050,10 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		"Header-1": "Value-1",
 		"Header-2": "Value-2",
 	}
+	smtpConfig := &alertmanager.SmtpConfig{
+		FromAddress:   "test@example.com",
+		StaticHeaders: staticHeaders,
+	}
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -1071,15 +1084,25 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
 
+			status, err := c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, status)
+
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders, smtpConfig)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.NoError(t, err)
 			require.Equal(t, now, cfg.CreatedAt)
+
+			status, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, cfg.CreatedAt, status.CreatedAt)
+			require.Equal(t, cfg.Promoted, status.Promoted)
+			require.Equal(t, cfg.Hash, status.Hash)
 		}
 
 		// Let's store config for a different user as well.
@@ -1094,7 +1117,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders, smtpConfig)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
@@ -1110,6 +1133,9 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 			require.Nil(t, cfg)
+
+			_, err = c.GetGrafanaAlertmanagerConfigStatus(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		}
 	}
 

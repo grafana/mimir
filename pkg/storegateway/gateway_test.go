@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -918,7 +919,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 }
 
 func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
-	runTest := func(t *testing.T, autoForgetEnabled bool) {
+	runTest := func(t *testing.T, autoForgetEnabled bool, autoForgetUnhealthyPeriods int, expectForget bool) {
 		test.VerifyNoLeak(t)
 
 		const unhealthyInstanceID = "unhealthy-id"
@@ -929,6 +930,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		gatewayCfg.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 		gatewayCfg.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 		gatewayCfg.ShardingRing.AutoForgetEnabled = autoForgetEnabled
+		gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods = autoForgetUnhealthyPeriods
 
 		storageCfg := mockStorageConfig(t)
 
@@ -948,7 +950,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
 			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now(), false, time.Time{})
-			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
+			instance.Timestamp = time.Now().Add(-time.Duration(gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods+1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 
 			return ringDesc, true, nil
@@ -957,7 +959,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		// Assert whether the unhealthy instance has been removed.
 		const maxWaitingTime = time.Second
 
-		if autoForgetEnabled {
+		if expectForget {
 			// Ensure the unhealthy instance is removed from the ring.
 			dstest.Poll(t, maxWaitingTime, false, func() interface{} {
 				d, err := ringStore.Get(ctx, RingKey)
@@ -980,12 +982,16 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		}
 	}
 
-	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled", func(t *testing.T) {
-		runTest(t, true)
+	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled, auto-forget-unhealthy-periods=10", func(t *testing.T) {
+		runTest(t, true, 10, true)
 	})
 
-	t.Run("should not auto-forget unhealthy instances in the ring when auto-forget is disabled", func(t *testing.T) {
-		runTest(t, false)
+	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled, auto-forget-unhealthy-periods=0", func(t *testing.T) {
+		runTest(t, true, 0, false)
+	})
+
+	t.Run("should not auto-forget unhealthy instances in the ring when auto-forget is disabled, auto-forget-unhealthy-periods=10", func(t *testing.T) {
+		runTest(t, false, 10, false)
 	})
 }
 
@@ -1593,8 +1599,8 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i] < tokens[j]
+	slices.SortFunc(tokens, func(a, b uint32) int {
+		return cmp.Compare(a, b)
 	})
 
 	return tokens
@@ -1655,7 +1661,7 @@ func (m *mockShardingStrategy) FilterBlocks(ctx context.Context, userID string, 
 }
 
 func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucketindex.Index {
-	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
+	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, 16, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))

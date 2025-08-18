@@ -18,10 +18,11 @@ import (
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -65,12 +66,16 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		if err != nil {
 			return err
 		}
+		defer func() {
+			for _, r := range results {
+				r.FreeBuffer()
+			}
+		}()
 
 		result = mergeExemplarQueryResponses(results)
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV("series", len(result.Timeseries))
-		}
+		s := trace.SpanFromContext(ctx)
+		s.SetAttributes(attribute.Int("series", len(result.Timeseries)))
 		return nil
 	})
 	return result, err
@@ -96,13 +101,12 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV(
-				"chunk-series", len(result.Chunkseries),
-				"time-series", len(result.Timeseries),
-				"streaming-series", len(result.StreamingSeries),
-			)
-		}
+		s := trace.SpanFromContext(ctx)
+		s.SetAttributes(
+			attribute.Int("chunk-series", len(result.Chunkseries)),
+			attribute.Int("time-series", len(result.Timeseries)),
+			attribute.Int("streaming-series", len(result.StreamingSeries)),
+		)
 		return nil
 	})
 
@@ -196,6 +200,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {
 		result[i] = exemplarResults[k]
+		result[i].MakeReferencesSafeToRetain()
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
@@ -211,12 +216,13 @@ type ingesterQueryResult struct {
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
-		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Finish()
 			cancelContext(errStreamClosed)
@@ -239,17 +245,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		log.SetTag("ingester_address", ing.Addr)
 		log.SetTag("ingester_zone", ing.Zone)
 
+		var result ingesterQueryResult
+
 		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
-			return ingesterQueryResult{}, err
+			return result, err
 		}
 
 		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
-			return ingesterQueryResult{}, err
+			return result, err
 		}
-
-		result := ingesterQueryResult{}
 
 		// Why retain the batches rather than iteratively build a single slice?
 		// If we iteratively build a single slice, we'll spend a lot of time copying elements as the slice grows beyond its capacity.
@@ -258,78 +264,25 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			resp, err := stream.Recv()
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
 			} else if err != nil {
-				return ingesterQueryResult{}, err
+				return result, err
 			}
-
-			if len(resp.Timeseries) > 0 {
-				for _, series := range resp.Timeseries {
-					if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
-						return ingesterQueryResult{}, limitErr
-					}
-				}
-
-				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
-			} else if len(resp.Chunkseries) > 0 {
-				// Enforce the max chunks limits.
-				if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
-				}
-
-				if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
-				}
-
-				for _, series := range resp.Chunkseries {
-					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
-						return ingesterQueryResult{}, err
-					}
-				}
-
-				if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
-				}
-
-				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
-			} else if len(resp.StreamingSeries) > 0 {
-				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
-				streamingSeriesCount += len(resp.StreamingSeries)
-
-				for _, s := range resp.StreamingSeries {
-					l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
-
-					if err := queryLimiter.AddSeries(l); err != nil {
-						return ingesterQueryResult{}, err
-					}
-
-					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
-					if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
-						return ingesterQueryResult{}, err
-					}
-
-					if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
-						return ingesterQueryResult{}, err
-					}
-
-					labelsBatch = append(labelsBatch, l)
-				}
-
+			if labelsBatch != nil {
+				streamingSeriesCount += len(labelsBatch)
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
 			}
-
-			if resp.IsEndOfSeriesStream {
+			if isEOS {
 				if streamingSeriesCount > 0 {
 					result.streamingSeries.Series = make([]labels.Labels, 0, streamingSeriesCount)
-
 					for _, batch := range streamingSeriesBatches {
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, memoryTracker, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -367,6 +320,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
 	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
+	streamReaderCount := 0
 
 	for _, res := range results {
 		// Accumulate any chunk series
@@ -391,7 +345,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToTimeSeries[key]
 				existing.Labels = series.Labels
-				if existing.Samples == nil {
+				if len(existing.Samples) == 0 {
 					existing.Samples = series.Samples
 				} else {
 					existing.Samples = mergeSamples(existing.Samples, series.Samples)
@@ -403,6 +357,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Start buffering chunks for streaming series
 		if res.streamingSeries.StreamReader != nil {
 			res.streamingSeries.StreamReader.StartBuffering()
+			streamReaderCount++
 		}
 	}
 
@@ -411,12 +366,18 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
+		StreamReaders:   make([]*ingester_client.SeriesChunksStreamReader, 0, streamReaderCount),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
 	}
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)
+	}
+	for _, res := range results {
+		if res.streamingSeries.StreamReader != nil {
+			resp.StreamReaders = append(resp.StreamReaders, res.streamingSeries.StreamReader)
+		}
 	}
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
@@ -426,6 +387,80 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
 
 	return resp, nil
+}
+
+// receiveResponse receives a response from stream, and:
+// * If the response has Timeseries, they are added to r.timeseriesBatches.
+// * If the response has Chunkseries, they are added to r.chunkseriesBatches.
+// * If the response has StreamingSeries, a slice is returned with the label sets of each series.
+// A bool is also returned to indicate whether the end of the stream has been reached.
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter) ([]labels.Labels, bool, error) {
+	resp, err := stream.Recv()
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.FreeBuffer()
+
+	if len(resp.Timeseries) > 0 {
+		for _, series := range resp.Timeseries {
+			if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
+				return nil, false, limitErr
+			}
+		}
+
+		for i := range resp.Timeseries {
+			resp.Timeseries[i].MakeReferencesSafeToRetain()
+		}
+		r.timeseriesBatches = append(r.timeseriesBatches, resp.Timeseries)
+	} else if len(resp.Chunkseries) > 0 {
+		// Enforce the max chunks limits.
+		if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+			return nil, false, err
+		}
+
+		if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+			return nil, false, err
+		}
+
+		for _, series := range resp.Chunkseries {
+			if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
+				return nil, false, err
+			}
+		}
+
+		if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
+			return nil, false, err
+		}
+
+		for i := range resp.Chunkseries {
+			resp.Chunkseries[i].MakeReferencesSafeToRetain()
+		}
+		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
+	} else if len(resp.StreamingSeries) > 0 {
+		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
+		for _, s := range resp.StreamingSeries {
+			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+
+			if err := queryLimiter.AddSeries(l); err != nil {
+				return nil, false, err
+			}
+
+			// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
+			if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
+				return nil, false, err
+			}
+
+			if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
+				return nil, false, err
+			}
+
+			labelsBatch = append(labelsBatch, l)
+		}
+
+		return labelsBatch, resp.IsEndOfSeriesStream, nil
+	}
+
+	return nil, resp.IsEndOfSeriesStream, nil
 }
 
 // estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.

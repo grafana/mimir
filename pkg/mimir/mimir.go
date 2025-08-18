@@ -31,15 +31,12 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/spanprofiler"
 	"github.com/okzk/sdnotify"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
@@ -58,7 +55,6 @@ import (
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -81,7 +77,6 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -186,6 +181,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
+	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
@@ -201,14 +197,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
-
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
-	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
@@ -337,20 +331,21 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+
 	// validate the default limits
-	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
-func (c *Config) ValidateLimits(limits validation.Limits) error {
-	if err := c.Querier.ValidateLimits(limits); err != nil {
+// ValidateLimits validates the runtime limits.
+func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
-	return nil
+	return limits.Validate()
 }
 
 func (c *Config) isModuleEnabled(m string) bool {
@@ -600,6 +595,28 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	})
 }
 
+func (c *Config) registerMemberlistKVFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
+	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
+
+	c.MemberlistKV.RegisterFlags(throwaway)
+
+	defaultsOverrides := map[string]string{
+		"memberlist.packet-dial-timeout":    "500ms",
+		"memberlist.packet-write-timeout":   "500ms",
+		"memberlist.max-concurrent-writes":  "5",
+		"memberlist.acquire-writer-timeout": "1s",
+	}
+
+	throwaway.VisitAll(func(f *flag.Flag) {
+		if defaultValue, overridden := defaultsOverrides[f.Name]; overridden {
+			// Ignore errors when setting new values. We have a test to verify that it works.
+			_ = f.Value.Set(defaultValue)
+		}
+
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
+}
+
 // CommonConfigInheriter abstracts config that inherit common config values.
 type CommonConfigInheriter interface {
 	CommonConfigInheritance() CommonConfigInheritance
@@ -755,13 +772,13 @@ type Mimir struct {
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
 	Flusher                          *flusher.Flusher
-	FrontendV1                       *frontendv1.Frontend
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
@@ -826,16 +843,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupObjstoreTracing()
-
-	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
-	// Note, for performance reasons, span profiler only labels root spans.
-	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
-	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
-	// gets converged into the latter.
-	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
-
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -869,13 +876,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	reg.MustRegister(collectors.NewGoCollector(
 		collectors.WithGoCollectorRuntimeMetrics(rules...),
 	))
-}
-
-// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
-func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
-	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.
@@ -1037,15 +1037,6 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 		if t.Ingester != nil {
 			if err := t.Ingester.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Ingester not ready: "+err.Error(), http.StatusServiceUnavailable)
-				return
-			}
-		}
-
-		// Query Frontend has a special check that makes sure that a querier is attached before it signals
-		// itself as ready
-		if t.FrontendV1 != nil {
-			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
-				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}

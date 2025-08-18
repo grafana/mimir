@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -786,43 +787,6 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 }
 
 func TestInvalidClusterValidationLabel(t *testing.T) {
-	testCases := map[string]struct {
-		distributorClusterLabel           string
-		ingesterClusterLabel              string
-		softValidation                    bool
-		expectedResponseStatus            int
-		expectedIngesterServerStatus      string
-		expectedIngesterClientStatus      string
-		expectedClusterValidationFailures int
-	}{
-		"when ingester client and server have the same cluster label no error is expected": {
-			distributorClusterLabel:           "cluster",
-			ingesterClusterLabel:              "cluster",
-			expectedResponseStatus:            http.StatusOK,
-			expectedIngesterServerStatus:      "OK",
-			expectedIngesterClientStatus:      "OK",
-			expectedClusterValidationFailures: 0,
-		},
-		"when ingester client and server do not have the same cluster label and soft validation is enabled no error is expected": {
-			distributorClusterLabel:           "distributor-cluster",
-			ingesterClusterLabel:              "ingester-cluster",
-			softValidation:                    true,
-			expectedResponseStatus:            http.StatusOK,
-			expectedIngesterServerStatus:      "OK",
-			expectedIngesterClientStatus:      "OK",
-			expectedClusterValidationFailures: 0,
-		},
-		"when ingester client and server do not have the same cluster label and soft validation is disabled an error is expected": {
-			distributorClusterLabel:           "distributor-cluster",
-			ingesterClusterLabel:              "ingester-cluster",
-			softValidation:                    false,
-			expectedResponseStatus:            http.StatusInternalServerError,
-			expectedIngesterServerStatus:      "FailedPrecondition",
-			expectedIngesterClientStatus:      "Internal",
-			expectedClusterValidationFailures: 1,
-		},
-	}
-
 	series := []prompb.TimeSeries{
 		{
 			Labels: []prompb.Label{
@@ -837,6 +801,66 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 					Value:     100,
 				},
 			},
+		},
+	}
+	metadata := []mimirpb.MetricMetadata{
+		{
+			Help: "foo",
+			Unit: "By",
+		},
+	}
+
+	pushPromRemoteWrite := func(client *e2emimir.Client) (*http.Response, error) { return client.Push(series) }
+	pushOTLP := func(client *e2emimir.Client) (*http.Response, error) { return client.PushOTLP(series, metadata) }
+
+	testCases := map[string]struct {
+		distributorClusterLabel           string
+		ingesterClusterLabel              string
+		softValidation                    bool
+		expectedResponseStatus            int
+		expectedIngesterServerStatus      string
+		expectedIngesterClientStatus      string
+		expectedClusterValidationFailures int
+		push                              func(*e2emimir.Client) (*http.Response, error)
+	}{
+		"when ingester client and server have the same cluster label no error is expected": {
+			distributorClusterLabel:           "cluster",
+			ingesterClusterLabel:              "cluster",
+			expectedResponseStatus:            http.StatusOK,
+			expectedIngesterServerStatus:      "OK",
+			expectedIngesterClientStatus:      "OK",
+			expectedClusterValidationFailures: 0,
+			push:                              pushPromRemoteWrite,
+		},
+		"when ingester client and server do not have the same cluster label and soft validation is enabled no error is expected": {
+			distributorClusterLabel:           "distributor-cluster",
+			ingesterClusterLabel:              "ingester-cluster",
+			softValidation:                    true,
+			expectedResponseStatus:            http.StatusOK,
+			expectedIngesterServerStatus:      "OK",
+			expectedIngesterClientStatus:      "OK",
+			expectedClusterValidationFailures: 0,
+			push:                              pushPromRemoteWrite,
+		},
+		"when ingester client and server do not have the same cluster label and soft validation is disabled an error is expected: prometheus remote-write": {
+			distributorClusterLabel:           "distributor-cluster",
+			ingesterClusterLabel:              "ingester-cluster",
+			softValidation:                    false,
+			expectedResponseStatus:            http.StatusInternalServerError,
+			expectedIngesterServerStatus:      "FailedPrecondition",
+			expectedIngesterClientStatus:      "Internal",
+			expectedClusterValidationFailures: 1,
+			push:                              pushPromRemoteWrite,
+		},
+		"when ingester client and server do not have the same cluster label and soft validation is disabled an error is expected: otlp": {
+			distributorClusterLabel:           "distributor-cluster",
+			ingesterClusterLabel:              "ingester-cluster",
+			softValidation:                    false,
+			expectedResponseStatus:            http.StatusServiceUnavailable,
+			expectedIngesterServerStatus:      "FailedPrecondition",
+			expectedIngesterClientStatus:      "Internal",
+			expectedClusterValidationFailures: 1,
+			push:                              pushOTLP,
 		},
 	}
 
@@ -885,7 +909,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 			require.NoError(t, err)
 
-			res, err := client.Push(series)
+			res, err := testCase.push(client)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedResponseStatus, res.StatusCode)
 

@@ -70,6 +70,32 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		}
 	}
 
+	cluster.ControlKey(kmsg.OffsetDelete.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		deleteR := request.(*kmsg.OffsetDeleteRequest)
+		ensureConsumerGroupExists(deleteR.Group)
+		assert.Len(t, deleteR.Topics, 1, "test only has support for one topic per request")
+		topic := deleteR.Topics[0]
+		assert.Equal(t, topicName, topic.Topic)
+		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
+
+		partitionID := topic.Partitions[0].Partition
+		// Delete the offsets for the specified consumer group and partition.
+		committedOffsets[deleteR.Group][partitionID] = -1
+
+		resp := request.ResponseKind().(*kmsg.OffsetDeleteResponse)
+		resp.Default()
+		resp.Topics = []kmsg.OffsetDeleteResponseTopic{
+			{
+				Topic:      topicName,
+				Partitions: []kmsg.OffsetDeleteResponseTopicPartition{{Partition: partitionID}},
+			},
+		}
+
+		return resp, nil, true
+
+	})
+
 	cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		commitR := request.(*kmsg.OffsetCommitRequest)

@@ -5,7 +5,9 @@
 
 package validation
 
-import "github.com/grafana/dskit/flagext"
+import (
+	"github.com/grafana/dskit/flagext"
+)
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
 type mockTenantLimits struct {
@@ -31,7 +33,9 @@ func (l *mockTenantLimits) AllByUserID() map[string]*Limits {
 func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Limits)) *Overrides {
 	defaults := MockDefaultLimits()
 	tenantLimits := map[string]*Limits{}
-	customize(defaults, tenantLimits)
+	if customize != nil {
+		customize(defaults, tenantLimits)
+	}
 
 	return NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
 }

@@ -131,6 +131,51 @@ How to **fix** it:
 3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
+4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
+   When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
+
+   1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
+
+      ```
+      (
+          # How many more series can each tenant send per ingester with current ingesters and limits.
+          (
+              (
+                  # Difference between usage and limits
+                  max by(namespace, user) (cortex_limits_overrides{namespace=~"(cortex|mimir).*", limit_name="max_global_series_per_user"})
+                  -
+                  max by (namespace, user) (namespace_user:cortex_ingester_owned_series:sum{namespace=~"(cortex|mimir).*"})
+              )
+              / on (namespace) group_left
+              max by (namespace) (sum by(namespace, job) (up{namespace=~"(cortex|mimir).*", container="ingester"}))
+          )
+
+          > on (namespace) group_left
+
+          # How many series per ingester can a namespace take without going into risk.
+          # This is: "target series * 1.25 - current owned series" on the ingester with most usage.
+          min by(namespace) (
+              min by(namespace) (
+                  0.8 * cortex_ingester_instance_limits{namespace=~"(cortex|mimir).*", limit="max_series"} > 0
+              )
+              -
+              max by(namespace) (
+                  sum by (namespace, pod) (cortex_ingester_owned_series{namespace=~"(cortex|mimir).*"})
+              )
+          )
+      )
+      ```
+
+   2. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
+      - Decrease the `max_global_series_per_user` limit.
+      - Ensure that the `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` values are not set below a safe value:
+        - If the experimental ingest storage is enabled:
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of partitions)`.
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to the value of `ingestion_partitions_tenant_shard_size * 3`.
+        - If the experimental ingest storage is disabled:
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of ingesters across all zones)`.
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to the value of `ingestion_tenant_shard_size / 3`.
+
 ### MimirIngesterReachingTenantsLimit
 
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
@@ -604,6 +649,32 @@ How to **investigate**:
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
+### MimirHighVolumeLevel1BlocksQueried
+
+This alert fires when the store-gateway is querying level 1 blocks for more than 6 hours, indicating that the compactor may not be keeping up with compaction work.
+
+How it **works**:
+
+- Level 1 blocks are 2-hour blocks shipped by ingesters, not yet optimized by the compactor
+- When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
+- This can lead to increased query latency and resource usage
+- Out-of-order blocks are excluded from this alert as they may be shipped for previous dates and queried before being compacted into bigger blocks
+
+How to **investigate**:
+
+- Check the `Mimir / Compactor` dashboard to see if the compactor is healthy and processing blocks normally
+- Look for errors in the compactor logs that might indicate why compaction is falling behind
+- Monitor the `Mimir / Queries` dashboard to see the "Blocks queried / sec by compaction level" panel for the volume of level 1 block queries
+- Check if there's increased write load that the compactor cannot keep up with
+
+How to **fix**:
+
+- Scale up the compactor horizontally if it's CPU or memory constrained
+- Check and increase compactor resources if needed
+- Preventatively check store-gateway CPU/memory/disk usage and scale out if constrained
+- Verify store-gateway auto-scaling has sufficient headroom to handle increased load during compactor catch-up
+- If the issue persists, investigate for corrupted blocks that might be blocking compaction
+
 ### MimirCompactorHasNotSuccessfullyRunCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
@@ -933,7 +1004,7 @@ How to **fix** it:
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
-  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
+  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (the general rule is ~2 million series per ingester, though some clusters might have a higher target. Series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### MimirGossipMembersTooHigh
@@ -1383,19 +1454,25 @@ How to **investigate**:
 
 ### MimirIngestedDataTooFarInTheFuture
 
-This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
+This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
 This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
 
 How it **works**:
 
-- The metric exported by ingester computes maximum timestamp from all TSDBs open in ingester.
-- Alert checks this exported metric and fires if maximum timestamp is more than 1h in the future.
+- The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
+- The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
+- This alert doesn't respect the per-user creation grace period.
 
 How to **investigate**
 
-- Find the tenant with bad sample on ingester's tenants list, where a warning "TSDB Head max timestamp too far in the future" is displayed.
-- Flush tenant's data to blocks storage.
-- Remove tenant's directory on disk and restart ingester.
+- Find an affected ingester pod and connect to its http API. For example, using `kubectl port-forward <pod> 8080:80`.
+- Find the tenant with a bad sample on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The sample should display the warning "TSDB Head max timestamp too far in the future".
+- If there are no warnings, the sample is likely within the tenant's grace interval and the alert is a false positive.
+
+If it's not a false positive:
+
+- Flush the tenant's data to blocks storage through the `/ingester/flush?wait=true&tenant=foo` endpoint.
+- Remove the tenant's directory on disk and restart the ingester.
 
 ### MimirStoreGatewayTooManyFailedOperations
 
@@ -1725,55 +1802,23 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
-### MimirBlockBuilderNoCycleProcessing
-
-This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
-
-How it **works**:
-
-- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
-- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
-
-How to **investigate**:
-
-- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
-
-Data recovery / temporary mitigation:
-
-While the block builder is still getting mature, ingester is likely still uploading blocks to a backup bucket (if you name your bucket as `*-blocks`, the backup bucket could be `*-ingester-blocks`).
-
-If the block builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following.
-
-If there is a backup `*-ingester-blocks` bucket
-
-1. Firstly, reconfigure ingesters to upload blocks to the main `*-blocks` bucket.
-2. Use `copyblocks` tool from Mimir to copy over the blocks from the backup bucket `*-ingester-blocks` to the main `*-blocks` bucket for the duration block builder did not produce blocks. It is advised to have the start time for copying blocks to be few hours prior (maybe 4hrs) to when the issue started.
-3. Fix the issue in block builder. Let it catch up with the backlog. Once it catches up, you can switch back ingesters to the backup bucket.
-
-If there is no backup bucket that ingester is uploading to
-
-- Increase the retention of the Kafka topic to buy some time.
-- Spin up a new set of block builder with an older version with a **new kafka topic name**, so that it does not conflict with the existing block builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
-- If the `block-builder.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block builders start back far enough to cover the missing data.
-- If there is any corrupt data in the partition that is hard failing the block builder, then this solution will not work. Keep increasing the kafka topic retention until the issue is resolved and block builder has caught up.
-
 ### MimirBlockBuilderLagging
 
-This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+This alert fires when the block-builder reports a large number of unprocessed records in Kafka partitions.
 
 How it **works**:
 
-- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
-- The block-builder must consume and process these records into TSDB blocks.
-- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
-- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+- The block-builder-scheduler watches the Kafka topic backlog. The lag is calculated per-partition as the difference between the partition's end and its last committed offset.
+- The block-builder-scheduler chops the backlog into jobs, and distributes the jobs between the block-builder instances.
+- A block-builder must consume and process the records in a job into TSDB blocks.
+- When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
+
+If the block-builder reports high values in the lag, this could indicate that the block-builder cannot fully process and commit Kafka record.
 
 How to **investigate**:
 
-- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Check if the per-partition lag has been growing over the past hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
-
-Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 ### MimirBlockBuilderCompactAndUploadFailed
 
@@ -1788,6 +1833,49 @@ How to **investigate**:
 - Explore the block-builder logs to check what errors are there.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+#### MimirBlockBuilderHasNotShippedBlocks
+
+Similar to [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks) but for block-builder.
+
+This alert fires when the block-builder stops shipping any blocks for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks.
+- It then sends the TSDB blocks to the object storage.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition jobs. These log records include the details about the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+Data recovery / temporary mitigation:
+
+If the block-builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following:
+
+- Increase the retention of the Kafka topic to buy some time.
+- Spin up a new set of block-builders and block-builder-scheduler with an older version and a **new kafka consumer group**. The latter is so it didn't conflict with the existing block-builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
+- If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
+- Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
+
+#### MimirBlockBuilderDataSkipped
+
+This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
+
+How it **works**:
+
+- Block-builder-scheduler is in charge of both planning "jobs" for block-builders to consume, as well as advancing the per-partition commit when one of these jobs is completed. Each job has a start offset, which is inclusive, and an end offset, which is exclusive.
+- Block-builder-scheduler also verifies that neither planning nor committing jobs ever produce a gap. This alert fires when the scheduler detects one of these gaps.
+- Note that this problem only happens if there's a bug in the planning logic.
+
+How to **investigate**:
+
+- Look at the block-builder-scheduler logs around the affected time. There's a log line that mentions "gap detected in offset advancement" with relevant data.
+- Using this data, continue to look at block-builder-scheduler logs to find the jobs either planned or committed around this time, and see if you can determine how the gap occurred.
+
+Data recovery / temporary mitigation:
+
+You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
 ### MimirServerInvalidClusterValidationLabelRequests
 
@@ -1817,6 +1905,24 @@ How to **investigate**:
 
 Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
 
+### MimirGoThreadsTooHigh
+
+This alert fires when a Mimir instance is running a very high number of Go threads.
+
+How it **works**:
+
+- In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
+- Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
+- Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
+- If a goroutine makes a call to a blocking syscall, for example, disk I/O, the Go runtime tries to schedule other goroutines on other OS threads. This process starts new threads on-demand. Note that network syscalls use asynchronous I/O under the hood, and therefore, don't create this problem.
+- Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
+
+How to **investigate**:
+
+- Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
+  - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
+  - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1843,7 +1949,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-series` option. To configure the limit per-tenant, use the `max_label_value_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1853,7 +1959,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 
 This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceeds the configured limit.
 An info series is a series where the metric name ends in `_info`.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-label-names-per-info-series` option.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -1862,7 +1968,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-max-native-histogram-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
-The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
+The limit protects the system from using too much memory. To configure the limit for all tenants, use the `-validation.max-native-histogram-buckets` option. To configure the limit per-tenant, use the `max_native_histogram_buckets` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
@@ -2037,7 +2143,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2046,7 +2152,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
@@ -2159,7 +2265,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
@@ -2168,7 +2274,7 @@ Invalid metrics metadata are skipped during ingestion. Valid metadata in the sam
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-metadata-length` option. To configure the limit per-tenant, use the `max_metadata_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
@@ -2660,6 +2766,20 @@ How to **fix** it:
 
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
+### err-mimir-distributor-max-influx-request-size
+
+This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming Influx write requests before and after decompression regardless of the compression type.
+- Configure this limit in the `-distributor.max-influx-request-size` setting.
+
+How to **fix** it:
+
+- If you use the `telegraf` agent, decrease the maximum batch size in the `metric_batch_size` setting. Refer to [Agent configuration](https://docs.influxdata.com/telegraf/v1/configuration/#agent-configuration) for details.
+- Increase the allowed limit in the `-distributor.max-influx-request-size` setting.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

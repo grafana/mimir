@@ -7,23 +7,23 @@ syntax = "proto3";
 
 package alerts;
 
-import "gogoproto/gogo.proto";
 import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
+import "gogoproto/gogo.proto";
 
 option go_package = "alertspb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message AlertConfigDesc {
-    string user = 1;
-    string raw_config = 2;
+  string user = 1;
+  string raw_config = 2;
 
-    repeated TemplateDesc templates = 3;
+  repeated TemplateDesc templates = 3;
 }
 
 message TemplateDesc {
-    string filename = 1;
-    string body = 2;
+  string filename = 1;
+  string body = 2;
 }
 
 message FullStateDesc {
@@ -45,5 +45,21 @@ message GrafanaAlertConfigDesc {
   bool default = 7;
   bool promoted = 8;
   string external_url = 9;
+  SmtpConfig smtp_config = 12;
+
+  // TODO: Deprecate and re-order once everything is sent in SmtpConfig.
   map<string, string> static_headers = 10;
+  string smtp_from = 11;
+}
+
+message SmtpConfig {
+  string ehlo_identity = 1;
+  string from_address = 2;
+  string from_name = 3;
+  string host = 4;
+  string password = 5;
+  bool skip_verify = 6;
+  string start_tls_policy = 7;
+  map<string, string> static_headers = 8;
+  string user = 9;
 }

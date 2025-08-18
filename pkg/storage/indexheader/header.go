@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
@@ -20,6 +21,8 @@ const (
 	DefaultIndexHeaderLazyLoadingEnabled     = true
 	DefaultIndexHeaderLazyLoadingIdleTimeout = 60 * time.Minute
 )
+
+var tracer = otel.Tracer("pkg/storage/indexheader")
 
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive

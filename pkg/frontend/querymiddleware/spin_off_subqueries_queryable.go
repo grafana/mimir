@@ -89,9 +89,14 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
-		promRes, ok := resp.(*PrometheusResponse)
+
+		// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
+		// (It does not copy labels, but MQE does not reuse labels as labels.Labels is immutable so it is still safe).
+		defer resp.Close()
+
+		promRes, ok := resp.GetPrometheusResponse()
 		if !ok {
-			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{}))
+			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp))
 		}
 		resStreams, err := ResponseToSamples(promRes)
 		if err != nil {
@@ -165,7 +170,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			} else {
 				rangeEnd = alignedEnd
 			}
-			newRangeRequest := NewPrometheusRangeQueryRequest(rangePath, q.req.GetHeaders(), rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
+			newRangeRequest := NewPrometheusRangeQueryRequest(rangePath, q.req.GetHeaders(), rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints(), q.req.GetStats())
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == alignedEnd {
 				break
@@ -179,9 +184,13 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
-			promRes, ok := resp.(*PrometheusResponse)
+			// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
+			// (It does not copy labels, but MQE does not reuse labels as labels.Labels is immutable so it is still safe).
+			defer resp.Close()
+
+			promRes, ok := resp.GetPrometheusResponse()
 			if !ok {
-				return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{}))
+				return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp))
 			}
 			resStreams, err := ResponseToSamples(promRes)
 			if err != nil {

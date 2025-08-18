@@ -241,18 +241,18 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests check-protobuf-format
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr11118-33a7e5a266
+LATEST_BUILD_IMAGE_TAG ?= pr12352-27854ede92
 
-# TTY is parameterized to allow Google Cloud Builder to run builds,
-# as it currently disallows TTY devices. This value needs to be overridden
-# in any custom cloudbuild.yaml files
-TTY := --tty
+# TTY is parameterized to allow CI and scripts to run builds,
+# as it currently disallows TTY devices.
+# Auto-detect TTY availability: use --tty if stdin is a TTY, otherwise empty
+TTY := $(shell test -t 0 && echo --tty || echo)
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
@@ -265,14 +265,18 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
+# Git worktree support: Generate volume mounts for worktree git metadata
+GITVOLUMES := $(shell ./tools/git-worktree-volumes.sh 2>/dev/null | sed 's/$$/:$(CONTAINER_MOUNT_OPTIONS)/' || true)
+
 GOVOLUMES=	-v mimir-go-cache:/go/cache \
 			-v mimir-go-pkg:/go/pkg \
-			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
+			$(GITVOLUMES)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-otlp: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -309,7 +313,7 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
 lint: ## Run lints to check for style issues.
-lint: check-makefiles
+lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
@@ -344,7 +348,7 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
-	# Ensure all errors are report as APIError
+	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
@@ -411,11 +415,9 @@ lint: check-makefiles
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
-	# Use the faster slices.Sort where we can.
-	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
-	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
+	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \
-		"sort.{Strings,Ints}=slices.Sort" \
+		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
@@ -454,6 +456,11 @@ lint: check-makefiles
 	# As a result the topic can be created with the wrong number of partitions.
 	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# We don't use opentracing anymore.
+	faillint -paths \
+		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure lines are sorted after lint:sorted directives.
@@ -504,6 +511,14 @@ format-promql-tests:
 check-promql-tests: format-promql-tests
 	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
 
+.PHONY: format-protobuf
+format-protobuf:
+	buf format --write $(addprefix --path=,$(PROTO_DEFS))
+
+.PHONY: check-protobuf-format
+check-protobuf-format:
+	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
+
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
 
@@ -524,6 +539,10 @@ license: ## Add license header to files.
 check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
+
+.PHONY: check-merge-conflicts
+check-merge-conflicts: ## Check for git merge conflict markers in source files.
+	@./tools/check-merge-conflicts.sh
 
 dist: ## Generates binaries for a Mimir release.
 	echo "Cleaning up dist/"
@@ -614,6 +633,14 @@ helm-conftest-test: build-helm-tests helm-conftest-quick-test
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
+
+.PHONY: generate-otlp
+generate-otlp:
+	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
+
+.PHONY: check-generated-otlp-code
+check-generated-otlp-code: generate-otlp
+	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
 
 endif
 
@@ -759,9 +786,6 @@ integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
 # Those vars are needed for packages target
 export VERSION
 
@@ -785,11 +809,3 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
-
-.PHONY: generate-otlp
-generate-otlp:
-	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
-
-.PHONY: check-generated-otlp-code
-check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)

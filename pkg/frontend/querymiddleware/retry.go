@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -20,12 +21,48 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type retryMiddlewareMetrics struct {
+type retryOperation[T any] func() (T, error)
+
+func doWithRetries[T any](ctx context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
+	tries := 0
+	defer func() { metrics.Observe(float64(tries)) }()
+
+	var lastErr error
+	var zero T
+	for ; tries < maxRetries; tries++ {
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+
+		resp, err := operation()
+		if err == nil {
+			return resp, nil
+		}
+
+		if !apierror.IsRetryableAPIError(err) || errors.Is(err, context.Canceled) {
+			return zero, err
+		}
+
+		// Retry if we get a HTTP 500 or a non-HTTP error.
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		if !ok || httpResp.Code/100 == 5 {
+			lastErr = err
+			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, log))
+			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
+			continue
+		}
+
+		return zero, err
+	}
+	return zero, lastErr
+}
+
+type retryMetrics struct {
 	retriesCount prometheus.Histogram
 }
 
-func newRetryMiddlewareMetrics(registerer prometheus.Registerer) prometheus.Observer {
-	return &retryMiddlewareMetrics{
+func newRetryMetrics(registerer prometheus.Registerer) prometheus.Observer {
+	return &retryMetrics{
 		retriesCount: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_query_frontend_retries",
 			Help:    "Number of times a request is retried.",
@@ -34,7 +71,7 @@ func newRetryMiddlewareMetrics(registerer prometheus.Registerer) prometheus.Obse
 	}
 }
 
-func (m *retryMiddlewareMetrics) Observe(v float64) {
+func (m *retryMetrics) Observe(v float64) {
 	m.retriesCount.Observe(v)
 }
 
@@ -50,7 +87,7 @@ type retry struct {
 // fail with 500 or a non-HTTP error.
 func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Observer) MetricsQueryMiddleware {
 	if metrics == nil {
-		metrics = newRetryMiddlewareMetrics(nil)
+		metrics = newRetryMetrics(nil)
 	}
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
@@ -64,32 +101,34 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Obser
 }
 
 func (r retry) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	tries := 0
-	defer func() { r.metrics.Observe(float64(tries)) }()
+	return doWithRetries(ctx, r.log, r.maxRetries, r.metrics, func() (Response, error) {
+		return r.next.Do(ctx, req)
+	})
+}
 
-	var lastErr error
-	for ; tries < r.maxRetries; tries++ {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		resp, err := r.next.Do(ctx, req)
-		if err == nil {
-			return resp, nil
-		}
+type retryRoundTripper struct {
+	next       http.RoundTripper
+	log        log.Logger
+	maxRetries int
 
-		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		// Retry if we get a HTTP 500 or a non-HTTP error.
-		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-		if !ok || httpResp.Code/100 == 5 {
-			lastErr = err
-			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, r.log))
-			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
-			continue
-		}
+	metrics prometheus.Observer
+}
 
-		return nil, err
+func newRetryRoundTripper(next http.RoundTripper, log log.Logger, maxRetries int, metrics prometheus.Observer) http.RoundTripper {
+	if metrics == nil {
+		metrics = newRetryMetrics(nil)
 	}
-	return nil, lastErr
+
+	return retryRoundTripper{
+		next:       next,
+		log:        log,
+		maxRetries: maxRetries,
+		metrics:    metrics,
+	}
+}
+
+func (r retryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return doWithRetries(req.Context(), r.log, r.maxRetries, r.metrics, func() (*http.Response, error) {
+		return r.next.RoundTrip(req)
+	})
 }

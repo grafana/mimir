@@ -3,7 +3,9 @@
 package compactor
 
 import (
-	"sort"
+	"cmp"
+	"slices"
+	"strings"
 )
 
 const (
@@ -34,34 +36,34 @@ func GetJobsOrderFunction(name string) JobsOrderFunc {
 // same time range, so finishing split jobs first unblocks more jobs and gives opportunity to more compactors
 // to work on them.
 func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
-	sort.SliceStable(jobs, func(i, j int) bool {
+	slices.SortStableFunc(jobs, func(a, b *Job) int {
 		// Move split jobs to the front.
-		if jobs[i].UseSplitting() && !jobs[j].UseSplitting() {
-			return true
+		if a.UseSplitting() && !b.UseSplitting() {
+			return -1
 		}
 
-		if !jobs[i].UseSplitting() && jobs[j].UseSplitting() {
-			return false
+		if !a.UseSplitting() && b.UseSplitting() {
+			return 1
 		}
 
-		checkLength := !jobs[i].UseSplitting() || !jobs[j].UseSplitting()
+		checkLength := !a.UseSplitting() || !b.UseSplitting()
 		// Don't check length for splitting jobs. We want to the oldest split blocks to be first, no matter the length.
 
 		if checkLength {
-			iLength := jobs[i].MaxTime() - jobs[i].MinTime()
-			jLength := jobs[j].MaxTime() - jobs[j].MinTime()
+			aLength := a.MaxTime() - a.MinTime()
+			bLength := b.MaxTime() - b.MinTime()
 
-			if iLength != jLength {
-				return iLength < jLength
+			if aLength != bLength {
+				return cmp.Compare(aLength, bLength)
 			}
 		}
 
-		if jobs[i].MinTime() != jobs[j].MinTime() {
-			return jobs[i].MinTime() < jobs[j].MinTime()
+		if a.MinTime() != b.MinTime() {
+			return cmp.Compare(a.MinTime(), b.MinTime())
 		}
 
 		// Guarantee stable sort for tests.
-		return jobs[i].Key() < jobs[j].Key()
+		return strings.Compare(a.Key(), b.Key())
 	})
 
 	return jobs
@@ -72,21 +74,21 @@ func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
 // compactor is lagging behind, we compact up to the largest range (eg. 24h) the most recent
 // blocks first and the move to older ones. Most recent blocks are the one more likely to be queried.
 func sortJobsByNewestBlocksFirst(jobs []*Job) []*Job {
-	sort.SliceStable(jobs, func(i, j int) bool {
-		iMaxTime := jobs[i].MaxTime()
-		jMaxTime := jobs[j].MaxTime()
-		if iMaxTime != jMaxTime {
-			return iMaxTime > jMaxTime
+	slices.SortStableFunc(jobs, func(a, b *Job) int {
+		aMaxTime := a.MaxTime()
+		bMaxTime := b.MaxTime()
+		if aMaxTime != bMaxTime {
+			return cmp.Compare(bMaxTime, aMaxTime)
 		}
 
-		iLength := iMaxTime - jobs[i].MinTime()
-		jLength := jMaxTime - jobs[j].MinTime()
-		if iLength != jLength {
-			return iLength < jLength
+		aLength := aMaxTime - a.MinTime()
+		bLength := bMaxTime - b.MinTime()
+		if aLength != bLength {
+			return cmp.Compare(aLength, bLength)
 		}
 
 		// Guarantee stable sort for tests.
-		return jobs[i].Key() < jobs[j].Key()
+		return strings.Compare(a.Key(), b.Key())
 	})
 
 	return jobs

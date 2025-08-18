@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -24,12 +24,12 @@ import (
 )
 
 type Pusher interface {
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 }
 
 type PusherCloser interface {
-	// PushToStorage pushes the write request to the storage.
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	// PushToStorageAndReleaseRequest pushes the write request to the storage.
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	// Close tells the PusherCloser that no more records are coming and it should flush any remaining records.
 	Close() []error
 }
@@ -66,7 +66,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	}(time.Now())
 
 	type parsedRecord struct {
-		*mimirpb.WriteRequest
+		*mimirpb.PreallocWriteRequest
 		// ctx holds the tracing baggage for this record/request.
 		ctx      context.Context
 		tenantID string
@@ -93,14 +93,18 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:          r.ctx,
-				tenantID:     r.tenantID,
-				WriteRequest: &mimirpb.WriteRequest{},
-				index:        index,
+				ctx:                  r.ctx,
+				tenantID:             r.tenantID,
+				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
+				index:                index,
+			}
+
+			if r.version > LatestRecordVersion {
+				parsed.err = fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", r.version, LatestRecordVersion)
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := parsed.Unmarshal(r.content)
+			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
@@ -142,7 +146,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		}
 
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest, writer)
+		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
@@ -173,13 +177,13 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "pusherConsumer.pushToStorage")
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "pusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
 	ctx = user.InjectOrgID(ctx, tenantID)
 
-	err := writer.PushToStorage(ctx, req)
+	err := writer.PushToStorageAndReleaseRequest(ctx, req)
 
 	return err
 }
@@ -209,14 +213,14 @@ func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, p
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (ssp sequentialStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	ssp.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 	defer func(now time.Time) {
 		ssp.metrics.processingTime.WithLabelValues(requestContents(wr)).Observe(time.Since(now).Seconds())
 	}(time.Now())
 
-	if err := ssp.pusher.PushToStorage(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
+	if err := ssp.pusher.PushToStorageAndReleaseRequest(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
 		return err
 	}
 
@@ -266,15 +270,15 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, byte
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (c *parallelStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
 
 	shards := c.shardsFor(userID, wr.Source)
-	return shards.PushToStorage(ctx, wr)
+	return shards.PushToStorageAndReleaseRequest(ctx, wr)
 }
 
 // Close implements the PusherCloser interface.
@@ -297,8 +301,6 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
 		return p
 	}
-	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
-	hashLabels := labels.Labels.Hash
 
 	idealShards := c.idealShardsFor(userID)
 	var p PusherCloser
@@ -310,7 +312,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 		// So we choose the lower overhead and simpler sequential pusher.
 		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
 	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher, hashLabels)
+		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
 	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
@@ -334,16 +336,14 @@ func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 	return r
 }
 
-type labelsHashFunc func(labels.Labels) uint64
-
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
+// Each series is consistently assigned to the same shard. This allows us to preserve the order of samples of the same series between multiple PushToStorage calls.
 type parallelStorageShards struct {
 	metrics      *storagePusherMetrics
 	errorHandler *pushErrorHandler
 
-	pusher     Pusher
-	hashLabels labelsHashFunc
+	pusher Pusher
 
 	numShards int
 	batchSize int
@@ -361,12 +361,11 @@ type flushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
+func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:    numShards,
 		pusher:       pusher,
 		errorHandler: errorHandler,
-		hashLabels:   hashLabels,
 		capacity:     capacity,
 		metrics:      metrics,
 		batchSize:    batchSize,
@@ -378,23 +377,41 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 	return p
 }
 
-// PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
-// PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
-// PushToStorage aborts the request if it encounters an error.
-func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	var (
-		builder         labels.ScratchBuilder
-		nonCopiedLabels labels.Labels
-	)
+// Compute a hash from LabelAdapters, avoiding the cost of conversion to Labels.
+// There is no particular benefit to match the hash function used by TSDB;
+// its main stripes are split by unique ID which we don't yet know.
+func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
+	const sep = '\xff'
+	b = b[:0]
+	for _, v := range ls {
+		b = append(b, v.Name...)
+		b = append(b, sep)
+		b = append(b, v.Value...)
+		b = append(b, sep)
+	}
+	return b, xxhash.Sum64(b)
+}
 
-	for _, ts := range request.Timeseries {
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
+// PushToStorageAndReleaseRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
+// PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
+// PushToStorageAndReleaseRequest aborts the request if it encounters an error.
+func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+	hashBuf := make([]byte, 0, 1024)
+	for i := range request.Timeseries {
+		var shard uint64
+		hashBuf, shard = labelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
+		shard = shard % uint64(p.numShards)
 
-		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
+		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
+		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
+		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
+	// The slice no longer owns any timeseries, so we can re-use it.
+	// Nil-out the slice to make any use-after-free attempts fail in an obvious way.
+	mimirpb.ReuseSliceOnly(request.Timeseries)
+	request.Timeseries = nil
 
 	// Push metadata to every shard in a round-robin fashion.
 	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
@@ -449,12 +466,13 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		p.metrics.batchAge.Observe(time.Since(wr.startedAt).Seconds())
 		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 		processingStart := time.Now()
+		requestContents := requestContents(wr.WriteRequest)
 
-		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
+		err := p.pusher.PushToStorageAndReleaseRequest(wr.Context, wr.WriteRequest)
 
 		// The error handler needs to determine if this is a server error or not.
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
-		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
+		p.metrics.processingTime.WithLabelValues(requestContents).Observe(time.Since(processingStart).Seconds())
 		if p.errorHandler.IsServerError(wr.Context, err) {
 			queue.ReportError(err)
 		}

@@ -99,32 +99,52 @@ func AddHistogramSeries(
 type SymbolTableBuilder struct {
 	count   uint32
 	symbols map[string]uint32
+	offset  uint32
+	common  map[string]uint32
 }
 
 func NewSymbolTableBuilder(symbols []string) *SymbolTableBuilder {
+	return NewSymbolTableBuilderWithCommon(symbols, 0, nil)
+}
+
+func NewSymbolTableBuilderWithCommon(symbols []string, offset uint32, commonSymbols []string) *SymbolTableBuilder {
+	// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
+	if len(symbols) == 0 || symbols[0] != "" {
+		symbols = append([]string{""}, symbols...)
+	}
+
 	symbolsMap := make(map[string]uint32)
 	for i, sym := range symbols {
-		symbolsMap[sym] = uint32(i)
+		symbolsMap[sym] = uint32(i) + offset
+	}
+	commonSymbolsMap := make(map[string]uint32)
+	for i, commonSym := range commonSymbols {
+		commonSymbolsMap[commonSym] = uint32(i)
 	}
 	return &SymbolTableBuilder{
 		count:   uint32(len(symbols)),
 		symbols: symbolsMap,
+		offset:  offset,
+		common:  commonSymbolsMap,
 	}
 }
 
 func (symbols *SymbolTableBuilder) GetSymbol(sym string) uint32 {
+	if i, ok := symbols.common[sym]; ok {
+		return i
+	}
 	if i, ok := symbols.symbols[sym]; ok {
 		return i
 	}
-	symbols.symbols[sym] = symbols.count
+	symbols.symbols[sym] = symbols.offset + symbols.count
 	symbols.count++
-	return symbols.count - 1
+	return symbols.offset + symbols.count - 1
 }
 
 func (symbols *SymbolTableBuilder) GetSymbols() []string {
 	res := make([]string, len(symbols.symbols))
 	for sym, i := range symbols.symbols {
-		res[i] = sym
+		res[i-symbols.offset] = sym
 	}
 	return res
 }

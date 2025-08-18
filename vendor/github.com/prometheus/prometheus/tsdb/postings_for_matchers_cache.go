@@ -5,30 +5,37 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DmitriyVTitov/size"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
+	promContext "github.com/prometheus/prometheus/util/context"
 )
 
 const (
 	// NOTE: keep them exported to reference them in Mimir.
 
-	DefaultPostingsForMatchersCacheTTL      = 10 * time.Second
-	DefaultPostingsForMatchersCacheMaxItems = 100
-	DefaultPostingsForMatchersCacheMaxBytes = 10 * 1024 * 1024 // DefaultPostingsForMatchersCacheMaxBytes is based on the default max items, 10MB / 100 = 100KB per cached entry on average.
-	DefaultPostingsForMatchersCacheForce    = false
+	DefaultPostingsForMatchersCacheTTL          = 10 * time.Second
+	DefaultPostingsForMatchersCacheMaxItems     = 100
+	DefaultPostingsForMatchersCacheMaxBytes     = 10 * 1024 * 1024 // DefaultPostingsForMatchersCacheMaxBytes is based on the default max items, 10MB / 100 = 100KB per cached entry on average.
+	DefaultPostingsForMatchersCacheForce        = false
+	DefaultPostingsForMatchersCacheInvalidation = false
+	DefaultPostingsForMatchersCacheVersions     = 2 * 1024 * 1024 // The number of metric versions to store across all metric names
 )
 
 const (
@@ -39,10 +46,93 @@ const (
 	evictionReasonsLength
 )
 
+// CacheKeyFunc provides a cache key for a Context. The cache key can be used to better distinguish cache entries, along
+// with the metric name from queries, such as for different users.
+type CacheKeyFunc func(ctx context.Context) (string, error)
+
+var DefaultPostingsForMatchersCacheKeyFunc = func(_ context.Context) (string, error) { return "", nil }
+
+// PostingsForMatchersCacheFactory gets or creates PostingsForMatchersCache instances.
+// `tracingKV` specifies attributes for tracing purposes, which are appended to the default attributes.
+type PostingsForMatchersCacheFactory interface {
+	NewPostingsForMatchersCache(tracingKV []attribute.KeyValue) *PostingsForMatchersCache
+}
+
+type sharedPostingsForMatchersCacheFactory struct {
+	instance *PostingsForMatchersCache
+}
+
+func (f *sharedPostingsForMatchersCacheFactory) NewPostingsForMatchersCache(_ []attribute.KeyValue) *PostingsForMatchersCache {
+	// Additional attributes are not propagated for shared caches
+	return f.instance
+}
+
+type nonSharedPostingsForMatchersCacheFactory struct {
+	factoryFunc func(tracingKV []attribute.KeyValue) *PostingsForMatchersCache
+}
+
+func (f *nonSharedPostingsForMatchersCacheFactory) NewPostingsForMatchersCache(tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
+	return f.factoryFunc(tracingKV)
+}
+
+var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(false, DefaultPostingsForMatchersCacheKeyFunc, DefaultPostingsForMatchersCacheInvalidation, DefaultPostingsForMatchersCacheVersions,
+	DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+
+// NewPostingsForMatchersCacheFactory creates a factory for building PostingsForMatchersCache instances. A few
+// configurations are possible for the resulting cache:
+//   - Not shared - A cache is created for each call, and entries are not invalidated when postings change.
+//   - Shared without invalidation - A single cache is shared for all factory callers, and entries are not invalidated when postings change.
+//   - Shared with invalidation - A cache is shared for all factory callers, and entries are invalidated when postings change.
+//
+// Params:
+//   - `shared` indicates whether the factory will return a cache that is shared across all invocations.
+//   - `keyFunc` allows `shared` caches to provide a key that better distinguishes entries.
+//   - `invalidation` can be enabled for `shared` caches to invalidate head block cache entries when postings change for a metric.
+//   - `cacheVersions` determines the size of the metric versions cache when `invalidation` is enabled.
+//   - `ttl` indicates the time-to-live for cache entries, else when 0, only in-flight requests are de-duplicated.
+//   - `force` indicates that all requests should go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
+//   - `metrics` the metrics that should be used by the produced caches.
+func NewPostingsForMatchersCacheFactory(shared bool, keyFunc CacheKeyFunc, invalidation bool, cacheVersions int, ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) PostingsForMatchersCacheFactory {
+	var mv *metricVersions
+	if shared && invalidation {
+		mv = &metricVersions{
+			versions: make([]atomic.Int64, cacheVersions),
+		}
+	}
+	factoryFunc := func(tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
+		return &PostingsForMatchersCache{
+			calls:            &sync.Map{},
+			cached:           list.New(),
+			expireInProgress: atomic.NewBool(false),
+
+			shared:         shared,
+			keyFunc:        keyFunc,
+			ttl:            ttl,
+			maxItems:       maxItems,
+			maxBytes:       maxBytes,
+			force:          force,
+			metricVersions: mv,
+			metrics:        metrics,
+
+			timeNow: func() time.Time {
+				// Ensure it is UTC, so that it's faster to compute the cache entry size.
+				return time.Now().UTC()
+			},
+			postingsForMatchers: PostingsForMatchers,
+			// Clone the slice so we don't end up sharding it with the parent.
+			additionalAttributes: append(slices.Clone(tracingKV), attribute.Bool("shared", shared), attribute.Stringer("ttl", ttl), attribute.Bool("force", force)),
+		}
+	}
+	if shared {
+		return &sharedPostingsForMatchersCacheFactory{instance: factoryFunc([]attribute.KeyValue{})}
+	}
+	return &nonSharedPostingsForMatchersCacheFactory{factoryFunc: factoryFunc}
+}
+
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
 type IndexPostingsReader interface {
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -59,86 +149,60 @@ type IndexPostingsReader interface {
 	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
 }
 
-// NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
-// If `ttl` is 0, then it only deduplicates in-flight requests.
-// If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
-func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) *PostingsForMatchersCache {
-	b := &PostingsForMatchersCache{
-		calls:            &sync.Map{},
-		cached:           list.New(),
-		expireInProgress: atomic.NewBool(false),
-
-		ttl:      ttl,
-		maxItems: maxItems,
-		maxBytes: maxBytes,
-		force:    force,
-		metrics:  metrics,
-
-		timeNow: func() time.Time {
-			// Ensure it is UTC, so that it's faster to compute the cache entry size.
-			return time.Now().UTC()
-		},
-		postingsForMatchers: PostingsForMatchers,
-
-		tracer:      otel.Tracer(""),
-		ttlAttrib:   attribute.Stringer("ttl", ttl),
-		forceAttrib: attribute.Bool("force", force),
-	}
-
-	return b
-}
-
 // PostingsForMatchersCache caches PostingsForMatchers call results when the concurrent hint is passed in or force is true.
+//
+// Invalidation of cache entries is supported for head blocks. Cache entries are partially keyed by a version per metric
+// name, and the version is incremented via InvalidateMetric, effectively invalidating all previous entries for the metric
+// name. Invalidation is lazy, where expired series become orphaned until they're later evicted.
 type PostingsForMatchersCache struct {
-	calls *sync.Map
-
-	cachedMtx   sync.RWMutex
-	cached      *list.List
-	cachedBytes int64
-
+	// Config
+	shared   bool
+	keyFunc  CacheKeyFunc
 	ttl      time.Duration
 	maxItems int
 	maxBytes int64
 	force    bool
-	metrics  *PostingsForMatchersCacheMetrics
+
+	// Mutable state
+	calls                *sync.Map // Tracks calls that are in progress so they can be coalesced
+	cachedMtx            sync.RWMutex
+	cached               *list.List      // Guarded by cachedMtx. Tracks postingsForMatcherPromise entries.
+	cachedBytes          int64           // Guarded by cachedMtx
+	metricVersions       *metricVersions // Tracks versions for metric names, enabling per-metric invalidation
+	metrics              *PostingsForMatchersCacheMetrics
+	additionalAttributes []attribute.KeyValue // Preallocated for performance
 
 	// Signal whether there's already a call to expire() in progress, in order to avoid multiple goroutines
 	// cleaning up expired entries at the same time (1 at a time is enough).
 	expireInProgress *atomic.Bool
 
-	// timeNow is the time.Now that can be replaced for testing purposes
-	timeNow func() time.Time
-
-	// postingsForMatchers can be replaced for testing purposes
-	postingsForMatchers func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
-
-	// onPromiseExecutionDoneBeforeHook is used for testing purposes. It allows to hook at the
-	// beginning of onPromiseExecutionDone() execution.
-	onPromiseExecutionDoneBeforeHook func()
-
-	// evictHeadBeforeHook is used for testing purposes. It allows to hook before calls to evictHead().
-	evictHeadBeforeHook func()
-
-	tracer trace.Tracer
-	// Preallocated for performance
-	ttlAttrib   attribute.KeyValue
-	forceAttrib attribute.KeyValue
+	// Test config that can be replaced for testing purposes
+	timeNow                          func() time.Time
+	postingsForMatchers              func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	onPromiseExecutionDoneBeforeHook func() // allows to hook at the beginning of onPromiseExecutionDone() execution.
+	evictHeadBeforeHook              func() // allows to hook before calls to evictHead().
 }
 
-func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, blockID ulid.ULID, ms ...*labels.Matcher) (index.Postings, error) {
 	c.metrics.requests.Inc()
 
 	span := trace.SpanFromContext(ctx)
 	defer func(startTime time.Time) {
 		span.AddEvent(
 			"PostingsForMatchers returned",
-			trace.WithAttributes(attribute.Bool("concurrent", concurrent), c.ttlAttrib, c.forceAttrib, attribute.Stringer("duration", time.Since(startTime))),
+			trace.WithAttributes(c.additionalAttributes...),
+			trace.WithAttributes(attribute.Bool("concurrent", concurrent), attribute.Stringer("duration", time.Since(startTime))),
 		)
 	}(time.Now())
 
-	if !concurrent && !c.force {
+	metricVersion, cacheKey, sharedKeyOk := c.sharedKeyForMatchers(ctx, blockID, ms...)
+
+	// Skip caching of non-concurrent non-forced calls, or where a shared cache key is not ok
+	skipCache := !concurrent && !c.force || !sharedKeyOk
+
+	if skipCache {
 		c.metrics.skipsBecauseIneligible.Inc()
-		span.AddEvent("cache not used")
+		span.AddEvent("cache not used", trace.WithAttributes(c.additionalAttributes...))
 
 		p, err := c.postingsForMatchers(ctx, ix, ms...)
 		if err != nil {
@@ -148,9 +212,9 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 		return p, err
 	}
 
-	span.AddEvent("using cache")
+	span.AddEvent("using cache", trace.WithAttributes(c.additionalAttributes...))
 	c.expire()
-	p, err := c.postingsForMatchersPromise(ctx, ix, ms)(ctx)
+	p, err := c.postingsForMatchersPromise(ctx, metricVersion, cacheKey, blockID, ix, ms)(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, "getting postings for matchers with cache failed")
 		span.RecordError(err)
@@ -158,10 +222,80 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	return p, err
 }
 
+// sharedKeyForMatchers returns a metric version and cache key for the blockID and matchers. For non-shared caches,
+// returns ok. For shared caches, returns ok when a cache key is computed and a metric name is retrievable from a head
+// block.
+func (c *PostingsForMatchersCache) sharedKeyForMatchers(ctx context.Context, blockID ulid.ULID, ms ...*labels.Matcher) (metricVersion int, cacheKey string, ok bool) {
+	ok = true
+	if c.shared {
+		var cacheKeyError error
+		if cacheKey, cacheKeyError = c.keyFunc(ctx); cacheKeyError != nil {
+			// Skip caching when using a shared cache where the keyFunc returns an error, since cache keys are important in shared caches
+			ok = false
+		} else if c.metricVersions != nil && blockID == headULID {
+			// Get metric version for invalidation
+			// This is only necessary for head blocks since postings can change for them. For compacted blocks, postings are considered immutable.
+			if metricName, mok := metricNameFromMatchers(ms); !mok {
+				// Skip caching when using invalidation with head blocks where a metric name matcher is missing, since this is needed for invalidation
+				ok = false
+			} else {
+				metricVersion = c.metricVersions.getVersion(cacheKey, metricName)
+			}
+		}
+	}
+	return
+}
+
+// InvalidateMetric invalidates cache entries for a key and metric name contained in the labels by incrementing its
+// version. Entries are not immediately removed from the cache since we don't track metric to postings mappings.
+func (c *PostingsForMatchersCache) InvalidateMetric(key, metricName string) {
+	if c.metricVersions == nil {
+		return
+	}
+	c.metrics.invalidations.Inc()
+
+	// Increment metric version so it can't be used for future cache lookups
+	c.metricVersions.incrementVersion(key, metricName)
+}
+
+// metricNameFromMatchers extracts the metric name from matchers if there's an equal matcher for __name__.
+func metricNameFromMatchers(ms []*labels.Matcher) (string, bool) {
+	for _, m := range ms {
+		if m.Name == labels.MetricName && m.Type == labels.MatchEqual {
+			return m.Value, true
+		}
+	}
+	return "", false
+}
+
+// metricVersions stores versions for metric names.
+// This type is concurrency safe.
+type metricVersions struct {
+	versions []atomic.Int64
+}
+
+// getVersion gets the version for the key and metricName.
+func (mv *metricVersions) getVersion(key, metricName string) int {
+	return int(mv.versions[mv.getIndex(key, metricName)].Load())
+}
+
+// incrementVersion increments the version for the key and metricName.
+func (mv *metricVersions) incrementVersion(key, metricName string) {
+	mv.versions[mv.getIndex(key, metricName)].Inc()
+}
+
+// getIndex returns the index of the versions entry for the key and metricName.
+func (mv *metricVersions) getIndex(key, metricName string) int {
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	h.Write([]byte(metricName))
+	return int(h.Sum64() % uint64(len(mv.versions)))
+}
+
 type postingsForMatcherPromise struct {
 	// Keep track of all callers contexts in order to cancel the execution context if all
 	// callers contexts get canceled.
-	callersCtxTracker *contextsTracker
+	callersCtxTracker *promContext.ContextsTracker
 
 	// The result of the promise is stored either in cloner or err (only of the two is valued).
 	// Do not access these fields until the done channel is closed.
@@ -191,16 +325,19 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 		trace.SpanFromContext(ctx).AddEvent("completed postingsForMatchers promise", trace.WithAttributes(
 			// Do not format the timestamp to introduce a performance regression.
 			attribute.Int64("evaluation completed at (epoch seconds)", p.evaluationCompletedAt.Unix()),
+			// We don't include the block ID because propagating it from the caller would increase the size of the promise.
+			// With a bigger promise we can fit fewer promises in the cache, so the cache will be less effective.
+			attribute.String("block", "unknown"),
 		))
 
 		return p.cloner.Clone(), nil
 	}
 }
 
-func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
+func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, metricVersion int, cacheKey string, blockID ulid.ULID, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
 	span := trace.SpanFromContext(ctx)
 
-	promiseCallersCtxTracker, promiseExecCtx := newContextsTracker()
+	promiseCallersCtxTracker, promiseExecCtx := promContext.NewContextsTracker()
 	promise := &postingsForMatcherPromise{
 		done:              make(chan struct{}),
 		callersCtxTracker: promiseCallersCtxTracker,
@@ -213,9 +350,14 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	// same label matchers) then it's not a problem, and resources will be released.
 	//
 	// Skipping the error checking because it can't happen here.
-	_ = promise.callersCtxTracker.add(ctx)
+	_ = promise.callersCtxTracker.Add(ctx)
 
-	key := matchersKey(ms)
+	var key string
+	if !c.shared {
+		key = cacheKeyForMatchers(ms)
+	} else {
+		key = sharedCacheKey(metricVersion, cacheKey, blockID, ms)
+	}
 
 	if oldPromiseValue, loaded := c.calls.LoadOrStore(key, promise); loaded {
 		// The new promise hasn't been stored because there's already an in-flight promise
@@ -223,7 +365,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 		// Release the resources created by the new promise, that will not be used.
 		close(promise.done)
-		promise.callersCtxTracker.close()
+		promise.callersCtxTracker.Close()
 
 		oldPromise := oldPromiseValue.(*postingsForMatcherPromise)
 
@@ -236,10 +378,13 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			case <-oldPromise.done:
 				if c.timeNow().Sub(oldPromise.evaluationCompletedAt) >= c.ttl {
 					// The cached promise already expired, but it has not been evicted.
-					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired", trace.WithAttributes(
-						attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
-						attribute.String("cache_key", key),
-					))
+					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired",
+						trace.WithAttributes(
+							attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
+							attribute.String("cache_key", key),
+						),
+						trace.WithAttributes(c.additionalAttributes...),
+					)
 					c.metrics.skipsBecauseStale.Inc()
 
 					return func(ctx context.Context) (index.Postings, error) {
@@ -253,16 +398,18 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		}
 
 		// Add the caller context to the ones tracked by the old promise (currently in-flight).
-		if err := oldPromise.callersCtxTracker.add(ctx); err != nil && errors.Is(err, errContextsTrackerCanceled{}) {
+		if err := oldPromise.callersCtxTracker.Add(ctx); err != nil && errors.Is(err, promContext.ErrContextsTrackerCanceled{}) {
 			// We've hit a race condition happening when the "loaded" promise execution was just canceled,
 			// but it hasn't been removed from map of calls yet, so the old promise was loaded anyway.
 			//
 			// We expect this race condition to be infrequent. In this case we simply skip the cache and
 			// pass through the execution to the underlying postingsForMatchers().
 			c.metrics.skipsBecauseCanceled.Inc()
-			span.AddEvent("looked up in-flight postingsForMatchers promise, but the promise was just canceled due to a race condition: skipping the cache", trace.WithAttributes(
-				attribute.String("cache_key", key),
-			))
+			span.AddEvent(
+				"looked up in-flight postingsForMatchers promise, but the promise was just canceled due to a race condition: skipping the cache",
+				trace.WithAttributes(attribute.String("cache_key", key)),
+				trace.WithAttributes(c.additionalAttributes...),
+			)
 
 			return func(ctx context.Context) (index.Postings, error) {
 				return c.postingsForMatchers(ctx, ix, ms...)
@@ -270,15 +417,16 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		}
 
 		c.metrics.hits.Inc()
-		span.AddEvent("waiting cached postingsForMatchers promise", trace.WithAttributes(
-			attribute.String("cache_key", key),
-		))
+		span.AddEvent("waiting cached postingsForMatchers promise",
+			trace.WithAttributes(attribute.String("cache_key", key)),
+			trace.WithAttributes(c.additionalAttributes...),
+		)
 
 		return oldPromise.result
 	}
 
 	c.metrics.misses.Inc()
-	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)))
+	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)), trace.WithAttributes(c.additionalAttributes...))
 
 	// promise was stored, close its channel after fulfilment
 	defer close(promise.done)
@@ -300,7 +448,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 	// The execution terminated (or has been canceled). We have to close the tracker to release resources.
 	// It's important to close it before computing the promise size, so that the actual size is smaller.
-	promise.callersCtxTracker.close()
+	promise.callersCtxTracker.Close()
 
 	sizeBytes := int64(len(key) + size.Of(promise))
 
@@ -344,17 +492,13 @@ func (c *PostingsForMatchersCache) expire() {
 	var evictionReasons [evictionReasonsLength]int
 
 	// Evict the head taking an exclusive lock.
-	{
-		c.cachedMtx.Lock()
-
-		now := c.timeNow()
-		for c.shouldEvictHead(now) {
-			reason := c.evictHead(now)
-			evictionReasons[reason]++
-		}
-
-		c.cachedMtx.Unlock()
+	c.cachedMtx.Lock()
+	now := c.timeNow()
+	for c.shouldEvictHead(now) {
+		reason := c.evictHead(now)
+		evictionReasons[reason]++
 	}
+	c.cachedMtx.Unlock()
 
 	// Keep track of the reason why items where evicted.
 	c.metrics.evictionsBecauseTTL.Add(float64(evictionReasons[evictionReasonTTL]))
@@ -365,7 +509,7 @@ func (c *PostingsForMatchersCache) expire() {
 
 // shouldEvictHead returns true if cache head should be evicted, either because it's too old,
 // or because the cache has too many elements
-// should be called while read lock is held on cachedMtx.
+// Must be called with a read lock held on cachedMtx.
 func (c *PostingsForMatchersCache) shouldEvictHead(now time.Time) bool {
 	// The cache should be evicted for sure if the max size (either items or bytes) is reached.
 	if c.cached.Len() > c.maxItems || c.cachedBytes > c.maxBytes {
@@ -380,6 +524,7 @@ func (c *PostingsForMatchersCache) shouldEvictHead(now time.Time) bool {
 	return now.Sub(ts) >= c.ttl
 }
 
+// Must be called with a write lock held on cachedMtx.
 func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	front := c.cached.Front()
 	oldest := front.Value.(*postingsForMatchersCachedCall)
@@ -406,6 +551,11 @@ func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	c.calls.Delete(oldest.key)
 	c.cached.Remove(front)
 	c.cachedBytes -= oldest.sizeBytes
+	if c.shared {
+		// Only set values when caches are shared, so separate per block caches do not interfere
+		c.metrics.entries.Set(float64(c.cached.Len()))
+		c.metrics.bytes.Set(float64(c.cachedBytes))
+	}
 
 	return
 }
@@ -423,7 +573,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 
 	// Do not cache if cache is disabled.
 	if c.ttl <= 0 {
-		span.AddEvent("not caching promise result because configured TTL is <= 0")
+		span.AddEvent("not caching promise result because configured TTL is <= 0", trace.WithAttributes(c.additionalAttributes...))
 		c.calls.Delete(key)
 		return
 	}
@@ -431,7 +581,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 	// Do not cache if the promise execution was canceled (it gets cancelled once all the callers contexts have
 	// been canceled).
 	if errors.Is(err, context.Canceled) {
-		span.AddEvent("not caching promise result because execution has been canceled")
+		span.AddEvent("not caching promise result because execution has been canceled", trace.WithAttributes(c.additionalAttributes...))
 		c.calls.Delete(key)
 		return
 	}
@@ -447,29 +597,37 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 			sizeBytes: sizeBytes,
 		})
 		c.cachedBytes += sizeBytes
+		if c.shared {
+			// Only set values when caches are shared, so separate per block caches do not interfere
+			c.metrics.entries.Set(float64(c.cached.Len()))
+			c.metrics.bytes.Set(float64(c.cachedBytes))
+		}
 		lastCachedBytes = c.cachedBytes
 
 		c.cachedMtx.Unlock()
 	}
 
-	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
-		attribute.Stringer("evaluation completed at", completedAt),
-		attribute.Int64("size in bytes", sizeBytes),
-		attribute.Int64("cached bytes", lastCachedBytes),
-	))
+	span.AddEvent("added cached value to expiry queue",
+		trace.WithAttributes(
+			attribute.Stringer("evaluation completed at", completedAt),
+			attribute.Int64("size in bytes", sizeBytes),
+			attribute.Int64("cached bytes", lastCachedBytes),
+		),
+		trace.WithAttributes(c.additionalAttributes...),
+	)
 }
 
-// matchersKey provides a unique string key for the given matchers slice.
+// cacheKeyForMatchers provides a unique string key for the given matchers slice.
 // NOTE: different orders of matchers will produce different keys,
 // but it's unlikely that we'll receive same matchers in different orders at the same time.
-func matchersKey(ms []*labels.Matcher) string {
+func cacheKeyForMatchers(ms []*labels.Matcher) string {
 	const (
 		typeLen = 2
 		sepLen  = 1
 	)
 	var size int
 	for _, m := range ms {
-		size += len(m.Name) + len(m.Value) + typeLen + sepLen
+		size += len(m.Name) + typeLen + len(m.Value) + sepLen
 	}
 	sb := strings.Builder{}
 	sb.Grow(size)
@@ -483,134 +641,74 @@ func matchersKey(ms []*labels.Matcher) string {
 	return key
 }
 
+// sharedCacheKey provides a key for an entry in shared cache, where entries are distinguished by all of the provided
+// fields. The version param may be 0 when invalidation is not enabled.
+func sharedCacheKey(version int, cacheKey string, blockID ulid.ULID, ms []*labels.Matcher) string {
+	// Sort matchers for consistent cache keys since shared cache entries may be long-lived
+	slices.SortFunc(ms, func(i, j *labels.Matcher) int {
+		if i.Type != j.Type {
+			return int(i.Type - j.Type)
+		}
+		if i.Name != j.Name {
+			return strings.Compare(i.Name, j.Name)
+		}
+		if i.Value != j.Value {
+			return strings.Compare(i.Value, j.Value)
+		}
+		return 0
+	})
+
+	const (
+		typeLen = 2
+		sepLen  = 1
+	)
+	versionStr := strconv.Itoa(version)
+	size := len(versionStr) + len(cacheKey) + len(blockID.String()) + 2*sepLen
+	for _, m := range ms {
+		size += sepLen + len(m.Name) + typeLen + len(m.Value)
+	}
+	sb := strings.Builder{}
+	sb.Grow(size)
+	sb.WriteString(versionStr)
+	sb.WriteByte(0)
+	sb.WriteString(cacheKey)
+	sb.WriteByte(0)
+	sb.WriteString(blockID.String())
+	for _, m := range ms {
+		sb.WriteByte(0)
+		sb.WriteString(m.Name)
+		sb.WriteString(m.Type.String())
+		sb.WriteString(m.Value)
+	}
+	return sb.String()
+}
+
 // indexReaderWithPostingsForMatchers adapts an index.Reader to be an IndexReader by adding the PostingsForMatchers method.
 type indexReaderWithPostingsForMatchers struct {
+	blockID ulid.ULID
 	*index.Reader
 	pfmc *PostingsForMatchersCache
 }
 
 func (ir indexReaderWithPostingsForMatchers) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return ir.pfmc.PostingsForMatchers(ctx, ir, concurrent, ms...)
+	return ir.pfmc.PostingsForMatchers(ctx, ir, concurrent, ir.blockID, ms...)
 }
 
 var _ IndexReader = indexReaderWithPostingsForMatchers{}
 
-// errContextsTrackerClosed is the reason to identify contextsTracker has been explicitly closed by calling close().
-//
-// This error is a struct instead of a globally generic error so that postingsForMatcherPromise computed size is smaller
-// (this error is referenced by contextsTracker, which is referenced by postingsForMatcherPromise).
-type errContextsTrackerClosed struct{}
-
-func (e errContextsTrackerClosed) Error() string {
-	return "contexts tracker is closed"
-}
-
-// errContextsTrackerCanceled is the reason to identify contextsTracker has been automatically closed because
-// all tracked contexts have been canceled.
-//
-// This error is a struct instead of a globally generic error so that postingsForMatcherPromise computed size is smaller
-// (this error is referenced by contextsTracker, which is referenced by postingsForMatcherPromise).
-type errContextsTrackerCanceled struct{}
-
-func (e errContextsTrackerCanceled) Error() string {
-	return "contexts tracker has been canceled"
-}
-
-// contextsTracker is responsible to monitor multiple context.Context and provides an execution
-// that gets canceled once all monitored context.Context have done.
-type contextsTracker struct {
-	cancelExecCtx context.CancelFunc
-
-	mx               sync.Mutex
-	closedWithReason error         // Track whether the tracker is closed and why. The tracker is not closed if this is nil.
-	trackedCount     int           // Number of tracked contexts.
-	trackedStopFuncs []func() bool // The stop watching functions for all tracked contexts.
-}
-
-func newContextsTracker() (*contextsTracker, context.Context) {
-	t := &contextsTracker{}
-
-	// Create a new execution context that will be canceled only once all tracked contexts have done.
-	var execCtx context.Context
-	execCtx, t.cancelExecCtx = context.WithCancel(context.Background())
-
-	return t, execCtx
-}
-
-// add the input ctx to the group of monitored context.Context.
-// Returns false if the input context couldn't be added to the tracker because the tracker is already closed.
-func (t *contextsTracker) add(ctx context.Context) error {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	// Check if we've already done.
-	if t.closedWithReason != nil {
-		return t.closedWithReason
-	}
-
-	// Register a function that will be called once the tracked context has done.
-	t.trackedCount++
-	t.trackedStopFuncs = append(t.trackedStopFuncs, context.AfterFunc(ctx, t.onTrackedContextDone))
-
-	return nil
-}
-
-// close the tracker. When the tracker is closed, the execution context is canceled
-// and resources releases.
-//
-// This function must be called once done to not leak resources.
-func (t *contextsTracker) close() {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	t.unsafeClose(errContextsTrackerClosed{})
-}
-
-// unsafeClose must be called with the t.mx lock hold.
-func (t *contextsTracker) unsafeClose(reason error) {
-	if t.closedWithReason != nil {
-		return
-	}
-
-	t.cancelExecCtx()
-
-	// Stop watching the tracked contexts. It's safe to call the stop function on a context
-	// for which was already done.
-	for _, fn := range t.trackedStopFuncs {
-		fn()
-	}
-
-	t.trackedCount = 0
-	t.trackedStopFuncs = nil
-	t.closedWithReason = reason
-}
-
-func (t *contextsTracker) onTrackedContextDone() {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	t.trackedCount--
-
-	// If this was the last context to be tracked, we can close the tracker and cancel the execution context.
-	if t.trackedCount == 0 {
-		t.unsafeClose(errContextsTrackerCanceled{})
-	}
-}
-
-func (t *contextsTracker) trackedContextsCount() int {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	return t.trackedCount
-}
-
 type PostingsForMatchersCacheMetrics struct {
-	requests                 prometheus.Counter
-	hits                     prometheus.Counter
-	misses                   prometheus.Counter
-	skipsBecauseIneligible   prometheus.Counter
-	skipsBecauseStale        prometheus.Counter
-	skipsBecauseCanceled     prometheus.Counter
+	entries  prometheus.Gauge
+	bytes    prometheus.Gauge
+	requests prometheus.Counter
+	hits     prometheus.Counter
+	misses   prometheus.Counter
+
+	skipsBecauseIneligible prometheus.Counter
+	skipsBecauseStale      prometheus.Counter
+	skipsBecauseCanceled   prometheus.Counter
+
+	invalidations prometheus.Counter
+
 	evictionsBecauseTTL      prometheus.Counter
 	evictionsBecauseMaxBytes prometheus.Counter
 	evictionsBecauseMaxItems prometheus.Counter
@@ -627,6 +725,14 @@ func NewPostingsForMatchersCacheMetrics(reg prometheus.Registerer) *PostingsForM
 	)
 
 	return &PostingsForMatchersCacheMetrics{
+		entries: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "postings_for_matchers_cache_entries_total",
+			Help: "Total number of entries in the PostingsForMatchers cache.",
+		}),
+		bytes: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "postings_for_matchers_cache_bytes_total",
+			Help: "Total number of bytes in the PostingsForMatchers cache.",
+		}),
 		requests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "postings_for_matchers_cache_requests_total",
 			Help: "Total number of requests to the PostingsForMatchers cache.",
@@ -653,6 +759,10 @@ func NewPostingsForMatchersCacheMetrics(reg prometheus.Registerer) *PostingsForM
 			Name:        skipsMetric,
 			Help:        skipsHelp,
 			ConstLabels: map[string]string{"reason": "canceled-cached-entry"},
+		}),
+		invalidations: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "postings_for_matchers_cache_invalidations_total",
+			Help: "Total number of cache entries that were invalidated.",
 		}),
 		evictionsBecauseTTL: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        evictionsMetric,

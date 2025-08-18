@@ -13,8 +13,12 @@ metadata:
     name: "store-gateway-zone-a"
     rollout-group: store-gateway
     zone: zone-a
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -92,6 +96,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-a"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
             - -flag-empty=
             - -flag-float=1.23
@@ -136,12 +141,10 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -157,8 +160,13 @@ metadata:
     name: "store-gateway-zone-b"
     rollout-group: store-gateway
     zone: zone-b
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-extra-args-values-mimir-store-gateway-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -236,6 +244,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-b"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
             - -flag-empty=
             - -flag-float=1.23
@@ -280,12 +289,10 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -301,8 +308,13 @@ metadata:
     name: "store-gateway-zone-c"
     rollout-group: store-gateway
     zone: zone-c
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-extra-args-values-mimir-store-gateway-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -380,6 +392,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-c"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
             - -flag-empty=
             - -flag-float=1.23
@@ -424,9 +437,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-            - name: "GOMEMLIMIT"
+            - name: GOMEMLIMIT
               value: "536870912"
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: "1000"

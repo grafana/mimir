@@ -37,29 +37,11 @@ import (
 )
 
 type queryFrontendTestConfig struct {
-	querySchedulerEnabled       bool
 	querySchedulerDiscoveryMode string
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	shardActiveSeriesQueries    bool
-}
-
-func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-			)
-
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio))
-
-			return "", flags
-		},
-		withHistograms: true,
-	})
 }
 
 func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
@@ -79,25 +61,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 	})
 }
 
-func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		queryStatsEnabled: true,
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-			)
-
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio))
-
-			return "", flags
-		},
-		withHistograms: true,
-	})
-}
-
-func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.T) {
+func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 	setup := func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 		flags = mergeFlags(
 			BlocksStorageFlags(),
@@ -110,18 +74,16 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 		return "", flags
 	}
 
-	t.Run("with query-scheduler (DNS-based service discovery)", func(t *testing.T) {
+	t.Run("query-scheduler with DNS-based service discovery", func(t *testing.T) {
 		runQueryFrontendTest(t, queryFrontendTestConfig{
-			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "dns",
 			setup:                       setup,
 			withHistograms:              true,
 		})
 	})
 
-	t.Run("with query-scheduler (ring-based service discovery)", func(t *testing.T) {
+	t.Run("query-scheduler with ring-based service discovery", func(t *testing.T) {
 		runQueryFrontendTest(t, queryFrontendTestConfig{
-			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "ring",
 			setup:                       setup,
 			withHistograms:              true,
@@ -129,9 +91,8 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 	})
 }
 
-func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerEnabled:       true,
 		querySchedulerDiscoveryMode: "dns",
 		queryStatsEnabled:           true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
@@ -172,6 +133,8 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 				getServerTLSFlags(),
 				getClientTLSFlagsWithPrefix("ingester.client"),
 				getClientTLSFlagsWithPrefix("querier.frontend-client"),
+				getClientTLSFlagsWithPrefix("querier.scheduler-client"),
+				getClientTLSFlagsWithPrefix("query-frontend.grpc-client-config"),
 			)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -233,9 +196,8 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	}
 }
 
-func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerEnabled:       true,
 		querySchedulerDiscoveryMode: "dns",
 		queryStatsEnabled:           true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
@@ -278,29 +240,25 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.subquery-spin-off-enabled":         "true",
 	})
 
-	// Start the query-scheduler if enabled.
+	// Start the query-scheduler.
 	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	} else if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "ring" {
+	if cfg.querySchedulerDiscoveryMode == "ring" {
 		flags["-query-scheduler.service-discovery-mode"] = "ring"
 		flags["-query-scheduler.ring.store"] = "consul"
 		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
 
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	} else {
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
-
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
@@ -368,7 +326,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		// Do a long query to test the split and cache middleware.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
-			end := time.Now()
+			end := now
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
 			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
@@ -439,8 +397,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
-	// +2 because the spun off subquery ends up as additional ingester queries.
-	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 3
+	// +1 because the spun off subquery ends up as additional ingester queries.
+	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
 	if cfg.queryStatsEnabled {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++
@@ -501,6 +459,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	defer s.Close()
 
 	cfg := &queryFrontendTestConfig{
+		querySchedulerDiscoveryMode: "dns",
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
 
@@ -542,10 +501,24 @@ overrides:
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
+	// Start the query-scheduler.
+	var queryScheduler *e2emimir.MimirService
+	if cfg.querySchedulerDiscoveryMode == "ring" {
+		flags["-query-scheduler.service-discovery-mode"] = "ring"
+		flags["-query-scheduler.ring.store"] = "consul"
+		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
+
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	} else {
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	}
+
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
-
-	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Start all other services.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
@@ -561,6 +534,7 @@ overrides:
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	now := time.Now()
+	nowTruncatedToLastSecond := now.Truncate(time.Second)
 
 	// Push some series.
 	cWrite, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "fake")
@@ -735,20 +709,12 @@ overrides:
 			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
-			name: "max samples limit hit",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
-			},
-			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
-		},
-		{
 			name: "query time range exceeds the limit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
+				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",
@@ -782,7 +748,7 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -811,7 +777,6 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 	runQueryFrontendWithQueryShardingHTTPTest(
 		t,
 		queryFrontendTestConfig{
-			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 					// The query result payload is 202 bytes, so it will be too large for the configured limit.
@@ -841,11 +806,10 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 		return "", flags
 	}
 
-	t.Run("with query-scheduler (DNS-based service discovery)", func(t *testing.T) {
+	t.Run("query-scheduler with DNS-based service discovery", func(t *testing.T) {
 		runQueryFrontendWithQueryShardingHTTPTest(
 			t,
 			queryFrontendTestConfig{
-				querySchedulerEnabled:       true,
 				querySchedulerDiscoveryMode: "dns",
 				setup:                       setupTestWithQueryScheduler,
 			},
@@ -854,34 +818,12 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 		)
 	})
 
-	t.Run("with query-scheduler (ring-based service discovery)", func(t *testing.T) {
+	t.Run("query-scheduler with ring-based service discovery", func(t *testing.T) {
 		runQueryFrontendWithQueryShardingHTTPTest(
 			t,
 			queryFrontendTestConfig{
-				querySchedulerEnabled:       true,
 				querySchedulerDiscoveryMode: "ring",
 				setup:                       setupTestWithQueryScheduler,
-			},
-			http.StatusTooManyRequests,
-			true,
-		)
-	})
-
-	t.Run("without query-scheduler", func(t *testing.T) {
-		runQueryFrontendWithQueryShardingHTTPTest(
-			t,
-			queryFrontendTestConfig{
-				querySchedulerEnabled: false,
-				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-						"-querier.max-outstanding-requests-per-tenant": "1", // Limit
-					})
-
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-					require.NoError(t, s.StartAndWaitReady(minio))
-
-					return "", flags
-				},
 			},
 			http.StatusTooManyRequests,
 			true,
@@ -911,29 +853,25 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 		"-query-frontend.query-sharding-total-shards": "32",
 	})
 
-	// Start the query-scheduler if enabled.
+	// Start the query-scheduler.
 	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	} else if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "ring" {
+	if cfg.querySchedulerDiscoveryMode == "ring" {
 		flags["-query-scheduler.service-discovery-mode"] = "ring"
 		flags["-query-scheduler.ring.store"] = "consul"
 		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
 
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	} else {
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
-
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
@@ -976,11 +914,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 
 	// Check that we actually discarded the request.
 	if checkDiscardedMetrics {
-		if cfg.querySchedulerEnabled {
-			require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
-		} else {
-			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
-		}
+		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
 	}
 }
 

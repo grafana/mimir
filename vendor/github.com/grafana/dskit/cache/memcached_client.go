@@ -35,8 +35,6 @@ var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
-	dnsProviders = []string{dns.GolangResolverType.String(), dns.MiekgdnsResolverType.String(), dns.MiekgdnsResolverType2.String()}
-
 	_ Cache = (*MemcachedClient)(nil)
 )
 
@@ -74,10 +72,6 @@ type MemcachedClientConfig struct {
 	// Addresses specifies the list of memcached addresses. The addresses get
 	// resolved with the DNS provider.
 	Addresses flagext.StringSliceCSV `yaml:"addresses"`
-
-	// AddressesProvider specifies the DNS provider used for resolving memcached
-	// addresses.
-	AddressesProvider dns.ResolverType `yaml:"addresses_provider" category:"experimental"`
 
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
@@ -128,8 +122,6 @@ type MemcachedClientConfig struct {
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
-	c.AddressesProvider = dns.MiekgdnsResolverType
-	f.Var(&c.AddressesProvider, prefix+"addresses-provider", fmt.Sprintf("DNS provider used for resolving memcached addresses. Available providers %s", strings.Join(dnsProviders, ", ")))
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
@@ -141,7 +133,7 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
-	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", false, "Allow client creation even if initial DNS resolution fails.")
+	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", true, "Allow client creation even if initial DNS resolution fails.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -256,7 +248,7 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-	addressProvider := dns.NewProvider(logger, reg, config.AddressesProvider)
+	addressProvider := dns.NewProvider(logger, reg, dns.MiekgdnsResolverType)
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{

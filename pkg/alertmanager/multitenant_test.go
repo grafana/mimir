@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -27,7 +29,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"github.com/grafana/alerting/definition"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -289,16 +294,19 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg := alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+
+	user2Cfg := alertspb.AlertConfigDesc{
 		User:      "user2",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
@@ -309,9 +317,9 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 2)
 
-	currentConfig, cfgExists := am.cfgs["user1"]
+	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigOne, currentConfig.RawConfig)
+	require.Equal(t, amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -349,11 +357,14 @@ templates:
 	user3Dir := dirs["user3"]
 	require.NotZero(t, user3Dir)
 	require.True(t, dirExists(t, user3Dir))
-	finalUser3Cfg, ok := am.cfgs["user3"]
+	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Len(t, finalUser3Cfg.Templates, 2)
-	require.Equal(t, "first.tpl", finalUser3Cfg.Templates[0].Filename)
-	require.Equal(t, "second.tpl", finalUser3Cfg.Templates[1].Filename)
+	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	user3Am, ok := am.alertmanagers["user3"]
+	require.True(t, ok)
+	require.Len(t, user3Am.templates, 2)
+	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
+	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -363,43 +374,59 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
-	// Ensure the config is updated
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	user1Cfg = alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigTwo,
 		Templates: []*alertspb.TemplateDesc{},
-	}))
+	}
+	// Ensure the config is updated
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
-	require.Empty(t, currentConfig.Templates)
+	expectedFp := amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User:      "user1",
-		RawConfig: simpleConfigTwo,
+	user1Cfg = alertspb.AlertConfigDesc{
+		User: "user1",
+		RawConfig: simpleConfigTwo + `
+templates:
+- 'some-template.tmpl'
+`,
 		Templates: []*alertspb.TemplateDesc{
 			{
 				Filename: "some-template.tmpl",
 				Body:     simpleTemplateOne,
 			},
 		},
-	}))
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user1"]
+	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Len(t, currentConfig.Templates, 1)
-	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Filename)
-	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
+	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
+	user1Am, ok := am.alertmanagers["user1"]
+	require.True(t, ok)
+	require.Len(t, user1Am.templates, 1)
+	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
+	require.Contains(t, user1Am.templates[0].Template, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
+	testSmtpFrom := "test@grafana.com"
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   testSmtpFrom,
+		StaticHeaders: map[string]string{"Header1": "Value1"},
+	}
+	externalUrl, err := url.Parse("test.grafana.com")
+	require.NoError(t, err)
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -407,10 +434,19 @@ templates:
 		CreatedAtTimestamp: time.Now().Unix(),
 		Default:            false,
 		Promoted:           true,
-		ExternalUrl:        "test.grafana.com",
-		StaticHeaders:      map[string]string{"Header1": "Value1"},
+		ExternalUrl:        externalUrl.String(),
+		SmtpConfig:         smtpConfig,
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
+	url, err := url.Parse("http://localhost/alertmanager")
+	require.NoError(t, err)
+	emptyMimirAmConfig := amConfig{
+		User:            "user4",
+		TmplExternalURL: url,
+		Templates:       []definition.PostableApiTemplate{},
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
 	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 
@@ -419,10 +455,10 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	amCfg, err := am.createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
+	amCfg, err := am.amConfigFromGrafanaConfig(userGrafanaCfg)
 	require.NoError(t, err)
-	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	grafanaAlertConfigDesc := amCfg
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -444,7 +480,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+	require.Equal(t, emptyMimirAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is used when it's promoted again.
 	userGrafanaCfg.Promoted = true
@@ -452,13 +488,20 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc.fingerprint(), am.cfgs["user4"])
 
 	// Add a Mimir fallback config for the same user.
 	defaultConfig := alertspb.AlertConfigDesc{
 		User:      "user4",
 		RawConfig: am.fallbackConfig,
 	}
+	expectedDefaultAmConfig := amConfig{
+		User:            defaultConfig.User,
+		RawConfig:       defaultConfig.RawConfig,
+		Templates:       []definition.PostableApiTemplate{},
+		TmplExternalURL: url,
+	}
+
 	require.NoError(t, store.SetAlertConfig(ctx, defaultConfig))
 
 	// The Grafana config + Mimir global config section should be used.
@@ -474,20 +517,35 @@ templates:
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
-	expCfg := alertspb.AlertConfigDesc{
-		User:      "user4",
-		RawConfig: string(rawCfg),
-		Templates: []*alertspb.TemplateDesc{},
+	expCfg := amConfig{
+		User:               "user4",
+		RawConfig:          string(rawCfg),
+		UsingGrafanaConfig: true,
+		TmplExternalURL:    externalUrl,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
+			AuthPassword: "",
+			AuthUser:     "",
+			CertFile:     "",
+			ContentTypes: []string{
+				"text/html",
+			},
+			EhloIdentity:  "localhost",
+			ExternalURL:   "test.grafana.com",
+			FromName:      "Grafana",
+			FromAddress:   smtpConfig.FromAddress,
+			StaticHeaders: smtpConfig.StaticHeaders,
+			SentBy:        "Mimir vunknown",
+		},
 	}
-	require.Equal(t, expCfg, am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
-	// Ensure the Grafana config is ignored when it's marked as default.
+	// Ensure the Grafana config is not ignored when it's marked as default.
 	userGrafanaCfg.Default = true
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.Equal(t, expCfg.fingerprint(), am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -496,15 +554,14 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.Equal(t, expectedDefaultAmConfig.fingerprint(), am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	currentConfig, cfgExists = am.cfgs["user3"]
+	_, cfgExists = am.cfgs["user3"]
 	require.False(t, cfgExists)
-	require.Equal(t, "", currentConfig.RawConfig)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.False(t, cfgExists)
@@ -528,9 +585,10 @@ templates:
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	currentConfig, cfgExists = am.cfgs["user3"]
+	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	require.Equal(t, user3Cfg.RawConfig, currentConfig.RawConfig)
+	expectedFp = amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
 	require.True(t, cfgExists)
@@ -1408,6 +1466,102 @@ receivers:
 
 	resp = w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {
+	const testGrafanaUser = "user1"
+	const testMimirUser = "user2"
+
+	// Run this test using a real storage client.
+	store := prepareInMemoryAlertStore()
+
+	amConfig := mockAlertmanagerConfig(t)
+	amConfig.StrictInitializationEnabled = true
+
+	externalURL := flagext.URLValue{}
+	err := externalURL.Set("http://localhost:8080/alertmanager")
+	require.NoError(t, err)
+	amConfig.ExternalURL = externalURL
+
+	// Create the Multitenant Alertmanager.
+	reg := prometheus.NewPedanticRegistry()
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+
+	// Create a tenant with a default Grafana and an empty Mimir config.
+	// It should be skipped by the MOA.
+	ctx := context.Background()
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: testGrafanaUser,
+	}))
+	smtpConfig := &alertspb.SmtpConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		Password:       "test password",
+		SkipVerify:     true,
+		StartTlsPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		User:           "test-user",
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
+		User:       testGrafanaUser,
+		RawConfig:  grafanaConfig,
+		Promoted:   true,
+		Default:    true,
+		SmtpConfig: smtpConfig,
+	}))
+
+	// Create another tenant with an empty Mimir config.
+	// It should be skipped by the MOA.
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: testMimirUser,
+	}))
+
+	// Sync configurations, the Alertmanagers shouldn't be initialized.
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 0)
+
+	// Make requests as the users. The Alertmanagers should be initialized.
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
+	w := httptest.NewRecorder()
+
+	require.NoError(t, err)
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Len(t, am.alertmanagers, 1)
+
+	// The configuration should have the custom SMTP settings.
+	exp := alertingReceivers.EmailSenderConfig{
+		EhloIdentity:   "test-identity",
+		FromAddress:    "test@test.com",
+		FromName:       "Test Name",
+		Host:           "test:8080",
+		AuthPassword:   "test password",
+		SkipVerify:     true,
+		StartTLSPolicy: "test",
+		StaticHeaders:  map[string]string{"test-key": "test-value"},
+		AuthUser:       "test-user",
+
+		ContentTypes: []string{"text/html"}, // Added by default
+		SentBy:       "Mimir vunknown",      // The version in tests is "unknown"
+	}
+	gAM, ok := am.alertmanagers[testGrafanaUser]
+	require.True(t, ok)
+	require.Equal(t, exp, gAM.emailCfg)
+
+	w = httptest.NewRecorder()
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Len(t, am.alertmanagers, 2)
+
+	// Set the idle period to 0.
+	// The Alertmanagers should be turned off after the next sync.
+	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 0)
 }
 
 // This test checks that the fallback configuration does not overwrite a configuration
@@ -2488,7 +2642,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
-	// If no fallback configration is set, it returns a valid empty configuration.
+	// If no fallback configuration is set, it returns a valid empty configuration.
 	fallbackConfig, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
@@ -2514,164 +2668,963 @@ func TestComputeConfig(t *testing.T) {
 
 	reg2 := prometheus.NewPedanticRegistry()
 	cfg2 := mockAlertmanagerConfig(t)
-	cfg2.GrafanaAlertmanagerTenantSuffix = "-grafana"
 	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
+
+	reg3 := prometheus.NewPedanticRegistry()
+	cfg3 := mockAlertmanagerConfig(t)
+	cfg3.StrictInitializationEnabled = true
+	amWithStrictInit := setupSingleMultitenantAlertmanager(t, cfg3, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg3)
+
+	testTenant := "test-tenant"
+
+	tenantReceivingRequests := "test-tenant-receiving"
+	amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
+	amWithSuffix.lastRequestTime.Store(tenantReceivingRequests+"-grafana", time.Now().Unix())
+
+	tenantReceivingRequestsExpired := "test-tenant-idle"
+	amWithStrictInit.lastRequestTime.Store(tenantReceivingRequestsExpired, time.Now().Add(-time.Hour).Unix())
+	amWithSuffix.lastRequestTime.Store(tenantReceivingRequestsExpired+"-grafana", time.Now().Add(-time.Hour).Unix())
 
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
 	grafanaExternalURL := "https://grafana.com"
+	grafanaExternalURLParsed, err := url.Parse("https://grafana.com")
+	require.NoError(t, err)
 
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 	require.NoError(t, err)
 
+	testFromAddress := "test-instance@grafana.com"
+	testHeaders := map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"}
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   testFromAddress,
+		StaticHeaders: testHeaders,
+	}
 	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
 	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
-	mimirExternalURL := am.cfg.ExternalURL.String()
+	baseEmailCfg := alertingReceivers.EmailSenderConfig{
+		FromName:     "Grafana",
+		EhloIdentity: "localhost",
+		ExternalURL:  "https://grafana.com",
+		ContentTypes: []string{"text/html"},
+		SentBy:       "Mimir vunknown", // no 'version' flag passed in tests.
+	}
 
+	patchedEmailCfg := alertingReceivers.EmailSenderConfig{
+		FromName:      "Grafana",
+		EhloIdentity:  "localhost",
+		ExternalURL:   "https://grafana.com",
+		ContentTypes:  []string{"text/html"},
+		FromAddress:   testFromAddress,
+		StaticHeaders: testHeaders,
+		SentBy:        "Mimir vunknown", // no 'version' flag passed in tests.
+	}
+
+	mimirExternalURL, err := url.Parse(am.cfg.ExternalURL.String())
+	require.NoError(t, err)
 	tests := []struct {
 		name       string
 		cfg        alertspb.AlertConfigDescs
 		expStartAM bool
 		expErr     string
-		expCfg     alertspb.AlertConfigDesc
-		expURL     string
-		expHeaders map[string]string
+		expCfg     amConfig
 	}{
 		{
-			name: "no grafana configuration",
+			name: "no grafana configuration, custom mimir config",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user-grafana",
+					User:      testTenant,
 					RawConfig: simpleConfigOne,
-				},
-			},
-			expStartAM: false,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
-			},
-			expURL: mimirExternalURL,
-		},
-		{
-			name: "empty grafana configuration",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      "user-grafana",
-					RawConfig: simpleConfigOne,
-				},
-				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     "",
-					Default:       false,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header": "test-value"},
-				},
-			},
-			expStartAM: false,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
-			},
-			expURL: mimirExternalURL,
-		},
-		{
-			name: "grafana configuration is not promoted",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      "user-grafana",
-					RawConfig: simpleConfigOne,
-				},
-				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Promoted:      false,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header": "test-value"},
-				},
-			},
-			expStartAM: false,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
-			},
-			expURL: mimirExternalURL,
-		},
-		{
-			name: "grafana configuration is default",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      "user-grafana",
-					RawConfig: simpleConfigOne,
-				},
-				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Default:       true,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header": "test-value"},
-				},
-			},
-			expStartAM: false,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
-			},
-			expURL: mimirExternalURL,
-		},
-		{
-			name: "empty mimir configuration",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      "user-grafana",
-					RawConfig: "",
-				},
-				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Default:       false,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 		},
 		{
-			name: "default mimir configuration",
+			name: "no grafana configuration, default mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, custom mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "no grafana configuration, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, custom mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, default mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, custom mimir config, idle tenant",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, default mimir config, idle tenant",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "empty grafana configuration, empty mimir config, idle tenant",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, custom mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, default mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            testTenant,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, custom mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       am.fallbackConfig,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "unpromoted grafana configuration, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    false,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "default grafana configuration, custom mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            testTenant,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "default grafana configuration, default mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:               testTenant,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "default grafana configuration, empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        testTenant,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:               testTenant,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "default grafana configuration, custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "default grafana configuration, default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "default grafana configuration, empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "default grafana configuration, custom mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequestsExpired,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			name: "default grafana configuration, default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				TmplExternalURL:    grafanaExternalURLParsed,
+				EmailConfig:        baseEmailCfg,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "default grafana configuration, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Default:     true,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+				},
+			},
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        baseEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration, default mimir config",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      "user-grafana",
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Default:       false,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
+			expCfg: amConfig{
+				User:               "user-grafana",
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			name: "usable grafana configuration, empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: "user-grafana",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               "user-grafana",
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration, default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration, empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequests,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration, default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:               tenantReceivingRequestsExpired,
+				RawConfig:          string(combinedCfg),
+				EmailConfig:        patchedEmailCfg,
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
+		},
+		{
+			name: "usable grafana configuration with custom SMTP configs, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig: &alertspb.SmtpConfig{
+						EhloIdentity:   "test-identity",
+						FromAddress:    "test@test.com",
+						FromName:       "Test From Name",
+						Host:           "http://test.com",
+						Password:       "test-password",
+						SkipVerify:     true,
+						StartTlsPolicy: "test-policy",
+						StaticHeaders:  nil,
+						User:           "test-user",
+					},
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: string(combinedCfg),
+				EmailConfig: alertingReceivers.EmailSenderConfig{
+					AuthPassword:   "test-password",
+					AuthUser:       "test-user",
+					ContentTypes:   []string{"text/html"},
+					EhloIdentity:   "test-identity",
+					ExternalURL:    grafanaExternalURL,
+					FromName:       "Test From Name",
+					FromAddress:    "test@test.com",
+					Host:           "http://test.com",
+					SkipVerify:     true,
+					StartTLSPolicy: "test-policy",
+					StaticHeaders:  nil,
+					SentBy:         "Mimir vunknown",
+				},
+				TmplExternalURL:    grafanaExternalURLParsed,
+				UsingGrafanaConfig: true,
+			},
 		},
 		{
 			// TODO: change once merging configs is implemented.
@@ -2682,20 +3635,68 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Default:       false,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user-grafana",
-				RawConfig: simpleConfigOne,
+			expCfg: amConfig{
+				User:            "user-grafana",
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
 			},
-			expURL: am.cfg.ExternalURL.String(),
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented), receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented), idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
+				},
+			},
+			expStartAM: true,
+			expCfg: amConfig{
+				User:            tenantReceivingRequests,
+				RawConfig:       simpleConfigOne,
+				Templates:       []definition.PostableApiTemplate{},
+				TmplExternalURL: mimirExternalURL,
+			},
 		},
 	}
 
@@ -2706,235 +3707,186 @@ func TestComputeConfig(t *testing.T) {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
+			require.NoError(t, err)
 
 			require.True(t, startAM)
-			require.NoError(t, err)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+			require.Equal(t, test.expCfg, cfg)
 		})
 
-		t.Run(fmt.Sprintf("%s with Grafana tenant suffix", test.name), func(t *testing.T) {
-			cfg, startAM, err := amWithSuffix.computeConfig(test.cfg)
+		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			// Set a recent last request time for the tenant receiving requests.
+			amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
+			amWithSuffix.lastRequestTime.Store(tenantReceivingRequests+"-grafana", time.Now().Unix())
+
+			cfg, startAM, err := amWithStrictInit.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
-
-			if !test.expStartAM {
-				require.False(t, startAM)
-				return
-			}
-			require.True(t, startAM)
 			require.NoError(t, err)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+
+			require.Equal(t, test.expStartAM, startAM)
+			if startAM {
+				require.Equal(t, test.expCfg, cfg)
+			}
 		})
 	}
 }
 
-func Test_configChanged(t *testing.T) {
-	type tc struct {
-		name    string
-		left    alertspb.AlertConfigDesc
-		right   alertspb.AlertConfigDesc
-		changed bool
-	}
+func Test_amConfigFingerprint(t *testing.T) {
+	const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
+	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
+		// Helper function to get field count of a struct
+		getFieldCount := func(v interface{}) int {
+			t := reflect.TypeOf(v)
+			if t.Kind() == reflect.Ptr {
+				t = t.Elem()
+			}
+			return t.NumField()
+		}
 
-	cases := []tc{
-		{
-			name: "matching",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
+		// Calculate total fields across all structs
+		totalFields := 0
+		totalFields += getFieldCount(definition.PostableApiTemplate{})
+		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
+		totalFields += getFieldCount(amConfig{})
+
+		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
+	})
+
+	url, err := url.Parse("http://localhost")
+	require.NoError(t, err)
+
+	fullConfig := amConfig{
+		User:      "user-grafana",
+		RawConfig: simpleConfigOne,
+		Templates: []definition.PostableApiTemplate{
+			{
+				Name:    "test",
+				Content: "test",
+				Kind:    definition.MimirTemplateKind,
 			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
+			{
+				Name:    "test2",
+				Content: "test2",
+				Kind:    definition.GrafanaTemplateKind,
 			},
-			changed: false,
+			{
+				Name:    "test3",
+				Content: "test3",
+				Kind:    definition.GrafanaTemplateKind,
+			},
 		},
-		{
-			name: "user changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user2",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "config changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigTwo,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template body changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template name changed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template added",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			changed: true,
-		},
-		{
-			name: "template removed",
-			left: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-					{
-						Filename: "template-two.tmpl",
-						Body:     simpleTemplateTwo,
-					},
-				},
-			},
-			right: alertspb.AlertConfigDesc{
-				User:      "user1",
-				RawConfig: simpleConfigOne,
-				Templates: []*alertspb.TemplateDesc{
-					{
-						Filename: "template-one.tmpl",
-						Body:     simpleTemplateOne,
-					},
-				},
-			},
-			changed: true,
+		TmplExternalURL: url,
+		EmailConfig: alertingReceivers.EmailSenderConfig{
+			AuthPassword:   "custom-password",
+			AuthUser:       "custom-user",
+			ContentTypes:   []string{"text/html", "text/plain"},
+			EhloIdentity:   "custom-identity",
+			ExternalURL:    "http://custom-url",
+			FromAddress:    "custom@address.com",
+			FromName:       "Custom From Name",
+			Host:           "custom-host",
+			SentBy:         "Mimir vunknown",
+			SkipVerify:     true,
+			StartTLSPolicy: "custom-policy",
+			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
 		},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			r := configChanged(c.left, c.right)
-			assert.Equal(t, c.changed, r)
+	jsonCfg, err := json.Marshal(fullConfig)
+	require.NoError(t, err)
+
+	t.Run("fingerprint should be stable", func(t *testing.T) {
+		expected := fullConfig.fingerprint()
+
+		// do it many times to make sure order of elements in the map does not affect fingerprint
+		for i := 0; i < 100; i++ {
+			cfg2 := amConfig{}
+			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
+				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
+			})
+			// copy map to shuffle elements
+			cp := map[string]string{}
+			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
+			cfg2.EmailConfig.StaticHeaders = cp
+
+			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
+				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
+			})
+
+			require.Equal(t, expected, cfg2.fingerprint())
+		}
+	})
+
+	t.Run("fingerprint should change", func(t *testing.T) {
+		cfg := amConfig{}
+		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
+		notChecked := expectedTotalFields
+		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
+			t := val.Type()
+			for i := 0; i < t.NumField(); i++ {
+				field := val.Field(i)
+				// Skip unexported fields (cannot be set via reflection)
+				if !field.CanSet() {
+					continue
+				}
+				switch field.Kind() {
+				case reflect.String:
+					field.SetString(uuid.NewString())
+				case reflect.Bool:
+					field.SetBool(!field.Bool())
+				default:
+					continue
+				}
+				callback(t.Field(i).Name)
+				notChecked--
+			}
+		}
+
+		lastFingerprint := cfg.fingerprint()
+		assertField := func(prefix string) func(fieldName string) {
+			return func(fieldName string) {
+				newFP := cfg.fingerprint()
+				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
+				lastFingerprint = newFP
+			}
+		}
+
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
+		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
+			Name:    "test3",
+			Content: "test3",
+			Kind:    definition.GrafanaTemplateKind,
 		})
-	}
+		assertField("")("Templates")
+		notChecked--
+
+		cfg.TmplExternalURL = nil
+		assertField("")("TmplExternalURL")
+		cfg.TmplExternalURL, err = url.Parse("http://new-url")
+		require.NoError(t, err)
+		assertField("")("TmplExternalURL")
+		notChecked--
+
+		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
+		assertField("EmailConfig.")("ContentTypes")
+		notChecked--
+
+		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
+		assertField("EmailConfig.")("StaticHeaders")
+		notChecked--
+
+		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
+		assertField("")("EmailConfig")
+		notChecked--
+
+		require.Equal(t, 0, notChecked)
+	})
 }
 
 func TestSyncStates(t *testing.T) {
@@ -3022,31 +3974,25 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should be a no-op",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User: user,
-				},
+				User: user,
 			},
 			expNoNewAlertmanager: true,
 		},
 		{
 			name: "no grafana state should be a no-op",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User: user,
-				},
-				usingGrafanaConfig: true,
+				User:               user,
+				UsingGrafanaConfig: true,
 			},
 			expNoNewAlertmanager: true,
 		},
 		{
 			name: "invalid alertmanager configuration should cause an error",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: "invalid",
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          "invalid",
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"notifications": grafanaNflog},
 			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
@@ -3054,12 +4000,10 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "invalid part key",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"invalid": []byte("invalid")},
 			expErr: "unknown part key \"invalid\"",
@@ -3067,24 +4011,20 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			parts: map[string][]byte{"notifications": grafanaNflog},
 		},
 		{
 			name: "starting with existing mimir state should merge states",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			mimirState: &testMimirState,
 			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
@@ -3191,11 +4131,9 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should toggle the promoted flag off",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            user,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: true,
 			expPromoted:     false,
@@ -3203,11 +4141,9 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "not using grafana config should be a no-op if the alertmanager is not promoted",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            user,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			},
 			initialPromoted: false,
 			expPromoted:     false,
@@ -3215,12 +4151,10 @@ func TestSyncStates(t *testing.T) {
 		{
 			name: "attempting to promote an already promoted alertmanager should not change the flag",
 			cfg: amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL:    externalURL,
-				usingGrafanaConfig: true,
+				User:               user,
+				RawConfig:          simpleConfigOne,
+				TmplExternalURL:    externalURL,
+				UsingGrafanaConfig: true,
 			},
 			initialPromoted: true,
 			expPromoted:     true,
@@ -3242,11 +4176,9 @@ func TestSyncStates(t *testing.T) {
 			require.NoError(t, store.SetFullGrafanaState(ctx, test.cfg.User, alertspb.FullStateDesc{}))
 
 			require.NoError(t, am.setConfig(amConfig{
-				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      test.cfg.User,
-					RawConfig: simpleConfigOne,
-				},
-				tmplExternalURL: externalURL,
+				User:            test.cfg.User,
+				RawConfig:       simpleConfigOne,
+				TmplExternalURL: externalURL,
 			}))
 			require.NotNil(t, am.alertmanagers[test.cfg.User])
 			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
@@ -3322,6 +4254,9 @@ type mockAlertManagerLimits struct {
 	maxDispatcherAggregationGroups int
 	maxAlertsCount                 int
 	maxAlertsSizeBytes             int
+
+	receiversBlockPrivateAddresses bool
+	receiversBlockCIDRNetworks     []flagext.CIDR
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
@@ -3351,11 +4286,11 @@ func (m *mockAlertManagerLimits) AlertmanagerMaxTemplateSize(string) int {
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockCIDRNetworks(string) []flagext.CIDR {
-	panic("implement me")
+	return m.receiversBlockCIDRNetworks
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockPrivateAddresses(string) bool {
-	panic("implement me")
+	return m.receiversBlockPrivateAddresses
 }
 
 func (m *mockAlertManagerLimits) NotificationRateLimit(string, string) rate.Limit {

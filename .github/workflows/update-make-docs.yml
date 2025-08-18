@@ -1,15 +1,24 @@
 name: Update `make docs` procedure
+
+permissions: {}
+
 on:
   schedule:
     - cron: '0 7 * * 1-5'
   workflow_dispatch:
+
 jobs:
   main:
     if: github.repository == 'grafana/mimir'
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: grafana/writers-toolkit/update-make-docs@update-make-docs/v1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: grafana/writers-toolkit/update-make-docs@f65819d6a412b752c0e0263375215f049507b0e6 # update-make-docs@v1.3.0
         with:
           pr_options: >
             --label type/docs

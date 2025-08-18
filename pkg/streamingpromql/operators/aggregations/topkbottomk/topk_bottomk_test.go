@@ -15,11 +15,11 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
@@ -50,7 +50,8 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					for name, readSeries := range map[string]bool{"read one series": true, "read no series": false} {
 						t.Run(name, func(t *testing.T) {
-							memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+							ctx := context.Background()
+							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 							inner := &operators.TestOperator{
 								Series: inputSeries,
@@ -62,12 +63,12 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 									createDummyData(t, true, timeRange, memoryConsumptionTracker),
 									createDummyData(t, false, timeRange, memoryConsumptionTracker),
 								},
+								MemoryConsumptionTracker: memoryConsumptionTracker,
 							}
 
 							param := scalars.NewScalarConstant(6, timeRange, memoryConsumptionTracker, posrange.PositionRange{})
 							o := New(inner, param, timeRange, nil, false, isTopK, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
 
-							ctx := context.Background()
 							series, err := o.SeriesMetadata(ctx)
 							require.NoError(t, err)
 
@@ -78,6 +79,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 								// Range queries will return all input series, but those with histograms will return no data from NextSeries() below.
 								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(inputSeries), series)
 							}
+							types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
 							if readSeries {
 								seriesData, err := o.NextSeries(ctx)
@@ -92,7 +94,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 							// Close the operator and confirm all memory has been released.
 							o.Close()
-							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 						})
 					}
 				})
@@ -101,7 +103,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	}
 }
 
-func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	d := types.InstantVectorSeriesData{}
 
 	if histograms {

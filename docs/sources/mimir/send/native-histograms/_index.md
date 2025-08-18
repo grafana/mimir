@@ -15,10 +15,6 @@ weight: 100
 
 # Send native histograms to Mimir
 
-{{% admonition type="note" %}}
-Native histograms are an experimental feature of Grafana Mimir.
-{{% /admonition %}}
-
 Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 
 Native histograms are different from classic Prometheus histograms in a number of ways:
@@ -30,6 +26,8 @@ Native histograms are different from classic Prometheus histograms in a number o
 - Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) and [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
+
+For more information on native histogram flavors and how to query them using PromQL, refer to the [Prometheus Native Histograms specification](https://prometheus.io/docs/specs/native_histograms/).
 
 ## Advantages and disadvantages
 

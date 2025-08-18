@@ -6,13 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -30,7 +32,6 @@ const (
 // Victorops specifications (http://victorops.force.com/knowledgebase/articles/Integration/Alert-Ingestion-API-Documentation/)
 type Notifier struct {
 	*receivers.Base
-	log        logging.Logger
 	images     images.Provider
 	ns         receivers.WebhookSender
 	tmpl       *templates.Template
@@ -40,10 +41,9 @@ type Notifier struct {
 
 // New creates an instance of VictoropsNotifier that
 // handles posting notifications to Victorops REST API
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, appVersion string) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, appVersion string) *Notifier {
 	return &Notifier{
-		Base:       receivers.NewBase(meta),
-		log:        logger,
+		Base:       receivers.NewBase(meta, logger),
 		images:     images,
 		ns:         sender,
 		tmpl:       template,
@@ -54,12 +54,13 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends notification to Victorops via POST to URL endpoint
 func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	vn.log.Debug("sending notification", "notification", vn.Name)
+	l := vn.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending notification")
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, vn.tmpl, as, vn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, vn.tmpl, as, l, &tmplErr)
 
-	messageType := buildMessageType(vn.log, tmpl, vn.settings.MessageType, as...)
+	messageType := buildMessageType(l, tmpl, vn.settings.MessageType, as...)
 
 	groupKey, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
@@ -68,7 +69,7 @@ func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	stateMessage, truncated := receivers.TruncateInRunes(tmpl(vn.settings.Description), victorOpsMaxMessageLenRunes)
 	if truncated {
-		vn.log.Warn("Truncated stateMessage", "incident", groupKey, "max_runes", victorOpsMaxMessageLenRunes)
+		level.Warn(l).Log("msg", "truncated stateMessage", "incident", groupKey, "max_runes", victorOpsMaxMessageLenRunes)
 	}
 
 	bodyJSON := map[string]interface{}{
@@ -81,12 +82,11 @@ func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	if tmplErr != nil {
-		vn.log.Warn("failed to expand message template. "+
-			"", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to expand message template", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
-	_ = images.WithStoredImages(ctx, vn.log, vn.images,
+	_ = images.WithStoredImages(ctx, l, vn.images,
 		func(_ int, image images.Image) error {
 			if image.URL != "" {
 				bodyJSON["image_url"] = image.URL
@@ -95,12 +95,12 @@ func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			return nil
 		}, as...)
 
-	ruleURL := receivers.JoinURLPath(vn.tmpl.ExternalURL.String(), "/alerting/list", vn.log)
+	ruleURL := receivers.JoinURLPath(vn.tmpl.ExternalURL.String(), "/alerting/list", l)
 	bodyJSON["alert_url"] = ruleURL
 
 	u := tmpl(vn.settings.URL)
 	if tmplErr != nil {
-		vn.log.Info("failed to expand URL template", "error", tmplErr.Error(), "fallback", vn.settings.URL)
+		level.Info(l).Log("msg", "failed to expand URL template", "err", tmplErr.Error(), "fallback", vn.settings.URL)
 		u = vn.settings.URL
 	}
 
@@ -113,8 +113,8 @@ func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		Body: string(b),
 	}
 
-	if err := vn.ns.SendWebhook(ctx, cmd); err != nil {
-		vn.log.Error("failed to send notification", "error", err, "webhook", vn.Name)
+	if err := vn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "failed to send notification", "err", err)
 		return false, err
 	}
 
@@ -125,13 +125,13 @@ func (vn *Notifier) SendResolved() bool {
 	return !vn.GetDisableResolveMessage()
 }
 
-func buildMessageType(l logging.Logger, tmpl func(string) string, msgType string, as ...*types.Alert) string {
+func buildMessageType(l log.Logger, tmpl func(string) string, msgType string, as ...*types.Alert) string {
 	if types.Alerts(as...).Status() == model.AlertResolved {
 		return victoropsAlertStateRecovery
 	}
 	if messageType := strings.ToUpper(tmpl(msgType)); messageType != "" {
 		return messageType
 	}
-	l.Warn("expansion of message type template resulted in an empty string. Using fallback", "fallback", DefaultMessageType, "template", msgType)
+	level.Warn(l).Log("msg", "expansion of message type template resulted in an empty string. Using fallback", "fallback", DefaultMessageType, "template", msgType)
 	return DefaultMessageType
 }

@@ -22,7 +22,7 @@ type DynamicReplicationConfig struct {
 func (cfg *DynamicReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"dynamic-replication.enabled", false, "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.")
 	f.DurationVar(&cfg.MaxTimeThreshold, prefix+"dynamic-replication.max-time-threshold", 25*time.Hour, "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.")
-	f.IntVar(&cfg.Multiple, prefix+"dynamic-replication.multiple", 2, "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2")
+	f.IntVar(&cfg.Multiple, prefix+"dynamic-replication.multiple", 5, "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2")
 }
 
 func (cfg *DynamicReplicationConfig) Validate() error {
@@ -59,14 +59,21 @@ type DynamicReplication interface {
 	// default number of store-gateways and the appropriate replication factor to use, false and
 	// an undefined replication factor otherwise.
 	EligibleForQuerying(b ReplicatedBlock) (bool, int)
+
+	// MaxReplicationFactor returns the maximum value that either EligibleForSync or EligibleForQuerying can return.
+	MaxReplicationFactor() int
 }
 
-func NewNopDynamicReplication() *NopDynamicReplication {
-	return &NopDynamicReplication{}
+func NewNopDynamicReplication(defaultReplicationFactor int) *NopDynamicReplication {
+	return &NopDynamicReplication{
+		replicationFactor: defaultReplicationFactor,
+	}
 }
 
 // NopDynamicReplication is an DynamicReplication implementation that always returns false.
-type NopDynamicReplication struct{}
+type NopDynamicReplication struct {
+	replicationFactor int
+}
 
 func (n NopDynamicReplication) EligibleForSync(ReplicatedBlock) (bool, int) {
 	return false, 0
@@ -74,6 +81,10 @@ func (n NopDynamicReplication) EligibleForSync(ReplicatedBlock) (bool, int) {
 
 func (n NopDynamicReplication) EligibleForQuerying(ReplicatedBlock) (bool, int) {
 	return false, 0
+}
+
+func (n NopDynamicReplication) MaxReplicationFactor() int {
+	return n.replicationFactor
 }
 
 func NewMaxTimeDynamicReplication(cfg Config, gracePeriod time.Duration) *MaxTimeDynamicReplication {
@@ -109,4 +120,8 @@ func (e *MaxTimeDynamicReplication) EligibleForQuerying(b ReplicatedBlock) (bool
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
 	return maxTimeDelta <= e.maxTimeThreshold, e.replicationFactor
+}
+
+func (e *MaxTimeDynamicReplication) MaxReplicationFactor() int {
+	return e.replicationFactor
 }

@@ -28,8 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -41,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -187,7 +186,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
-		{Desc: "Status", Path: "/multitenant_alertmanager/configs"},
+		{Desc: "Config", Path: "/multitenant_alertmanager/configs"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
@@ -215,12 +214,14 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
+			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
 
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.GetUserGrafanaState), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
 
 			// These APIs are handled by the per-tenant Alertmanager, so they are handled by the distributor.
+			a.RegisterRoute("/api/v1/grafana/full_state", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
@@ -263,8 +264,11 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool)
+	}
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
-		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
+		pushConfig.MaxRecvMsgSize, newRequestBuffers, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
@@ -472,6 +476,10 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
 }
 
+func (a *API) RegisterEvaluationAPI(handler http.Handler) {
+	a.RegisterRoute("/api/v1/evaluate", handler, true, true, "POST")
+}
+
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
 }
@@ -481,10 +489,6 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)
-}
-
-func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
-	frontendv1pb.RegisterFrontendServer(a.server.GRPC, f)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {

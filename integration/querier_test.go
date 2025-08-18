@@ -159,13 +159,17 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			t.Cleanup(func() { require.NoError(t, s.Stop(storeGateway1, storeGateway2)) })
 			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			t.Cleanup(func() { require.NoError(t, s.Stop(queryScheduler)) })
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start the query-frontend but do not check for readiness yet.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
-
-			// Configure the querier to connect to the query-frontend.
-			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
@@ -333,7 +337,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, blocksBucketName)
+			minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -342,9 +346,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// blocks is stable and easy to assert on.
 			const seriesReplicationFactor = 2
 
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+			// Configure the blocks storage to frequently compact TSDB head and ship blocks to the storage.
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), RulerStorageS3Flags(), map[string]string{
 				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
 				"-blocks-storage.tsdb.ship-interval":                           "1s",
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
@@ -368,6 +371,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
+				// Ruler.
+				"-ruler.ring.store":           "consul",
+				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -384,6 +390,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance++          // Distributors ring
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
+				numTokensPerInstance += 128     // Ruler ring.
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -974,7 +981,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	)
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))

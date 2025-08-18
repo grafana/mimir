@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"testing"
 
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -16,11 +17,11 @@ import (
 
 func Test_withCustomFunctions(t *testing.T) {
 	type tc struct {
-		name        string
-		template    string
-		alerts      template.Alerts
-		result      string
-		expectError bool
+		name          string
+		template      string
+		alerts        template.Alerts
+		result        string
+		expectedError string
 	}
 	tmpl, err := template.FromGlobs([]string{}, WithCustomFunctions("test"))
 	assert.NoError(t, err)
@@ -47,18 +48,18 @@ func Test_withCustomFunctions(t *testing.T) {
 					GeneratorURL: "http://localhost:9090?foo=bar",
 				},
 			},
-			template:    `{{ queryFormGeneratorURL (index .Alerts 0).GeneratorURL }}`,
-			expectError: true,
+			template:      `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
+			expectedError: "query not found in the generator URL",
 		},
 		{
 			name: "error on URL decoding query in GeneratorURL",
 			alerts: template.Alerts{
 				template.Alert{
-					GeneratorURL: "http://localhost:9090?g0.expr=up{foo=bar}",
+					GeneratorURL: "http://localhost:9090-g0.expr=up{foo=bar}",
 				},
 			},
-			template:    `{{ queryFormGeneratorURL (index .Alerts 0).GeneratorURL }}`,
-			expectError: true,
+			template:      `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
+			expectedError: "failed to parse generator URL",
 		},
 		{
 			name:     "generate grafana explore URL",
@@ -66,9 +67,9 @@ func Test_withCustomFunctions(t *testing.T) {
 			result:   `https://foo.bar/explore?left=` + url.QueryEscape(`{"range":{"from":"now-12h","to":"now"},"queries":[{"datasource":{"type":"prometheus","uid":"test_datasoruce"},"expr":"up{foo!=\"bar\"}","instant":false,"range":true,"refId":"A"}]}`),
 		},
 		{
-			name:        "invalid params for grafanaExploreURL",
-			template:    `{{ grafanaExploreURL "https://foo.bar" 3 2 1 0 }}`,
-			expectError: true,
+			name:          "invalid params for grafanaExploreURL",
+			template:      `{{ grafanaExploreURL "https://foo.bar" 3 2 1 0 }}`,
+			expectedError: "expected string; found 3",
 		},
 		{
 			name: "Generate Grafana Explore URL from GeneratorURL query",
@@ -84,8 +85,8 @@ func Test_withCustomFunctions(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			res, err := tmpl.ExecuteTextString(c.template, template.Data{Alerts: c.alerts})
-			if c.expectError {
-				assert.Error(t, err)
+			if c.expectedError != "" {
+				assert.ErrorContains(t, err, c.expectedError)
 				return
 			}
 			assert.NoError(t, err)
@@ -138,7 +139,15 @@ func Test_loadTemplates(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tmpl, err := loadTemplates(c.loaded, WithCustomFunctions("test"))
+			def := []alertingTemplates.TemplateDefinition{}
+			for idx, s := range c.loaded {
+				def = append(def, alertingTemplates.TemplateDefinition{
+					Name:     fmt.Sprintf("test_%d", idx),
+					Template: s,
+					Kind:     alertingTemplates.MimirKind,
+				})
+			}
+			tmpl, err := loadTemplates(def, WithCustomFunctions("test"))
 			assert.NoError(t, err)
 
 			call := fmt.Sprintf(`{{ template "%s" . }}`, c.invoke)

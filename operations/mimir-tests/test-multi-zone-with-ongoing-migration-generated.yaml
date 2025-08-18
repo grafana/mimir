@@ -785,9 +785,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -870,6 +868,7 @@ spec:
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -884,9 +883,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -964,10 +961,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1039,7 +1033,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1094,7 +1088,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.26.0
+        image: grafana/rollout-operator:v0.28.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1178,10 +1172,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1259,7 +1250,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1358,7 +1349,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1455,6 +1446,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1467,9 +1459,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1579,6 +1569,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1591,9 +1582,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1703,6 +1692,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1715,9 +1705,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1827,6 +1815,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1839,9 +1828,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1934,12 +1921,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1987,12 +1980,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2040,12 +2039,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2093,12 +2098,18 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2158,6 +2169,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2176,9 +2188,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2294,6 +2304,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2314,9 +2325,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2432,6 +2441,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2452,9 +2462,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2570,6 +2578,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2590,9 +2599,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

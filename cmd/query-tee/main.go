@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/common/model"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -82,12 +81,16 @@ func main() {
 }
 
 func initTracing() io.Closer {
-	name := os.Getenv("JAEGER_SERVICE_NAME")
-	if name == "" {
+	var name string
+	if otelEnvName := os.Getenv("OTEL_SERVICE_NAME"); otelEnvName != "" {
+		name = otelEnvName
+	} else if jaegerEnvName := os.Getenv("JAEGER_SERVICE_NAME"); jaegerEnvName != "" {
+		name = jaegerEnvName
+	} else {
 		name = "query-tee"
 	}
 
-	trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3))
+	trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		return nil

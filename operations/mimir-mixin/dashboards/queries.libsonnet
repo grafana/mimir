@@ -18,6 +18,24 @@ local filename = 'mimir-queries.json';
       { label: 'Main', value: $.jobMatcher($._config.job_names.main_read_path) },
       { label: 'Remote ruler', value: $.jobMatcher($._config.job_names.remote_ruler_read_path) },
     ])
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Gateway')
+      .addPanel(
+        $.timeseriesPanel('Queries / sec by read path') +
+        $.panelDescription(
+          'Queries / sec by read path',
+          |||
+            Queries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.
+          |||
+        ) +
+        $.queryPanel(
+          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobMatcher($._config.job_names.gateway),
+          '{{proxy}}'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+    )
     .addRow(
       $.row('Query-frontend')
       .addPanel(
@@ -28,7 +46,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Retries') +
         $.latencyPanel('cortex_query_frontend_retries', '{$read_path_matcher}', multiplier=1) +
-        { yaxes: $.yaxes('short') },
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
@@ -300,6 +318,9 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
+    )
+    .addRow(
+      $.row('')
       .addPanel(
         $.timeseriesPanel('Rejected queries') +
         $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~"%(routes_regex)s"}[$__rate_interval]))' % { routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
@@ -308,6 +329,55 @@ local filename = 'mimir-queries.json';
           'Rejected queries',
           |||
             The proportion of all queries received by queriers that were rejected for some reason.
+          |||
+        ),
+      )
+      .addPanel(
+        $.heatmapPanel('Estimated per-query memory consumption') +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))', 'Estimated memory consumption') +
+        {
+          options+: {
+            legend+: {
+              show: false,
+            },
+            tooltip+: {
+              yHistogram: true,
+            },
+            cellValues+: {
+              unit: 'reqps',
+            },
+            yAxis+: {
+              min: 0,
+              unit: 'bytes',
+            },
+            cellGap: 0,
+            calculation+: {
+              xBuckets: {
+                mode: 'count',
+                value: 60,
+              },
+              yBuckets: {
+                mode: 'count',
+                value: 40,
+              },
+            },
+          },
+        } +
+        $.panelDescription(
+          'Estimated per-query memory consumption',
+          |||
+            The esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel("Fallback to Prometheus' query engine") +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)', 'Queries') +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          "Fallback to Prometheus' query engine",
+          |||
+            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.
           |||
         ),
       )

@@ -124,7 +124,7 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, pod) (
-                increase(kube_pod_container_status_restarts_total{container=~"(ingester|mimir-write)"}[30m])
+                increase(kube_pod_container_status_restarts_total{container=~"(ingester)"}[30m])
               )
               >= 2
             )
@@ -155,7 +155,7 @@ groups:
             message: '{{ $labels.job }}/{{ $labels.pod }} has a number of mmap-ed areas close to the limit.'
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemorymapareastoohigh
           expr: |
-            process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} > 0.8
+            process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} > 0.8
           for: 5m
           labels:
             severity: critical
@@ -235,9 +235,9 @@ groups:
             message: GEM servers in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving requests with invalid cluster validation labels.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirserverinvalidclustervalidationlabelrequests
           expr: |
-            (sum by (cluster, namespace) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
+            (sum by (cluster, namespace, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (cluster, namespace) (mimir_build_info) > 0)
+            and on (cluster, namespace) (mimir_build_info > 0)
           labels:
             severity: warning
         - alert: MimirClientInvalidClusterValidationLabelRequests
@@ -245,9 +245,9 @@ groups:
             message: GEM clients in {{ $labels.cluster }}/{{ $labels.namespace }} are having requests rejected due to invalid cluster validation labels.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirclientinvalidclustervalidationlabelrequests
           expr: |
-            (sum by (cluster, namespace) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
+            (sum by (cluster, namespace, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (cluster, namespace) (mimir_build_info) > 0)
+            and on (cluster, namespace) (mimir_build_info > 0)
           labels:
             severity: warning
         - alert: MimirRingMembersMismatch
@@ -257,8 +257,8 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirringmembersmismatch
           expr: |
             (
-              avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"}))
-              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"})
+              avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"}))
+              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"})
             )
             and
             (
@@ -478,9 +478,9 @@ groups:
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
+              container_memory_rss{container=~"(ingester)"}
                 /
-              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester)"} > 0 )
             )
             # Match only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
@@ -497,9 +497,9 @@ groups:
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
+              container_memory_rss{container=~"(ingester)"}
                 /
-              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester)"} > 0 )
             )
             # Match only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
@@ -603,7 +603,7 @@ groups:
           expr: |
             max by (cluster, namespace) (memberlist_client_cluster_members_count)
             >
-            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"}) + 10)
           for: 20m
           labels:
             severity: warning
@@ -614,7 +614,7 @@ groups:
           expr: |
             min by (cluster, namespace) (memberlist_client_cluster_members_count)
             <
-            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
+            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"}) * 0.5)
           for: 20m
           labels:
             severity: warning
@@ -689,6 +689,36 @@ groups:
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8
+          for: 15m
+          labels:
+            severity: critical
+    - name: golang_alerts
+      rules:
+        - alert: MimirGoThreadsTooHigh
+          annotations:
+            message: |
+                GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is running a very high number of Go threads.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
+          expr: |
+            # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+            max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 5000)
+
+            # Further filter on namespaces actually running Mimir.
+            and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirGoThreadsTooHigh
+          annotations:
+            message: |
+                GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is running a very high number of Go threads.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
+          expr: |
+            # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+            max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 8000)
+
+            # Further filter on namespaces actually running Mimir.
+            and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
           for: 15m
           labels:
             severity: critical
@@ -809,6 +839,9 @@ groups:
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
             (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[1h] offset 4h)) > 0)
+            # And only if blocks aren't shipped by the block-builder.
+            unless on (cluster, namespace)
+            (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           for: 15m
           labels:
             severity: critical
@@ -820,6 +853,9 @@ groups:
             (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
             (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (cluster, namespace)
+            (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           for: 4h
           labels:
             severity: critical
@@ -831,6 +867,9 @@ groups:
             (time() - cortex_ingester_oldest_unshipped_block_timestamp_seconds > 3600)
             and
             (cortex_ingester_oldest_unshipped_block_timestamp_seconds > 0)
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (cluster, namespace)
+            (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           for: 15m
           labels:
             severity: critical
@@ -935,9 +974,18 @@ groups:
             message: GEM bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
           expr: |
-            min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
+            min by(cluster, namespace, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
           labels:
             severity: critical
+        - alert: MimirHighVolumeLevel1BlocksQueried
+          annotations:
+            message: GEM store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
+          expr: |
+            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[5m])) > 0
+          for: 6h
+          labels:
+            severity: warning
     - name: mimir_compactor_alerts
       rules:
         - alert: MimirCompactorHasNotSuccessfullyCleanedUpBlocks
@@ -1004,8 +1052,7 @@ groups:
             and
             (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           for: 15m
           labels:
@@ -1018,8 +1065,7 @@ groups:
           expr: |
             (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           for: 24h
           labels:
@@ -1277,21 +1323,18 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirBlockBuilderNoCycleProcessing
-          annotations:
-            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not processed cycles in the past hour.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
-          expr: |
-            max by(cluster, namespace, pod) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
-          for: 60m
-          labels:
-            severity: critical
         - alert: MimirBlockBuilderLagging
           annotations:
             message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
           expr: |
-            max by(cluster, namespace, pod) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+            max by(cluster, namespace, pod) (
+            max_over_time(
+            (
+            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
+            -
+            cortex_blockbuilder_scheduler_partition_committed_offset
+            )[10m:])) > 4e6
           for: 75m
           labels:
             severity: warning
@@ -1300,7 +1343,13 @@ groups:
             message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
           expr: |
-            max by(cluster, namespace, pod) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+            max by(cluster, namespace, pod) (
+            max_over_time(
+            (
+            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
+            -
+            cortex_blockbuilder_scheduler_partition_committed_offset
+            )[10m:])) > 4e6
           for: 140m
           labels:
             severity: critical
@@ -1312,6 +1361,28 @@ groups:
             sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
           labels:
             severity: critical
+        - alert: MimirBlockBuilderHasNotShippedBlocks
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not shipped any block in the last 4 hours.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderhasnotshippedblocks
+          expr: |
+            (min by(cluster, namespace, pod) (time() - cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 60 * 60 * 4)
+            and
+            (max by(cluster, namespace, pod) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
+            # Only if blocks aren't shipped by ingesters.
+            unless on (cluster, namespace)
+            (max by (cluster, namespace) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
+          for: 15m
+          labels:
+            severity: critical
+        - alert: MimirBlockBuilderDataSkipped
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected skipped data.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderdataskipped
+          expr: |
+            increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
+          labels:
+            severity: warning
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

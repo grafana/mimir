@@ -36,11 +36,11 @@ func (m *DelayedBucketClient) Provider() objstore.ObjProvider {
 	return m.wrapped.Provider()
 }
 
-func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
+func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
 	m.delay()
 	defer m.delay()
 
-	return m.wrapped.Upload(ctx, name, r)
+	return m.wrapped.Upload(ctx, name, r, opts...)
 }
 
 func (m *DelayedBucketClient) Delete(ctx context.Context, name string) error {

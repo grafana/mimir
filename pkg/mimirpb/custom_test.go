@@ -11,6 +11,11 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestWriteRequest_MinTimestamp(t *testing.T) {
@@ -86,7 +91,7 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 	})
 }
 
-func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
+func TestWriteRequest_FieldSize(t *testing.T) {
 	req := &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
 			Samples:    []Sample{{TimestampMs: 20}},
@@ -98,21 +103,50 @@ func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
 		},
 	}
 
-	origSize := req.Size()
-	metadataSize := req.MetadataSize()
-	timeseriesSize := req.TimeseriesSize()
+	t.Run("MetadataSize and TimeseriesSize", func(t *testing.T) {
+		origSize := req.Size()
+		metadataSize := req.MetadataSize()
+		timeseriesSize := req.TimeseriesSize()
 
-	assert.Less(t, metadataSize, origSize)
-	assert.Less(t, timeseriesSize, origSize)
-	assert.Equal(t, origSize, req.Size())
+		assert.Less(t, metadataSize, origSize)
+		assert.Less(t, timeseriesSize, origSize)
+		assert.Equal(t, metadataSize+timeseriesSize, req.Size())
 
-	reqWithoutTimeseries := *req
-	reqWithoutTimeseries.Timeseries = nil
-	assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
+		reqWithoutTimeseries := *req
+		reqWithoutTimeseries.Timeseries = nil
+		assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
 
-	reqWithoutMetadata := *req
-	reqWithoutMetadata.Metadata = nil
-	assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
+		reqWithoutMetadata := *req
+		reqWithoutMetadata.Metadata = nil
+		assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
+	})
+
+	reqv2 := &WriteRequest{
+		SymbolsRW2: []string{"", "1", "2", "3", "4"},
+		TimeseriesRW2: []TimeSeriesRW2{{
+			LabelsRefs: []uint32{1, 2, 3, 4},
+			Samples:    []Sample{{TimestampMs: 20}},
+			Exemplars:  []ExemplarRW2{{Timestamp: 30}},
+			Histograms: []Histogram{{Timestamp: 10}},
+		}},
+	}
+
+	t.Run("TimeseriesRW2Size and SymbolsRW2Size", func(t *testing.T) {
+		origSize := reqv2.Size()
+		timeseriesSize := reqv2.TimeseriesRW2Size()
+		symbolsSize := reqv2.SymbolsRW2Size()
+		assert.Less(t, timeseriesSize, origSize)
+		assert.Less(t, symbolsSize, origSize)
+		assert.Equal(t, timeseriesSize+symbolsSize, reqv2.Size())
+
+		reqWithoutTimeseries := *reqv2
+		reqWithoutTimeseries.TimeseriesRW2 = nil
+		assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
+
+		reqWithoutSymbols := *reqv2
+		reqWithoutSymbols.SymbolsRW2 = nil
+		assert.Equal(t, origSize-symbolsSize, reqWithoutSymbols.Size())
+	})
 }
 
 func TestIsFloatHistogram(t *testing.T) {
@@ -156,6 +190,60 @@ func TestIsFloatHistogram(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			res := testData.histogram.IsFloatHistogram()
 			require.Equal(t, testData.expected, res)
+		})
+	}
+}
+
+func TestCodecV2_Unmarshal(t *testing.T) {
+	c := codecV2{codec: fakeCodecV2{}}
+
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var req WriteRequest
+	require.NoError(t, c.Unmarshal(data, &req))
+
+	require.True(t, origReq.Equal(req))
+
+	require.NotNil(t, req.buffer)
+	req.FreeBuffer()
+}
+
+type fakeCodecV2 struct {
+	encoding.CodecV2
+}
+
+func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
+	return encoding.GetCodecV2(proto.Name).Marshal(v)
+}
+
+func TestHistogram_BucketsCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		histogram Histogram
+		expected  int
+	}{
+		{
+			name:      "empty histogram",
+			histogram: Histogram{},
+			expected:  0,
+		},
+		{
+			name:      "int histogram",
+			histogram: FromHistogramToHistogramProto(0, test.GenerateTestHistogram(0)),
+			expected:  8,
+		},
+		{
+			name:      "float histogram",
+			histogram: FromFloatHistogramToHistogramProto(0, test.GenerateTestFloatHistogram(0)),
+			expected:  8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
 		})
 	}
 }

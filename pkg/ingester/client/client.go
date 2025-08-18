@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -42,13 +43,14 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
+	opts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(inst.Addr, dialOpts...)
+	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,4 +92,5 @@ type CombinedQueryStreamResponse struct {
 	Chunkseries     []TimeSeriesChunk
 	Timeseries      []mimirpb.TimeSeries
 	StreamingSeries []StreamingSeries
+	StreamReaders   []*SeriesChunksStreamReader
 }

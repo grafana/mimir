@@ -44,7 +44,7 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
+func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -58,15 +58,15 @@ func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample,
 			}
 		}
 
-		req.Timeseries = append(req.Timeseries, PreallocTimeseries{TimeSeries: ts})
+		m.Timeseries = append(m.Timeseries, PreallocTimeseries{TimeSeries: ts})
 	}
-	return req
+	return m
 }
 
 // AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+func (m *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -80,20 +80,20 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 			}
 		}
 
-		req.Timeseries = append(req.Timeseries, PreallocTimeseries{TimeSeries: ts})
+		m.Timeseries = append(m.Timeseries, PreallocTimeseries{TimeSeries: ts})
 	}
 
-	return req
+	return m
 }
 
 // AddExemplarsAt appends exemplars to the timeseries at index i.
 // This is needed as the Add*Series functions only allow for a single exemplar
 // to be added per time series for simplicity.
-func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
+func (m *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
 	for _, e := range exemplars {
-		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, *e)
+		m.Timeseries[i].Exemplars = append(m.Timeseries[i].Exemplars, *e)
 	}
-	return req
+	return m
 }
 
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
@@ -321,6 +321,10 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
+	// NOTE(jhesketh): fromSpansToSpansProto is not a deepcopy, slices are referenced. This could
+	// potentially cause issues where other Histograms using the same Spans are mutated. However,
+	// since https://github.com/prometheus/prometheus/pull/14771 change each Histogram should have
+	// its own Spans.
 	return Histogram{
 		Count:         &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:           fh.Sum,

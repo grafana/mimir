@@ -47,7 +47,7 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	var mimir1, mimir2, mimir3 *e2emimir.MimirService
@@ -91,8 +91,8 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 
-	// Each Mimir instance will use (512 ingester tokens + 1 distributor token + 512 compactor tokens + 512 store gateway tokens + 512 tokens seen by store-gateway client).
-	tokensPerInstance := float64(512 + 1 + 512 + 512 + 512)
+	// Each Mimir instance will use (512 ingester tokens + 1 distributor token + 512 compactor tokens + 512 store gateway tokens + 512 tokens seen by store-gateway client + 128 ruler tokens).
+	tokensPerInstance := float64(512 + 1 + 512 + 512 + 512 + 128)
 	// 3 = number of instances.
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3*tokensPerInstance), "cortex_ring_tokens_total"))
@@ -103,8 +103,8 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 
-	// Tombstones should increase by four for each server that leaves (once for distributor, ingester, compactor and store-gateway ring)
-	tombstonesPerRemovedInstance := 4.0
+	// Tombstones should increase by five for each server that leaves (once for distributor, ingester, compactor, store-gateway and ruler ring)
+	tombstonesPerRemovedInstance := float64(5)
 	require.NoError(t, s.Stop(mimir1))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
@@ -144,6 +144,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 			DefaultSingleBinaryFlags(),
 			BlocksStorageFlags(),
 			BlocksStorageS3Flags(),
+			RulerStorageS3Flags(),
 			flags,
 			testFlags,
 			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),
@@ -167,7 +168,7 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted
@@ -205,8 +206,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 
 	// Sanity check the ring membership and give each instance time to see every other instance.
 	for _, c := range instances {
-		// we expect 5*maxMimir to account for ingester, distributor, compactor, store-gateway and store-gateway-client rings
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*5)), "cortex_ring_members"), "instance: %s", c.Name())
+		// we expect 6*maxMimir to account for ingester, distributor, compactor, store-gateway, store-gateway-client and ruler rings
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*6)), "cortex_ring_members"), "instance: %s", c.Name())
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"), "instance: %s", c.Name())
 	}
 
@@ -232,10 +233,9 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// The logging is mildly spammy, but it has proven extremely useful for debugging convergence cases.
 	// We don't use WaitSumMetrics [over all instances] here so we can log the per-instance metrics.
 
-	// These values are multiplied by three to account for the fact that ingester
-	// distributor, compactor, store-gateway components use a ring.
-	expectedRingMembers := float64(minMimir) * 5 // One extra, because store-gateway-client uses ring too. But it's the same ring as store-gateway.
-	expectedTombstones := float64(maxMimir-minMimir) * 4
+	// These values account for the fact that ingester, distributor, compactor, store-gateway, store-gateway-client and ruler components use rings.
+	expectedRingMembers := float64(minMimir) * 6 // One extra, because store-gateway-client uses ring too. But it's the same ring as store-gateway.
+	expectedTombstones := float64(maxMimir-minMimir) * 5
 
 	require.Eventually(t, func() bool {
 		ok := true

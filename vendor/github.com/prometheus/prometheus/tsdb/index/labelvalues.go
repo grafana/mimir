@@ -119,11 +119,11 @@ func (it *intersectLabelValuesV1) Err() error {
 	return it.err
 }
 
-func (it *intersectLabelValuesV1) Warnings() annotations.Annotations {
+func (*intersectLabelValuesV1) Warnings() annotations.Annotations {
 	return nil
 }
 
-func (it *intersectLabelValuesV1) Close() error {
+func (*intersectLabelValuesV1) Close() error {
 	return nil
 }
 
@@ -199,11 +199,11 @@ func (it *intersectLabelValues) Err() error {
 	return it.err
 }
 
-func (it *intersectLabelValues) Warnings() annotations.Annotations {
+func (*intersectLabelValues) Warnings() annotations.Annotations {
 	return nil
 }
 
-func (it *intersectLabelValues) Close() error {
+func (*intersectLabelValues) Close() error {
 	return nil
 }
 
@@ -279,10 +279,7 @@ func intersect(p1, p2 Postings) bool {
 		cur = p2.At()
 	}
 
-	for {
-		if !p1.Seek(cur) {
-			break
-		}
+	for p1.Seek(cur) {
 		if p1.At() > cur {
 			cur = p1.At()
 		}

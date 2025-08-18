@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -65,13 +67,15 @@ type distributorTestCase struct {
 	exemplarQueries map[string][]promv1.ExemplarQueryResult
 	metadataQueries map[string]metadataResponse
 	// Expected statistics for RW2 per request.
-	expectedStats []promRemote.WriteResponseStats
+	expectedStats  []promRemote.WriteResponseStats
+	shouldReject   bool
+	expectedStatus int
 }
 
 func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
-	queryStep := 10 * time.Minute
+	queryStep := 5 * time.Minute
 
 	overridesWithExemplars := func(maxExemplars int) string {
 		return fmt.Sprintf("overrides:\n  \"%s\":\n    max_global_exemplars_per_user: %d\n", userID, maxExemplars)
@@ -101,16 +105,16 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
-								HelpRef: 2,
-								UnitRef: 3,
+								HelpRef: 3,
+								UnitRef: 4,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarC_total", "some helpC", "someunitC"},
+					Symbols: []string{"", "__name__", "foobarC_total", "some helpC", "someunitC"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -127,6 +131,55 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							Type: "counter",
 							Help: "some helpC",
 							Unit: "someunitC",
+						}},
+					},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
+		},
+
+		"simple counter with created timestamp": {
+			rw1request: nil, // Not supported in RW1
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{1, 2},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.Add(1 * time.Second).UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+								HelpRef: 3,
+								UnitRef: 4,
+							},
+							CreatedTimestamp: queryStart.UnixMilli(),
+						},
+					},
+					Symbols: []string{"", "__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarC_CT_total": {{
+					Metric: model.Metric{"__name__": "foobarC_CT_total"},
+					Values: []model.SamplePair{
+						{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(0)},
+						{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
+					},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarC_CT_total": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarC_CT_total": {{
+							Type: "counter",
+							Help: "some helpC_CT",
+							Unit: "someunitC_CT",
 						}},
 					},
 				},
@@ -163,16 +216,16 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_GAUGE,
-								HelpRef: 2,
-								UnitRef: 3,
+								HelpRef: 3,
+								UnitRef: 4,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarG", "some helpG", "someunitG"},
+					Symbols: []string{"", "__name__", "foobarG", "some helpG", "someunitG"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -237,43 +290,43 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3},
+							LabelsRefs: []uint32{1, 2, 3, 4},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 						{
-							LabelsRefs: []uint32{0, 1, 2, 6},
+							LabelsRefs: []uint32{1, 2, 3, 7},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 						{
-							LabelsRefs: []uint32{0, 7},
+							LabelsRefs: []uint32{1, 8},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 						{
-							LabelsRefs: []uint32{0, 8},
+							LabelsRefs: []uint32{1, 9},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarH_bucket", "le", "0.1", "some helpH", "someunitH", "+Inf", "foobarH_count", "foobarH_sum"},
+					Symbols: []string{"", "__name__", "foobarH_bucket", "le", "0.1", "some helpH", "someunitH", "+Inf", "foobarH_count", "foobarH_sum"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -348,34 +401,34 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3},
+							LabelsRefs: []uint32{1, 2, 3, 4},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 						{
-							LabelsRefs: []uint32{0, 6},
+							LabelsRefs: []uint32{1, 7},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 						{
-							LabelsRefs: []uint32{0, 7},
+							LabelsRefs: []uint32{1, 8},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
-								HelpRef: 4,
-								UnitRef: 5,
+								HelpRef: 5,
+								UnitRef: 6,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarS", "quantile", "0.5", "some helpS", "someunitS", "foobarS_count", "foobarS_sum"},
+					Symbols: []string{"", "__name__", "foobarS", "quantile", "0.5", "some helpS", "someunitS", "foobarS_count", "foobarS_sum"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -450,7 +503,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Histograms: []promRW2.Histogram{
 								{
 									Count:  &promRW2.Histogram_CountInt{CountInt: 200},
@@ -468,12 +521,12 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 2,
-								UnitRef: 3,
+								HelpRef: 3,
+								UnitRef: 4,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarNH", "some helpNH", "someunitNH"},
+					Symbols: []string{"", "__name__", "foobarNH", "some helpNH", "someunitNH"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -531,7 +584,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Histograms: []promRW2.Histogram{
 								{
 									Count:  &promRW2.Histogram_CountInt{CountInt: 200},
@@ -550,12 +603,12 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							},
 							Metadata: promRW2.Metadata{
 								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
-								HelpRef: 2,
-								UnitRef: 3,
+								HelpRef: 3,
+								UnitRef: 4,
 							},
 						},
 					},
-					Symbols: []string{"__name__", "foobarNHCB", "some helpNHCB", "someunitNHCB"},
+					Symbols: []string{"", "__name__", "foobarNHCB", "some helpNHCB", "someunitNHCB"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -615,11 +668,11 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3},
+							LabelsRefs: []uint32{1, 2, 3, 4},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series_with_empty_label", "empty", ""},
+					Symbols: []string{"", "__name__", "series_with_empty_label", "empty", ""},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -645,11 +698,11 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							LabelsRefs: []uint32{1, 2, 3, 4, 5, 6},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series_with_wrong_labels_order", "zzz", "1", "aaa", "2"},
+					Symbols: []string{"", "__name__", "series_with_wrong_labels_order", "zzz", "1", "aaa", "2"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -683,20 +736,20 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							LabelsRefs: []uint32{1, 2, 3, 4, 5, 6},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series1", "cluster", "C", "replica", "a"},
+					Symbols: []string{"", "__name__", "series1", "cluster", "C", "replica", "a"},
 				},
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							LabelsRefs: []uint32{1, 2, 3, 4, 5, 6},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series2", "cluster", "C", "replica", "b"},
+					Symbols: []string{"", "__name__", "series2", "cluster", "C", "replica", "b"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -730,11 +783,11 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3},
+							LabelsRefs: []uint32{1, 2, 3, 4},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series_with_dropped_label", "dropped_label", "some value"},
+					Symbols: []string{"", "__name__", "series_with_dropped_label", "dropped_label", "some value"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -766,11 +819,11 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1, 2, 3},
+							LabelsRefs: []uint32{1, 2, 3, 4},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
 						},
 					},
-					Symbols: []string{"__name__", "series_with_relabeling_applied", "prometheus", "cluster/instance"},
+					Symbols: []string{"", "__name__", "series_with_relabeling_applied", "prometheus", "cluster/instance"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -812,12 +865,12 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{3, 3}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
 						},
 					},
-					Symbols: []string{"__name__", "foobar_with_exemplars", "test"},
+					Symbols: []string{"", "__name__", "foobar_with_exemplars", "test"},
 				},
 			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
@@ -862,12 +915,12 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli()}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{3, 3}, Value: 123.0, Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli()}},
 						},
 					},
-					Symbols: []string{"__name__", "foobar_with_old_exemplars", "test"},
+					Symbols: []string{"", "__name__", "foobar_with_old_exemplars", "test"},
 				},
 			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
@@ -899,12 +952,12 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{3, 3}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
 						},
 					},
-					Symbols: []string{"__name__", "foobar_with_exemplars_disabled", "test"},
+					Symbols: []string{"", "__name__", "foobar_with_exemplars_disabled", "test"},
 				},
 			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
@@ -949,7 +1002,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Timeseries: []promRW2.TimeSeries{
 						{
-							LabelsRefs: []uint32{0, 1},
+							LabelsRefs: []uint32{1, 2},
 							Histograms: []promRW2.Histogram{
 								{
 									Count:          &promRW2.Histogram_CountInt{CountInt: 12},
@@ -966,7 +1019,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							},
 						},
 					},
-					Symbols: []string{"__name__", "histogram_down_scaling_series"},
+					Symbols: []string{"", "__name__", "histogram_down_scaling_series"},
 				},
 			},
 			queries: map[string]model.Matrix{
@@ -996,6 +1049,33 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				  "`+userID+`":
 				    max_native_histogram_buckets: 7
 			`),
+		},
+		"invalid rw2 symbols": {
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "invalid_series_bad_symbols", "some helpC", "someunitC"},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    0,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
+			expectedStatus: http.StatusBadRequest,
+			shouldReject:   true,
 		},
 	}
 
@@ -1109,11 +1189,17 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				for _, wreq := range tc.rw1request {
 					res, err := client.PushRW1(&wreq)
 					require.NoError(t, err)
-					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					if tc.expectedStatus != 0 {
+						require.Equal(t, tc.expectedStatus, res.StatusCode)
+					} else {
+						require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					}
 					assertNoStats(t, res)
 				}
 
-				requestCount += len(tc.rw1request)
+				if !tc.shouldReject {
+					requestCount += len(tc.rw1request)
+				}
 				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")))
 				require.NoError(t, err)
@@ -1122,13 +1208,19 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				for i, wreq := range tc.rw2request {
 					res, err := client.PushRW2(&wreq)
 					require.NoError(t, err)
-					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					if tc.expectedStatus != 0 {
+						require.Equal(t, tc.expectedStatus, res.StatusCode)
+					} else {
+						require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					}
 					if tc.expectedStats != nil {
 						assertStats(t, tc.expectedStats[i], res)
 					}
 				}
 
-				requestCount += len(tc.rw2request)
+				if !tc.shouldReject {
+					requestCount += len(tc.rw2request)
+				}
 				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")))
 				require.NoError(t, err)
@@ -1198,4 +1290,261 @@ func assertStats(t *testing.T, expectedStats promRemote.WriteResponseStats, res 
 	exemplars, err := strconv.Atoi(exemplarsH)
 	require.NoError(t, err, "exemplars stats header value should be an integer")
 	require.Equal(t, expectedStats.Exemplars, exemplars, "wrong exemplars stats header value")
+}
+
+func TestDistributor_NameValidation(t *testing.T) {
+	for _, scheme := range []model.ValidationScheme{model.LegacyValidation, model.UTF8Validation} {
+		for _, rwVersion := range []string{"rw1", "rw2"} {
+			t.Run(path.Join(scheme.String(), rwVersion), func(t *testing.T) {
+				testDistributorNameValidation(t, rwVersion, scheme)
+			})
+		}
+	}
+}
+
+func testDistributorNameValidation(
+	t *testing.T,
+	rwVersion string,
+	validationScheme model.ValidationScheme,
+) {
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 5 * time.Minute
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+
+	baseFlags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-distributor.ingestion-tenant-shard-size":           "0",
+			"-ingester.ring.heartbeat-period":                    "1s",
+			"-validation.name-validation-scheme":                 validationScheme.String(),
+			"-timeseries-unmarshal-caching-optimization-enabled": "false",
+		},
+	)
+
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", baseFlags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+
+	queryFrontendFlags := mergeFlags(baseFlags, map[string]string{
+		"-query-frontend.cache-results":                      "true",
+		"-query-frontend.results-cache.backend":              "memcached",
+		"-query-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                strconv.FormatBool(false),
+		"-query-frontend.query-sharding-total-shards":        "32",
+		"-query-frontend.query-sharding-max-sharded-queries": "128",
+		"-query-frontend.scheduler-address":                  queryScheduler.NetworkGRPCEndpoint(),
+	})
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), queryFrontendFlags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	querierFlags := mergeFlags(
+		baseFlags,
+		map[string]string{
+			"-querier.scheduler-address": queryScheduler.NetworkGRPCEndpoint(),
+		},
+	)
+
+	distributorFlags := mergeFlags(baseFlags, map[string]string{
+		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
+		"-ingester.max-global-exemplars-per-user": "3",
+	})
+
+	ingesterFlags := mergeFlags(baseFlags, map[string]string{
+		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
+		"-ingester.max-global-exemplars-per-user": "100",
+	})
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), querierFlags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until the distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until the querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name       string
+		rw1request *prompb.WriteRequest
+		rw2request *promRW2.Request
+		queries    map[string]model.Matrix
+		wantStatus map[model.ValidationScheme]int
+	}{
+		{
+			name: "legacy metric name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "legacy_metricC"},
+							{Name: "label_name", Value: "test"},
+						},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Symbols: []string{
+					"", "__name__", "legacy_metricC",
+					"label_name", "test",
+				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC": {{
+					Metric: model.Metric{
+						"__name__":   "legacy_metricC",
+						"label_name": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusOK,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+		{
+			name: "utf8 metric name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels:  []prompb.Label{{Name: "__name__", Value: "utf_metric😀C"}},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Metadata: []prompb.MetricMetadata{
+					{
+						MetricFamilyName: "utf_metric😀C",
+						Help:             "some helpC",
+						Unit:             "someunitC",
+						Type:             prompb.MetricMetadata_COUNTER,
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+						Metadata: promRW2.Metadata{
+							Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+							HelpRef: 3,
+							UnitRef: 4,
+						},
+					},
+				},
+				Symbols: []string{
+					"",
+					"__name__", "utf_metric😀C",
+					"some helpC",
+					"someunitC",
+				},
+			},
+			queries: map[string]model.Matrix{
+				`{"utf_metric😀C"}`: {{
+					Metric: model.Metric{
+						"__name__": "utf_metric😀C",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusBadRequest,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+		{
+			name: "utf8 label name",
+			rw1request: &prompb.WriteRequest{
+				Timeseries: []prompb.TimeSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "legacy_metricC_total_2"},
+							{Name: "utf8_label😀", Value: "test"},
+						},
+						Samples: []prompb.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+			},
+			rw2request: &promRW2.Request{
+				Timeseries: []promRW2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []promRW2.Sample{{Timestamp: queryEnd.UnixMilli(), Value: 100}},
+					},
+				},
+				Symbols: []string{
+					"", "__name__", "legacy_metricC_total_2",
+					"utf8_label😀", "test",
+				},
+			},
+			queries: map[string]model.Matrix{
+				"legacy_metricC_total_2": {{
+					Metric: model.Metric{
+						"__name__":    "legacy_metricC_total_2",
+						"utf8_label😀": "test",
+					},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryEnd.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			wantStatus: map[model.ValidationScheme]int{
+				model.LegacyValidation: http.StatusBadRequest,
+				model.UTF8Validation:   http.StatusOK,
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var writeRes *http.Response
+			switch rwVersion {
+			case "rw1":
+				writeRes, err = client.PushRW1(tc.rw1request)
+			case "rw2":
+				writeRes, err = client.PushRW2(tc.rw2request)
+			default:
+				t.Fatalf("unsupported rw version: %s", rwVersion)
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus[validationScheme], writeRes.StatusCode)
+			if writeRes.StatusCode != http.StatusOK {
+				// No point in running queries if we didn't write anything.
+				return
+			}
+			for q, want := range tc.queries {
+				got, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				require.NoError(t, err)
+				require.Equal(t, want.String(), got.String())
+			}
+		})
+	}
 }

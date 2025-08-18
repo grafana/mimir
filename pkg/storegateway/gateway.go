@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -37,10 +38,6 @@ const (
 	syncReasonPeriodic   = "periodic"
 	syncReasonRingChange = "ring-change"
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed.
-	ringAutoForgetUnhealthyPeriods = 10
-
 	// ringNumTokensDefault is the number of tokens registered in the ring by each store-gateway
 	// instance for testing purposes.
 	ringNumTokensDefault = 512
@@ -50,6 +47,8 @@ var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
+
+var tracer = otel.Tracer("pkg/storegateway")
 
 // Config holds the store gateway config.
 type Config struct {
@@ -164,8 +163,8 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, lifecyclerCfg.NumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewTokensPersistencyDelegate(gatewayCfg.ShardingRing.TokensFilePath, ring.JOINING, delegate, logger)
-	if gatewayCfg.ShardingRing.AutoForgetEnabled {
-		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
+	if gatewayCfg.ShardingRing.AutoForgetEnabled && gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods)*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
 	}
 
 	g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
@@ -179,7 +178,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create ring client")
 	}
 
-	var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+	var dynamicReplication DynamicReplication = NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = NewMaxTimeDynamicReplication(
 			gatewayCfg,

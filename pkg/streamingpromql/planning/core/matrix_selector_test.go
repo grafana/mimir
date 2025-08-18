@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestMatrixSelector_Describe(t *testing.T) {
@@ -74,6 +76,16 @@ func TestMatrixSelector_Describe(t *testing.T) {
 				},
 			},
 			expected: `{__name__="foo"}[1m0s] @ 123456 (1970-01-01T00:02:03.456Z) offset 1h0m0s`,
+		},
+		"one matcher, skip histogram buckets enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:             singleMatcher,
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s], skip histogram buckets`,
 		},
 	}
 
@@ -297,6 +309,29 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: false,
 		},
+		"one with skipping histogram buckets enabled, one without": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:                time.Minute,
+					SkipHistogramBuckets: false,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -306,6 +341,64 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 
 			require.True(t, testCase.a.EquivalentTo(testCase.a))
 			require.True(t, testCase.b.EquivalentTo(testCase.b))
+		})
+	}
+}
+
+func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	rng := 7 * time.Minute
+	offset := 3 * time.Minute
+	ts := timestamp.Time(0).Add(5 * time.Hour)
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	testCases := map[string]struct {
+		selector *MatrixSelector
+		expected planning.QueriedTimeRange
+	}{
+		"no timestamp or offset": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range: rng,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(excludeLowerBoundary), endT),
+		},
+		"timestamp set, no offset": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:     rng,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(excludeLowerBoundary), ts),
+		},
+		"offset set, no timestamp": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:  rng,
+					Offset: offset,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
+		},
+		"both timestamp and offset set": {
+			selector: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Range:     rng,
+					Offset:    offset,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, 100*time.Minute))
 		})
 	}
 }
