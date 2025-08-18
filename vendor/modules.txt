@@ -159,6 +159,10 @@ github.com/alecthomas/kingpin/v2
 # github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 ## explicit; go 1.15
 github.com/alecthomas/units
+# github.com/andybalholm/brotli v1.1.1
+## explicit; go 1.13
+github.com/andybalholm/brotli
+github.com/andybalholm/brotli/matchfinder
 # github.com/apache/arrow-go/v18 v18.2.0
 ## explicit; go 1.23.0
 github.com/apache/arrow-go/v18/arrow
@@ -183,6 +187,41 @@ github.com/apache/arrow-go/v18/internal/bitutils
 github.com/apache/arrow-go/v18/internal/hashing
 github.com/apache/arrow-go/v18/internal/json
 github.com/apache/arrow-go/v18/internal/utils
+# github.com/apache/arrow/go/arrow v0.0.0-20200730104253-651201b0f516
+## explicit; go 1.12
+github.com/apache/arrow/go/arrow
+github.com/apache/arrow/go/arrow/array
+github.com/apache/arrow/go/arrow/bitutil
+github.com/apache/arrow/go/arrow/decimal128
+github.com/apache/arrow/go/arrow/float16
+github.com/apache/arrow/go/arrow/internal/cpu
+github.com/apache/arrow/go/arrow/internal/debug
+github.com/apache/arrow/go/arrow/memory
+# github.com/apache/arrow/go/v12 v12.0.1
+## explicit; go 1.20
+github.com/apache/arrow/go/v12/arrow
+github.com/apache/arrow/go/v12/arrow/array
+github.com/apache/arrow/go/v12/arrow/bitutil
+github.com/apache/arrow/go/v12/arrow/decimal128
+github.com/apache/arrow/go/v12/arrow/decimal256
+github.com/apache/arrow/go/v12/arrow/encoded
+github.com/apache/arrow/go/v12/arrow/endian
+github.com/apache/arrow/go/v12/arrow/float16
+github.com/apache/arrow/go/v12/arrow/internal/debug
+github.com/apache/arrow/go/v12/arrow/internal/flatbuf
+github.com/apache/arrow/go/v12/arrow/memory
+github.com/apache/arrow/go/v12/arrow/memory/internal/cgoalloc
+github.com/apache/arrow/go/v12/arrow/memory/mallocator
+github.com/apache/arrow/go/v12/internal/bitutils
+github.com/apache/arrow/go/v12/internal/hashing
+github.com/apache/arrow/go/v12/internal/utils
+github.com/apache/arrow/go/v12/parquet
+github.com/apache/arrow/go/v12/parquet/compress
+github.com/apache/arrow/go/v12/parquet/internal/debug
+github.com/apache/arrow/go/v12/parquet/internal/gen-go/parquet
+# github.com/apache/thrift v0.21.0
+## explicit; go 1.22.0
+github.com/apache/thrift/lib/go/thrift
 # github.com/armon/go-metrics v0.4.1
 ## explicit; go 1.12
 github.com/armon/go-metrics
@@ -958,6 +997,10 @@ github.com/julienschmidt/httprouter
 # github.com/kamstrup/intmap v0.5.1
 ## explicit; go 1.23
 github.com/kamstrup/intmap
+# github.com/klauspost/asmfmt v1.3.2
+## explicit; go 1.16
+github.com/klauspost/asmfmt
+github.com/klauspost/asmfmt/cmd/asmfmt
 # github.com/klauspost/compress v1.18.0
 ## explicit; go 1.22
 github.com/klauspost/compress
@@ -1015,6 +1058,12 @@ github.com/mdlayher/vsock
 # github.com/miekg/dns v1.1.66
 ## explicit; go 1.23.0
 github.com/miekg/dns
+# github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8
+## explicit
+github.com/minio/asm2plan9s
+# github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3
+## explicit
+github.com/minio/c2goasm
 # github.com/minio/crc64nvme v1.0.1
 ## explicit; go 1.22
 github.com/minio/crc64nvme
@@ -1482,6 +1531,23 @@ github.com/x448/float16
 # github.com/xhit/go-str2duration/v2 v2.1.0
 ## explicit; go 1.13
 github.com/xhit/go-str2duration/v2
+# github.com/xitongsys/parquet-go v1.6.2
+## explicit; go 1.16
+github.com/xitongsys/parquet-go/common
+github.com/xitongsys/parquet-go/compress
+github.com/xitongsys/parquet-go/encoding
+github.com/xitongsys/parquet-go/layout
+github.com/xitongsys/parquet-go/marshal
+github.com/xitongsys/parquet-go/parquet
+github.com/xitongsys/parquet-go/reader
+github.com/xitongsys/parquet-go/schema
+github.com/xitongsys/parquet-go/source
+github.com/xitongsys/parquet-go/types
+github.com/xitongsys/parquet-go/writer
+# github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
+## explicit; go 1.16
+github.com/xitongsys/parquet-go-source/local
+github.com/xitongsys/parquet-go-source/writerfile
 # github.com/xlab/treeprint v1.2.0
 ## explicit; go 1.13
 github.com/xlab/treeprint

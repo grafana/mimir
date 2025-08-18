@@ -55,6 +55,7 @@ require (
 	cloud.google.com/go/storage v1.55.0
 	github.com/alecthomas/chroma/v2 v2.19.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
+	github.com/apache/arrow/go/v12 v12.0.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.83.0
 	github.com/aybabtme/uniplot v0.0.0-20151203143629-039c559e5e7e
 	github.com/dennwc/varint v1.0.0
@@ -85,6 +86,8 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
+	github.com/xitongsys/parquet-go v1.6.2
+	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.36.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0
@@ -115,7 +118,10 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/apache/arrow-go/v18 v18.2.0 // indirect
+	github.com/apache/arrow/go/arrow v0.0.0-20200730104253-651201b0f516 // indirect
+	github.com/apache/thrift v0.21.0 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.4 // indirect
@@ -154,12 +160,15 @@ require (
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jaegertracing/jaeger-idl v0.5.0 // indirect
 	github.com/kamstrup/intmap v0.5.1 // indirect
+	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/providers/confmap v1.0.0 // indirect
 	github.com/knadh/koanf/v2 v2.2.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
+	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
+	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
