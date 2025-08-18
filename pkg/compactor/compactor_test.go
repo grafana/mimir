@@ -2381,6 +2381,8 @@ func makeTestCompactorConfig(schedulingMode, schedulerAddress string) Config {
 	return Config{
 		SchedulingMode:                      schedulingMode,
 		SchedulerAddress:                    schedulerAddress,
+		SchedulerUpdateInterval:             20 * time.Second,
+		SchedulerMaxUpdateAge:               30 * time.Minute,
 		CompactionJobsOrder:                 CompactionOrderOldestFirst,
 		MaxOpeningBlocksConcurrency:         1,
 		MaxClosingBlocksConcurrency:         1,
@@ -2462,6 +2464,23 @@ func TestCompactor_SchedulerMode_ConfigValidation(t *testing.T) {
 		"scheduler_mode_with_whitespace_only_address_should_fail": {
 			config:      makeTestCompactorConfig(planningModeScheduler, "   "),
 			expectedErr: errInvalidSchedulerAddress,
+		},
+		"scheduler_mode_with_zero_update_interval_should_fail": {
+			config: func() Config {
+				cfg := makeTestCompactorConfig(planningModeScheduler, schedulerAddress)
+				cfg.SchedulerUpdateInterval = 0
+				return cfg
+			}(),
+			expectedErr: errInvalidSchedulerUpdateInterval,
+		},
+		"scheduler_mode_with_short_max_update_age_should_fail": {
+			config: func() Config {
+				cfg := makeTestCompactorConfig(planningModeScheduler, schedulerAddress)
+				cfg.SchedulerUpdateInterval = 10 * time.Second
+				cfg.SchedulerMaxUpdateAge = 11 * time.Second
+				return cfg
+			}(),
+			expectedErr: errInvalidSchedulerMaxUpdateAge,
 		},
 	}
 
@@ -2560,6 +2579,7 @@ func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
 			cfg.ShardingRing.Common.KVStore.Mock = ringStore
 			cfg.SchedulerAddress = "localhost:9095"
 			cfg.SchedulingMode = planningModeScheduler
+			cfg.SchedulerUpdateInterval = 1 * time.Hour // set SchedulerUpdateInterval long, only testing initial progress update
 
 			inmem := objstore.NewInMemBucket()
 			c, _, _, _, _ := prepare(t, cfg, inmem)
@@ -2624,4 +2644,123 @@ func TestCompactor_SchedulerMode_JobLeasing(t *testing.T) {
 			require.Equal(t, tc.expectedJob, gotWork)
 		})
 	}
+}
+
+func TestCompactor_SchedulerMode_ActiveJobLifecycle(t *testing.T) {
+
+	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg.SchedulerUpdateInterval = 50 * time.Millisecond
+	cfg.SchedulerMaxUpdateAge = 1 * time.Second
+
+	c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
+	mockScheduler := &mockCompactorSchedulerClient{
+		updateJobResponse: &schedulerpb.UpdateJobResponse{},
+	}
+	c.schedulerClient = mockScheduler
+
+	jobKey := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
+	tenant := "test-tenant"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c.startKeepAlive(ctx)
+
+	// No active job on startup
+	assert.Nil(t, c.activeJob)
+
+	// Check activeJob is set
+	err := c.setActiveJob(jobKey, tenant)
+	assert.NoError(t, err)
+	assert.NotNil(t, c.activeJob)
+	assert.Equal(t, jobKey, c.activeJob.key)
+	assert.Equal(t, tenant, c.activeJob.tenant)
+
+	// Check periodic status updates are sent while job is set
+	require.Eventually(t, func() bool {
+		return mockScheduler.updateJobCallCount > 2
+	}, 1*time.Second, 50*time.Millisecond, "should send updates while activeJob is set")
+
+	// Check activeJob is unset successfully and no further updates are sent
+	err = c.unsetActiveJob(jobKey.Id)
+	assert.NoError(t, err)
+	assert.Nil(t, c.activeJob)
+
+	curCount := mockScheduler.updateJobCallCount
+	require.Never(t, func() bool {
+		return mockScheduler.updateJobCallCount > curCount
+	}, 1*time.Second, 50*time.Millisecond, "should not send updates when activeJob is not set")
+}
+
+func TestCompactor_SchedulerMode_CleanupExpiredJobs(t *testing.T) {
+
+	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg.SchedulerMaxUpdateAge = 0 * time.Millisecond // set to 0ms to test cleanup w.o. waiting
+
+	c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
+
+	jobKey := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
+
+	// Set activeJob
+	err := c.setActiveJob(jobKey, "test-tenant")
+	assert.NotNil(t, c.activeJob)
+	assert.NoError(t, err)
+
+	c.cleanupExpiredJobs()
+
+	// Check activeJob is unset
+	assert.Nil(t, c.activeJob, "expired job should be cleaned up")
+}
+
+func TestCompactor_SchedulerMode_ActiveJobLocking(t *testing.T) {
+	t.Run("should_not_overwrite_non_nil_active_job", func(t *testing.T) {
+		cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+		c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
+
+		jobKey1 := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
+		jobKey2 := &schedulerpb.JobKey{Id: "test-job-2", Epoch: 1}
+
+		// Set activeJob
+		c.setActiveJob(jobKey1, "test-tenant")
+		assert.Equal(t, jobKey1.Id, c.activeJob.key.Id)
+
+		// Attempt to overwrite activeJob - should fail
+		err := c.setActiveJob(jobKey2, "test-tenant")
+		assert.EqualError(t, err, "cannot write active job")
+	})
+
+	t.Run("should_not_unset_job_with_incorrect_id", func(t *testing.T) {
+		cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+		c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
+
+		jobKey1 := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
+		jobKey2 := &schedulerpb.JobKey{Id: "test-job-2", Epoch: 1}
+
+		// Set activeJob
+		c.setActiveJob(jobKey1, "test-tenant")
+		assert.Equal(t, jobKey1.Id, c.activeJob.key.Id)
+
+		// Attempt to unset activeJob using incorrect keyId - should fail
+		err := c.unsetActiveJob(jobKey2.Id)
+		assert.EqualError(t, err, "cannot write active job")
+	})
+
+	t.Run("unset_is_idempotent", func(t *testing.T) {
+		cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+		c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
+
+		jobKey := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
+
+		// Set activeJob
+		c.setActiveJob(jobKey, "test-tenant")
+		assert.Equal(t, jobKey.Id, c.activeJob.key.Id)
+
+		// unset activeJob
+		err := c.unsetActiveJob(jobKey.Id)
+		assert.NoError(t, err)
+		assert.Nil(t, c.activeJob)
+
+		// unset activeJob while no activeJobSet
+		err = c.unsetActiveJob(jobKey.Id)
+		assert.NoError(t, err)
+	})
 }
