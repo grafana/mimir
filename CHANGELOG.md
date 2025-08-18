@@ -40,6 +40,7 @@
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
 * [CHANGE] Rollout-operator: Add `watch` permission to the rollout-operators's cluster role. #12360. See [rollout-operator#262](https://github.com/grafana/rollout-operator/pull/262)
+* [CHANGE] Memcached: Remove configuration for enabling mTLS connections to Memcached servers. #12434
 
 ### Documentation
 
