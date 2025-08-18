@@ -78,6 +78,18 @@ func (i *ProfilingWrapper) Push(ctx context.Context, request *mimirpb.WriteReque
 	return i.ing.Push(ctx, request)
 }
 
+func (i *ProfilingWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
+}
+
 func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
 	ctx := server.Context()
 	if isTraceSampled(ctx) {

@@ -31,8 +31,13 @@ func NewIngesterActivityTracker(ing IngesterAPI, tracker *activitytracker.Activi
 }
 
 func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	// No tracking in Push
+	// No tracking in Push because it is called very frequently
 	return i.ing.Push(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+	// No tracking in PushToStorageAndReleaseRequest because it is called very frequently
+	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
