@@ -31,20 +31,15 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
-		iter := m.Iterator()
+		length, series := m.Items()
 		m.Unlock()
-		// Once we have the iter we don't need to hold the mutex anymore as it works on a iter.
+		// Once we have the series iterator we don't need to hold the mutex anymore.
 		tenant.RUnlock()
-
-		iter(
-			func(length int) {
-				snapshot.PutUvarint64(uint64(length))
-			},
-			func(s uint64, ts clock.Minutes) {
-				snapshot.PutBE64(s)
-				snapshot.PutByte(byte(ts))
-			},
-		)
+		snapshot.PutUvarint64(uint64(length))
+		for s, ts := range series {
+			snapshot.PutBE64(s)
+			snapshot.PutByte(byte(ts))
+		}
 	}
 	return snapshot.Get()
 }

@@ -45,11 +45,11 @@ func TestMap(t *testing.T) {
 
 	{
 		gotValues := map[uint64]clock.Minutes{}
-		iterator := m.Iterator()
-		iterator(
-			func(c int) { require.Equal(t, len(storedValues), c) },
-			func(key uint64, value clock.Minutes) { gotValues[key] = value },
-		)
+		length, items := m.Items()
+		require.Equal(t, len(storedValues), length)
+		for key, value := range items {
+			gotValues[key] = value
+		}
 		require.Equal(t, storedValues, gotValues)
 	}
 
@@ -81,9 +81,10 @@ func TestMapValues(t *testing.T) {
 	require.Equal(t, len(stored), int(total.Load()))
 
 	got := map[uint64]clock.Minutes{}
-	m.Iterator()(
-		func(c int) { require.Equal(t, len(stored), c) },
-		func(key uint64, value clock.Minutes) { got[key] = value },
-	)
+	l, items := m.Items()
+	require.Equal(t, len(stored), l)
+	for key, value := range items {
+		got[key] = value
+	}
 	require.Equal(t, stored, got)
 }

@@ -6,6 +6,7 @@
 package tenantshard
 
 import (
+	"iter"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -224,13 +225,15 @@ func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 	return pooled
 }
 
-func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
+func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 	keysClone := pooledClone(m.keys, keysPool)
 	dataClone := pooledClone(m.data, dataPool)
 	count := m.count()
 
-	return func(length LengthCallback, iterSeries IteratorCallback) {
-		length(count)
+	return count, func(yield func(uint64, clock.Minutes) bool) {
+		if count == 0 {
+			return
+		}
 
 		for i, g := range *dataClone {
 			for j, xor := range g {
@@ -239,11 +242,14 @@ func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
 					continue
 				}
 				value := ^xor
-				iterSeries((*keysClone)[i][j], value)
+				if !yield((*keysClone)[i][j], value) {
+					return // stop iteration
+				}
 			}
 		}
 
 		keysPool.Put(keysClone)
 		dataPool.Put(dataClone)
+		return
 	}
 }
