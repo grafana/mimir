@@ -362,7 +362,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate alerts across different availability zones.
   -alertmanager.state-read-timeout duration
-    	[experimental] Timeout for reading the state from object storage during the initial sync. (default 15ns)
+    	[experimental] Timeout for reading the state from object storage during the initial sync. (default 15s)
   -alertmanager.storage.path string
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
