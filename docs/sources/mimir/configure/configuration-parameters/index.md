@@ -5327,7 +5327,7 @@ dynamic_replication:
   # (experimental) Multiple of the default replication factor that should be
   # used for recent blocks. Minimum value is 2
   # CLI flag: -store-gateway.dynamic-replication.multiple
-  [multiple: <int> | default = 2]
+  [multiple: <int> | default = 5]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by
