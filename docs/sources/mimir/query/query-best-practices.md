@@ -35,9 +35,9 @@ Follow these guidelines for setting a time range based on your query type:
 
 Additionally, choose a step interval that matches your requirements for running the query. Smaller step intervals increase a query's cost but provide higher resolution.
 
-## Match your query time range to the evaluation frequency
+## Consider your query time range and evaluation frequency
 
-Align the time range of your query with how frequently the query is evaluated or how current the data needs to be. For instance, if a query runs every minute, such as for an alerting rule or a frequently refreshing dashboard panel, there's no need for it to look back over a long time period, such as 30 days.
+Consider the time range of your query when determining how frequently the query is evaluated or how current the data needs to be. For instance, if a query runs every minute, such as for an alerting rule or a frequently refreshing dashboard panel, there's no need for it to look back over a long time period, such as 30 days.
 
 Queries with very long look-back periods, such as `rate(my_metric[30d])`, can be computationally expensive. They require Mimir to process a large volume of historical data, even if only the latest value is of interest.
 
