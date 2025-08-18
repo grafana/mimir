@@ -250,6 +250,5 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 
 		keysPool.Put(keysClone)
 		dataPool.Put(dataClone)
-		return
 	}
 }
