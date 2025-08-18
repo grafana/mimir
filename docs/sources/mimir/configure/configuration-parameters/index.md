@@ -2327,7 +2327,7 @@ The `alertmanager` block configures the alertmanager.
 # (experimental) Timeout for reading the state from object storage during the
 # initial sync.
 # CLI flag: -alertmanager.state-read-timeout
-[state_read_timeout: <duration> | default = 15ns]
+[state_read_timeout: <duration> | default = 15s]
 
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
