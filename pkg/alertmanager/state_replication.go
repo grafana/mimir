@@ -26,7 +26,6 @@ import (
 
 const (
 	defaultSettleReadTimeout = 15 * time.Second
-	defaultStoreReadTimeout  = 15 * time.Second
 
 	// Initial sync outcome label values.
 	syncFromReplica  = "from-replica"
@@ -67,7 +66,7 @@ type state struct {
 }
 
 // newReplicatedStates creates a new state struct, which manages state to be replicated between alertmanagers.
-func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.AlertStore, l log.Logger, r prometheus.Registerer) *state {
+func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.AlertStore, readTimeout time.Duration, l log.Logger, r prometheus.Registerer) *state {
 
 	s := &state{
 		logger:            log.With(l, "user", userID),
@@ -79,7 +78,7 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 		msgc:              make(chan *clusterpb.Part),
 		reg:               r,
 		settleReadTimeout: defaultSettleReadTimeout,
-		storeReadTimeout:  defaultStoreReadTimeout,
+		storeReadTimeout:  readTimeout,
 		partialStateMergesTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "alertmanager_partial_state_merges_total",
 			Help: "Number of times we have received a partial state to merge for a key.",

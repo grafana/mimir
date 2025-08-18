@@ -74,13 +74,14 @@ var (
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
-	DataDir        string           `yaml:"data_dir"`
-	Retention      time.Duration    `yaml:"retention" category:"advanced"`
-	ExternalURL    flagext.URLValue `yaml:"external_url"`
-	PollInterval   time.Duration    `yaml:"poll_interval" category:"advanced"`
-	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size" category:"advanced"`
+	DataDir          string           `yaml:"data_dir"`
+	Retention        time.Duration    `yaml:"retention" category:"advanced"`
+	ExternalURL      flagext.URLValue `yaml:"external_url"`
+	PollInterval     time.Duration    `yaml:"poll_interval" category:"advanced"`
+	MaxRecvMsgSize   int64            `yaml:"max_recv_msg_size" category:"advanced"`
+	StateReadTimeout time.Duration    `yaml:"state_read_timeout" category:"experimental"`
 
-	// Sharding confiuration for the Alertmanager
+	// Sharding configuration for the Alertmanager.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
@@ -145,6 +146,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
 	f.DurationVar(&cfg.GrafanaAlertmanagerIdleGracePeriod, "alertmanager.grafana-alertmanager-grace-period", defaultGrafanaAlertmanagerGracePeriod, "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
+	f.DurationVar(&cfg.StateReadTimeout, "alertmanager.state-read-timeout", 15, "Timeout for reading the state from object storage during the initial sync.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
 
