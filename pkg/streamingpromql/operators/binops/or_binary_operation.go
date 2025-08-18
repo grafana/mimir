@@ -57,6 +57,7 @@ func NewOrBinaryOperation(
 		expressionPosition:       expressionPosition,
 	}
 
+	// If both sides of the OR have same labels, let DeduplicateAndMerge operator handle this.
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 

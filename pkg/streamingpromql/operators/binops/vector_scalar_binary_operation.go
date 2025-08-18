@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -48,7 +49,7 @@ func NewVectorScalarBinaryOperation(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) (*VectorScalarBinaryOperation, error) {
+) (types.InstantVectorOperator, error) {
 	var f binaryOperationFunc
 
 	if returnBool {
@@ -90,8 +91,8 @@ func NewVectorScalarBinaryOperation(
 			return f(scalar, vectorF, nil, vectorH, true, true)
 		}
 	}
-
-	return b, nil
+	// VectorScalarBinaryOperation drops name from the vector, let DeduplicateAndMerge operator handle this.
+	return operators.NewDeduplicateAndMerge(b, memoryConsumptionTracker), nil
 }
 
 func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
