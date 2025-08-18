@@ -271,6 +271,21 @@ jobs:
           artifact_name: docker-image-copyblocks
           target: "./tools/copyblocks/.uptodate"
 
+  # This job does not do anything - it exists to simplify the "needs" condition of the "deploy" job,
+  # and to make it easier to configure the required passing checks in branch protection rules in GitHub,
+  # as we have to specify each required passing job there. This job won't be considered successful unless
+  # all the jobs it needs have succeeded.
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - build-metaconvert-image
+      - build-mimir-image
+      - build-query-tee-image
+      - build-mimirtool-image
+      - build-copyblocks-image
+    steps:
+      - run: echo "All dependencies succeeded!"
+
   build-race-enabled-image:
     runs-on: ubuntu-latest
     needs:
@@ -385,11 +400,7 @@ jobs:
   deploy:
     needs:
       - prepare
-      - build-metaconvert-image
-      - build-mimir-image
-      - build-query-tee-image
-      - build-mimirtool-image
-      - build-copyblocks-image
+      - build
       - test
       - test-docs
       - lint
