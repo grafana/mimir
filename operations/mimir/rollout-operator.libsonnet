@@ -31,14 +31,15 @@
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
 
     rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
+
+    rollout_operator_enabled: $._config.multi_zone_ingester_enabled ||
+                              $._config.multi_zone_store_gateway_enabled ||
+                              $._config.cortex_compactor_concurrent_rollout_enabled ||
+                              $._config.ingest_storage_ingester_autoscaling_enabled ||
+                              $._config.enable_rollout_operator_webhook,
   },
 
-  local rollout_operator_enabled =
-    $._config.multi_zone_ingester_enabled ||
-    $._config.multi_zone_store_gateway_enabled ||
-    $._config.cortex_compactor_concurrent_rollout_enabled ||
-    $._config.ingest_storage_ingester_autoscaling_enabled ||
-    $._config.enable_rollout_operator_webhook,
+  local rollout_operator_enabled = $._config.rollout_operator_enabled,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
