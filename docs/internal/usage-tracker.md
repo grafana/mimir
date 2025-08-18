@@ -41,7 +41,7 @@ A quick overview of this interaction from the Distributor's perspective:
 
 - Series ready to be ingested are hashed into uint64 values, these hashes are what Usage tracker service tracks.
 - The hashes are sharded across a fixed number of partitions.
-- The usage tracker partition ring is checked to find the partition owner for each partition.
+- The usage tracker partition ring is checked to find a partition owner for each partition.
 - A simultaneous gRPC request is sent to each partition owner with the series hashes and the userID of the requesting tenant.
 - Usage tracker tracks the series hashes and returns a list of rejected hashes.
 - Distributor filters the `WriteRequest` to remove rejected series hashes.
