@@ -71,6 +71,31 @@ var (
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
 )
 
+// TODO: move this somewhere more appropriate
+type NotificationHistoryConfig struct {
+	Enabled               bool   `yaml:"enabled"`
+	LokiRemoteURL         string `yaml:"loki_remote_url"`
+	LokiTenantID          string `yaml:"loki_tenant_id"`
+	LokiBasicAuthUsername string `yaml:"loki_basic_auth_username"`
+	LokiBasicAuthPassword string `yaml:"loki_basic_auth_password"`
+
+	// TODO
+	//ExternalLabels        map[string]string `yaml:"external_labels"`
+}
+
+func (cfg *NotificationHistoryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+".enabled", false, "Enable notification history.")
+	f.StringVar(&cfg.LokiRemoteURL, prefix+".loki-remote-url", "", "Loki remote write URL for notification history.")
+	f.StringVar(&cfg.LokiTenantID, prefix+".loki-tenant-id", "", "Loki tenant ID for notification history.")
+	f.StringVar(&cfg.LokiBasicAuthUsername, prefix+".loki-basic-auth-username", "", "Loki basic auth username for notification history.")
+	f.StringVar(&cfg.LokiBasicAuthPassword, prefix+".loki-basic-auth-password", "", "Loki basic auth password for notification history.")
+}
+
+func (cfg *NotificationHistoryConfig) Validate() error {
+	// TODO
+	return nil
+}
+
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
 	DataDir        string           `yaml:"data_dir"`
@@ -121,6 +146,8 @@ type MultitenantAlertmanagerConfig struct {
 
 	// Enable experimental pre-notification hooks.
 	EnableNotifyHooks bool `yaml:"enable_notify_hooks" category:"experimental"`
+
+	NotificationHistory NotificationHistoryConfig `yaml:"notification_history" category:"experimental"`
 }
 
 const (
@@ -160,6 +187,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
 	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
+
+	cfg.NotificationHistory.RegisterFlagsWithPrefix("alertmanager.notification-history", f)
 }
 
 // Validate config and returns error on failure
@@ -1117,6 +1146,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
+		NotificationHistory:               am.cfg.NotificationHistory,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
