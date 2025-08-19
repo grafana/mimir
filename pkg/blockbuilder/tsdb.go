@@ -4,6 +4,7 @@ package blockbuilder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -77,6 +77,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocks
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher.
+// It puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
 func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
@@ -85,17 +86,12 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		return fmt.Errorf("extract tenant id: %w", err)
 	}
 
-	return b.Process(ctx, b.partitionID, tenantID, req)
-}
-
-// Process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
-func (b *TSDBBuilder) Process(ctx context.Context, partitionID int32, tenantID string, req *mimirpb.WriteRequest) (err error) {
 	if len(req.Timeseries) == 0 {
 		return nil
 	}
 
 	tenant := tsdbTenant{
-		partitionID: partitionID,
+		partitionID: b.partitionID,
 		tenantID:    tenantID,
 	}
 	db, err := b.getOrCreateTSDB(tenant)
@@ -466,7 +462,7 @@ var (
 func (u *userTSDB) PreCreation(labels.Labels) error {
 	// Global series limit.
 	if u.maxGlobalSeries > 0 && u.Head().NumSeries() >= uint64(u.maxGlobalSeries) {
-		return errors.Wrapf(errMaxInMemorySeriesReached, "limit of %d reached for user %s", u.maxGlobalSeries, u.userID)
+		return fmt.Errorf("limit of %d reached for user %s: %w", u.maxGlobalSeries, u.userID, errMaxInMemorySeriesReached)
 	}
 
 	return nil
