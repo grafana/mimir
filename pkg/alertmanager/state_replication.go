@@ -228,7 +228,6 @@ func (s *state) starting(ctx context.Context) error {
 	}
 
 	level.Info(s.logger).Log("msg", "reading state from storage")
-
 	// Attempt to read the state from persistent storage instead.
 	if s.storeReadTimeout != 0 {
 		storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
