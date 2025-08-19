@@ -363,9 +363,9 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
-		if !cmp.Equal(req.Metadata, v2Req.Metadata, sortMetadata) {
-			diff := cmp.Diff(req.Metadata, v2Req.Metadata, sortMetadata)
-			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering). Diff: %s", diff))
+		if !cmp.Equal(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata) {
+			diff := cmp.Diff(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata)
+			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering, exact duplicates dropped). Diff: %s", diff))
 		}
 	}
 
@@ -386,6 +386,32 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	}
 
 	return report.Track(rec.Value, v2Rec.Value)
+}
+
+func dropExactDuplicates(metadata []*mimirpb.MetricMetadata) []*mimirpb.MetricMetadata {
+	metadataByMetric := make(map[string][]*mimirpb.MetricMetadata, len(metadata))
+	result := make([]*mimirpb.MetricMetadata, 0, len(metadata))
+
+metaLoop:
+	for _, meta := range metadata {
+		seen, ok := metadataByMetric[meta.MetricFamilyName]
+		if !ok {
+			metadataByMetric[meta.MetricFamilyName] = append(metadataByMetric[meta.MetricFamilyName], meta)
+			result = append(result, meta)
+			continue
+		}
+
+		for _, seenMeta := range seen {
+			if seenMeta.MetricFamilyName == meta.MetricFamilyName && seenMeta.Help == meta.Help && seenMeta.Type == meta.Type && seenMeta.Unit == meta.Unit {
+				continue metaLoop
+			}
+		}
+
+		metadataByMetric[meta.MetricFamilyName] = append(metadataByMetric[meta.MetricFamilyName], meta)
+		result = append(result, meta)
+	}
+
+	return result
 }
 
 // TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
