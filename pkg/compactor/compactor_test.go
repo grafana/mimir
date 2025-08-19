@@ -2596,10 +2596,10 @@ func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
 
 			c.startJobStatusUpdates(context.Background())
 			go c.runAsWorker(context.Background())
-			
+
 			require.Eventually(t, func() bool {
 				mockScheduler.mu.Lock()
-				defer mockScheduler.mu.Unlock()			
+				defer mockScheduler.mu.Unlock()
 				return (mockScheduler.leaseJobCallCount == tc.expectedLeaseCalls) &&
 					(mockScheduler.updateJobCallCount == tc.expectedUpdateCalls)
 			}, 6*time.Second, 100*time.Millisecond)
