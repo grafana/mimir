@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -351,7 +352,7 @@ func (c *Config) ValidateLimits(limits *validation.Limits) error {
 }
 
 func (c *Config) isModuleEnabled(m string) bool {
-	return util.StringsContain(c.Target, m)
+	return slices.Contains(c.Target, m)
 }
 
 func (c *Config) isAnyModuleEnabled(modules ...string) bool {
