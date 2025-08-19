@@ -31,16 +31,12 @@
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
 * [BUGFIX] Distributor: Fix pooled memory reuse bug that can cause corrupt data to appear in the err-mimir-label-value-too-long error message. #12048
 * [BUGFIX] Querier: Fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #12261
-<<<<<<< HEAD
 * [BUGFIX] Block-builder-scheduler: Fix a caching bug in initial job probing causing excessive memory usage at startup. #12389
 
 ### Mixin
 
 * [ENHANCEMENT] Rollout progress dashboard: make panels higher to fit more components. #12429
 * [BUGFIX] Block-builder dashboard: fix reference to detected gaps metric in errors panel. #12401
-=======
-* [BUGFIX] Ruler: Support GroupLabels. #12397
->>>>>>> eb2fc7515f57bd12ab1d279b8a5b1431f9c85aa1
 
 ### Jsonnet
 
@@ -319,7 +315,7 @@
 * [FEATURE] Distributor: Add experimental `memberlist` KV store for ha_tracker. You can enable it using the `-distributor.ha-tracker.kvstore.store` flag. You can configure Memberlist parameters via the `-memberlist-*` flags. #10054
 * [ENHANCEMENT] Compactor: Expose `cortex_bucket_index_last_successful_update_timestamp_seconds` for all tenants assigned to the compactor before starting the block cleanup job. #10569
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
-* [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also <https://github.com/prometheus/prometheus/pull/15416>. #10168
+* [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also https://github.com/prometheus/prometheus/pull/15416. #10168
 * [ENHANCEMENT] Distributor: discard float and histogram samples with duplicated timestamps from each timeseries in a request before the request is forwarded to ingesters. Discarded samples are tracked by `cortex_discarded_samples_total` metrics with the reason `sample_duplicate_timestamp`. #10145 #10430
 * [ENHANCEMENT] Ruler: Add `cortex_prometheus_rule_group_last_rule_duration_sum_seconds` metric to track the total evaluation duration of a rule group regardless of concurrency #10189
 * [ENHANCEMENT] Distributor: Add native histogram support for `electedReplicaPropagationTime` metric in ha_tracker. #10264
@@ -365,19 +361,19 @@
 * [ENHANCEMENT] gRPC clients: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that are used by Mimir's gRPC clients to track invalid cluster validations. #10767
 * [ENHANCEMENT] Add experimental metric `cortex_distributor_dropped_native_histograms_total` to measure native histograms silently dropped when native histograms are disabled for a tenant. #10760
 * [ENHANCEMENT] Compactor: Add experimental `-compactor.upload-sparse-index-headers` option. When enabled, the compactor will attempt to upload sparse index headers to object storage. This prevents latency spikes after adding store-gateway replicas. #10684
-* [ENHANCEMENT] Ruler: add support for YAML aliases in `alert`, `record` and `expr` fields in rule groups. <https://github.com/prometheus/prometheus/pull/14957> #10884
+* [ENHANCEMENT] Ruler: add support for YAML aliases in `alert`, `record` and `expr` fields in rule groups. https://github.com/prometheus/prometheus/pull/14957 #10884
 * [ENHANCEMENT] Memcached: Add experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends when discovering Memcached hosts. #10895
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
 * [BUGFIX] Query-frontend: Fix an issue where transient errors are inadvertently cached. #10537 #10631
-* [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. <https://github.com/prometheus/prometheus/pull/15560> #10258
-* [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. <https://github.com/prometheus/prometheus/pull/15531> #10258
+* [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. https://github.com/prometheus/prometheus/pull/15560 #10258
+* [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. https://github.com/prometheus/prometheus/pull/15531 #10258
 * [BUGFIX] Ruler: Fixed an issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where if a rule group was eligible for concurrency, it would flap between running concurrently or not based on the time it took after running concurrently. #9726 #10189
 * [BUGFIX] Mimirtool: `remote-read` commands will now return data. #10286
-* [BUGFIX] PromQL: Fix deriv, predict_linear and double_exponential_smoothing with histograms <https://github.com/prometheus/prometheus/pull/15686> #10383
+* [BUGFIX] PromQL: Fix deriv, predict_linear and double_exponential_smoothing with histograms https://github.com/prometheus/prometheus/pull/15686 #10383
 * [BUGFIX] MQE: Fix deriv with histograms #10383
-* [BUGFIX] PromQL: Fix <aggr_over_time> functions with histograms <https://github.com/prometheus/prometheus/pull/15711> #10400
+* [BUGFIX] PromQL: Fix <aggr_over_time> functions with histograms https://github.com/prometheus/prometheus/pull/15711 #10400
 * [BUGFIX] MQE: Fix <aggr_over_time> functions with histograms #10400
 * [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423 #10916
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
@@ -387,11 +383,11 @@
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
 * [BUGFIX] Ruler: fix issue where rule evaluations could be missed while shutting down a ruler instance if that instance owns many rule groups. prometheus/prometheus#15804 #10762
 * [BUGFIX] Ingester: Add additional check on reactive limiter queue sizes. #10722
-* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. <https://github.com/prometheus/prometheus/pull/16060> <https://github.com/prometheus/prometheus/pull/16231> #10824 #10955
-* [BUGFIX] Querier: fix issue where `label_join` could incorrectly return multiple series with the same labels rather than failing with `vector cannot contain metrics with the same labelset`. <https://github.com/prometheus/prometheus/pull/15975> #10826
-* [BUGFIX] Querier: fix issue where counter resets on native histograms could be incorrectly under- or over-counted when using subqueries. <https://github.com/prometheus/prometheus/pull/15987> #10871
-* [BUGFIX] Querier: fix incorrect annotation emitted when `quantile_over_time` is evaluated over a range with both histograms and floats. <https://github.com/prometheus/prometheus/pull/16018> #10884
-* [BUGFIX] Querier: fix duplicated double quotes in invalid label name error from `count_values`. <https://github.com/prometheus/prometheus/pull/16054> #10884
+* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. https://github.com/prometheus/prometheus/pull/16060 https://github.com/prometheus/prometheus/pull/16231 #10824 #10955
+* [BUGFIX] Querier: fix issue where `label_join` could incorrectly return multiple series with the same labels rather than failing with `vector cannot contain metrics with the same labelset`. https://github.com/prometheus/prometheus/pull/15975 #10826
+* [BUGFIX] Querier: fix issue where counter resets on native histograms could be incorrectly under- or over-counted when using subqueries. https://github.com/prometheus/prometheus/pull/15987 #10871
+* [BUGFIX] Querier: fix incorrect annotation emitted when `quantile_over_time` is evaluated over a range with both histograms and floats. https://github.com/prometheus/prometheus/pull/16018 #10884
+* [BUGFIX] Querier: fix duplicated double quotes in invalid label name error from `count_values`. https://github.com/prometheus/prometheus/pull/16054 #10884
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
 * [BUGFIX] Alertmanager: Fix decoding of queryFromGeneratorURL in templates. #8914
@@ -483,6 +479,7 @@
 * [BUGFIX] Update module golang.org/x/net to v0.36.0 to address [CVE-2025-22870](https://nvd.nist.gov/vuln/detail/CVE-2025-22870). #10875
 * [BUGFIX] Update module github.com/golang-jwt/jwt/v5 to v5.2.2 to address [CVE-2025-30204](https://nvd.nist.gov/vuln/detail/CVE-2025-30204). #11045
 
+
 ## 2.15.1
 
 ### Grafana Mimir
@@ -492,6 +489,7 @@
 * [BUGFIX] Update module golang.org/x/oauth2 to v0.27.0 to address [CVE-2025-22868](https://nvd.nist.gov/vuln/detail/CVE-2025-22868). #10803
 * [BUGFIX] Update module golang.org/x/crypto to v0.35.0 to address [CVE-2025-22869](https://nvd.nist.gov/vuln/detail/CVE-2025-22869). #10804
 * [BUGFIX] Upgrade Go to 1.23.7 to address [CVE-2024-45336](https://nvd.nist.gov/vuln/detail/CVE-2024-45336), [CVE-2024-45341](https://nvd.nist.gov/vuln/detail/CVE-2024-45341), and [CVE-2025-22866](https://nvd.nist.gov/vuln/detail/CVE-2025-22866). #10862
+
 
 ## 2.15.0
 
@@ -571,7 +569,7 @@
 * [ENHANCEMENT] Ingester: Add `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to build 24h blocks for out-of-order data belonging to the previous days instead of building smaller 2h blocks. This reduces pressure on compactors and ingesters when the out-of-order samples span multiple days in the past. #9844 #10033 #10035
 * [ENHANCEMENT] Distributor: allow a different limit for info series (series ending in `_info`) label count, via `-validation.max-label-names-per-info-series`. #10028
 * [ENHANCEMENT] Ingester: do not reuse labels, samples and histograms slices in the write request if there are more entries than 10x the pre-allocated size. This should help to reduce the in-use memory in case of few requests with a very large number of labels, samples or histograms. #10040
-* [ENHANCEMENT] Query-Frontend: prune `<subquery> and on() (vector(x)==y)` style queries and stop pruning `<subquery> < -Inf`. Triggered by <https://github.com/prometheus/prometheus/pull/15245>. #10026
+* [ENHANCEMENT] Query-Frontend: prune `<subquery> and on() (vector(x)==y)` style queries and stop pruning `<subquery> < -Inf`. Triggered by https://github.com/prometheus/prometheus/pull/15245. #10026
 * [ENHANCEMENT] Query-Frontend: perform request format validation before processing the request. #10093
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508
@@ -1213,7 +1211,7 @@
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
 * [ENHANCEMENT] Storage Provider: `-<prefix>.s3.sts-endpoint` sets a custom endpoint for AWS Security Token Service (AWS STS) in s3 storage provider. #6172
-* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_querier_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099,#7145
+* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_querier_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099,#7145
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
 * [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
@@ -2150,9 +2148,9 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
   * `cortex_ingester_queried_ephemeral_samples`
   * `cortex_ingester_queried_ephemeral_series`
 * [CHANGE] Store-gateway: use mmap-less index-header reader by default and remove mmap-based index header reader. The following flags have changed: #4280
-  * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
-  * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
-  * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
+   * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
 * [CHANGE] Store-gateway: the streaming store-gateway is now enabled by default. The new default setting for `-blocks-storage.bucket-store.batch-series-size` is `5000`. #4330
 * [CHANGE] Compactor: the configuration parameter `-compactor.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
 * [CHANGE] Store-gateway: the configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
@@ -2451,7 +2449,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
     * Reviewing any possible extensions to `genericBlocksStorageConfig`, `rulerClientConfig` and `alertmanagerStorageClientConfig` and moving them to the corresponding new options.
     * Renaming the alertmanager's bucket name configuration from provider-specific to the new `alertmanager_storage_bucket_name` key.
 * [CHANGE] The `overrides-exporter.libsonnet` file is now always imported. The overrides-exporter can be enabled in jsonnet setting the following: #3379
-
   ```jsonnet
   {
     _config+:: {
@@ -2459,9 +2456,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
     }
   }
   ```
-
 * [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379 #3475 #3405
-
   ```jsonnet
   {
     _config+:: {
@@ -2474,7 +2469,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
     }
   }
   ```
-
 * [ENHANCEMENT] Add autoscaling support to the `mimir-read` component when running the read-write-deployment model. #3419
 * [ENHANCEMENT] Added `$._config.usageStatsConfig` to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
@@ -2656,12 +2650,11 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Tools
 
-* [BUGFIX] trafficdump: Fixed panic occurring when `-success-only=true` and the captured request failed. #2863
+- [BUGFIX] trafficdump: Fixed panic occurring when `-success-only=true` and the captured request failed. #2863
 
 ## 2.3.1
 
 ### Grafana Mimir
-
 * [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
 * [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
@@ -2692,8 +2685,8 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [CHANGE] Compactor: `-compactor.partial-block-deletion-delay` must either be set to 0 (to disable partial blocks deletion) or a value higher than `4h`. #2787
 * [CHANGE] Query-frontend: CLI flag `-query-frontend.align-querier-with-step` has been deprecated. Please use `-query-frontend.align-queries-with-step` instead. #2840
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
-  * `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
-  * The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
+  - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
+  - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
 * [FEATURE] Querier: enabled support for queries with negative offsets, which are not cached in the query results cache. #2429
 * [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436 #2461
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
@@ -2770,16 +2763,16 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [CHANGE] query-scheduler is enabled by default. We advise to deploy the query-scheduler to improve the scalability of the query-frontend. #2431
 * [CHANGE] Replaced anti-affinity rules with pod topology spread constraints for distributor, query-frontend, querier and ruler. #2517
-  * The following configuration options have been removed:
-    * `distributor_allow_multiple_replicas_on_same_node`
-    * `query_frontend_allow_multiple_replicas_on_same_node`
-    * `querier_allow_multiple_replicas_on_same_node`
-    * `ruler_allow_multiple_replicas_on_same_node`
-  * The following configuration options have been added:
-    * `distributor_topology_spread_max_skew`
-    * `query_frontend_topology_spread_max_skew`
-    * `querier_topology_spread_max_skew`
-    * `ruler_topology_spread_max_skew`
+  - The following configuration options have been removed:
+    - `distributor_allow_multiple_replicas_on_same_node`
+    - `query_frontend_allow_multiple_replicas_on_same_node`
+    - `querier_allow_multiple_replicas_on_same_node`
+    - `ruler_allow_multiple_replicas_on_same_node`
+  - The following configuration options have been added:
+    - `distributor_topology_spread_max_skew`
+    - `query_frontend_topology_spread_max_skew`
+    - `querier_topology_spread_max_skew`
+    - `ruler_topology_spread_max_skew`
 * [CHANGE] Change `max_global_series_per_metric` to 0 in all plans, and as a default value. #2669
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
 * [FEATURE] Added ruler-querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster. Ruler-querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2545
@@ -2824,12 +2817,12 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1884
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
-  * `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
-  * `-querier.query-store-after` now defaults to `12h` (previously `0`)
-* [CHANGE] Alertmanager: removed support for migrating local files from Cortex 1.8 or earlier. Related to original Cortex PR <https://github.com/cortexproject/cortex/pull/3910>. #2253
+    - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
+    - `-querier.query-store-after` now defaults to `12h` (previously `0`)
+* [CHANGE] Alertmanager: removed support for migrating local files from Cortex 1.8 or earlier. Related to original Cortex PR https://github.com/cortexproject/cortex/pull/3910. #2253
 * [CHANGE] The following settings are now classified as advanced because the defaults should work for most users and tuning them requires in-depth knowledge of how the read path works: #1929
-  * `-querier.query-ingesters-within`
-  * `-querier.query-store-after`
+    - `-querier.query-ingesters-within`
+    - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
 * [CHANGE] Ingester: deprecated `-ingester.ring.join-after`. Mimir now behaves as this setting is always set to 0s. This configuration option will be removed in Mimir 2.4.0. #1965
 * [CHANGE] Blocks uploaded by ingester no longer contain `__org_id__` label. Compactor now ignores this label and will compact blocks with and without this label together. `mimirconvert` tool will remove the label from blocks as "unknown" label. #1972
@@ -2963,9 +2956,9 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
-  * `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
-  * `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
-  * `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
+    - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version. #1655
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
@@ -3014,15 +3007,15 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547
-  * `-alertmanager.alertmanager-client.backoff-max-period`
-  * `-alertmanager.alertmanager-client.backoff-min-period`
-  * `-alertmanager.alertmanager-client.backoff-on-ratelimits`
-  * `-alertmanager.alertmanager-client.backoff-retries`
-  * `-alertmanager.alertmanager-client.grpc-client-rate-limit`
-  * `-alertmanager.alertmanager-client.grpc-client-rate-limit-burst`
-  * `-alertmanager.alertmanager-client.grpc-compression`
-  * `-alertmanager.alertmanager-client.grpc-max-recv-msg-size`
-  * `-alertmanager.alertmanager-client.grpc-max-send-msg-size`
+  - `-alertmanager.alertmanager-client.backoff-max-period`
+  - `-alertmanager.alertmanager-client.backoff-min-period`
+  - `-alertmanager.alertmanager-client.backoff-on-ratelimits`
+  - `-alertmanager.alertmanager-client.backoff-retries`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit-burst`
+  - `-alertmanager.alertmanager-client.grpc-compression`
+  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size`
+  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size`
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549 #1821 #1824
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
@@ -3067,9 +3060,9 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
   * Writes Networking from `681cd62b680b7154811fe73af55dcfd4` to `978c1cb452585c96697a238eaac7fe2d`
   * Writes Resources from `c0464f0d8bd026f776c9006b0591bb0b` to `bc9160e50b52e89e0e49c840fea3d379`
 * [FEATURE] Alerts: added the following alerts on `mimir-continuous-test` tool: #1676
-  * `MimirContinuousTestNotRunningOnWrites`
-  * `MimirContinuousTestNotRunningOnReads`
-  * `MimirContinuousTestFailed`
+  - `MimirContinuousTestNotRunningOnWrites`
+  - `MimirContinuousTestNotRunningOnReads`
+  - `MimirContinuousTestFailed`
 * [ENHANCEMENT] Added `per_cluster_label` support to allow to change the label name used to differentiate between Kubernetes clusters. #1651
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
@@ -3084,7 +3077,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 ### Jsonnet
 
 * [FEATURE] Added support for `mimir-continuous-test`. To deploy `mimir-continuous-test` you can use the following configuration: #1675 #1850
-
   ```jsonnet
   _config+: {
     continuous_test_enabled: true,
@@ -3093,7 +3085,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
     continuous_test_read_endpoint: 'http://type-read-path-hostname/prometheus',
   },
   ```
-
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
 * [ENHANCEMENT] Added `node_selector` configuration option to select Kubernetes nodes where Mimir should run. #1596
 * [ENHANCEMENT] Alertmanager: Added a `PodDisruptionBudget` of `withMaxUnavailable = 1`, to ensure we maintain quorum during rollouts. #1683
@@ -3296,7 +3287,7 @@ _Changes since Cortex 1.10.0._
     | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
     | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                     |
 
-    > **Note:** The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
+    > __Note:__ The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
     in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
     `/<prometheus-http-prefix>/config/v1/**` endpoints that Mimir 2.0.0 introduces.
 
@@ -3880,16 +3871,13 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
     * `-compactor.max-closing-blocks-concurrency=2`
     * `-compactor.symbols-flushers-concurrency=4`
   * The following per-tenant overrides have been set on `super_user` and `mega_user` classes:
-
     ```
     compactor_split_and_merge_shards: 2,
     compactor_tenant_shard_size: 2,
     compactor_split_groups: 2,
     ```
-
 * [CHANGE] The entrypoint file to include has been renamed from `cortex.libsonnet` to `mimir.libsonnet`. #897
 * [CHANGE] The default image config field has been renamed from `cortex` to `mimir`. #896
-
    ```
    {
      _images+:: {
@@ -3897,7 +3885,6 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
      },
    }
    ```
-
 * [CHANGE] Removed `cortex_` prefix from config fields. #898
   * The following config fields have been renamed:
     * `cortex_bucket_index_enabled` renamed to `bucket_index_enabled`
@@ -3934,7 +3921,6 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] gossip.libsonnet has been renamed to memberlist.libsonnet, and is now imported by default. Use of memberlist for ring is enabled by setting `_config.memberlist_ring_enabled` to true. #1526
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
-
    ```
    _config+:: {
      shuffle_sharding:: {
@@ -3946,11 +3932,10 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
      },
    }
    ```
-
 * [FEATURE] Added multi-zone ingesters and store-gateways support. #1352 #1552
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
-* [ENHANCEMENT] Update `etcd-operator` to latest version (see <https://github.com/grafana/jsonnet-libs/pull/480>). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
+* [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
 * [ENHANCEMENT] Add support for Azure storage in Alertmanager configuration. [#381](https://github.com/grafana/cortex-jsonnet/pull/381)
 * [ENHANCEMENT] Add support for running Alertmanager in sharding mode. [#394](https://github.com/grafana/cortex-jsonnet/pull/394)
 * [ENHANCEMENT] Allow to customize PromQL engine settings via `queryEngineConfig`. [#399](https://github.com/grafana/cortex-jsonnet/pull/399)
@@ -3982,9 +3967,9 @@ _Changes since cortextool `0.10.7`._
 * [CHANGE] Change `cortex` backend to `mimir`. #883
 * [CHANGE] Do not publish `mimirtool` binary for 386 windows architecture. #1263
 * [CHANGE] `analyse` command has been renamed to `analyze`. #1318
-* [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). <https://github.com/grafana/cortex-tools/pull/215>
+* [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). https://github.com/grafana/cortex-tools/pull/215
 * [ENHANCEMENT] Correctly support federated rules. #823
-* [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. <https://github.com/grafana/cortex-tools/pull/226>
+* [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. https://github.com/grafana/cortex-tools/pull/226
 
 ### Query-tee
 
