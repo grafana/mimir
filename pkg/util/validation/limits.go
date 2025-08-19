@@ -623,7 +623,7 @@ func (l *Limits) Validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		cfg.MetricNameValidationScheme = validationScheme
+		cfg.NameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -1116,7 +1116,7 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
 	validationScheme := o.NameValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }
