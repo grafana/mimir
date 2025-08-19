@@ -145,7 +145,7 @@ func TestStateReplication(t *testing.T) {
 				}))
 			}
 
-			s := newReplicatedStates(testUserID, tt.replicationFactor, replicator, store, 15*time.Second, log.NewNopLogger(), reg)
+			s := newReplicatedStates(testUserID, tt.replicationFactor, replicator, store, 0, log.NewNopLogger(), reg)
 			require.False(t, s.Ready())
 			{
 				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -345,7 +345,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			replicator.read = tt.read
 			store := newFakeAlertStore()
 			store.states = tt.storeStates
-			s := newReplicatedStates("user-1", tt.replicationFactor, replicator, store, 15*time.Second, log.NewNopLogger(), reg)
+			s := newReplicatedStates("user-1", tt.replicationFactor, replicator, store, 0, log.NewNopLogger(), reg)
 
 			key1State := &fakeState{}
 			key2State := &fakeState{}
@@ -422,7 +422,7 @@ func TestStateReplication_GetFullState(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			s := newReplicatedStates("user-1", 1, nil, nil, 15*time.Second, log.NewNopLogger(), reg)
+			s := newReplicatedStates("user-1", 1, nil, nil, 0, log.NewNopLogger(), reg)
 
 			for key, datum := range tt.data {
 				state := &fakeState{binary: datum}
@@ -450,7 +450,7 @@ func TestMergeGrafanaState(t *testing.T) {
 	store := newFakeAlertStore()
 
 	reg := prometheus.NewPedanticRegistry()
-	s := newReplicatedStates("test", 3, replicator, store, 15*time.Second, log.NewNopLogger(), reg)
+	s := newReplicatedStates("test", 3, replicator, store, 0, log.NewNopLogger(), reg)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
 	t.Cleanup(func() {
