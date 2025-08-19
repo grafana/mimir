@@ -130,6 +130,11 @@ func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStre
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
+	if d.engine == nil {
+		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, "MQE is not enabled on this querier")
+		return
+	}
+
 	req := &querierpb.EvaluateQueryRequest{}
 	if err := proto.Unmarshal(body, req); err != nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))

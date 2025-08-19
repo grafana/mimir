@@ -294,7 +294,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	var err error
-	if n, err = newRulerNotifier(&notifier.Options{
+	if n, err = newRulerNotifier(r.limits.NameValidationScheme(userID), &notifier.Options{
 		QueueCapacity:   r.cfg.NotificationQueueCapacity,
 		DrainOnShutdown: true,
 		Registerer:      reg,

@@ -8,6 +8,7 @@ package tsdb
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/alecthomas/units"
@@ -18,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -58,7 +58,7 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 
 // Validate the config.
 func (cfg *IndexCacheConfig) Validate() error {
-	if !util.StringsContain(supportedIndexCacheBackends, cfg.Backend) {
+	if !slices.Contains(supportedIndexCacheBackends, cfg.Backend) {
 		return errUnsupportedIndexCacheBackend
 	}
 

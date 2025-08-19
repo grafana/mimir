@@ -18,6 +18,7 @@
 * [CHANGE] Store-gateway: Update default value of `-store-gateway.dynamic-replication.multiple` to `5` to increase replication of recent blocks. #12433
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306 #12369
+* [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.enabled-promql-experimental-functions` and its associated YAML configuration is now stable. #12368
 * [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094

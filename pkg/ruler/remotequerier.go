@@ -221,6 +221,12 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	return remote.FromQueryResult(sortSeries, res), nil
 }
 
+// ReadMultiple implements Prometheus remote.ReadClient.
+// As of writing this the method is not used by the ruler and the prometheus remote queryable implementation.
+func (q *RemoteQuerier) ReadMultiple(context.Context, []*prompb.Query, bool) (storage.SeriesSet, error) {
+	return nil, errors.New("ReadMultiple is not supported by ruler.RemoteQuerier; open a bug report if you see this error")
+}
+
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.New(ctx, q.logger, tracer, "ruler.RemoteQuerier.Query")

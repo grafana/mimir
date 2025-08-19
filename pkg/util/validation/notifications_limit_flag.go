@@ -6,14 +6,14 @@
 package validation
 
 import (
+	"slices"
+
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func validateIntegrationLimit(k string, _ float64) error {
-	if !util.StringsContain(allowedIntegrationNames, k) {
+	if !slices.Contains(allowedIntegrationNames, k) {
 		return errors.Errorf("unknown integration name: %s", k)
 	}
 	return nil
