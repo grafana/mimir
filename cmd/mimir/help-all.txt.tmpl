@@ -1186,7 +1186,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduling-mode string
-    	Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
+    	[experimental] Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting.
   -compactor.split-groups int

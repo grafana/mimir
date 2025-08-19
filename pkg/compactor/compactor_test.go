@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2408,10 +2409,13 @@ type mockCompactorSchedulerClient struct {
 	plannedJobsError      error
 	updatePlanJobResponse *schedulerpb.UpdateJobResponse
 	updatePlanJobError    error
+	mu                    sync.Mutex
 }
 
 func (m *mockCompactorSchedulerClient) LeaseJob(ctx context.Context, in *schedulerpb.LeaseJobRequest, opts ...grpc.CallOption) (*schedulerpb.LeaseJobResponse, error) {
+	m.mu.Lock()
 	m.leaseJobCallCount++
+	defer m.mu.Unlock()
 	if m.leaseJobError != nil {
 		return nil, m.leaseJobError
 	}
@@ -2433,7 +2437,9 @@ func (m *mockCompactorSchedulerClient) UpdatePlanJob(ctx context.Context, in *sc
 }
 
 func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
+	m.mu.Lock()
 	m.updateJobCallCount++
+	defer m.mu.Unlock()
 	if m.updateJobError != nil {
 		return nil, m.updateJobError
 	}
@@ -2584,10 +2590,16 @@ func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
 			inmem := objstore.NewInMemBucket()
 			c, _, _, _, _ := prepare(t, cfg, inmem)
 
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 			c.schedulerClient = mockScheduler
+			reg := prometheus.NewPedanticRegistry()
+			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
 
+			c.startJobStatusUpdates(context.Background())
+			go c.runAsWorker(context.Background())
+			
 			require.Eventually(t, func() bool {
+				mockScheduler.mu.Lock()
+				defer mockScheduler.mu.Unlock()			
 				return (mockScheduler.leaseJobCallCount == tc.expectedLeaseCalls) &&
 					(mockScheduler.updateJobCallCount == tc.expectedUpdateCalls)
 			}, 6*time.Second, 100*time.Millisecond)
@@ -2663,7 +2675,7 @@ func TestCompactor_SchedulerMode_ActiveJobLifecycle(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c.startKeepAlive(ctx)
+	c.startJobStatusUpdates(ctx)
 
 	// No active job on startup
 	assert.Nil(t, c.activeJob)
@@ -2677,6 +2689,8 @@ func TestCompactor_SchedulerMode_ActiveJobLifecycle(t *testing.T) {
 
 	// Check periodic status updates are sent while job is set
 	require.Eventually(t, func() bool {
+		mockScheduler.mu.Lock()
+		defer mockScheduler.mu.Unlock()
 		return mockScheduler.updateJobCallCount > 2
 	}, 1*time.Second, 50*time.Millisecond, "should send updates while activeJob is set")
 

@@ -153,7 +153,7 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Scheduler mode options
-	SchedulingMode          string            `yaml:"scheduling_mode" category:"advanced"`
+	SchedulingMode          string            `yaml:"scheduling_mode" category:"experimental"`
 	SchedulerAddress        string            `yaml:"scheduler_address" category:"advanced"`
 	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"advanced"`
 	SchedulerMaxUpdateAge   time.Duration     `yaml:"scheduler_max_update_age" category:"advanced"`
@@ -577,7 +577,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Initialize scheduler client.
 	if c.compactorCfg.SchedulingMode == planningModeScheduler {
 		if c.schedulerClient, c.schedulerConn, err = c.makeSchedulerClient(); err != nil {
-			return fmt.Errorf("failed to create scheduler client: %w", err)
+			return errors.Wrap(err, "failed to create scheduler client")
 		}
 	}
 
@@ -699,10 +699,7 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 	if c.compactorCfg.SchedulingMode == planningModeStandalone {
 		return c.runStandalone(ctx)
 	}
-
-	// Start the keep-alive goroutine for scheduler job lease management
-	c.startKeepAlive(ctx)
-
+	c.startJobStatusUpdates(ctx)
 	return c.runAsWorker(ctx)
 }
 
@@ -806,8 +803,9 @@ func (c *MultitenantCompactor) executeCompactionJob(ctx context.Context, spec *s
 	return schedulerpb.COMPLETE, nil
 }
 
-// startKeepAlive starts the background goroutine that sends periodic keep-alive updates to the scheduler
-func (c *MultitenantCompactor) startKeepAlive(ctx context.Context) {
+// startJobUpdates sends periodic keep-alive updates to the scheduler and removes jobs that have exceeded
+// max job
+func (c *MultitenantCompactor) startJobStatusUpdates(ctx context.Context) {
 	if c.compactorCfg.SchedulingMode != planningModeScheduler {
 		return
 	}
@@ -819,7 +817,7 @@ func (c *MultitenantCompactor) startKeepAlive(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				c.sendKeepAliveUpdates()
+				c.sendInProgressUpdates()
 				c.cleanupExpiredJobs()
 			case <-ctx.Done():
 				return
@@ -828,8 +826,8 @@ func (c *MultitenantCompactor) startKeepAlive(ctx context.Context) {
 	}()
 }
 
-// sendKeepAliveUpdates sends IN_PROGRESS update for the active job if any
-func (c *MultitenantCompactor) sendKeepAliveUpdates() {
+// sendInProgressUpdates sends IN_PROGRESS update for the active job if any
+func (c *MultitenantCompactor) sendInProgressUpdates() {
 	c.activeJobMu.RLock()
 	job := c.activeJob
 	c.activeJobMu.RUnlock()
@@ -853,9 +851,7 @@ func (c *MultitenantCompactor) sendKeepAliveUpdates() {
 	}
 }
 
-// cleanupExpiredJobs removes the active job if it hasn't been updated recently.
-// This handles cases where the job execution completed but the defer unsetActiveJob()
-// didn't run (e.g. due to process crash), preventing stale job tracking.
+// cleanupExpiredJobs removes the active job if it has been open for too long
 func (c *MultitenantCompactor) cleanupExpiredJobs() {
 	c.activeJobMu.Lock()
 	defer c.activeJobMu.Unlock()
@@ -864,11 +860,11 @@ func (c *MultitenantCompactor) cleanupExpiredJobs() {
 		return
 	}
 
+	// TODO: make these extendable, e.g. set expiration time rather than constant +1h
 	now := time.Now()
-	age := now.Sub(c.activeJob.lastUpdate)
-
+	age := now.Sub(c.activeJob.startTime)
 	if age > c.compactorCfg.SchedulerMaxUpdateAge {
-		level.Info(c.logger).Log("msg", "removing expired job from tracking", "job_id", c.activeJob.key.Id, "age", age)
+		level.Info(c.logger).Log("msg", "removing expired job", "job_id", c.activeJob.key.Id, "age", age)
 		c.activeJob = nil
 	}
 }
@@ -905,12 +901,12 @@ func (c *MultitenantCompactor) unsetActiveJob(currentId string) error {
 	}
 
 	// clear current job only if it matches the expected job
-	if c.activeJob.key.Id == currentId {
-		c.activeJob = nil
-		return nil
+	if c.activeJob.key.Id != currentId {
+		return errCannotWriteActiveJob
 	}
 
-	return errCannotWriteActiveJob
+	c.activeJob = nil
+	return nil
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {

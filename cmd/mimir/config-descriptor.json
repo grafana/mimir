@@ -11239,7 +11239,7 @@
           "fieldDefaultValue": "standalone",
           "fieldFlag": "compactor.scheduling-mode",
           "fieldType": "string",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

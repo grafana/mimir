@@ -5185,8 +5185,9 @@ sharding_ring:
 # CLI flag: -compactor.upload-sparse-index-headers
 [upload_sparse_index_headers: <boolean> | default = false]
 
-# (advanced) Compactor operation mode. Supported values are: standalone (plan
-# and execute compactions), scheduler (request jobs from a remote scheduler).
+# (experimental) Compactor operation mode. Supported values are: standalone
+# (plan and execute compactions), scheduler (request jobs from a remote
+# scheduler).
 # CLI flag: -compactor.scheduling-mode
 [scheduling_mode: <string> | default = "standalone"]
 
