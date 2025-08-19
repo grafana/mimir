@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -630,7 +630,7 @@ func (l *Limits) Validate() error {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 

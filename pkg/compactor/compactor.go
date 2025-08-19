@@ -201,7 +201,7 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	if cfg.MaxBlockUploadValidationConcurrency < 0 {
 		return errInvalidMaxBlockUploadValidationConcurrency
 	}
-	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
+	if !slices.Contains(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
 	}
 
