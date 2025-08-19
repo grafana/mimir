@@ -2833,10 +2833,9 @@ func TestHistogramAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms (1:25)`},
 		},
 		"forced monotonicity info": {
-			data:                               mixedClassicHistograms,
-			expr:                               `histogram_quantile(0.5, series{host="d"})`,
-			expectedInfoAnnotations:            []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
-			skipComparisonWithPrometheusReason: "Prometheus does not output any series name: https://github.com/prometheus/prometheus/issues/15411",
+			data:                    mixedClassicHistograms,
+			expr:                    `histogram_quantile(0.5, series{host="d"})`,
+			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
@@ -3018,10 +3017,7 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 		expressions = append(expressions, fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex))
 	}
 
-	// We skip comparing the annotation results as Prometheus does not output any series name
-	// for forced monotonicity: https://github.com/prometheus/prometheus/issues/15411
-
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, true)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
