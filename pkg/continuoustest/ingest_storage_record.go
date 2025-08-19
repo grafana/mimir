@@ -372,15 +372,42 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	req.ClearTimeseriesUnmarshalData() // We do not want to match on gRPC buffers used only in an optimization.
 	if len(req.Timeseries) != 0 || len(v2Req.Timeseries) != 0 {
 		t.metrics.timeseriesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries)))
-		if len(req.Timeseries) != len(v2Req.Timeseries) {
-			return report.Error(fmt.Errorf("Different count of timeseries, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
+		// No metadata -> Same number of timeseries must be in v2 as in the original.
+		// Yes metadata -> There may be extra metadata carrier timeseries in the result, but they must be empty. We'll assert that later.
+		if len(req.Metadata) == 0 {
+			if len(req.Timeseries) != len(v2Req.Timeseries) {
+				return report.Error(fmt.Errorf("Mismatched count of timeseries on a request with no metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
+			}
+		} else {
+			if len(req.Timeseries) > len(v2Req.Timeseries) {
+				return report.Error(fmt.Errorf("Too few timeseries returned on a request carrying metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
+			}
 		}
+		extraTimeseriesCount := len(v2Req.Timeseries) - len(req.Timeseries)
+
+		// For each original timeseries, the corresponding out timeseries should match.
 		for i := range req.Timeseries {
 			t.metrics.samplesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Samples)))
 			t.metrics.exemplarsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Exemplars)))
 			t.metrics.histogramsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Histograms)))
 			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
 				return report.Error(fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries))
+			}
+		}
+
+		// All remaining timeseries in V2 should be empty as they were fabricated to carry metadata and appended to the end. If they contain any data, the result is wrong.
+		if extraTimeseriesCount > 0 {
+			extraTimeseries := v2Req.Timeseries[len(v2Req.Timeseries)-extraTimeseriesCount:]
+			for _, extra := range extraTimeseries {
+				if len(extra.Samples) > 0 {
+					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained samples: %v", extra))
+				}
+				if len(extra.Exemplars) > 0 {
+					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained exemplars: %v", extra))
+				}
+				if len(extra.Histograms) > 0 {
+					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained histograms: %v", extra))
+				}
 			}
 		}
 	}
