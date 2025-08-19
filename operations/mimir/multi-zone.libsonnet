@@ -19,7 +19,7 @@
     multi_zone_ingester_zpdb_enabled: false,
     multi_zone_ingester_zpdb_max_unavailable: 1,
     // the name regex and group are only used if ingest_storage_enabled=true
-    multi_zone_ingester_zpdb_partition_name_regex: "[a-z\\-]+-zone-[a-z]-([0-9]+)",
+    multi_zone_ingester_zpdb_partition_name_regex: '[a-z\\-]+-zone-[a-z]-([0-9]+)',
     multi_zone_ingester_zpdb_partition_name_regex_group: 1,
 
     multi_zone_store_gateway_enabled: false,
@@ -164,9 +164,9 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
-    if $._config.multi_zone_ingester_zpdb_enabled && $._config.ingest_storage_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+    if $._config.multi_zone_ingester_zpdb_enabled && $._config.ingest_storage_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
       $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_name_regex, $._config.multi_zone_ingester_zpdb_partition_name_regex_group)
-    else if $._config.multi_zone_ingester_zpdb_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+    else if $._config.multi_zone_ingester_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
       $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('ingester-rollout') +
@@ -316,7 +316,7 @@
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
-  if $._config.multi_zone_store_gateway_zpdb_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+    if $._config.multi_zone_store_gateway_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
       $.newZPDB('store-gateway-rollout', 'store-gateway', $._config.multi_zone_store_gateway_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('store-gateway-rollout') +

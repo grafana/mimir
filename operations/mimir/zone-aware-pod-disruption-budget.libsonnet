@@ -5,7 +5,7 @@
   // maxUnavailable - the max unavailable pod count. ie 1
   // podNamePartitionRegex - use to enable partition awareness. A regex which can extract a partition name from a pod name. ie [a-z\\-]+-zone-[a-z]-([0-9]+)
   // podNameRegexGroup - use to define the regex grouping which holds the partition name. default is 1
-  newZPDB(name, rolloutGroup, maxUnavailable, podNamePartitionRegex="", podNameRegexGroup=1):: {
+  newZPDB(name, rolloutGroup, maxUnavailable, podNamePartitionRegex='', podNameRegexGroup=1):: {
     apiVersion: 'rollout-operator.grafana.com/v1',
     kind: 'ZoneAwarePodDisruptionBudget',
     metadata: {
@@ -15,17 +15,18 @@
         name: name,
       },
     },
-    spec: ({
+    spec: (
+      {
         maxUnavailable: maxUnavailable,
         selector: {
-            matchLabels: {
-              'rollout-group': rolloutGroup,
-            },
+          matchLabels: {
+            'rollout-group': rolloutGroup,
+          },
         },
-     } + if podNamePartitionRegex == "" then {} else {
+      } + if podNamePartitionRegex == '' then {} else {
         podNamePartitionRegex: podNamePartitionRegex,
         podNameRegexGroup: podNameRegexGroup,
-     }
-     ),
+      }
+    ),
   },
 }
