@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
+	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -21,12 +22,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -40,6 +39,8 @@ type TSDBBuilder struct {
 	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
 	metrics                          tsdbBuilderMetrics
 	applyMaxGlobalSeriesPerUserBelow int // inclusive
+
+	partitionID int32
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -62,7 +63,7 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
 	return &TSDBBuilder{
 		dataDir:                          dataDir,
 		logger:                           logger,
@@ -70,54 +71,50 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 		blocksStorageCfg:                 blocksStorageCfg,
 		metrics:                          metrics,
 		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
+		partitionID:                      partitionID,
 		tsdbs:                            make(map[tsdbTenant]*userTSDB),
 	}
 }
 
-// Process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
-func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record) (err error) {
-	userID := string(rec.Key)
-
-	req := mimirpb.PreallocWriteRequest{
-		SkipUnmarshalingExemplars: true,
-	}
+// PushToStorageAndReleaseRequest implements ingest.Pusher.
+func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
-	version := ingest.ParseRecordVersion(rec)
-	if version > ingest.LatestRecordVersion {
-		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion)
-	}
-
-	err = ingest.DeserializeRecordContent(rec.Value, &req, version)
+	tenantID, err := dskittenant.TenantID(ctx)
 	if err != nil {
-		return fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
+		return fmt.Errorf("extract tenant id: %w", err)
 	}
 
+	return b.Process(ctx, b.partitionID, tenantID, req)
+}
+
+// Process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
+func (b *TSDBBuilder) Process(ctx context.Context, partitionID int32, tenantID string, req *mimirpb.WriteRequest) (err error) {
 	if len(req.Timeseries) == 0 {
 		return nil
 	}
 
 	tenant := tsdbTenant{
-		partitionID: rec.Partition,
-		tenantID:    userID,
+		partitionID: partitionID,
+		tenantID:    tenantID,
 	}
 	db, err := b.getOrCreateTSDB(tenant)
 	if err != nil {
-		return fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
+		return fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
 	}
 
 	app := db.Appender(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
-				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", userID, "err", e)
+				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", tenantID, "err", e)
 			}
 			// Always wrap the returned error with tenant.
-			err = fmt.Errorf("failed to process record for tenant %s: %w", userID, err)
+			err = fmt.Errorf("failed to process record for tenant %s: %w", tenantID, err)
 		}
 	}()
 
-	nativeHistogramsIngestionEnabled := b.limits.NativeHistogramsIngestionEnabled(userID)
+	nativeHistogramsIngestionEnabled := b.limits.NativeHistogramsIngestionEnabled(tenantID)
 
 	var (
 		labelsBuilder   labels.ScratchBuilder
@@ -146,7 +143,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record) (err error) 
 					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				}
 				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", userID, "err", err)
+					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
 					discardedSamples++
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -200,7 +197,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record) (err error) 
 					ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 				}
 				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", userID, "err", err)
+					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
 					discardedSamples++
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
