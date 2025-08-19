@@ -8,6 +8,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -77,6 +78,11 @@ func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
 }
 
 type RemoteExecutionMaterializer struct {
+	executor RemoteExecutor
+}
+
+func NewRemoteExecutionMaterializer(executor RemoteExecutor) *RemoteExecutionMaterializer {
+	return &RemoteExecutionMaterializer{executor: executor}
 }
 
 var _ planning.NodeMaterializer = &RemoteExecutionMaterializer{}
@@ -87,14 +93,21 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 		return nil, fmt.Errorf("expected node of type RemoteExecution, got %T", n)
 	}
 
-	inner, err := materializer.ConvertNodeToOperator(r.Inner, timeRange)
+	resultType, err := r.Inner.ResultType()
 	if err != nil {
 		return nil, err
 	}
 
-	switch inner := inner.(type) {
+	switch resultType {
+	case parser.ValueTypeScalar:
+		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
+			Node:           r.Inner,
+			TimeRange:      timeRange,
+			RemoteExecutor: m.executor,
+		}), nil
+
 	// TODO
 	default:
-		return nil, fmt.Errorf("unsupported child type for RemoteExecution: got %T", inner)
+		return nil, fmt.Errorf("unsupported child result type for RemoteExecution: got %v", resultType)
 	}
 }
