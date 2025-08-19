@@ -34,7 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func createWriteRequest(t *testing.T, suffix string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) mimirpb.WriteRequest {
+func createWriteRequest(suffix string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) mimirpb.WriteRequest {
 	var req mimirpb.WriteRequest
 
 	var seriesValue string
@@ -242,7 +242,7 @@ func TestTSDBBuilder(t *testing.T) {
 				if !s.shouldDiscard {
 					expSamples = append(expSamples, samples...)
 				}
-				req := createWriteRequest(t, userID, samples, nil)
+				req := createWriteRequest(userID, samples, nil)
 				err := builder.PushToStorageAndReleaseRequest(ctx, &req)
 				require.NoError(t, err)
 			}
@@ -256,7 +256,7 @@ func TestTSDBBuilder(t *testing.T) {
 						expHistograms = append(expHistograms, histograms[i])
 					}
 				}
-				req := createWriteRequest(t, userID, nil, histograms)
+				req := createWriteRequest(userID, nil, histograms)
 				err := builder.PushToStorageAndReleaseRequest(ctx, &req)
 				require.NoError(t, err)
 			}
@@ -541,7 +541,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 		} else {
 			histograms = histogramSample(ts)
 		}
-		return createWriteRequest(t, strconv.Itoa(seriesID), samples, histograms)
+		return createWriteRequest(strconv.Itoa(seriesID), samples, histograms)
 	}
 
 	for seriesID := 1; seriesID <= 100; seriesID++ {
@@ -599,7 +599,7 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 	for seriesID := 1; seriesID <= 100; seriesID++ {
 		for userID := range limits {
 			ctx := user.InjectOrgID(t.Context(), userID)
-			req := createWriteRequest(t, strconv.Itoa(seriesID), nil, histogramSample(ts))
+			req := createWriteRequest(strconv.Itoa(seriesID), nil, histogramSample(ts))
 			err := builder.PushToStorageAndReleaseRequest(ctx, &req)
 			require.NoError(t, err)
 		}

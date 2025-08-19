@@ -168,7 +168,7 @@ func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, 
 		samples = append(samples, floatSample(st.UnixMilli(), 1)...)
 	}
 
-	req := createWriteRequest(t, tenantID, samples, nil)
+	req := createWriteRequest(tenantID, samples, nil)
 	val, err := req.Marshal()
 	require.NoError(t, err)
 
