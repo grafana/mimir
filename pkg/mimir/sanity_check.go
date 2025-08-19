@@ -53,19 +53,19 @@ func checkDirectoriesReadWriteAccess(
 ) error {
 	errs := multierror.New()
 
-	if cfg.isAnyModuleEnabled(All, Ingester, Write) {
+	if cfg.isAnyModuleExplicitlyTargeted(All, Ingester, Write) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir, dirExistFn, isDirReadWritableFn), "ingester"))
 	}
-	if cfg.isAnyModuleEnabled(All, StoreGateway, Backend) {
+	if cfg.isAnyModuleExplicitlyTargeted(All, StoreGateway, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.BlocksStorage.BucketStore.SyncDir, dirExistFn, isDirReadWritableFn), "store-gateway"))
 	}
-	if cfg.isAnyModuleEnabled(All, Compactor, Backend) {
+	if cfg.isAnyModuleExplicitlyTargeted(All, Compactor, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir, dirExistFn, isDirReadWritableFn), "compactor"))
 	}
-	if cfg.isAnyModuleEnabled(All, Ruler, Backend) {
+	if cfg.isAnyModuleExplicitlyTargeted(All, Ruler, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath, dirExistFn, isDirReadWritableFn), "ruler"))
 	}
-	if cfg.isAnyModuleEnabled(AlertManager, Backend) {
+	if cfg.isAnyModuleExplicitlyTargeted(AlertManager, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Alertmanager.DataDir, dirExistFn, isDirReadWritableFn), "alertmanager"))
 	}
 
@@ -127,17 +127,17 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	errs := multierror.New()
 
 	// Check blocks storage config only if running at least one component using it.
-	if cfg.isAnyModuleEnabled(All, Ingester, Querier, Ruler, StoreGateway, Compactor, Write, Read, Backend) {
+	if cfg.isAnyModuleExplicitlyTargeted(All, Ingester, Querier, Ruler, StoreGateway, Compactor, Write, Read, Backend) {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.BlocksStorage.Bucket, logger), "blocks storage"))
 	}
 
 	// Check alertmanager storage config.
-	if cfg.isAnyModuleEnabled(AlertManager, Backend) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if cfg.isAnyModuleExplicitlyTargeted(AlertManager, Backend) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.AlertmanagerStorage.Config, logger), "alertmanager storage"))
 	}
 
 	// Check ruler storage config.
-	if cfg.isAnyModuleEnabled(All, Ruler, Backend) && cfg.RulerStorage.Backend != rulestore.BackendLocal {
+	if cfg.isAnyModuleExplicitlyTargeted(All, Ruler, Backend) && cfg.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.RulerStorage.Config, logger), "ruler storage"))
 	}
 
