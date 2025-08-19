@@ -2,6 +2,7 @@ package alertmanager
 
 import (
 	"flag"
+	"fmt"
 	"net/url"
 
 	"github.com/go-kit/log"
@@ -25,16 +26,28 @@ type NotificationHistoryConfig struct {
 
 func (cfg *NotificationHistoryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+".enabled", false, "Enable notification history.")
-	f.StringVar(&cfg.LokiRemoteURL, prefix+".loki-remote-url", "", "Loki remote write URL for notification history.")
+	f.StringVar(&cfg.LokiRemoteURL, prefix+".loki-remote-url", "", "Loki remote URL for notification history.")
 	f.StringVar(&cfg.LokiTenantID, prefix+".loki-tenant-id", "", "Loki tenant ID for notification history.")
 	f.StringVar(&cfg.LokiBasicAuthUsername, prefix+".loki-basic-auth-username", "", "Loki basic auth username for notification history.")
 	f.StringVar(&cfg.LokiBasicAuthPassword, prefix+".loki-basic-auth-password", "", "Loki basic auth password for notification history.")
 }
 
 func (cfg *NotificationHistoryConfig) Validate() error {
-	// TODO
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.LokiRemoteURL == "" {
+		return fmt.Errorf("loki remote URL must be provided")
+	}
+
+	_, err := url.Parse(cfg.LokiRemoteURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse loki remote URL: %w", err)
+	}
+
 	return nil
-} // TODO
+}
 
 func createNotificationHistorian(cfg NotificationHistoryConfig, reg *prometheus.Registry, logger log.Logger) nfstatus.NotificationHistorian {
 	if !cfg.Enabled {
