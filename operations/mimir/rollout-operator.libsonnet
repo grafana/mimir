@@ -40,11 +40,13 @@
   },
 
   local ingester_zpdb_enabled =
+    $._config.rollout_operator_enabled &&
     $._config.multi_zone_ingester_enabled &&
     $._config.multi_zone_ingester_zpdb_enabled &&
     $._config.enable_rollout_operator_webhook,
 
   local store_gateway_zpdb_enabled =
+    $._config.rollout_operator_enabled &&
     $._config.multi_zone_store_gateway_enabled &&
     $._config.multi_zone_store_gateway_zpdb_enabled &&
     $._config.enable_rollout_operator_webhook,

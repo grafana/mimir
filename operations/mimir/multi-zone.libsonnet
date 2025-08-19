@@ -15,8 +15,12 @@
     multi_zone_ingester_replication_read_path_enabled: true,
     multi_zone_ingester_replicas: 0,
     multi_zone_ingester_max_unavailable: 50,
-    // use the ZoneAwarePodDisruptionBudget - requires the rollout operator webhook to also be enabled
+    // use the ZoneAwarePodDisruptionBudget
     multi_zone_ingester_zpdb_enabled: false,
+    multi_zone_ingester_zpdb_max_unavailable: 1,
+    // the name regex and group are only used if ingest_storage_enabled=true
+    multi_zone_ingester_zpdb_partition_name_regex: "[a-z\\-]+-zone-[a-z]-([0-9]+)",
+    multi_zone_ingester_zpdb_partition_name_regex_group: 1,
 
     multi_zone_store_gateway_enabled: false,
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
@@ -25,8 +29,9 @@
     // When store-gateway lazy loading is disabled, store-gateway may take a long time to startup.
     // To speed up rollouts, we increase the max unavailable to rollout all store-gateways in a zone in a single batch.
     multi_zone_store_gateway_max_unavailable: if $._config.store_gateway_lazy_loading_enabled then 50 else 1000,
-    // use the ZoneAwarePodDisruptionBudget - requires the rollout operator webhook to also be enabled
+    // use the ZoneAwarePodDisruptionBudget
     multi_zone_store_gateway_zpdb_enabled: false,
+    multi_zone_store_gateway_zpdb_max_unavailable: 1,
 
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
@@ -159,8 +164,10 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
-    if $._config.multi_zone_ingester_zpdb_enabled then
-      $.newZPDB('ingester-rollout', 'ingester', 1, $._config.ingest_storage_enabled)
+    if $._config.multi_zone_ingester_zpdb_enabled && $._config.ingest_storage_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+      $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_name_regex, $._config.multi_zone_ingester_zpdb_partition_name_regex_group)
+    else if $._config.multi_zone_ingester_zpdb_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+      $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('ingester-rollout') +
       podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' }) +
@@ -309,8 +316,8 @@
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
-    if $._config.multi_zone_store_gateway_zpdb_enabled then
-      $.newZPDB('store-gateway-rollout', 'store-gateway', 1)
+  if $._config.multi_zone_store_gateway_zpdb_enabled && $._config.rollout_operator_enabled &&  $._config.enable_rollout_operator_webhook then
+      $.newZPDB('store-gateway-rollout', 'store-gateway', $._config.multi_zone_store_gateway_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('store-gateway-rollout') +
       podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' }) +
