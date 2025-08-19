@@ -157,7 +157,7 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 			invocations := atomic.NewInt64(0)
 			returnErrors := atomic.NewBool(true)
 			trackingConsumer := newTestConsumer(2)
-			consumer := consumerFunc(func(ctx context.Context, records []record) error {
+			consumer := consumerFunc(func(ctx context.Context, records []Record) error {
 				invocations.Inc()
 				if !returnErrors.Load() {
 					return trackingConsumer.Consume(ctx, records)
@@ -212,15 +212,15 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 			// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
 			consumerErrs := atomic.NewError(errors.New("dummy error"))
 			type consumerCall struct {
-				f    func() []record
+				f    func() []Record
 				resp chan error
 			}
 			consumeCalls := make(chan consumerCall)
-			consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+			consumer := consumerFunc(func(ctx context.Context, records []Record) (err error) {
 				defer consumerErrs.Store(err)
 
 				call := consumerCall{
-					f:    func() []record { return records },
+					f:    func() []Record { return records },
 					resp: make(chan error),
 				}
 				consumeCalls <- call
@@ -271,7 +271,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		ctx = context.Background()
 	)
 
-	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer RecordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -300,7 +300,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				// We define a custom consume function which introduces a delay once the 2nd record
 				// has been consumed but before the function returns. From the PartitionReader perspective,
 				// the 2nd record consumption will be delayed.
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					for _, record := range records {
 						// Introduce a delay before returning from the consume function once
 						// the 2nd record has been consumed.
@@ -555,7 +555,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer       = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer       = consumerFunc(func(context.Context, []Record) error { return nil })
 					reg            = prometheus.NewPedanticRegistry()
 				)
 
@@ -590,7 +590,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer             = consumerFunc(func(context.Context, []Record) error { return nil })
 					reg                  = prometheus.NewPedanticRegistry()
 				)
 
@@ -643,7 +643,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsCount = atomic.NewInt64(0)
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsCount.Add(int64(len(records)))
 					return nil
 				})
@@ -735,7 +735,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsCount     = atomic.NewInt64(0)
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsCount.Add(int64(len(records)))
 					return nil
 				})
@@ -835,7 +835,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
@@ -934,7 +934,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
@@ -1049,7 +1049,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
@@ -1180,7 +1180,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
@@ -1296,7 +1296,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records []Record) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
@@ -1418,7 +1418,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					close(testDone)
 				})
 
-				consumer := consumerFunc(func(_ context.Context, _ []record) error {
+				consumer := consumerFunc(func(_ context.Context, _ []Record) error {
 					return nil
 				})
 
@@ -1506,7 +1506,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer                 = consumerFunc(func(context.Context, []Record) error { return nil })
 					listOffsetsRequestsCount = atomic.NewInt64(0)
 					contextCancelled         = atomic.NewBool(false)
 				)
@@ -1580,7 +1580,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer             = consumerFunc(func(context.Context, []Record) error { return nil })
 					fetchRequestsCount   = atomic.NewInt64(0)
 				)
 
@@ -1646,7 +1646,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 						ctx, cancel := context.WithCancel(context.Background())
 						t.Cleanup(cancel)
 
-						consumer := consumerFunc(func(context.Context, []record) error {
+						consumer := consumerFunc(func(context.Context, []Record) error {
 							return nil
 						})
 
@@ -1733,7 +1733,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecords      []string
 		)
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []Record) error {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 
@@ -1893,7 +1893,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				blocked           = atomic.NewBool(false)
 			)
 
-			consumer := consumerFunc(func(_ context.Context, records []record) error {
+			consumer := consumerFunc(func(_ context.Context, records []Record) error {
 				if blocked.Load() {
 					blockedTicker := time.NewTicker(100 * time.Millisecond)
 					defer blockedTicker.Stop()
@@ -2154,7 +2154,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		consumedRecordIDs    = sync.Map{}
 	)
 
-	consumer := consumerFunc(func(_ context.Context, records []record) error {
+	consumer := consumerFunc(func(_ context.Context, records []Record) error {
 		for _, rec := range records {
 			totalConsumedRecords.Inc()
 
@@ -2294,7 +2294,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 				consumedRecordIDs    = sync.Map{}
 			)
 
-			consumer := consumerFunc(func(_ context.Context, records []record) error {
+			consumer := consumerFunc(func(_ context.Context, records []Record) error {
 				for _, rec := range records {
 					totalConsumedRecords.Inc()
 
@@ -2363,7 +2363,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []Record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2394,7 +2394,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []Record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2435,7 +2435,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []Record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2778,19 +2778,19 @@ func withMaxBufferedBytes(i int) readerTestCfgOpt {
 
 var testingLogger = mimirtest.NewTestingLogger(nil)
 
-func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
 		logger:      testingLogger.WithT(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer: consumerFactoryFunc(func() recordConsumer {
+		consumer: consumerFactoryFunc(func() RecordConsumer {
 			return consumer
 		}),
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -2817,7 +2817,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	return reader
 }
 
-func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -2932,16 +2932,16 @@ func TestPartitionReader_Commit(t *testing.T) {
 }
 
 type testConsumer struct {
-	records chan record
+	records chan Record
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		records: make(chan record, capacity),
+		records: make(chan Record, capacity),
 	}
 }
 
-func (t testConsumer) Consume(ctx context.Context, records []record) error {
+func (t testConsumer) Consume(ctx context.Context, records []Record) error {
 	for _, r := range records {
 		select {
 		case <-ctx.Done():
@@ -2966,8 +2966,8 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 	return content, err
 }
 
-func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]record, error) {
-	var records []record
+func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]Record, error) {
+	var records []Record
 	timeout := time.After(waitTimeout)
 	for {
 		select {
@@ -2989,9 +2989,9 @@ func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainP
 	}
 }
 
-type consumerFunc func(ctx context.Context, records []record) error
+type consumerFunc func(ctx context.Context, records []Record) error
 
-func (c consumerFunc) Consume(ctx context.Context, records []record) error {
+func (c consumerFunc) Consume(ctx context.Context, records []Record) error {
 	return c(ctx, records)
 }
 

@@ -163,6 +163,8 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 	return records, nil
 }
 
+type DeserializerFunc func(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error
+
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
 	switch version {
 	case 0:
