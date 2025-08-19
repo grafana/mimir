@@ -79,7 +79,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 		ctx := context.Background()
 
 		for _, u := range []string{user1, user2} {
-			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, "", model.UTF8Validation) // Client loads rules in its List method.
+			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, "") // Client loads rules in its List method.
 			require.NoError(t, err)
 
 			require.Equal(t, 2, len(rgs))
@@ -93,7 +93,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 		ctx := context.Background()
 
 		for _, u := range []string{user1, user2} {
-			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, namespace2, model.UTF8Validation) // Client loads rules in its List method.
+			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, namespace2) // Client loads rules in its List method.
 			require.NoError(t, err)
 
 			require.Equal(t, 1, len(rgs))
@@ -102,13 +102,13 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	})
 
 	t.Run("single rule group in namespace", func(t *testing.T) {
-		rg, err := client.GetRuleGroup(context.Background(), user1, namespace1, "rule", model.UTF8Validation)
+		rg, err := client.GetRuleGroup(context.Background(), user1, namespace1, "rule")
 		require.NoError(t, err)
 		require.Equal(t, rulespb.ToProto(user1, namespace1, ruleGroups.Groups[0]), rg)
 	})
 
 	t.Run("single rule group that not exists", func(t *testing.T) {
-		_, err := client.GetRuleGroup(context.Background(), user1, namespace1, "unknown-rule", model.UTF8Validation)
+		_, err := client.GetRuleGroup(context.Background(), user1, namespace1, "unknown-rule")
 		require.ErrorIs(t, err, rulestore.ErrGroupNotFound)
 	})
 }

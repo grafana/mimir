@@ -18,7 +18,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -120,7 +119,7 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Op
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore.
-func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, _ model.ValidationScheme, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.ListRuleGroupsForUserAndNamespace")
 	defer logger.Finish()
 
@@ -225,7 +224,7 @@ outer:
 }
 
 // GetRuleGroup implements rules.RuleStore.
-func (b *BucketRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string, _ model.ValidationScheme) (*rulespb.RuleGroupDesc, error) {
+func (b *BucketRuleStore) GetRuleGroup(ctx context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
 	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.GetRuleGroup")
 	defer logger.Finish()
 
@@ -260,13 +259,13 @@ func (b *BucketRuleStore) DeleteRuleGroup(ctx context.Context, userID string, na
 }
 
 // DeleteNamespace implements rules.RuleStore.
-func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string, nameValidationScheme model.ValidationScheme) error {
+func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID string, namespace string) error {
 	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.DeleteNamespace")
 	defer logger.Finish()
 
 	// Disable caching when listing all rule groups for a user since listing entries are not
 	// invalidated in the cache when rule groups are modified and we need to delete everything.
-	ruleGroupList, err := b.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, nameValidationScheme, rulestore.WithCacheDisabled())
+	ruleGroupList, err := b.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, rulestore.WithCacheDisabled())
 	if err != nil {
 		return err
 	}

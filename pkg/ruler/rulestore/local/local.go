@@ -70,12 +70,12 @@ func (l *Client) ListAllUsers(_ context.Context, _ ...rulestore.Option) ([]strin
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore. This method also loads the rules.
-func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, nameValidationScheme model.ValidationScheme, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	if namespace == "" {
-		return l.loadAllRulesGroupsForUser(ctx, userID, nameValidationScheme)
+		return l.loadAllRulesGroupsForUser(ctx, userID)
 	}
 
-	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace, nameValidationScheme)
+	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
 	}
@@ -93,13 +93,13 @@ func (l *Client) LoadRuleGroups(_ context.Context, _ map[string]rulespb.RuleGrou
 	return nil, nil
 }
 
-// GetRuleGroup implements RuleStore.
-func (l *Client) GetRuleGroup(ctx context.Context, userID, namespace, group string, nameValidationScheme model.ValidationScheme) (*rulespb.RuleGroupDesc, error) {
+// GetRuleGroup implements RuleStore
+func (l *Client) GetRuleGroup(ctx context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
 	if namespace == "" {
 		return nil, errors.New("empty namespace")
 	}
 
-	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace, nameValidationScheme)
+	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
 	}
@@ -123,11 +123,11 @@ func (l *Client) DeleteRuleGroup(_ context.Context, _, _, _ string) error {
 }
 
 // DeleteNamespace implements RulerStore
-func (l *Client) DeleteNamespace(_ context.Context, _, _ string, _ model.ValidationScheme) error {
+func (l *Client) DeleteNamespace(_ context.Context, _, _ string) error {
 	return errors.New("DeleteNamespace unsupported in rule local store")
 }
 
-func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string, nameValidationScheme model.ValidationScheme) (rulespb.RuleGroupList, error) {
+func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (rulespb.RuleGroupList, error) {
 	var list rulespb.RuleGroupList
 
 	root := filepath.Join(l.cfg.Directory, userID)
@@ -156,7 +156,7 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string, n
 			continue
 		}
 
-		rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace, nameValidationScheme)
+		rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
 		}
@@ -169,10 +169,12 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string, n
 	return list, nil
 }
 
-func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, error) {
+func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
 	filename := filepath.Join(l.cfg.Directory, userID, namespace)
 
-	rulegroups, errs := l.loader.Load(filename, false, nameValidationScheme)
+	// Note that we hard code UTF-8 metric/label name validation mode, since we don't want to prevent
+	// loading rule groups created in UTF-8 mode if validation mode is legacy.
+	rulegroups, errs := l.loader.Load(filename, false, model.UTF8Validation)
 	if len(errs) > 0 {
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}

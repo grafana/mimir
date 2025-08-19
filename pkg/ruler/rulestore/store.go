@@ -9,8 +9,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/prometheus/common/model"
-
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
@@ -60,7 +58,7 @@ type RuleStore interface {
 	// It *MUST* populate fields User, Namespace, Name of all rule groups.
 	// It *MAY* populate the actual rules.
 	// If namespace is empty, groups from all namespaces are returned.
-	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, nameValidationScheme model.ValidationScheme, opts ...Option) (rulespb.RuleGroupList, error)
+	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...Option) (rulespb.RuleGroupList, error)
 
 	// LoadRuleGroups loads rules for each rule group in the map.
 	//
@@ -78,7 +76,7 @@ type RuleStore interface {
 	//   in the storage, and not that we failed loading for other reasons.
 	LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error)
 
-	GetRuleGroup(ctx context.Context, userID, namespace, group string, nameValidationScheme model.ValidationScheme) (*rulespb.RuleGroupDesc, error)
+	GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error)
 	SetRuleGroup(ctx context.Context, userID, namespace string, group *rulespb.RuleGroupDesc) error
 
 	// DeleteRuleGroup deletes single rule group.
@@ -86,5 +84,5 @@ type RuleStore interface {
 
 	// DeleteNamespace lists rule groups for given user and namespace, and deletes all rule groups.
 	// If namespace is empty, deletes all rule groups for user.
-	DeleteNamespace(ctx context.Context, userID, namespace string, nameValidationScheme model.ValidationScheme) error
+	DeleteNamespace(ctx context.Context, userID, namespace string) error
 }

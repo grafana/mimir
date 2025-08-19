@@ -1429,7 +1429,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 			t.Run("NotifySyncRulesAsync() should trigger a re-sync after all rule groups of a tenant have been deleted", func(t *testing.T) {
 				// Remove all rules groups of a tenant.
-				require.NoError(t, store.DeleteNamespace(ctx, userID, namespace, model.UTF8Validation))
+				require.NoError(t, store.DeleteNamespace(ctx, userID, namespace))
 
 				// Call NotifySyncRulesAsync() on 1 ruler.
 				rulers[0].NotifySyncRulesAsync("user-1")
@@ -1578,8 +1578,8 @@ func (s *testRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Opti
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (s *testRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, nameValidationScheme model.ValidationScheme, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
-	args := s.Called(ctx, userID, namespace, nameValidationScheme, opts)
+func (s *testRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+	args := s.Called(ctx, userID, namespace, opts)
 	return args.Get(0).(rulespb.RuleGroupList), args.Error(1)
 }
 
@@ -1588,8 +1588,8 @@ func (s *testRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[str
 	return args.Get(0).(rulespb.RuleGroupList), args.Error(1)
 }
 
-func (s *testRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string, nameValidationScheme model.ValidationScheme) (*rulespb.RuleGroupDesc, error) {
-	args := s.Called(ctx, userID, namespace, group, nameValidationScheme)
+func (s *testRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error) {
+	args := s.Called(ctx, userID, namespace, group)
 	return args.Get(0).(*rulespb.RuleGroupDesc), args.Error(1)
 }
 
@@ -1603,8 +1603,8 @@ func (s *testRuleStore) DeleteRuleGroup(ctx context.Context, userID, namespace s
 	return args.Error(0)
 }
 
-func (s *testRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string, nameValidationScheme model.ValidationScheme) error {
-	args := s.Called(ctx, userID, namespace, nameValidationScheme)
+func (s *testRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string) error {
+	args := s.Called(ctx, userID, namespace)
 	return args.Error(0)
 }
 
@@ -1970,7 +1970,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	ctx := context.Background()
 
 	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
-		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", model.UTF8Validation)
+		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
 		require.NoError(t, err)
 
 		if expectedDeleted {

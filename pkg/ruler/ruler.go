@@ -768,7 +768,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for userID := range userCh {
-				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", r.NameValidationScheme(userID), opts...)
+				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", opts...)
 				if err != nil {
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
@@ -1418,7 +1418,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	err = r.store.DeleteNamespace(req.Context(), userID, "", r.NameValidationScheme(userID)) // Empty namespace = delete all rule groups.
+	err = r.store.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
 	if err != nil && !errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 		respondServerError(logger, w, err.Error())
 		return
@@ -1451,7 +1451,7 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	err = concurrency.ForEachUser(req.Context(), userIDs, fetchRulesConcurrency, func(ctx context.Context, userID string) error {
 		// Disable any caching when getting list of all rule groups since listing results
 		// are cached and not invalidated and this API is expected to be strongly consistent.
-		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", r.NameValidationScheme(userID), rulestore.WithCacheDisabled())
+		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
 		if err != nil {
 			return errors.Wrapf(err, "failed to fetch ruler config for user %s", userID)
 		}
@@ -1531,7 +1531,7 @@ func (r *Ruler) ListUserRuleGroups(w http.ResponseWriter, req *http.Request) {
 
 	// Disable any caching when getting list of all rule groups since listing results
 	// are cached and not invalidated and this API is expected to be strongly consistent.
-	rg, err := r.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, "", r.NameValidationScheme(userID), rulestore.WithCacheDisabled())
+	rg, err := r.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, "", rulestore.WithCacheDisabled())
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to list user rule groups", "user", userID, "err", err)
 		http.Error(w, fmt.Sprintf("failed to list user rule groups: %s", err.Error()), http.StatusInternalServerError)
