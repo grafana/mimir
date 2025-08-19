@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -75,17 +76,68 @@ type Node interface {
 	// Most nodes will return timeRange as is, with the exception of subqueries.
 	ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange
 
-	// OperatorFactory returns a factory that produces operators for this node.
-	//
-	// Implementations may retain the provided Materializer for later use.
-	OperatorFactory(materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
-
 	// ResultType returns the kind of result this node produces.
 	//
 	// May return an error if the kind of result cannot be determined (eg. because the node references an unknown function).
 	ResultType() (parser.ValueType, error)
 
+	// QueriedTimeRange returns the range of data queried from ingesters and store-gateways by this node
+	// and its children.
+	//
+	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+
+	// ExpressionPosition returns the position of the subexpression this node represents in the original
+	// expression.
+	ExpressionPosition() posrange.PositionRange
+
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+type QueriedTimeRange struct {
+	// The earliest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MinT time.Time
+
+	// The latest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MaxT time.Time
+
+	// If false, the node does not query any data (eg. a number literal).
+	AnyDataQueried bool
+}
+
+func NewQueriedTimeRange(minT time.Time, maxT time.Time) QueriedTimeRange {
+	return QueriedTimeRange{
+		MinT:           minT,
+		MaxT:           maxT,
+		AnyDataQueried: true,
+	}
+}
+
+func NoDataQueried() QueriedTimeRange {
+	return QueriedTimeRange{AnyDataQueried: false}
+}
+
+func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
+	if !t.AnyDataQueried {
+		return other
+	}
+
+	if !other.AnyDataQueried {
+		return t
+	}
+
+	minT := t.MinT
+	maxT := t.MaxT
+
+	if other.MinT.Before(t.MinT) {
+		minT = other.MinT
+	}
+
+	if other.MaxT.After(t.MaxT) {
+		maxT = other.MaxT
+	}
+
+	return NewQueriedTimeRange(minT, maxT)
 }
 
 type OperatorParameters struct {

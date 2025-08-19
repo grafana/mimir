@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -623,14 +623,14 @@ func (l *Limits) Validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		cfg.MetricNameValidationScheme = validationScheme
+		cfg.NameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 
@@ -1116,7 +1116,7 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
 	validationScheme := o.NameValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }

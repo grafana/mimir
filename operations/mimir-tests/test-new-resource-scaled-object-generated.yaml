@@ -466,7 +466,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -562,7 +562,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -640,7 +640,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -712,7 +712,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -792,7 +792,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -902,7 +902,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1262,7 +1262,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1370,7 +1370,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__",namespace="default"}) > 0
           )[15m:]
@@ -1390,7 +1390,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_0.7__",namespace="default"})
               and
               max by (pod) (up{container="test_false_false_0.7__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1400,6 +1400,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_0.7__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1433,7 +1434,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1453,7 +1454,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1463,6 +1464,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_0.7__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1496,7 +1498,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -1516,7 +1518,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1526,6 +1528,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1559,7 +1562,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1579,7 +1582,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1589,6 +1592,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1622,7 +1626,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__",namespace="default"}) > 0
           )[15m:]
@@ -1642,7 +1646,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1.5__",namespace="default"})
               and
               max by (pod) (up{container="test_false_false_1.5__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1652,6 +1656,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_1.5__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1685,7 +1690,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1705,7 +1710,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1715,6 +1720,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_1.5__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1748,7 +1754,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -1768,7 +1774,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1778,6 +1784,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1811,7 +1818,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1831,7 +1838,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1841,6 +1848,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -1874,7 +1882,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1__",namespace="default"}) > 0
           )[15m:]
@@ -1893,7 +1901,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1__",namespace="default"})
               and
               max by (pod) (up{container="test_false_false_1__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1903,6 +1911,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_1__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1935,7 +1944,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -1954,7 +1963,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1964,6 +1973,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_false_1__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1996,7 +2006,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -2015,7 +2025,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2025,6 +2035,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2057,7 +2068,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -2076,7 +2087,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2086,6 +2097,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2118,7 +2130,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2138,7 +2150,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_0.7__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2148,6 +2160,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_0.7__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2181,7 +2194,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2201,7 +2214,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2211,6 +2224,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_0.7__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2244,7 +2258,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2264,7 +2278,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2274,6 +2288,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2307,7 +2322,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2327,7 +2342,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2337,6 +2352,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2370,7 +2386,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2390,7 +2406,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1.5__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2400,6 +2416,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_1.5__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2433,7 +2450,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2453,7 +2470,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2463,6 +2480,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_1.5__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2496,7 +2514,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2516,7 +2534,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2526,6 +2544,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2559,7 +2578,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2579,7 +2598,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2589,6 +2608,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2622,7 +2642,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2641,7 +2661,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2651,6 +2671,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_1__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2683,7 +2704,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2702,7 +2723,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2712,6 +2733,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_false_true_1__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2744,7 +2766,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -2763,7 +2785,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2773,6 +2795,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2805,7 +2828,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -2824,7 +2847,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2834,6 +2857,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2866,7 +2890,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__",namespace="default"}) > 0
           )[15m:]
@@ -2886,7 +2910,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_0.7__",namespace="default"})
               and
               max by (pod) (up{container="test_true_false_0.7__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2896,6 +2920,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_0.7__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2929,7 +2954,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -2949,7 +2974,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2959,6 +2984,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_0.7__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2992,7 +3018,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3012,7 +3038,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3022,6 +3048,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3055,7 +3082,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3075,7 +3102,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3085,6 +3112,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3118,7 +3146,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__",namespace="default"}) > 0
           )[15m:]
@@ -3138,7 +3166,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1.5__",namespace="default"})
               and
               max by (pod) (up{container="test_true_false_1.5__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3148,6 +3176,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_1.5__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3181,7 +3210,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3201,7 +3230,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3211,6 +3240,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_1.5__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3244,7 +3274,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3264,7 +3294,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3274,6 +3304,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3307,7 +3338,7 @@ spec:
       query: |-
         (max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3327,7 +3358,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3337,6 +3368,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3370,7 +3402,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1__",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1__",namespace="default"}) > 0
           )[15m:]
@@ -3389,7 +3421,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1__",namespace="default"})
               and
               max by (pod) (up{container="test_true_false_1__",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3399,6 +3431,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_1__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3431,7 +3464,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3450,7 +3483,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3460,6 +3493,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_false_1__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3492,7 +3526,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
@@ -3511,7 +3545,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (up{container="test_container",namespace="default"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3521,6 +3555,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3553,7 +3588,7 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
@@ -3572,7 +3607,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3582,6 +3617,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3614,7 +3650,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3634,7 +3670,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_0.7__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3644,6 +3680,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_0.7__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3677,7 +3714,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -3697,7 +3734,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3707,6 +3744,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_0.7__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3740,7 +3778,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3760,7 +3798,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3770,6 +3808,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3803,7 +3842,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -3823,7 +3862,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3833,6 +3872,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3866,7 +3906,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -3886,7 +3926,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1.5__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3896,6 +3936,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_1.5__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3929,7 +3970,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -3949,7 +3990,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -3959,6 +4000,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_1.5__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -3992,7 +4034,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4012,7 +4054,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4022,6 +4064,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -4055,7 +4098,7 @@ spec:
       query: |-
         (quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4075,7 +4118,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4085,6 +4128,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
         ) * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
@@ -4118,7 +4162,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1__",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1__",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4137,7 +4181,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1__",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4147,6 +4191,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_1__", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1__", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4179,7 +4224,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4198,7 +4243,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4208,6 +4253,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_true_true_1__pod-zone-a.*", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4240,7 +4286,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
@@ -4259,7 +4305,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4269,6 +4315,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4301,7 +4348,7 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (irate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[5m]))
             and
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
@@ -4320,7 +4367,7 @@ spec:
               sum by (pod) (container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"})
               and
               max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
-            )
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -4330,6 +4377,7 @@ spec:
           max by (pod) (changes(kube_pod_container_status_restarts_total{container="test_container", namespace="default",pod=~"pod-zone-a.*"}[15m]) > 0)
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
+          or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
