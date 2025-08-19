@@ -488,7 +488,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or
 	// ruler's dependency)
-	canJoinDistributorsRing := t.Cfg.isAnyModuleExplicitlyTargeted(Distributor, Write, All)
+	canJoinDistributorsRing := t.Cfg.isDistributorEnabled()
 
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
@@ -645,7 +645,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
 	// to ensure requests it processes use the default middleware instrumentation.
-	if !t.Cfg.isAnyModuleExplicitlyTargeted(QueryFrontend, QueryScheduler, Read, All) {
+	if !t.Cfg.isQuerySchedulerEnabled() && !t.Cfg.isQueryFrontendEnabled() {
 		// First, register the internal querier handler with the external HTTP server
 		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
 
@@ -864,7 +864,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	// If the query-frontend is running in the same process as the query-scheduler and
 	// the query-scheduler hasn't been explicitly configured, Mimir will default to trying
 	// to connect to a scheduler on localhost on its own gRPC listening port.
-	if t.Cfg.isAnyModuleExplicitlyTargeted(QueryScheduler, Read, All) && !t.Cfg.Frontend.FrontendV2.IsSchedulerConfigured() {
+	if t.Cfg.isQuerySchedulerEnabled() && !t.Cfg.Frontend.FrontendV2.IsSchedulerConfigured() {
 		address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
 		level.Info(util_log.Logger).Log("msg", "The query-frontend has not been configured with the query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic frontend configuration. If queries are unresponsive, consider explicitly configuring the query-scheduler address for querier-frontend.", "address", address)
 		t.Cfg.Frontend.FrontendV2.SchedulerAddress = address
@@ -1175,7 +1175,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 	// Since it requires the access to the blocks storage, we enable it only for components
 	// accessing the blocks storage.
-	if !t.Cfg.isAnyModuleExplicitlyTargeted(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor) {
+	if !(t.Cfg.isIngesterEnabled() || t.Cfg.isQuerierEnabled() || t.Cfg.isStoreGatewayEnabled() || t.Cfg.isCompactorEnabled()) {
 		return nil, nil
 	}
 
