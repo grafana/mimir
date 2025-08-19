@@ -2595,7 +2595,10 @@ func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
 
 			c.startJobStatusUpdates(context.Background())
-			go c.runAsWorker(context.Background())
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- c.runAsWorker(context.Background())
+			}()
 
 			require.Eventually(t, func() bool {
 				mockScheduler.mu.Lock()
@@ -2603,6 +2606,8 @@ func TestCompactor_SchedulerMode_JobLeasing_BackoffBehavior(t *testing.T) {
 				return (mockScheduler.leaseJobCallCount == tc.expectedLeaseCalls) &&
 					(mockScheduler.updateJobCallCount == tc.expectedUpdateCalls)
 			}, 6*time.Second, 100*time.Millisecond)
+
+			assert.Empty(t, errCh, "error channel should be empty")
 		})
 	}
 }
@@ -2734,11 +2739,12 @@ func TestCompactor_SchedulerMode_ActiveJobLocking(t *testing.T) {
 		jobKey2 := &schedulerpb.JobKey{Id: "test-job-2", Epoch: 1}
 
 		// Set activeJob
-		c.setActiveJob(jobKey1, "test-tenant")
+		err := c.setActiveJob(jobKey1, "test-tenant")
+		assert.NoError(t, err)
 		assert.Equal(t, jobKey1.Id, c.activeJob.key.Id)
 
 		// Attempt to overwrite activeJob - should fail
-		err := c.setActiveJob(jobKey2, "test-tenant")
+		err = c.setActiveJob(jobKey2, "test-tenant")
 		assert.EqualError(t, err, "cannot write active job")
 	})
 
@@ -2750,11 +2756,12 @@ func TestCompactor_SchedulerMode_ActiveJobLocking(t *testing.T) {
 		jobKey2 := &schedulerpb.JobKey{Id: "test-job-2", Epoch: 1}
 
 		// Set activeJob
-		c.setActiveJob(jobKey1, "test-tenant")
+		err := c.setActiveJob(jobKey1, "test-tenant")
+		assert.NoError(t, err)
 		assert.Equal(t, jobKey1.Id, c.activeJob.key.Id)
 
 		// Attempt to unset activeJob using incorrect keyId - should fail
-		err := c.unsetActiveJob(jobKey2.Id)
+		err = c.unsetActiveJob(jobKey2.Id)
 		assert.EqualError(t, err, "cannot write active job")
 	})
 
@@ -2765,11 +2772,12 @@ func TestCompactor_SchedulerMode_ActiveJobLocking(t *testing.T) {
 		jobKey := &schedulerpb.JobKey{Id: "test-job-1", Epoch: 1}
 
 		// Set activeJob
-		c.setActiveJob(jobKey, "test-tenant")
+		err := c.setActiveJob(jobKey, "test-tenant")
+		assert.NoError(t, err)
 		assert.Equal(t, jobKey.Id, c.activeJob.key.Id)
 
 		// unset activeJob
-		err := c.unsetActiveJob(jobKey.Id)
+		err = c.unsetActiveJob(jobKey.Id)
 		assert.NoError(t, err)
 		assert.Nil(t, c.activeJob)
 

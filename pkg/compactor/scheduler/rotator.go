@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 )
 

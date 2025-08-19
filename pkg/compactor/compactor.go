@@ -73,7 +73,6 @@ var (
 	errInvalidSchedulerAddress                    = fmt.Errorf("scheduler address is required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("scheduler update interval must be positive")
 	errInvalidSchedulerMaxUpdateAge               = fmt.Errorf("scheduler max update age must be at least twice the update interval")
-	errInvalidJob                                 = fmt.Errorf("invalid job from scheduler")
 	errInvalidOpForSchedulingMode                 = fmt.Errorf("invalid operation for scheduling mode")
 	errCannotWriteActiveJob                       = fmt.Errorf("cannot write active job")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
@@ -774,8 +773,16 @@ func (c *MultitenantCompactor) leaseAndExecuteJob(ctx context.Context, workerID 
 	level.Info(c.logger).Log("msg", "leased job from scheduler", "job_id", resp.Key.Id, "tenant", resp.Spec.Tenant)
 
 	// Track the job and send keep-alive updates
-	c.setActiveJob(resp.Key, resp.Spec.Tenant)
-	defer c.unsetActiveJob(resp.Key.Id)
+	if err := c.setActiveJob(resp.Key, resp.Spec.Tenant); err != nil {
+		return true, err
+	}
+
+	defer func() {
+		// TODO: handle failing unset
+		if uerr := c.unsetActiveJob(resp.Key.Id); uerr != nil {
+			err = uerr
+		}
+	}()
 
 	if err := c.updateJobStatus(ctx, resp.Key, resp.Spec.Tenant, schedulerpb.IN_PROGRESS); err != nil {
 		level.Warn(c.logger).Log("msg", "failed to mark job as in progress", "job_id", resp.Key.Id, "err", err)
