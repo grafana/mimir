@@ -192,7 +192,7 @@ func TestApiGzip(t *testing.T) {
 }
 
 type MockIngester struct {
-	ingester.IngesterAPI
+	ingester.API
 }
 
 func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {

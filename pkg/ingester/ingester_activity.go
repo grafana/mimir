@@ -19,11 +19,11 @@ import (
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
 type ActivityTrackerWrapper struct {
-	ing     IngesterAPI
+	ing     API
 	tracker *activitytracker.ActivityTracker
 }
 
-func NewIngesterActivityTracker(ing IngesterAPI, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
+func NewIngesterActivityTracker(ing API, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
 	return &ActivityTrackerWrapper{
 		ing:     ing,
 		tracker: tracker,

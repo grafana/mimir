@@ -302,7 +302,7 @@ func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i ingester.IngesterAPI) {
+func (a *API) RegisterIngester(i ingester.API) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{

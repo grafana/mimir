@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type IngesterAPI interface {
+type API interface {
 	client.IngesterServer
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)

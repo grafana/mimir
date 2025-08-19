@@ -16,10 +16,10 @@ import (
 
 // ProfilingWrapper is a wrapper around Ingester that adds tenant ID to pprof labels.
 type ProfilingWrapper struct {
-	ing IngesterAPI
+	ing API
 }
 
-func NewIngesterProfilingWrapper(ing IngesterAPI) *ProfilingWrapper {
+func NewIngesterProfilingWrapper(ing API) *ProfilingWrapper {
 	return &ProfilingWrapper{
 		ing: ing,
 	}
