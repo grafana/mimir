@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus-community/parquet-common/util"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,28 +81,65 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 			}
 
 			labels, rr := b.m.FilterSeriesLabels(ctx, sp, labelsSlices, rr)
-			_, rrGroups, err := groupBySortingColumns(b.shard.LabelsFile().RowGroups()[rgi].SortingColumns(), labels, rr)
-			if err != nil {
-				return errors.Wrapf(err, "error grouping by sorting columns")
-			}
-
-			// WIP
-			for groupIdx, groupRR := range rrGroups {
-				if len(groupRR) == 0 {
-					continue
+			
+			if skipChunks {
+				// For skipChunks, just add series with labels (no need to group)
+				noChunksSeriesSet := search.NewNoChunksConcreteLabelsSeriesSet(labels)
+				defer func() { _ = noChunksSeriesSet.Close() }()
+				for noChunksSeriesSet.Next() {
+					results[rgi] = append(results[rgi], noChunksSeriesSet.At())
 				}
-
-				groupSeriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, groupRR)
-				if err != nil {
-					return errors.Wrapf(err, "error materializing group %d", groupIdx)
-				}
-
-				defer func() { _ = groupSeriesSetIter.Close() }()
-				for groupSeriesSetIter.Next() {
-					results[rgi] = append(results[rgi], groupSeriesSetIter.At())
-				}
-				if err := groupSeriesSetIter.Err(); err != nil {
+				if err := noChunksSeriesSet.Err(); err != nil {
 					return err
+				}
+			} else {
+				// Group by sorting columns for chunk materialization
+				labelsGroups, rrGroups, err := groupBySortingColumns(b.shard.LabelsFile().RowGroups()[rgi].SortingColumns(), labels, rr)
+				if err != nil {
+					return errors.Wrapf(err, "error grouping by sorting columns")
+				}
+
+				// Create ChunkSeriesSet for each group
+				var groupSeriesSets []prom_storage.ChunkSeriesSet
+				for groupIdx, groupRR := range rrGroups {
+					if len(groupRR) == 0 {
+						continue
+					}
+
+					groupLabels := labelsGroups[groupIdx]
+					
+					// Materialize chunks for this group
+					chunksIter, err := b.m.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
+					if err != nil {
+						return errors.Wrapf(err, "error materializing chunks for group %d", groupIdx)
+					}
+
+					// Create simple series set that pairs chunks with labels without filtering
+					groupSeriesSet := &simpleChunkSeriesSet{
+						labels:     groupLabels,
+						chunksIter: chunksIter,
+					}
+					groupSeriesSets = append(groupSeriesSets, groupSeriesSet)
+				}
+
+				// Merge all group iterators on-the-fly using NewMergeChunkSeriesSet
+				if len(groupSeriesSets) > 0 {
+					// Close all individual group series sets when done
+					defer func() {
+						for _, groupSet := range groupSeriesSets {
+							if closer, ok := groupSet.(interface{ Close() error }); ok {
+								_ = closer.Close()
+							}
+						}
+					}()
+					
+					mergedSeriesSet := prom_storage.NewMergeChunkSeriesSet(groupSeriesSets, 0, prom_storage.NewConcatenatingChunkSeriesMerger())
+					for mergedSeriesSet.Next() {
+						results[rgi] = append(results[rgi], mergedSeriesSet.At())
+					}
+					if err := mergedSeriesSet.Err(); err != nil {
+						return err
+					}
 				}
 			}
 
@@ -129,6 +168,73 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 	}
 
 	return convert.NewChunksSeriesSet(resultsFlattened), nil
+}
+
+// simpleChunkSeriesSet is a ChunkSeriesSet that pairs chunks with labels without filtering empty chunks
+type simpleChunkSeriesSet struct {
+	labels      []labels.Labels
+	chunksIter  search.ChunksIteratorIterator
+	labelIdx    int
+	currentSeries prom_storage.ChunkSeries
+	err         error
+}
+
+func (s *simpleChunkSeriesSet) Next() bool {
+	if !s.chunksIter.Next() {
+		s.err = s.chunksIter.Err()
+		return false
+	}
+	
+	if s.labelIdx >= len(s.labels) {
+		s.err = errors.Newf("chunk/label mismatch: got chunk but no corresponding label (labelIdx=%d, labels=%d)", s.labelIdx, len(s.labels))
+		return false
+	}
+	
+	lbls := s.labels[s.labelIdx]
+	chunkIter := s.chunksIter.At()
+	
+	s.currentSeries = &simpleChunkSeries{
+		labels:      lbls,
+		chunkIter:   chunkIter,
+	}
+	s.labelIdx++
+	return true
+}
+
+func (s *simpleChunkSeriesSet) At() prom_storage.ChunkSeries {
+	return s.currentSeries
+}
+
+func (s *simpleChunkSeriesSet) Err() error {
+	return s.err
+}
+
+func (s *simpleChunkSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+func (s *simpleChunkSeriesSet) Close() error {
+	return s.chunksIter.Close()
+}
+
+// simpleChunkSeries is a simple ChunkSeries that pairs labels with a chunk iterator
+type simpleChunkSeries struct {
+	labels    labels.Labels
+	chunkIter chunks.Iterator
+}
+
+func (s *simpleChunkSeries) Labels() labels.Labels {
+	return s.labels
+}
+
+func (s *simpleChunkSeries) Iterator(_ chunks.Iterator) chunks.Iterator {
+	return s.chunkIter
+}
+
+func (s *simpleChunkSeries) ChunkCount() (int, error) {
+	// We don't have a way to count chunks without consuming the iterator,
+	// so return -1 to indicate unknown count
+	return -1, nil
 }
 
 func groupBySortingColumns(sortingColumns []parquet.SortingColumn, lbls []labels.Labels, rr []search.RowRange) ([][]labels.Labels, [][]search.RowRange, error) {
