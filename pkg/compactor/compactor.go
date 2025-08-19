@@ -235,7 +235,7 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		return errInvalidCompactionOrder
 	}
 
-	if !util.StringsContain(CompactionPlanningModes, cfg.SchedulingMode) {
+	if !slices.Contains(CompactionPlanningModes, cfg.SchedulingMode) {
 		return errInvalidPlanningMode
 	}
 
