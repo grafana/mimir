@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -160,6 +161,82 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	list, err := os.ReadDir(cfg.DataDir)
 	require.NoError(t, err, "expected data_dir to exist")
 	require.Empty(t, list, "expected data_dir to be empty")
+}
+
+func TestBlockBuilder_KafkaRecordVersion_unsupportedRecordVersion(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+
+	const (
+		tenantID    = "1"
+		partitionID = int32(1)
+	)
+
+	ts := time.Unix(1000, 0)
+	req := createWriteRequest(tenantID, floatSample(ts.UnixMilli(), 1), nil)
+	val, err := req.Marshal()
+	require.NoError(t, err)
+
+	const unsupportedRecordVersion = ingest.LatestRecordVersion + 100
+
+	testRec := &kgo.Record{
+		Timestamp: ts,
+		Key:       []byte(tenantID),
+		Value:     val,
+		Topic:     testTopic,
+		Partition: partitionID,
+		Headers:   []kgo.RecordHeader{ingest.RecordVersionHeader(unsupportedRecordVersion)},
+	}
+
+	produceResult := kafkaClient.ProduceSync(ctx, testRec)
+
+	rec, err := produceResult.First()
+	require.NoError(t, err)
+
+	scheduler := &mockSchedulerClient{}
+	scheduler.addJob(
+		schedulerpb.JobKey{
+			Id:    "test-job-1",
+			Epoch: 90000,
+		},
+		schedulerpb.JobSpec{
+			Topic:       testTopic,
+			Partition:   partitionID,
+			StartOffset: rec.Offset,
+			EndOffset:   rec.Offset + 1, // The job spec describes a span of only one record, which we produced above.
+		},
+	)
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// The test record has unsupported RecordVersionHeader and its samples are skipped. The job itself is complete.
+	require.Eventually(t, func() bool {
+		return scheduler.completeJobCallCount() > 0
+	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-1", Epoch: 90000}},
+		scheduler.completeJobCalls,
+	)
+
+	// No samples produced due to unsupported RecordVersionHeader.
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenantID),
+		nil, nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
 }
 
 func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, partition int32, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {
