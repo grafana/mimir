@@ -2723,6 +2723,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler`
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`
@@ -5183,6 +5184,30 @@ sharding_ring:
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
 [upload_sparse_index_headers: <boolean> | default = false]
+
+# (experimental) Compactor operation mode. Supported values are: standalone
+# (plan and execute compactions), scheduler (request jobs from a remote
+# scheduler).
+# CLI flag: -compactor.scheduling-mode
+[scheduling_mode: <string> | default = "standalone"]
+
+# (advanced) Compactor scheduler endpoint. Required when compactor mode is
+# 'scheduler'.
+# CLI flag: -compactor.scheduler-endpoint
+[scheduler_address: <string> | default = ""]
+
+# (advanced) Interval between scheduler job lease updates.
+# CLI flag: -compactor.scheduler-update-interval
+[scheduler_update_interval: <duration> | default = 15s]
+
+# (advanced) Maximum age of completed jobs to continue sending to the scheduler.
+# CLI flag: -compactor.scheduler-max-update-age
+[scheduler_max_update_age: <duration> | default = 1h]
+
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is: compactor.scheduler
+[grpc_client_config: <grpc_client>]
 ```
 
 ### store_gateway
