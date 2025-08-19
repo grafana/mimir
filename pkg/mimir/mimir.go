@@ -112,25 +112,26 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API                   api.Config                      `yaml:"api"`
-	Server                server.Config                   `yaml:"server"`
-	Distributor           distributor.Config              `yaml:"distributor"`
-	Querier               querier.Config                  `yaml:"querier"`
-	IngesterClient        client.Config                   `yaml:"ingester_client"`
-	Ingester              ingester.Config                 `yaml:"ingester"`
-	Flusher               flusher.Config                  `yaml:"flusher"`
-	LimitsConfig          validation.Limits               `yaml:"limits"`
-	Worker                querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
-	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
-	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
-	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor             compactor.Config                `yaml:"compactor"`
-	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
-	Vault                 vault.Config                    `yaml:"vault"`
+	API                            api.Config                      `yaml:"api"`
+	Server                         server.Config                   `yaml:"server"`
+	Distributor                    distributor.Config              `yaml:"distributor"`
+	Querier                        querier.Config                  `yaml:"querier"`
+	IngesterClient                 client.Config                   `yaml:"ingester_client"`
+	Ingester                       ingester.Config                 `yaml:"ingester"`
+	Flusher                        flusher.Config                  `yaml:"flusher"`
+	LimitsConfig                   validation.Limits               `yaml:"limits"`
+	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor                      compactor.Config                `yaml:"compactor"`
+	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
+	IncludeTenantIDInProfileLabels bool                            `yaml:"include_tenant_id_in_profile_labels" category:"experimental"`
+	Vault                          vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -178,6 +179,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
 	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
+	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", false, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
