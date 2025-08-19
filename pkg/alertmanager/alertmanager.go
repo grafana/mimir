@@ -25,14 +25,11 @@ import (
 	"github.com/grafana/alerting/definition"
 	alertingHttp "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/lokiclient"
-	"github.com/grafana/alerting/notificationhistorian"
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/instrument"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
@@ -348,7 +345,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	am.notificationHistorian = configureNotificationHistorian(cfg, reg, log.With(am.logger, "component", "notification_historian"))
+	am.notificationHistorian = createNotificationHistorian(cfg.NotificationHistory, reg, am.logger)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
@@ -1053,51 +1050,4 @@ func alertSize(alert model.Alert) int {
 	}
 	size += len(alert.GeneratorURL)
 	return size
-}
-
-func configureNotificationHistorian(cfg *Config, reg *prometheus.Registry, logger log.Logger) nfstatus.NotificationHistorian {
-	if !cfg.NotificationHistory.Enabled {
-		return nil
-	}
-
-	bytesWritten := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_notification_history_writes_bytes_total",
-		Help: "The total number of bytes sent within a batch to the notification history store.",
-	})
-
-	writeDuration := instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "alertmanager_notification_history_request_duration_seconds",
-		Help:    "Histogram of request durations to the notification history store.",
-		Buckets: instrument.DefBuckets,
-	}, instrument.HistogramCollectorBuckets))
-
-	writesTotal := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_notification_history_writes_total",
-		Help: "The total number of notification history batches that were attempted to be written.",
-	})
-
-	writesFailed := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_notification_history_writes_failed_total",
-		Help: "The total number of failed writes of notification history batches.",
-	})
-
-	lokiRemoteURL, _ := url.Parse(cfg.NotificationHistory.LokiRemoteURL)
-	return notificationhistorian.NewNotificationHistorian(
-		logger,
-		lokiclient.LokiConfig{
-			WritePathURL:      lokiRemoteURL,
-			BasicAuthUser:     cfg.NotificationHistory.LokiBasicAuthUsername,
-			BasicAuthPassword: cfg.NotificationHistory.LokiBasicAuthPassword,
-			TenantID:          cfg.NotificationHistory.LokiTenantID,
-			// TODO
-			// ExternalLabels:    cfg.ExternalLabels,
-			Encoder: lokiclient.SnappyProtoEncoder{},
-		},
-		lokiclient.NewRequester(),
-		bytesWritten,
-		writeDuration,
-		writesTotal,
-		writesFailed,
-		tracer,
-	)
 }

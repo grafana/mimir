@@ -71,31 +71,6 @@ var (
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
 )
 
-// TODO: move this somewhere more appropriate
-type NotificationHistoryConfig struct {
-	Enabled               bool   `yaml:"enabled"`
-	LokiRemoteURL         string `yaml:"loki_remote_url"`
-	LokiTenantID          string `yaml:"loki_tenant_id"`
-	LokiBasicAuthUsername string `yaml:"loki_basic_auth_username"`
-	LokiBasicAuthPassword string `yaml:"loki_basic_auth_password"`
-
-	// TODO
-	//ExternalLabels        map[string]string `yaml:"external_labels"`
-}
-
-func (cfg *NotificationHistoryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+".enabled", false, "Enable notification history.")
-	f.StringVar(&cfg.LokiRemoteURL, prefix+".loki-remote-url", "", "Loki remote write URL for notification history.")
-	f.StringVar(&cfg.LokiTenantID, prefix+".loki-tenant-id", "", "Loki tenant ID for notification history.")
-	f.StringVar(&cfg.LokiBasicAuthUsername, prefix+".loki-basic-auth-username", "", "Loki basic auth username for notification history.")
-	f.StringVar(&cfg.LokiBasicAuthPassword, prefix+".loki-basic-auth-password", "", "Loki basic auth password for notification history.")
-}
-
-func (cfg *NotificationHistoryConfig) Validate() error {
-	// TODO
-	return nil
-}
-
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
 	DataDir        string           `yaml:"data_dir"`
