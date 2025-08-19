@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -113,4 +116,69 @@ func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRang
 
 func (t *testNode) ResultType() (parser.ValueType, error) {
 	panic("not supported")
+}
+
+func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange {
+	panic("not supported")
+}
+
+func (t *testNode) ExpressionPosition() posrange.PositionRange {
+	panic("not supported")
+}
+
+func TestQueriedTimeRange_Union(t *testing.T) {
+	testCases := map[string]struct {
+		first    QueriedTimeRange
+		second   QueriedTimeRange
+		expected QueriedTimeRange
+	}{
+		"neither queries any data": {
+			first:    NoDataQueried(),
+			second:   NoDataQueried(),
+			expected: NoDataQueried(),
+		},
+		"only one queries any data": {
+			first:    NoDataQueried(),
+			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+		},
+		"both query data and are the same": {
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+		},
+		"both query data and don't overlap": {
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(4000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+		},
+		"both query data and don't overlap, but the end of one aligns with the start of the other": {
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(3000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+		},
+		"both query data and one is entirely contained by the other": {
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(2500)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+		},
+		"both query data and overlap": {
+			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(5000)),
+			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := testCase.first.Union(testCase.second)
+			require.Equal(t, testCase.expected, result)
+
+			// Swapping the order should produce the same result.
+			// This doesn't hold true if either is invalid with AnyDataQueried=false and non-zero MinT or MaxT,
+			// but if either is invalid then garbage in-garbage out applies.
+			result = testCase.second.Union(testCase.first)
+			require.Equal(t, testCase.expected, result)
+		})
+	}
 }

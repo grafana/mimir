@@ -4,9 +4,11 @@ package core
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -74,10 +76,10 @@ func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Mater
 
 	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
-		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params.MemoryConsumptionTracker, u.ExpressionPosition.ToPrometheusType(), timeRange)
+		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params.MemoryConsumptionTracker, u.ExpressionPosition(), timeRange)
 		return planning.NewSingleUseOperatorFactory(o), nil
 	case types.ScalarOperator:
-		o := scalars.NewUnaryNegationOfScalar(inner, u.ExpressionPosition.ToPrometheusType())
+		o := scalars.NewUnaryNegationOfScalar(inner, u.ExpressionPosition())
 		return planning.NewSingleUseOperatorFactory(o), nil
 	default:
 		return nil, fmt.Errorf("expected InstantVectorOperator or ScalarOperator as child of UnaryExpression, got %T", inner)
@@ -86,4 +88,12 @@ func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Mater
 
 func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
 	return u.Inner.ResultType()
+}
+
+func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return u.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (u *UnaryExpression) ExpressionPosition() posrange.PositionRange {
+	return u.GetExpressionPosition().ToPrometheusType()
 }

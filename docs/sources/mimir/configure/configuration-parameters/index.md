@@ -440,16 +440,8 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
-  # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay,
-  # max_global_series_per_user, max_global_series_per_metric,
-  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
-  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
-  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
-  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
-  # request_burst_size, alertmanager_notification_rate_limit,
-  # alertmanager_max_dispatcher_aggregation_groups,
-  # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
+  # Comma-separated list of metrics to include in the exporter. Metric names
+  # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
   [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
 
@@ -5335,7 +5327,7 @@ dynamic_replication:
   # (experimental) Multiple of the default replication factor that should be
   # used for recent blocks. Minimum value is 2
   # CLI flag: -store-gateway.dynamic-replication.multiple
-  [multiple: <int> | default = 2]
+  [multiple: <int> | default = 5]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by

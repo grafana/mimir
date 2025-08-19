@@ -4,9 +4,11 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -65,6 +67,14 @@ func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) type
 
 func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
+}
+
+func (d *Duplicate) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (d *Duplicate) ExpressionPosition() posrange.PositionRange {
+	return d.Inner.ExpressionPosition()
 }
 
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

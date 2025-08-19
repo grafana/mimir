@@ -36,9 +36,6 @@
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +
 
-// mTLS client configuration for Memcached
-(import 'memcached-client-mtls.libsonnet') +
-
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
 (import 'ingester-automated-downscale-v2.libsonnet') +

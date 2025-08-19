@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
@@ -115,7 +117,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition.ToPrometheusType())
+		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
 
 	case AGGREGATION_QUANTILE:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -123,7 +125,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition.ToPrometheusType())
+		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +136,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.ExpressionPosition.ToPrometheusType())
+		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.ExpressionPosition())
 
 	default:
 		itemType, ok := a.Op.ToItemType()
@@ -143,7 +145,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 		var err error
-		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition.ToPrometheusType())
+		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
 		if err != nil {
 			return nil, err
 		}
@@ -154,4 +156,17 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 
 func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	innerRange := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if a.Param == nil {
+		return innerRange
+	}
+
+	return innerRange.Union(a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta))
+}
+
+func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {
+	return a.GetExpressionPosition().ToPrometheusType()
 }
