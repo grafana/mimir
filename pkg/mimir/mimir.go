@@ -366,7 +366,7 @@ func (c *Config) isAnyModuleExplicitlyTargeted(modules ...string) bool {
 }
 
 func (c *Config) isIngesterEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(Ingester, Write, All)
+	return c.isAnyModuleExplicitlyTargeted(All, Ingester, Write)
 }
 
 func (c *Config) isAlertManagerEnabled() bool {
