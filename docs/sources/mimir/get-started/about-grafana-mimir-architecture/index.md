@@ -23,7 +23,7 @@ To get started, you can run Grafana Mimir in [monolithic mode](../../references/
 
 Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir.
 
-Ingest storage architecture represents the next generation of Mimir architecture. It's designed to enhance reliability, support growth, and enable use cases at an even larger scale, aiming for more robust and cost-effective deployments.
+Ingest storage architecture is designed to enhance reliability, support growth, and enable use cases at an even larger scale. It enables you to run more robust and cost-effective deployments.
 
 {{< admonition type="note" >}}
 Classic architecture is still supported in Grafana Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new deployment of Grafana Mimir.{{< /admonition >}}
