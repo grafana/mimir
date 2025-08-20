@@ -75,11 +75,11 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	// This function is designed to do a 1:1 mapping between the data models, so we
 	// preserve QueryOffset and EvaluationDelay as they've been set in input.
 	if rg.QueryOffset > 0 {
-		formattedRuleGroup.QueryOffset = pointerOf[model.Duration](model.Duration(rg.QueryOffset))
+		formattedRuleGroup.QueryOffset = pointerOf(model.Duration(rg.QueryOffset))
 	}
 	//nolint:staticcheck // We want to intentionally access a deprecated field
 	if rg.EvaluationDelay > 0 {
-		formattedRuleGroup.EvaluationDelay = pointerOf[model.Duration](model.Duration(rg.EvaluationDelay))
+		formattedRuleGroup.EvaluationDelay = pointerOf(model.Duration(rg.EvaluationDelay))
 	}
 
 	for i, rl := range rg.GetRules() {

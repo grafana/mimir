@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestProtoConversionShouldBeIdempotent(t *testing.T) {
@@ -309,7 +310,7 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},
 			},
@@ -327,7 +328,7 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
-				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				QueryOffset: pointerOf(model.Duration(2 * time.Second)),
 				Rules:       []rulefmt.Rule{},
 				Labels:      map[string]string{},
 			},
@@ -346,8 +347,8 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
-				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				QueryOffset:     pointerOf(model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},
 			},
