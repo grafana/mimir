@@ -365,7 +365,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		})
 		if !cmp.Equal(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata) {
 			diff := cmp.Diff(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata)
-			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering, exact duplicates dropped). Diff: %s", diff))
+			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering, exact duplicates dropped). numTimeseries: %d, numMetadata: %d,\noriginalMetadata: %v,\nv2Metadata: %v\n Diff: %s", len(req.Timeseries), len(req.Metadata), req.Metadata, v2Req.Metadata, diff))
 		}
 	}
 
