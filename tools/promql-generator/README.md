@@ -16,4 +16,3 @@ promql-generator -labels.file=<labels_file.json> [-promql.count=<int>]
 promql-generator --help
 
 ```
-
