@@ -818,7 +818,6 @@ type Mimir struct {
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -836,6 +835,12 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
+	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends.
+	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
+	// including when running in monolithic and read/write modes.
+	QuerierQueryPlanner *streamingpromql.QueryPlanner
 }
 
 // New makes a new Mimir.

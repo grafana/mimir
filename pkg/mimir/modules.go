@@ -100,7 +100,8 @@ const (
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
-	QueryPlanner                     string = "query-planner"
+	QuerierQueryPlanner              string = "querier-query-planner"
+	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
@@ -527,7 +528,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QueryPlanner,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -823,7 +824,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	case querier.PrometheusEngine:
 		eng = promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryPlanner, util_log.Logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner, util_log.Logger)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -913,11 +914,25 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}), nil
 }
 
-func (t *Mimir) initQueryPlanner() (services.Service, error) {
+func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
-	t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+	t.QuerierQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 
-	analysisHandler := streamingpromql.AnalysisHandler(t.QueryPlanner)
+	// If the query-frontend is running in this process, we want to expose its planner through the analysis endpoint, not
+	// the querier's planner.
+	if !t.Cfg.isQueryFrontendEnabled() {
+		analysisHandler := streamingpromql.AnalysisHandler(t.QuerierQueryPlanner)
+		t.API.RegisterQueryAnalysisAPI(analysisHandler)
+	}
+
+	return nil, nil
+}
+
+func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
+	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
+	t.QueryFrontendQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+
+	analysisHandler := streamingpromql.AnalysisHandler(t.QueryFrontendQueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
@@ -970,7 +985,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QueryPlanner)
+		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
@@ -1254,11 +1269,12 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryPlanner, t.initQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1299,13 +1315,14 @@ func (t *Mimir) setupModuleManager() error {
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault},
+		QuerierQueryPlanner:              {API, ActivityTracker},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendQueryPlanner:        {API, ActivityTracker},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
-		QueryPlanner:                     {API, ActivityTracker},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},
