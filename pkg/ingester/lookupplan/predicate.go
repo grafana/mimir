@@ -77,6 +77,7 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (uint64, error) {
 	var (
 		seriesBehindSelectedValues uint64
+		matchesAnyValues           bool
 		err                        error
 	)
 
@@ -89,12 +90,15 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 		} else {
 			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
 		}
+		matchesAnyValues = seriesBehindSelectedValues > 0
 	case labels.MatchRegexp, labels.MatchNotRegexp:
 		if setMatches := m.SetMatches(); len(setMatches) > 0 {
 			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
+			matchesAnyValues = seriesBehindSelectedValues > 0
 		} else {
 			var labelNameCardinality uint64
 			labelNameCardinality, err = stats.LabelValuesCardinality(ctx, m.Name)
+			matchesAnyValues = labelNameCardinality > 0
 			if m.Matches("") {
 				// The matcher selects all series, which don't have this label.
 				seriesBehindSelectedValues += stats.TotalSeries() - labelNameCardinality
@@ -108,6 +112,10 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 	}
 	switch m.Type {
 	case labels.MatchNotEqual, labels.MatchNotRegexp:
+		if !matchesAnyValues {
+			// This label name doesn't exist. This means that negating this will select everything.
+			return stats.TotalSeries(), nil
+		}
 		return stats.TotalSeries() - seriesBehindSelectedValues, nil
 	}
 	return seriesBehindSelectedValues, nil
