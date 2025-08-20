@@ -71,8 +71,8 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
 	var newMatchersL []*labels.Matcher
 	if e.Op == parser.LUNLESS {
-		// For LUNLESS, we do not propagate matchers from the right-hand side to the left-hand side.
-		// e.g. `up unless down{foo="bar"}` would remain unchanged but `up{foo="bar"} unless down` would become `up{foo="bar"} unless down{foo="bar"}`.
+		// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
+		// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
 		newMatchersL = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
