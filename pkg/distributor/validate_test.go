@@ -774,9 +774,8 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	}).MarshalTo(buf)
 	require.NoError(t, err)
 
-	// Ensure the LabelValueTooLongError doesn't retain a reference to the
-	// buffer.
-	require.NotContains(t, lengthErr.Error(), "forbidden_value")
+	// Ensure the labelValueTooLongError isn't corrupted.
+	require.EqualError(t, lengthErr, "received a series whose label value length exceeds the limit, label: '__name__', value: 'value_longer_than_maxLabelValueLength' (truncated) series: 'value_longer_than_maxLabelValueLength' (err-mimir-label-value-too-long). To adjust the related per-tenant limit, configure -validation.max-length-label-value, or contact your service administrator.")
 }
 
 type sampleValidationCfg struct {
