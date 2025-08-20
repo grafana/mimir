@@ -460,12 +460,15 @@ func TestBlocksStoreReplicationSet_GetClientsFor_NoLoadBalancingStrategyFallback
 				selectedClients[instanceI] = client
 			}
 
-			currClient := selectedClients[instanceI]
-			prevClients := selectedClients[:instanceI]
+			currClient := selectedClients[instanceI].RemoteAddress()
+			prevClients := make([]string, 0)
+			for _, selectedClient := range selectedClients[:instanceI] {
+				prevClients = append(prevClients, selectedClient.RemoteAddress())
+			}
 			require.NotContains(t, prevClients, currClient)
 
 			// Imitate the effect of a failure in the client, excluding it from subsequent attempts.
-			exclude[blockID1] = append(exclude[blockID1], currClient.RemoteAddress())
+			exclude[blockID1] = append(exclude[blockID1], currClient)
 		}
 		for i, c := range selectedClients {
 			// Ensure that the client is in the expected order
