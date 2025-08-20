@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -246,7 +247,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			logger := log.NewNopLogger()
-			comparisonOutcomes := prometheus.NewCounterVec(
+			comparisonOutcomes := promauto.With(prometheus.DefaultRegisterer).NewCounterVec(
 				prometheus.CounterOpts{Name: "test_comparison_outcomes_" + tc.name},
 				[]string{"outcome"},
 			)
@@ -286,7 +287,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 	ctx := context.Background()
 
 	logger := log.NewNopLogger()
-	comparisonOutcomes := prometheus.NewCounterVec(
+	comparisonOutcomes := promauto.With(prometheus.DefaultRegisterer).NewCounterVec(
 		prometheus.CounterOpts{Name: "test_comparison_outcomes_cancelled_after_select"},
 		[]string{"outcome"},
 	)
