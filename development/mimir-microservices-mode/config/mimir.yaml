@@ -52,12 +52,12 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    sync_interval: 1m
+    sync_interval: 30s
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
     # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
-    ignore_blocks_within: 2m
+    ignore_blocks_within: 1m
 
     index_cache:
       backend: memcached

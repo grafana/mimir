@@ -132,7 +132,7 @@ func uploadTestBlock(ctx context.Context, t *testing.T, bucket objstore.Bucket) 
 
 	b, err := tsdb.OpenBlock(nil, fmt.Sprintf("%s/%s", dir, bid.String()), nil, nil)
 	require.NoError(t, err)
-	err = block.Upload(ctx, log.NewNopLogger(), bucket, b.Dir(), nil)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bucket, b.Dir(), nil)
 	require.NoError(t, err)
 	return bid
 }
