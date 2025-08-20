@@ -25,11 +25,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-type loadBalancingStrategy int
+type loadBalancingStrategy string
 
 const (
-	noLoadBalancing = loadBalancingStrategy(iota)
-	randomLoadBalancing
+	InOrder loadBalancingStrategy = "in-order"
+	Random  loadBalancingStrategy = "random"
 )
 
 // BlocksStoreSet implementation used when the blocks are sharded and replicated across
@@ -146,7 +146,7 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 }
 
 func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy) *ring.InstanceDesc {
-	if balancingStrategy == randomLoadBalancing {
+	if balancingStrategy == Random {
 		// Randomize the list of instances to not always query the same one.
 		rand.Shuffle(len(set.Instances), func(i, j int) {
 			set.Instances[i], set.Instances[j] = set.Instances[j], set.Instances[i]

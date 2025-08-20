@@ -357,7 +357,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, InOrder, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -388,6 +388,101 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBlocksStoreReplicationSet_GetClientsFor_NoLoadBalancingStrategyFallbackOnError(t *testing.T) {
+	const (
+		numRuns      = 3
+		numInstances = 3
+	)
+
+	ctx := context.Background()
+	userID := "user-A"
+	registeredAt := time.Now()
+
+	minT := time.Now().Add(-5 * time.Hour)
+	maxT := minT.Add(2 * time.Hour)
+	blockID1 := ulid.MustNew(1, nil)
+	block1 := newBlock(blockID1, minT, maxT)
+
+	// Create a ring.
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
+		d := ring.NewDesc()
+		for n := 1; n <= numInstances; n++ {
+			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), "", []uint32{uint32(n)}, ring.ACTIVE, registeredAt, false, time.Time{})
+		}
+		return d, true, nil
+	}))
+
+	// Configure a replication factor equal to the number of instances, so that every store-gateway gets all blocks.
+	ringCfg := ring.Config{}
+	flagext.DefaultValues(&ringCfg)
+	ringCfg.ReplicationFactor = numInstances
+
+	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
+	reg := prometheus.NewPedanticRegistry()
+	s, err := newBlocksStoreReplicationSet(r, InOrder, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
+	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
+
+	// Wait until the ring client has initialised the state.
+	test.Poll(t, time.Second, true, func() interface{} {
+		all, err := r.GetAllHealthy(storegateway.BlocksRead)
+		return err == nil && len(all.Instances) > 0
+	})
+
+	set, err := r.GetWithOptions(mimir_tsdb.HashBlockID(block1.ID), storegateway.BlocksRead, []ring.Option{}...)
+	expectedClients := set.GetAddresses()
+	require.NoError(t, err)
+
+	// Initialize outside of loop to close later.
+	selectedClients := make([]BlocksStoreClient, numInstances)
+	for runI := 0; runI < numRuns; runI++ {
+
+		// Request the same block multiple times to imitate queryWithConsistencyCheck's retry behavior
+		exclude := map[ulid.ULID][]string{}
+		selectedClients = make([]BlocksStoreClient, numInstances)
+
+		for instanceI := 0; instanceI < numInstances; instanceI++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, exclude)
+			require.NoError(t, err)
+			require.Len(t, clients, 1)
+
+			// Only one client; record the map value
+			for client := range clients {
+				selectedClients[instanceI] = client
+			}
+
+			currClient := selectedClients[instanceI].RemoteAddress()
+			prevClients := make([]string, 0)
+			for _, selectedClient := range selectedClients[:instanceI] {
+				prevClients = append(prevClients, selectedClient.RemoteAddress())
+			}
+			require.NotContains(t, prevClients, currClient)
+
+			// Imitate the effect of a failure in the client, excluding it from subsequent attempts.
+			exclude[blockID1] = append(exclude[blockID1], currClient)
+		}
+		for i, c := range selectedClients {
+			// Ensure that the client is in the expected order
+			// and that no shuffling has occurred over multiple runs.
+			assert.Equal(t, expectedClients[i], c.RemoteAddress())
+		}
+	}
+
+	defer func() {
+		// Close all clients to ensure no goroutines are leaked.
+		for _, c := range selectedClients {
+			c.(io.Closer).Close() //nolint:errcheck
+		}
+	}()
 }
 
 func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy(t *testing.T) {
@@ -427,7 +522,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, Random, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck

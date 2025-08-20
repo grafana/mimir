@@ -1696,6 +1696,11 @@ The `querier` block configures the querier.
 # querier.store-gateway-client
 [store_gateway_client: <grpc_client>]
 
+# (advanced) Store-gateway replica selection strategy to use. Either 'in-order',
+# which is not recommended with zone awareness, or 'random'
+# CLI flag: -querier.store-gateway-replica-load-balancing-strategy
+[store_gateway_replica_load_balancing_strategy: <string> | default = "random"]
+
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
 # -querier.query-ingesters-within. If this setting is false or
