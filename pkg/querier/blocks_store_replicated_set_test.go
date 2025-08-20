@@ -455,6 +455,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_NoLoadBalancingStrategyFallback
 			require.NoError(t, err)
 			require.Len(t, clients, 1)
 
+			// Only one client; record the map value
 			for client := range clients {
 				selectedClients[instanceI] = client
 			}
