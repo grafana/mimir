@@ -3061,7 +3061,7 @@ minio:
 
 kafka:
   # -- Enable Kafka for ingest-storage architecture (demo purposes only)
-  enabled: true
+  enabled: false
 
   image:
     # -- The container image registry
@@ -3093,8 +3093,7 @@ kafka:
     requests:
       cpu: 100m
       memory: 512Mi
-    limits:
-      memory: 1Gi
+    limits: {}
   # -- Node selector for Kafka pods
   nodeSelector: {}
   # -- Tolerations for Kafka pods
