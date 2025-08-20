@@ -106,12 +106,12 @@ Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping
 #### Configure the HA tracker KV store
 
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
-The suggested KV store for the HA tracker is `memberlist` since version [2.17](https://github.com/grafana/mimir/releases/tag/mimir-2.17.0). The `consul` and `etcd` are marked as _deprecated_
+In [Grafana Mimir versions 2.17](https://github.com/grafana/mimir/releases/tag/mimir-2.17.0) and later, use `memberlist` as the KV store backend for the HA tracker. The `consul` and `etcd` backends are deprecated.
 
 The following CLI flags (and their respective YAML configuration options) are available for configuring the HA tracker KV store:
 
-- `-distributor.ha-tracker.store`: The backend storage to use, which is `memberlist`. The `consul` or `etcd` are marked as deprecated.
-- `-memberlist.*`: The memberlist client configuration. Its common and used by other Mimir components as well.
+- `-distributor.ha-tracker.store`: The backend storage to use, which is `memberlist`. The `consul` and `etcd` backends are deprecated.
+- `-memberlist.*`: The memberlist client configuration. It's common and used by other Mimir components as well.
 - [deprecated]`-distributor.ha-tracker.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
 - [deprecated]`-distributor.ha-tracker.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
 
