@@ -153,7 +153,7 @@ frontend:
   cache_samples_processed_stats: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
-  # scheduler_address: "query-scheduler:9011"
+  # scheduler_address: "query-scheduler:9008"
 
   results_cache:
     compression: snappy
@@ -165,10 +165,7 @@ frontend_worker:
   response_streaming_enabled: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
-  # scheduler_address: "query-scheduler:9011"
-
-  # Uncomment to skip query-scheduler and enqueue queries directly in the query-frontend.
-  # frontend_address: "query-frontend:9007"
+  # scheduler_address: "query-scheduler:9008"
 
 querier:
   # query_store_after must be smaller than blocks_storage.tsdb.retention_period
@@ -181,6 +178,8 @@ query_scheduler:
 limits:
   # Limit max query time range to 31d
   max_partial_query_length: 744h
+  # Limit total query time range to 365d
+  max_total_query_length: 8760h
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32

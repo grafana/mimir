@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -209,7 +209,7 @@ type Limits struct {
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
-	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
+	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
 	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
@@ -616,21 +616,6 @@ func (l *Limits) Validate() error {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
-		// Generate translation strategy based on other settings.
-		switch validationScheme {
-		case model.LegacyValidation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
-			}
-		case model.UTF8Validation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
 	}
@@ -638,14 +623,14 @@ func (l *Limits) Validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		cfg.MetricNameValidationScheme = validationScheme
+		cfg.NameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 
@@ -1131,7 +1116,7 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
 	validationScheme := o.NameValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }
@@ -1443,7 +1428,30 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 }
 
 func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	return otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	if strategy != "" {
+		return strategy
+	}
+
+	// Generate translation strategy based on other settings.
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
+	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	case model.LegacyValidation:
+		if suffixesEnabled {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case model.UTF8Validation:
+		if suffixesEnabled {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.NoTranslation
+		}
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
+	}
+	return strategy
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.

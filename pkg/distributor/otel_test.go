@@ -1290,7 +1290,6 @@ func TestHandlerOTLPPush(t *testing.T) {
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
 				NameValidationScheme:          validation.ValidationSchemeValue(model.LegacyValidation),
-				OTelTranslationStrategy:       validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
 				OTelMetricSuffixesEnabled:     false,
 			}
 			limits := validation.NewOverrides(

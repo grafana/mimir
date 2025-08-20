@@ -1232,7 +1232,7 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		}
 		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
 		_, ok := testedFns[expectedFn]
-		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
+		assert.Truef(t, ok || slices.Contains(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
 	}
 }
 

@@ -4,9 +4,11 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -67,12 +69,21 @@ func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
 }
 
-func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	if len(children) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 child for Duplicate, got %v", len(children))
+func (d *Duplicate) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (d *Duplicate) ExpressionPosition() posrange.PositionRange {
+	return d.Inner.ExpressionPosition()
+}
+
+func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(d.Inner, timeRange)
+	if err != nil {
+		return nil, err
 	}
 
-	switch inner := children[0].(type) {
+	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
 		return &InstantVectorDuplicationConsumerOperatorFactory{
 			Buffer: NewInstantVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
@@ -82,7 +93,7 @@ func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTime
 			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
 		}, nil
 	default:
-		return nil, fmt.Errorf("expected InstantVectorOperator as child of Duplicate, got %T", children[0])
+		return nil, fmt.Errorf("expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got %T", inner)
 	}
 }
 

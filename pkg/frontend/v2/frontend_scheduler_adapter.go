@@ -4,16 +4,21 @@ package v2
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -27,29 +32,65 @@ type frontendToSchedulerAdapter struct {
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 	req *frontendRequest, frontendAddr string,
 ) (*schedulerpb.FrontendToScheduler, error) {
-	var addlQueueDims []string
-	var err error
-	addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
-	if err != nil {
-		return nil, err
+	msg := &schedulerpb.FrontendToScheduler{
+		Type:            schedulerpb.ENQUEUE,
+		QueryID:         req.queryID,
+		UserID:          req.userID,
+		FrontendAddress: frontendAddr,
+		StatsEnabled:    req.statsEnabled,
 	}
 
-	return &schedulerpb.FrontendToScheduler{
-		Type:                      schedulerpb.ENQUEUE,
-		QueryID:                   req.queryID,
-		UserID:                    req.userID,
-		HttpRequest:               req.request,
-		FrontendAddress:           frontendAddr,
-		StatsEnabled:              req.statsEnabled,
-		AdditionalQueueDimensions: addlQueueDims,
-	}, nil
+	if req.httpRequest == nil && req.protobufRequest == nil {
+		return nil, errors.New("got neither a HTTP nor a Protobuf request payload")
+	}
+
+	if req.httpRequest != nil && req.protobufRequest != nil {
+		return nil, errors.New("got both a HTTP and a Protobuf request payload")
+	}
+
+	if req.httpRequest != nil {
+		var err error
+		msg.AdditionalQueueDimensions, err = a.extractAdditionalQueueDimensionsForHTTPRequest(req.ctx, req.httpRequest, time.Now())
+		if err != nil {
+			return nil, err
+		}
+
+		// Propagate trace context for this query in the HTTP payload.
+		// We can't use the trace headers from the gRPC request, as it is a long-running stream from the frontend to the scheduler
+		// that handles many queries.
+		otel.GetTextMapPropagator().Inject(req.ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.httpRequest))
+
+		msg.Payload = &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: req.httpRequest}
+	} else {
+		// TODO: set additional queue dimensions based on queried time range of request (taking into account lookback etc.)
+
+		encodedRequest, err := types.MarshalAny(req.protobufRequest)
+		if err != nil {
+			return nil, err
+		}
+
+		// Propagate trace context for this query in the request payload.
+		// We can't use the trace headers from the gRPC request, as it is a long-running stream from the frontend to the scheduler
+		// that handles many queries.
+		traceHeaders := map[string]string{}
+		otel.GetTextMapPropagator().Inject(req.ctx, propagation.MapCarrier(traceHeaders))
+
+		msg.Payload = &schedulerpb.FrontendToScheduler_ProtobufRequest{
+			ProtobufRequest: &schedulerpb.ProtobufRequest{
+				Payload:      encodedRequest,
+				TraceHeaders: traceHeaders,
+			},
+		}
+	}
+
+	return msg, nil
 }
 
 const ShouldQueryIngestersQueueDimension = "ingester"
 const ShouldQueryStoreGatewayQueueDimension = "store-gateway"
 const ShouldQueryIngestersAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
-func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
+func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensionsForHTTPRequest(
 	ctx context.Context, request *httpgrpc.HTTPRequest, now time.Time,
 ) ([]string, error) {
 	var err error
