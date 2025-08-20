@@ -15,7 +15,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -414,7 +413,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	validationScheme := cfg.NameValidationScheme(userID)
 
-	if !labels.IsValidMetricName(unsafeMetricName, validationScheme) {
+	if !validationScheme.IsValidMetricName(unsafeMetricName) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
@@ -440,7 +439,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelValidation && !labels.IsValidLabelName(l.Name, validationScheme) {
+		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
