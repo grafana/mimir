@@ -25,7 +25,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -223,13 +222,8 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	builder := NewTSDBBuilder(logger, b.cfg.DataDir, spec.Partition, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
-	deserializeRecord := func(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
-		// As an optimization, the block-builder skips unmarshaling of exemplars because TSDB doesn't persist them into blocks.
-		wr.SkipUnmarshalingExemplars = true
-		return ingest.DeserializeRecordContent(content, wr, version)
-	}
-
-	consumer := ingest.NewPusherConsumer(deserializeRecord, builder, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
+	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
+	consumer := ingest.NewPusherConsumer(builder, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
 
 	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
