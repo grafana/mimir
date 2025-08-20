@@ -137,7 +137,7 @@ func OTLPHandler(
 			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
 		}
-		if labelValueTooLongErr := (LabelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
+		if labelValueTooLongErr := (labelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
 			// Translate from Mimir to OTel domain terminology
 			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
 		}
@@ -760,7 +760,7 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 }
 
 type otelAttributeValueTooLongError struct {
-	LabelValueTooLongError
+	labelValueTooLongError
 }
 
 func (e otelAttributeValueTooLongError) Error() string {

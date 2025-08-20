@@ -229,7 +229,7 @@ func TestValidateLabels(t *testing.T) {
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			wantErr: alwaysErr(LabelValueTooLongError{
+			wantErr: alwaysErr(labelValueTooLongError{
 				Label: labels.Label{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 				Limit: 25,
 				Series: mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{
@@ -759,7 +759,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
 	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
-	var lengthErr LabelValueTooLongError
+	var lengthErr labelValueTooLongError
 	require.ErrorAs(t, err, &lengthErr)
 
 	// Reuse PreallocTimeseries by unmarshaling a different TimeSeries into

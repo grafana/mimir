@@ -123,13 +123,13 @@ var (
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
 
-type LabelValueTooLongError struct {
+type labelValueTooLongError struct {
 	Label  labels.Label
 	Series string
 	Limit  int
 }
 
-func (e LabelValueTooLongError) Error() string {
+func (e labelValueTooLongError) Error() string {
 	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, e.Series)
 }
 
@@ -465,7 +465,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return LabelValueTooLongError{
+			return labelValueTooLongError{
 				Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
 				Series: mimirpb.FromLabelAdaptersToString(ls),
 				Limit:  maxLabelValueLength,
