@@ -2124,7 +2124,7 @@
           "kind": "field",
           "name": "store_gateway_replica_load_balancing_strategy",
           "required": false,
-          "desc": "Store-gateway replica selection strategy to use, either 'in-order' (not recommended with zone awareness) or 'random'",
+          "desc": "Store-gateway replica selection strategy to use. Either 'in-order', which is not recommended with zone awareness, or 'random'",
           "fieldValue": null,
           "fieldDefaultValue": "random",
           "fieldFlag": "querier.store-gateway-replica-load-balancing-strategy",

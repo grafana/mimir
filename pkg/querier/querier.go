@@ -85,7 +85,7 @@ const (
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
-	f.StringVar(&cfg.StoreGatewayReplicaLoadBalancingStrategy, "querier.store-gateway-replica-load-balancing-strategy", string(Random), fmt.Sprintf("Store-gateway replica selection strategy to use, either '%v' (not recommended with zone awareness) or '%v'", InOrder, Random))
+	f.StringVar(&cfg.StoreGatewayReplicaLoadBalancingStrategy, "querier.store-gateway-replica-load-balancing-strategy", string(Random), fmt.Sprintf("Store-gateway replica selection strategy to use. Either '%v', which is not recommended with zone awareness, or '%v'", InOrder, Random))
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
