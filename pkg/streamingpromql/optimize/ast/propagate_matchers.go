@@ -64,10 +64,6 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		return vssL, matchersL
 	}
 
-	if e.VectorMatching == nil {
-		return nil, nil
-	}
-
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
 	var newMatchersL []*labels.Matcher
 	if e.Op == parser.LUNLESS {
@@ -129,9 +125,6 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 }
 
 func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
-	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
-		return nil, nil
-	}
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
 		// Shortcut if there are no labels allowed to propagate inwards or outwards.
@@ -153,13 +146,13 @@ func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupin
 	if vs.containsAgg {
 		switch {
 		case vs.include && include:
-			vs.labelsSet = getIntersection(vs.labelsSet, groupingSet)
+			vs.labelsSet = vs.labelsSet.Intersection(groupingSet)
 		case !vs.include && !include:
-			vs.labelsSet = getUnion(vs.labelsSet, groupingSet)
+			vs.labelsSet = vs.labelsSet.Union(groupingSet)
 		case vs.include && !include:
-			vs.labelsSet = getDifference(vs.labelsSet, groupingSet)
+			vs.labelsSet = vs.labelsSet.Difference(groupingSet)
 		case !vs.include && include:
-			vs.labelsSet = getDifference(groupingSet, vs.labelsSet)
+			vs.labelsSet = groupingSet.Difference(vs.labelsSet)
 			vs.include = true
 		}
 		return
@@ -189,7 +182,7 @@ func vectorSelectorArgumentIndex(funcName string) int {
 		return 0
 	case "quantile_over_time":
 		return 1
-	// Explicitly not supported
+	// Explicitly not supported because it's not valid to propagate matchers across these functions.
 	case "scalar":
 		return -1
 	default:
@@ -198,7 +191,13 @@ func vectorSelectorArgumentIndex(funcName string) int {
 }
 
 func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet stringSet, include bool) []*labels.Matcher {
-	matchersToAdd := make([]*labels.Matcher, 0, len(matchersSrc))
+	var length int
+	if include {
+		length = min(len(labelsSet), len(matchersSrc))
+	} else {
+		length = len(matchersSrc)
+	}
+	matchersToAdd := make([]*labels.Matcher, 0, length)
 	for _, m := range matchersSrc {
 		if isMetricNameMatcher(m) {
 			continue
@@ -252,7 +251,7 @@ func (s stringSet) Contains(key string) bool {
 	return exists
 }
 
-func getIntersection(set1, set2 stringSet) stringSet {
+func (set1 stringSet) Intersection(set2 stringSet) stringSet {
 	overlap := make(stringSet, len(set1))
 	for key := range set1 {
 		if set2.Contains(key) {
@@ -262,7 +261,7 @@ func getIntersection(set1, set2 stringSet) stringSet {
 	return overlap
 }
 
-func getUnion(set1, set2 stringSet) stringSet {
+func (set1 stringSet) Union(set2 stringSet) stringSet {
 	union := make(stringSet, len(set1)+len(set2))
 	for key := range set1 {
 		union.Add(key)
@@ -273,7 +272,7 @@ func getUnion(set1, set2 stringSet) stringSet {
 	return union
 }
 
-func getDifference(set1, set2 stringSet) stringSet {
+func (set1 stringSet) Difference(set2 stringSet) stringSet {
 	diff := make(stringSet, len(set1))
 	for key := range set1 {
 		if !set2.Contains(key) {

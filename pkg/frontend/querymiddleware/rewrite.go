@@ -61,9 +61,7 @@ func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 
 	rewrittenQuery, success, err := m.rewriteQuery(ctx, r.GetQuery())
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to rewrite the input query, falling back to the original query", "query", r.GetQuery(), "err", err)
-
-		return m.next.Do(ctx, r)
+		return nil, err
 	}
 
 	if !success {

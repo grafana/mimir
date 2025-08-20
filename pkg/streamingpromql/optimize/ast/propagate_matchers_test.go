@@ -68,10 +68,12 @@ var testCasesPropagateMatchers = map[string]string{
 	`rate(up{foo="bar"}[2m]) + delta(down{baz="fob"}[4m])`:                     `rate(up{foo="bar", baz="fob"}[2m]) + delta(down{foo="bar", baz="fob"}[4m])`,
 	`up * -down{foo="bar"}`:                                                    `up{foo="bar"} * -down{foo="bar"}`,
 	`up{foo="bar"} @ 1 + down @ 2`:                                             `up{foo="bar"} @ 1 + down{foo="bar"} @ 2`,
+	`scalar(up{foo="bar"} * down)`:                                             `scalar(up{foo="bar"} * down{foo="bar"})`,
+	`scalar(up{foo="bar"}) * down`:                                             `scalar(up{foo="bar"}) * down`,
+	`scalar(up) * down{foo="bar"}`:                                             `scalar(up) * down{foo="bar"}`,
+
+	// Subqueries (not currently supported)
 	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`,
-	`scalar(up{foo="bar"} * down)`: `scalar(up{foo="bar"} * down{foo="bar"})`,
-	`scalar(up{foo="bar"}) * down`: `scalar(up{foo="bar"}) * down`,
-	`scalar(up) * down{foo="bar"}`: `scalar(up) * down{foo="bar"}`,
 
 	// Aggregations
 	`sum(up) / sum(down)`:                                                                                  `sum(up) / sum(down)`,
@@ -99,7 +101,7 @@ var testCasesPropagateMatchers = map[string]string{
 	`up * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`:                                    `up * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`,
 	`up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob"})`:                         `up{soo="sar"} * ignoring(foo) sum without (baz) (down{foo="bar", baz="fob", soo="sar"})`,
 	`topk by (foo) (5, up{foo="bar"}) / bottomk by (baz) (5, down{baz="fob"})`:                             `topk by (foo) (5, up{foo="bar"}) / bottomk by (baz) (5, down{baz="fob"})`,
-	`topk by (foo) (5, up{foo="bar"}) / bottomk by (foo) (5, down{baz="fob"})`:                             `topk by (foo) (5, up{foo="bar"}) / bottomk by (foo) (5, down{baz="fob"})`,
+	`topk by (foo) (5, up{foo="bar"}) / bottomk by (foo) (5, down{baz="fob"})`:                             `topk by (foo) (5, up{foo="bar"}) / bottomk by (foo) (5, down{foo="bar", baz="fob"})`,
 	`sum by (foo) (abs(up{foo="bar"})) / sum by (foo) (sin(down))`:                                         `sum by (foo) (abs(up{foo="bar"})) / sum by (foo) (sin(down{foo="bar"}))`,
 	`max by (baz) (avg by (foo, baz) (up)) / down{foo="bar"}`:                                              `max by (baz) (avg by (foo, baz) (up)) / down{foo="bar"}`,
 	`max by (foo) (avg by (foo, baz) (up{foo="bar"})) / down`:                                              `max by (foo) (avg by (foo, baz) (up{foo="bar"})) / down{foo="bar"}`,
