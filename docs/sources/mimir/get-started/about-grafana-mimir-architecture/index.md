@@ -11,9 +11,7 @@ weight: 5
 
 # Grafana Mimir architecture
 
-Grafana Mimir has a microservices-based architecture.
-The system has multiple horizontally scalable microservices that can run separately and in parallel.
-Grafana Mimir microservices are called components.
+Grafana Mimir has a microservices-based architecture. The system has multiple horizontally scalable microservices that can run separately and in parallel. Grafana Mimir microservices are called components.
 
 Grafana Mimir's design compiles the code for all components into a single binary.
 
@@ -23,22 +21,33 @@ To get started, you can run Grafana Mimir in [monolithic mode](../../references/
 
 ## About ingest storage architecture
 
-Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir. Ingest storage architecture uses object storage as a data transfer pipeline between the write and read paths. This approach allows for synchronous writing of incoming data directly to object storage. Data is then read asynchronously for querying.
+Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir.
 
-Ingest storage architecture marks the next generation of Grafana Mimir. Compared with the classic architecture, ingest storage architecture boosts system reliability and supports future growth and new use cases at a larger scale.
+Ingest storage architecture represents the next generation of Mimir architecture. It's designed to enhance reliability, support growth, and enable use cases at an even larger scale, aiming for more robust and cost-effective deployments.
 
 {{< admonition type="note" >}}
 Classic architecture is still supported in Grafana Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new deployment of Grafana Mimir.{{< /admonition >}}
 
 ### How ingest storage architecture works
 
-Compared to the classic Architecture, ingest storage architecture
+Ingest storage architecture fundamentally changes how Grafana Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
 
-Diagram!
+Ingest storage architectures mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses object storage as a central data transfer pipeline between the write and read paths.
 
-## Benefits of ingest storage architecture
+Here's an overview of how ingest storage architecture works (WIP):
 
-Ingest storage architecture offers the following advantages over the classic architecture.
+- .
+
+Diagram! (WIP)
+
+### Benefits of ingest storage architecture
+
+Ingest storage architecture offers the following advantages over the classic architecture:
+
+- Increased reliability and resilience in the event of sudden spikes in query traffic and ingest volume.
+- Decoupled read and write paths prevents performance interference.
+- Ingesters are less stateful, making them easier to manage.
+- Using object storage as the data pipeline avoids high cross-availability zone data transfer costs. Object stores are highly available and durable, with free data transfer within a region across availability zones.
 
 ## Grafana Mimir components
 
