@@ -363,12 +363,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		switch fnc {
 		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
-			absentLabels := functions.CreateLabelsForAbsentFunction(expr.Args[0])
-			if len(absentLabels) > 0 {
-				f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(absentLabels)
-			} else {
-				f.AbsentLabels = nil
-			}
 		case functions.FUNCTION_TIMESTAMP:
 			vs, isVectorSelector := args[0].(*core.VectorSelector)
 			if isVectorSelector {
