@@ -11798,7 +11798,7 @@
               "required": false,
               "desc": "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2",
               "fieldValue": null,
-              "fieldDefaultValue": 2,
+              "fieldDefaultValue": 5,
               "fieldFlag": "store-gateway.dynamic-replication.multiple",
               "fieldType": "int",
               "fieldCategory": "experimental"
@@ -11904,6 +11904,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "include_tenant_id_in_profile_labels",
+      "required": false,
+      "desc": "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "include-tenant-id-in-profile-labels",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     },
     {
       "kind": "block",

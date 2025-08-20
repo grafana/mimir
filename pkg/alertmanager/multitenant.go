@@ -772,7 +772,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	// Custom Mimir configurations have the highest precedence.
 	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
-		if !cfgs.Grafana.Default {
+		if cfgs.Grafana.Promoted {
 			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		}
 		am.removeFromSkippedList(cfgs.Mimir.User)
