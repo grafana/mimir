@@ -41,6 +41,11 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	}, nil
 }
 
+// Query queries the Parquet shard for the given time range and matchers.
+// seriesWithoutChunks iterates only labels, while seriesWithChunks includes chunk data.
+// Their underlying structures are independent of each other.
+// Although seriesWithoutChunks only has labels, we use ChunkSeriesSet to play nicely
+// with other helpers. Arguably hacky.
 func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
 	seriesWithoutChunks prom_storage.ChunkSeriesSet,
 	seriesWithChunks prom_storage.ChunkSeriesSet,
