@@ -149,6 +149,7 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
+  - [ ] Ensure the workflow to sync linux packages runs successfully later
   - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
     - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
@@ -296,6 +297,7 @@ To publish a stable release:
 1. Check the `README.md` file for any broken links.
 1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
    - Keep the last 3 minor releases
+1. Ensure that the daily workflow to sync linux packages in our internal deployment repository runs successfully later that day, or better yet, trigger it manually so that the delay does not break renovate automation for our users.
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
       1. Make sure your user in the Grafana Labs organization members list has Admin access.
