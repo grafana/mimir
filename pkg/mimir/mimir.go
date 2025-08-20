@@ -837,7 +837,8 @@ type Mimir struct {
 	CostAttributionManager           *costattribution.Manager
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
-	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends.
+	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,
+	// and support for sending queries directly to queriers via the Prometheus HTTP API endpoints is removed.
 	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
 	// including when running in monolithic and read/write modes.
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
