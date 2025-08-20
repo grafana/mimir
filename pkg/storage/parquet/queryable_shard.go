@@ -4,7 +4,6 @@ package parquet
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/efficientgo/core/errors"
@@ -16,8 +15,6 @@ import (
 	"github.com/prometheus-community/parquet-common/util"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -44,14 +41,19 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	}, nil
 }
 
-func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (prom_storage.ChunkSeriesSet, error) {
-	errGroup, ctx := errgroup.WithContext(ctx)
+func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
+	seriesWithoutChunks prom_storage.ChunkSeriesSet,
+	seriesWithChunks prom_storage.ChunkSeriesSet,
+	err error,
+) {
+	errGroup, groupCtx := errgroup.WithContext(ctx)
 	errGroup.SetLimit(b.concurrency)
 
 	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
-	results := make([][]prom_storage.ChunkSeries, rowGroupCount)
-	for i := range results {
-		results[i] = make([]prom_storage.ChunkSeries, 0, 1024/rowGroupCount)
+	labelsSets := make([]prom_storage.ChunkSeriesSet, rowGroupCount)
+	var seriesSets []prom_storage.ChunkSeriesSet
+	if !skipChunks {
+		seriesSets = make([]prom_storage.ChunkSeriesSet, rowGroupCount)
 	}
 
 	for rgi := range rowGroupCount {
@@ -64,7 +66,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
+			rr, err := search.Filter(groupCtx, b.shard, rgi, cs...)
 			if err != nil {
 				return err
 			}
@@ -75,253 +77,64 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 
 			b.shard.TSDBSchema()
 
-			labelsSlices, err := b.m.MaterializeAllLabels(ctx, rgi, rr)
+			labelsSlices, err := b.m.MaterializeAllLabels(groupCtx, rgi, rr)
 			if err != nil {
 				return errors.Wrapf(err, "error materializing labels")
 			}
 
-			labels, rr := b.m.FilterSeriesLabels(ctx, sp, labelsSlices, rr)
-			
+			labels, rr := b.m.FilterSeriesLabels(groupCtx, sp, labelsSlices, rr)
+
+			labelsSets[rgi] = search.NewNoChunksConcreteLabelsSeriesSet(labels)
 			if skipChunks {
-				// For skipChunks, just add series with labels (no need to group)
-				noChunksSeriesSet := search.NewNoChunksConcreteLabelsSeriesSet(labels)
-				defer func() { _ = noChunksSeriesSet.Close() }()
-				for noChunksSeriesSet.Next() {
-					results[rgi] = append(results[rgi], noChunksSeriesSet.At())
+				// No need to query for chunks
+				return nil
+			}
+
+			// MaterializeChunks is designed to materialize rows from top to bottom of the Parquet file. That
+			// is not necessarily ordered by labels set, as rows are ordered by a particular subset of labels.
+			// If we got them in that order, we'd have to load them all inmemory to then sort (because we need them sorted).
+			// Instead we leverage the fact that rows are sorted by label set _after_ sorted by that particular
+			// subset of columns (known as the 'sorting columns'). That means that if we were to materialize a set of rows
+			// with equal sorting column values, they would be sorted by label set.
+			// So the trick is: group our label sets in groups such that all series within a group have the same values
+			// for the sorting columns. We can then materialize each of the groups separately and then merge them sorted
+			// on the fly as we iterate, given each of them is sorted.
+			labelsGroups, rrGroups, err := groupBySortingColumns(b.shard.LabelsFile().RowGroups()[rgi].SortingColumns(), labels, rr)
+			if err != nil {
+				return errors.Wrapf(err, "error grouping by sorting columns")
+			}
+
+			var groupSeriesSets []prom_storage.ChunkSeriesSet
+			// TODO: this could be parallelizable, though the creation of iterators should not be too expensive nor i/o heavy
+			for groupIdx, groupRR := range rrGroups {
+				if len(groupRR) == 0 {
+					continue
 				}
-				if err := noChunksSeriesSet.Err(); err != nil {
-					return err
-				}
-			} else {
-				// Group by sorting columns for chunk materialization
-				labelsGroups, rrGroups, err := groupBySortingColumns(b.shard.LabelsFile().RowGroups()[rgi].SortingColumns(), labels, rr)
+				// TODO: closeable
+				chunksIter, err := b.m.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
 				if err != nil {
-					return errors.Wrapf(err, "error grouping by sorting columns")
+					return errors.Wrapf(err, "error materializing chunks for group %d", groupIdx)
 				}
 
-				// Create ChunkSeriesSet for each group
-				var groupSeriesSets []prom_storage.ChunkSeriesSet
-				for groupIdx, groupRR := range rrGroups {
-					if len(groupRR) == 0 {
-						continue
-					}
-
-					groupLabels := labelsGroups[groupIdx]
-					
-					// Materialize chunks for this group
-					chunksIter, err := b.m.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
-					if err != nil {
-						return errors.Wrapf(err, "error materializing chunks for group %d", groupIdx)
-					}
-
-					// Create simple series set that pairs chunks with labels without filtering
-					groupSeriesSet := &simpleChunkSeriesSet{
-						labels:     groupLabels,
-						chunksIter: chunksIter,
-					}
-					groupSeriesSets = append(groupSeriesSets, groupSeriesSet)
-				}
-
-				// Merge all group iterators on-the-fly using NewMergeChunkSeriesSet
-				if len(groupSeriesSets) > 0 {
-					// Close all individual group series sets when done
-					defer func() {
-						for _, groupSet := range groupSeriesSets {
-							if closer, ok := groupSet.(interface{ Close() error }); ok {
-								_ = closer.Close()
-							}
-						}
-					}()
-					
-					mergedSeriesSet := prom_storage.NewMergeChunkSeriesSet(groupSeriesSets, 0, prom_storage.NewConcatenatingChunkSeriesMerger())
-					for mergedSeriesSet.Next() {
-						results[rgi] = append(results[rgi], mergedSeriesSet.At())
-					}
-					if err := mergedSeriesSet.Err(); err != nil {
-						return err
-					}
-				}
+				// TODO: we are returning the chunks iterator without knowing if it has any values at all.
+				// And, more importantly, labels for the series. In Prometheus world that violates the querier's
+				// interface. For us, whether or not that is problematic depends on how Queriers handle responses
+				// from Store Gateways that have labels for which there are no series. We'll see...
+				groupSeriesSet := newConcreteLabelsChunkSeriesSet(labelsGroups[groupIdx], chunksIter)
+				groupSeriesSets = append(groupSeriesSets, groupSeriesSet)
 			}
 
-			if sorted {
-				sort.Sort(byLabels(results[rgi]))
-			}
+			seriesSets[rgi] = prom_storage.NewMergeChunkSeriesSet(groupSeriesSets, 0, prom_storage.NewConcatenatingChunkSeriesMerger())
 			return nil
 		})
 	}
 
 	if err := errGroup.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	totalResults := 0
-	for _, res := range results {
-		totalResults += len(res)
-	}
-
-	resultsFlattened := make([]prom_storage.ChunkSeries, 0, totalResults)
-	for _, res := range results {
-		resultsFlattened = append(resultsFlattened, res...)
-	}
-	if sorted {
-		sort.Sort(byLabels(resultsFlattened))
-	}
-
-	return convert.NewChunksSeriesSet(resultsFlattened), nil
-}
-
-// simpleChunkSeriesSet is a ChunkSeriesSet that pairs chunks with labels without filtering empty chunks
-type simpleChunkSeriesSet struct {
-	labels      []labels.Labels
-	chunksIter  search.ChunksIteratorIterator
-	labelIdx    int
-	currentSeries prom_storage.ChunkSeries
-	err         error
-}
-
-func (s *simpleChunkSeriesSet) Next() bool {
-	if !s.chunksIter.Next() {
-		s.err = s.chunksIter.Err()
-		return false
-	}
-	
-	if s.labelIdx >= len(s.labels) {
-		s.err = errors.Newf("chunk/label mismatch: got chunk but no corresponding label (labelIdx=%d, labels=%d)", s.labelIdx, len(s.labels))
-		return false
-	}
-	
-	lbls := s.labels[s.labelIdx]
-	chunkIter := s.chunksIter.At()
-	
-	s.currentSeries = &simpleChunkSeries{
-		labels:      lbls,
-		chunkIter:   chunkIter,
-	}
-	s.labelIdx++
-	return true
-}
-
-func (s *simpleChunkSeriesSet) At() prom_storage.ChunkSeries {
-	return s.currentSeries
-}
-
-func (s *simpleChunkSeriesSet) Err() error {
-	return s.err
-}
-
-func (s *simpleChunkSeriesSet) Warnings() annotations.Annotations {
-	return nil
-}
-
-func (s *simpleChunkSeriesSet) Close() error {
-	return s.chunksIter.Close()
-}
-
-// simpleChunkSeries is a simple ChunkSeries that pairs labels with a chunk iterator
-type simpleChunkSeries struct {
-	labels    labels.Labels
-	chunkIter chunks.Iterator
-}
-
-func (s *simpleChunkSeries) Labels() labels.Labels {
-	return s.labels
-}
-
-func (s *simpleChunkSeries) Iterator(_ chunks.Iterator) chunks.Iterator {
-	return s.chunkIter
-}
-
-func (s *simpleChunkSeries) ChunkCount() (int, error) {
-	// We don't have a way to count chunks without consuming the iterator,
-	// so return -1 to indicate unknown count
-	return -1, nil
-}
-
-func groupBySortingColumns(sortingColumns []parquet.SortingColumn, lbls []labels.Labels, rr []search.RowRange) ([][]labels.Labels, [][]search.RowRange, error) {
-	sortingLabels := make([]string, 0, len(sortingColumns))
-	for _, col := range sortingColumns {
-
-		path := col.Path()
-		column := path[len(path)-1]
-
-		label, ok := schema.ExtractLabelFromColumn(column)
-		if !ok {
-			return nil, nil, errors.Newf("cannot extract label from sorting column %q", column)
-		}
-		sortingLabels = append(sortingLabels, label)
-	}
-
-	if len(sortingLabels) == 0 || len(lbls) == 0 {
-		if len(lbls) == 0 {
-			return nil, nil, nil
-		}
-		return [][]labels.Labels{lbls}, [][]search.RowRange{rr}, nil
-	}
-
-	groupMap := make(map[string]int)
-	var labelsGroups [][]labels.Labels
-	var rrGroups [][]search.RowRange
-	keyValues := make([]string, len(sortingLabels)) // Reuse this slice to avoid allocations
-
-	labelIdx := 0
-	for _, rowRange := range rr {
-		currentRow := rowRange.From
-		rangeStart := currentRow
-		var currentGroupKey string
-		var currentGroupIndex int
-
-		for i := int64(0); i < rowRange.Count; i++ {
-			if labelIdx >= len(lbls) {
-				return nil, nil, errors.Newf("label index %d exceeds labels length %d", labelIdx, len(lbls))
-			}
-
-			lbl := lbls[labelIdx]
-			// Build group key
-			for j, sortingLabel := range sortingLabels {
-				keyValues[j] = lbl.Get(sortingLabel)
-			}
-			key := strings.Join(keyValues, "\x00")
-
-			groupIndex, exists := groupMap[key]
-			if !exists {
-				// New group
-				groupIndex = len(labelsGroups)
-				groupMap[key] = groupIndex
-				labelsGroups = append(labelsGroups, make([]labels.Labels, 0))
-				rrGroups = append(rrGroups, make([]search.RowRange, 0))
-			}
-
-			if i == 0 {
-				// First row in range - initialize group
-				currentGroupKey = key
-				currentGroupIndex = groupIndex
-			} else if key != currentGroupKey {
-				// Group change - finish current range and start new one
-				rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
-					From:  rangeStart,
-					Count: currentRow - rangeStart,
-				})
-
-				// Start new group
-				currentGroupKey = key
-				currentGroupIndex = groupIndex
-				rangeStart = currentRow
-			}
-
-			// Add label to current group
-			labelsGroups[currentGroupIndex] = append(labelsGroups[currentGroupIndex], lbl)
-			labelIdx++
-			currentRow++
-		}
-
-		// Finish the last range in this RowRange
-		rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
-			From:  rangeStart,
-			Count: currentRow - rangeStart,
-		})
-	}
-
-	return labelsGroups, rrGroups, nil
+	return convert.NewMergeChunkSeriesSet(labelsSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()),
+		convert.NewMergeChunkSeriesSet(seriesSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()), nil
 }
 
 func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []*labels.Matcher) ([]string, error) {
@@ -428,8 +241,93 @@ func (b queryableShard) allLabelValues(ctx context.Context, name string, limit i
 	return util.MergeUnsortedSlices(int(limit), results...), nil
 }
 
-type byLabels []prom_storage.ChunkSeries
+// groupBySortingColumns groups the given labels and rows into groups where
+// each group has the same values for the specified sorting columns. This is useful because
+// Parquet series (rows) are sorted by label set for a fixed tuple of sorted columns. Consequently,
+// each of the returned groups are guaranteed to be ordered by label set within the Parquet file.
+func groupBySortingColumns(sortingColumns []parquet.SortingColumn, lbls []labels.Labels, rr []search.RowRange) ([][]labels.Labels, [][]search.RowRange, error) {
+	sortingLabels := make([]string, 0, len(sortingColumns))
+	for _, col := range sortingColumns {
 
-func (b byLabels) Len() int           { return len(b) }
-func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels(), b[j].Labels()) < 0 }
+		path := col.Path()
+		column := path[len(path)-1]
+
+		label, ok := schema.ExtractLabelFromColumn(column)
+		if !ok {
+			return nil, nil, errors.Newf("cannot extract label from sorting column %q", column)
+		}
+		sortingLabels = append(sortingLabels, label)
+	}
+
+	if len(sortingLabels) == 0 || len(lbls) == 0 {
+		if len(lbls) == 0 {
+			return nil, nil, nil
+		}
+		return [][]labels.Labels{lbls}, [][]search.RowRange{rr}, nil
+	}
+
+	groupMap := make(map[string]int)
+	var labelsGroups [][]labels.Labels
+	var rrGroups [][]search.RowRange
+	keyValues := make([]string, len(sortingLabels)) // Reuse this slice to avoid allocations
+
+	labelIdx := 0
+	for _, rowRange := range rr {
+		currentRow := rowRange.From
+		rangeStart := currentRow
+		var currentGroupKey string
+		var currentGroupIndex int
+
+		for i := int64(0); i < rowRange.Count; i++ {
+			if labelIdx >= len(lbls) {
+				return nil, nil, errors.Newf("label index %d exceeds labels length %d", labelIdx, len(lbls))
+			}
+
+			lbl := lbls[labelIdx]
+			// Build group key
+			for j, sortingLabel := range sortingLabels {
+				keyValues[j] = lbl.Get(sortingLabel)
+			}
+			key := strings.Join(keyValues, "\x00")
+
+			groupIndex, exists := groupMap[key]
+			if !exists {
+				// New group
+				groupIndex = len(labelsGroups)
+				groupMap[key] = groupIndex
+				labelsGroups = append(labelsGroups, make([]labels.Labels, 0))
+				rrGroups = append(rrGroups, make([]search.RowRange, 0))
+			}
+
+			if i == 0 {
+				// First row in range - initialize group
+				currentGroupKey = key
+				currentGroupIndex = groupIndex
+			} else if key != currentGroupKey {
+				// Group change - finish current range and start new one
+				rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
+					From:  rangeStart,
+					Count: currentRow - rangeStart,
+				})
+
+				// Start new group
+				currentGroupKey = key
+				currentGroupIndex = groupIndex
+				rangeStart = currentRow
+			}
+
+			// Add label to current group
+			labelsGroups[currentGroupIndex] = append(labelsGroups[currentGroupIndex], lbl)
+			labelIdx++
+			currentRow++
+		}
+
+		// Finish the last range in this RowRange
+		rrGroups[currentGroupIndex] = append(rrGroups[currentGroupIndex], search.RowRange{
+			From:  rangeStart,
+			Count: currentRow - rangeStart,
+		})
+	}
+
+	return labelsGroups, rrGroups, nil
+}
