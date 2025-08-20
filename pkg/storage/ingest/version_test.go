@@ -262,6 +262,59 @@ func TestRecordSerializer(t *testing.T) {
 		// Metadata order is currently not preserved by the RW2 deser layer.
 		require.ElementsMatch(t, req.Metadata, resultReq.Metadata)
 	})
+
+	t.Run("metadata with UNKNOWN type", func(t *testing.T) {
+		req := &mimirpb.WriteRequest{
+			Source:              mimirpb.RULE,
+			SkipLabelValidation: true,
+			Timeseries:          []mimirpb.PreallocTimeseries{},
+			Metadata: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: mimirpb.UNKNOWN, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+
+		serializer := versionTwoRecordSerializer{}
+		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		require.NoError(t, err)
+		require.Len(t, records, 1)
+		record := records[0]
+
+		require.Equal(t, 2, ParseRecordVersion(record))
+
+		resultReq := &mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(record.Value, resultReq, 2)
+		require.NoError(t, err)
+
+		require.Len(t, resultReq.Timeseries, 3)
+
+		// The only way to carry a metadata in RW2.0 is attached to a timeseries.
+		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
+		expMetadataSeries := []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
+				Samples:   []mimirpb.Sample{},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2")),
+				Samples:   []mimirpb.Sample{},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_3")),
+				Samples:   []mimirpb.Sample{},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+		}
+		require.Equal(t, expMetadataSeries, resultReq.Timeseries)
+
+		require.Nil(t, resultReq.SymbolsRW2)
+		require.Nil(t, resultReq.TimeseriesRW2)
+		// Metadata order is currently not preserved by the RW2 deser layer.
+		require.ElementsMatch(t, req.Metadata, resultReq.Metadata)
+	})
 }
 
 func BenchmarkDeserializeRecordContent(b *testing.B) {
