@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -280,6 +281,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRecOffset  = int64(-1)
 	)
 
+	var records []ingest.Record
 	for recOffset := int64(-1); recOffset < endOffset-1; {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
@@ -297,7 +299,9 @@ func (b *BlockBuilder) consumePartitionSection(
 			}
 		})
 
-		records := make([]ingest.Record, 0, fetches.NumRecords())
+		// Reset and grown the slice's capacity to fit the NumRecords records.
+		records = slices.Grow(records[:0], fetches.NumRecords())
+
 		fetches.EachRecord(func(rec *kgo.Record) {
 			recOffset = rec.Offset
 
