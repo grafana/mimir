@@ -192,6 +192,111 @@ func TestRW2Unmarshal(t *testing.T) {
 		}
 	})
 
+	t.Run("metadata metric family name is normalized based on type", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilder(nil)
+		writeRequest := &WriteRequest{
+			TimeseriesRW2: []TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_summary_count")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_SUMMARY,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_summary_sum")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_SUMMARY,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_histogram_bucket")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_HISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_histogram_count")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_HISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_histogram_sum")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_HISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_gaugehistogram_bucket")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_GAUGEHISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_gaugehistogram_gcount")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_GAUGEHISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_gaugehistogram_gsum")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_GAUGEHISTOGRAM,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+			},
+		}
+		writeRequest.SymbolsRW2 = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		// 8 metadata carrier series
+		require.Len(t, received.Timeseries, 8)
+		expMetadata := []*MetricMetadata{
+			{
+				Type:             SUMMARY,
+				MetricFamilyName: "test_metric_summary",
+				Help:             "test_metric_help",
+				Unit:             "test_metric_unit",
+			},
+			{
+				Type:             HISTOGRAM,
+				MetricFamilyName: "test_metric_histogram",
+				Help:             "test_metric_help",
+				Unit:             "test_metric_unit",
+			},
+			{
+				Type:             GAUGEHISTOGRAM,
+				MetricFamilyName: "test_metric_gaugehistogram",
+				Help:             "test_metric_help",
+				Unit:             "test_metric_unit",
+			},
+		}
+		require.Equal(t, expMetadata, received.Metadata)
+	})
+
 	t.Run("rw2 with offset produces expected WriteRequest", func(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
