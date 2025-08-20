@@ -32,7 +32,7 @@ Classic architecture is still supported in Grafana Mimir version 3.0. However, t
 
 Ingest storage architecture fundamentally changes how Grafana Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
 
-Ingest storage architectures mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses object storage as a central data transfer pipeline between the write and read paths.
+Ingest storage architecture mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses object storage as a central data transfer pipeline between the write and read paths.
 
 Here's an overview of how ingest storage architecture works (WIP):
 
@@ -42,12 +42,12 @@ Diagram! (WIP)
 
 ### Benefits of ingest storage architecture
 
-Ingest storage architecture offers the following advantages over the classic architecture:
+Ingest storage architecture offers the following advantages over classic architecture:
 
-- Increased reliability and resilience in the event of sudden spikes in query traffic and ingest volume.
-- Decoupled read and write paths prevents performance interference.
-- Ingesters are less stateful, making them easier to manage.
-- Using object storage as the data pipeline avoids high cross-availability zone data transfer costs. Object stores are highly available and durable, with free data transfer within a region across availability zones.
+- Increased reliability and resilience in the event of sudden spikes in query traffic and ingest volume
+- Decoupled read and write paths to prevent performance interference
+- Less stateful, easier to manage ingesters
+- Reduced high cross-availability zone data transfer costs through using object storage
 
 ## Grafana Mimir components
 
