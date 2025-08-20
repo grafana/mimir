@@ -106,7 +106,7 @@ func main() {
 	}
 
 	if series, err = labelSetsFromFile(cfg.labelsFile); err != nil {
-		fmt.Fprint(os.Stderr, fmt.Sprintf("error parsing label sets file: %v \n", err))
+		fmt.Fprintf(os.Stderr, "error parsing label sets file: %v \n", err)
 		printUsageAndExit(flagSet)
 	}
 
