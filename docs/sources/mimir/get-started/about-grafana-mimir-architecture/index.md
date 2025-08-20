@@ -16,11 +16,29 @@ The system has multiple horizontally scalable microservices that can run separat
 Grafana Mimir microservices are called components.
 
 Grafana Mimir's design compiles the code for all components into a single binary.
-The `-target` parameter controls which component(s) that single binary will behave as.
 
-To get started easily, run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process, or in [read-write mode](../../references/architecture/deployment-modes/#read-write-mode), which groups components into _read_, _write_, and _backend_ paths.
+The `-target` parameter controls which components that single binary behaves as.
 
-For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
+To get started, you can run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process. For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
+
+## About ingest storage architecture
+
+Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir. Ingest storage architecture uses object storage as a data transfer pipeline between the write and read paths. This approach allows for synchronous writing of incoming data directly to object storage. Data is then read asynchronously for querying.
+
+Ingest storage architecture marks the next generation of Grafana Mimir. Compared with the classic architecture, ingest storage architecture boosts system reliability and supports future growth and new use cases at a larger scale.
+
+{{< admonition type="note" >}}
+Classic architecture is still supported in Grafana Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new deployment of Grafana Mimir.{{< /admonition >}}
+
+### How ingest storage architecture works
+
+Compared to the classic Architecture, ingest storage architecture
+
+Diagram!
+
+## Benefits of ingest storage architecture
+
+Ingest storage architecture offers the following advantages over the classic architecture.
 
 ## Grafana Mimir components
 
