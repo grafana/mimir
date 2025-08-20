@@ -11690,7 +11690,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			// TODO from here
 		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
