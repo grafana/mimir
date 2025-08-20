@@ -43,6 +43,9 @@
     multi_zone_schedule_toleration: 'secondary-az',
   },
 
+  local enable_ingester_zpdb = $._config.multi_zone_ingester_zpdb_enabled &&  $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
+  local enable_store_gateway_zpdb = $._config.multi_zone_store_gateway_zpdb_enabled &&  $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
+
   //
   // Zone-aware replication.
   //
@@ -164,9 +167,9 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
-    if $._config.multi_zone_ingester_zpdb_enabled && $._config.ingest_storage_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
+    if enable_ingester_zpdb && $._config.ingest_storage_enabled then
       $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_name_regex, $._config.multi_zone_ingester_zpdb_partition_name_regex_group)
-    else if $._config.multi_zone_ingester_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
+    else if enable_ingester_zpdb then
       $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('ingester-rollout') +
@@ -316,7 +319,7 @@
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
 
-    if $._config.multi_zone_store_gateway_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook then
+    if enable_store_gateway_zpdb then
       $.newZPDB('store-gateway-rollout', 'store-gateway', $._config.multi_zone_store_gateway_zpdb_max_unavailable)
     else
       podDisruptionBudget.new('store-gateway-rollout') +
