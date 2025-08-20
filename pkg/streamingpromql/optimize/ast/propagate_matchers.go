@@ -104,6 +104,8 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return mapper.extractVectorSelectors(e.Expr)
 	case *parser.UnaryExpr:
 		return mapper.extractVectorSelectors(e.Expr)
+	case *parser.SubqueryExpr:
+		return mapper.extractVectorSelectors(e.Expr)
 	case *parser.Call:
 		if i, _ := VectorSelectorArgumentIndex(e.Func.Name); i >= 0 {
 			return mapper.extractVectorSelectors(e.Args[i])
@@ -116,9 +118,6 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 	// Explicitly define what is not handled to avoid confusion.
 	case *parser.StepInvariantExpr:
 		// Used only for optimizations and not produced directly by parser.
-		return nil, nil
-	case *parser.SubqueryExpr:
-		// We do not support subqueries for now due to complexity.
 		return nil, nil
 	default:
 		return nil, nil

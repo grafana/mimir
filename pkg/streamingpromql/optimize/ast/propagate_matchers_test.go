@@ -72,8 +72,8 @@ var testCasesPropagateMatchers = map[string]string{
 	`scalar(up{foo="bar"}) * down`:                                             `scalar(up{foo="bar"}) * down`,
 	`scalar(up) * down{foo="bar"}`:                                             `scalar(up) * down{foo="bar"}`,
 
-	// Subqueries (not currently supported)
-	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`,
+	// Subqueries
+	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
 
 	// Aggregations
 	`sum(up) / sum(down)`:                                                                                  `sum(up) / sum(down)`,
