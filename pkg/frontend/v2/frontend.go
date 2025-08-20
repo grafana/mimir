@@ -257,6 +257,9 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	freq.httpRequest = httpRequest
 
 	f.requests.put(freq)

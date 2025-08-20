@@ -2861,6 +2861,11 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
@@ -2890,11 +2895,6 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
-
-# (experimental) If set to true and the Mimir query engine is in use, use remote
-# execution to evaluate queries in queriers.
-# CLI flag: -query-frontend.enable-remote-execution
-[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler

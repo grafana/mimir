@@ -69,6 +69,7 @@ type Config struct {
 	TargetSeriesPerShard     uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries bool               `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder   bool               `yaml:"use_active_series_decoder" category:"experimental"`
+	EnableRemoteExecution    bool               `yaml:"enable_remote_execution" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -103,6 +104,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache.")
+	f.BoolVar(&cfg.EnableRemoteExecution, "query-frontend.enable-remote-execution", false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 	cfg.ResultsCache.RegisterFlags(f)
 }
 
@@ -513,6 +515,7 @@ func newQueryMiddlewares(
 			engine,
 			limits,
 			cfg.TargetSeriesPerShard,
+			cfg.EnableRemoteExecution,
 			registerer,
 		)
 

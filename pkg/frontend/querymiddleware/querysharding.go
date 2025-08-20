@@ -39,10 +39,11 @@ const shardingTimeout = 10 * time.Second
 type querySharding struct {
 	limit Limits
 
-	engine            promql.QueryEngine
-	next              MetricsQueryHandler
-	logger            log.Logger
-	maxSeriesPerShard uint64
+	engine             promql.QueryEngine
+	next               MetricsQueryHandler
+	logger             log.Logger
+	maxSeriesPerShard  uint64
+	useRemoteExecution bool
 
 	queryShardingMetrics
 }
@@ -65,6 +66,7 @@ func newQueryShardingMiddleware(
 	engine promql.QueryEngine,
 	limit Limits,
 	maxSeriesPerShard uint64,
+	useRemoteExecution bool,
 	registerer prometheus.Registerer,
 ) MetricsQueryMiddleware {
 	metrics := queryShardingMetrics{
@@ -93,6 +95,7 @@ func newQueryShardingMiddleware(
 			engine:               engine,
 			logger:               logger,
 			limit:                limit,
+			useRemoteExecution:   useRemoteExecution,
 			maxSeriesPerShard:    maxSeriesPerShard,
 		}
 	})
@@ -115,7 +118,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
-		return s.next.Do(ctx, r)
+		return s.evaluateUnshardedQuery(ctx, r)
 	}
 
 	s.shardingAttempts.Inc()
@@ -132,7 +135,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery())
 		}
 
-		return s.next.Do(ctx, r)
+		return s.evaluateUnshardedQuery(ctx, r)
 	}
 
 	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery, "sharded_queries", shardingStats.GetShardedQueries())
@@ -154,10 +157,18 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	annotationAccumulator := NewAnnotationAccumulator()
 	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
 
-	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
+	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator, false)
 }
 
-func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
+func (s *querySharding) evaluateUnshardedQuery(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	if !s.useRemoteExecution {
+		return s.next.Do(ctx, r)
+	}
+
+	return ExecuteQueryOnQueryable(ctx, r, s.engine, unqueryableQueryable{}, nil, true)
+}
+
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator, includeAnnotationPositionInformation bool) (Response, error) {
 	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -171,7 +182,13 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 	// Note that the positions based on the original query may be wrong as the rewritten
 	// query which is actually used is different, but the user does not see the rewritten
 	// query, so we pass in an empty string as the query so the positions will be hidden.
-	warn, info := res.Warnings.AsStrings("", 0, 0)
+	var warn, info []string
+
+	if includeAnnotationPositionInformation {
+		warn, info = res.Warnings.AsStrings(r.GetQuery(), 0, 0)
+	} else {
+		warn, info = res.Warnings.AsStrings("", 0, 0)
+	}
 
 	if annotationAccumulator != nil {
 		// Add any annotations returned by the sharded queries, and remove any duplicates.
@@ -596,4 +613,12 @@ func removeAllAnnotationPositionInformation(annotations []string) []string {
 	}
 
 	return annotations
+}
+
+type unqueryableQueryable struct{}
+
+var errShouldNeverBeQueried = errors.New("this Queryable should never be queried as all selectors should be evaluated remotely. If you are seeing this, this is a bug.")
+
+func (u unqueryableQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	return nil, errShouldNeverBeQueried
 }
