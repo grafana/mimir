@@ -42,21 +42,19 @@ type PusherConsumer struct {
 
 	kafkaConfig KafkaConfig
 
-	deserializer DeserializerFunc
-	pusher       Pusher
+	pusher Pusher
 }
 
 // NewPusherConsumer creates a new PusherConsumer instance.
-func NewPusherConsumer(deserializer DeserializerFunc, pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &PusherConsumer{
-		deserializer: deserializer,
-		pusher:       pusher,
-		kafkaConfig:  kafkaCfg,
-		metrics:      metrics,
-		logger:       logger,
+		pusher:      pusher,
+		kafkaConfig: kafkaCfg,
+		metrics:     metrics,
+		logger:      logger,
 	}
 }
 
@@ -106,7 +104,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records []Record) (returnEr
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := c.deserializer(r.content, parsed.PreallocWriteRequest, r.version)
+			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}

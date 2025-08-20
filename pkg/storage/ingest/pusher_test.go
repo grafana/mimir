@@ -241,7 +241,7 @@ func TestPusherConsumer(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := NewPusherConsumer(DeserializeRecordContent, pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
+			c := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -340,7 +340,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := NewPusherConsumer(DeserializeRecordContent, pusher, KafkaConfig{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
+		consumer := NewPusherConsumer(pusher, KafkaConfig{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -504,7 +504,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		}
 
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		consumer := NewPusherConsumer(DeserializeRecordContent, pusher, cfg, metrics, log.NewNopLogger())
+		consumer := NewPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
 
 		// We expect consumption to fail.
 		err := consumer.Consume(context.Background(), records)
@@ -1633,7 +1633,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 0
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(DeserializeRecordContent, pusher, kcfg, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
@@ -1647,7 +1647,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 2
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(DeserializeRecordContent, pusher, kcfg, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
