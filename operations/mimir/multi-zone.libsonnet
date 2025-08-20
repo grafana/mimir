@@ -43,8 +43,8 @@
     multi_zone_schedule_toleration: 'secondary-az',
   },
 
-  local enable_ingester_zpdb = $._config.multi_zone_ingester_zpdb_enabled &&  $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
-  local enable_store_gateway_zpdb = $._config.multi_zone_store_gateway_zpdb_enabled &&  $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
+  local enable_ingester_zpdb = $._config.multi_zone_ingester_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
+  local enable_store_gateway_zpdb = $._config.multi_zone_store_gateway_zpdb_enabled && $._config.rollout_operator_enabled && $._config.enable_rollout_operator_webhook,
 
   //
   // Zone-aware replication.
