@@ -68,7 +68,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records []Record) (returnEr
 	}(time.Now())
 
 	type parsedRecord struct {
-		mimirpb.PreallocWriteRequest
+		*mimirpb.PreallocWriteRequest
 		// ctx holds the tracing baggage for this record/request.
 		ctx      context.Context
 		tenantID string
@@ -95,11 +95,10 @@ func (c PusherConsumer) Consume(ctx context.Context, records []Record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				PreallocWriteRequest: mimirpb.PreallocWriteRequest{},
-
-				ctx:      r.ctx,
-				tenantID: r.tenantID,
-				index:    index,
+				ctx:                  r.ctx,
+				tenantID:             r.tenantID,
+				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
+				index:                index,
 			}
 
 			if r.version > LatestRecordVersion {
@@ -107,7 +106,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records []Record) (returnEr
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := c.deserializer(r.content, &parsed.PreallocWriteRequest, r.version)
+			err := c.deserializer(r.content, parsed.PreallocWriteRequest, r.version)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
