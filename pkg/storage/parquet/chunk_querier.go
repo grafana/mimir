@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus-community/parquet-common/search"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -105,16 +104,6 @@ type parquetChunkQuerier struct {
 	shardsFinder queryable.ShardsFinderFunction
 	d            *schema.PrometheusParquetChunksDecoder
 	opts         *querierOpts
-}
-
-func (p parquetChunkQuerier) LabelValues(ctx context.Context, name string, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	// TODO implement me
-	panic("implement me")
-}
-
-func (p parquetChunkQuerier) LabelNames(ctx context.Context, hints *prom_storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	// TODO implement me
-	panic("implement me")
 }
 
 func (p parquetChunkQuerier) Close() error {
