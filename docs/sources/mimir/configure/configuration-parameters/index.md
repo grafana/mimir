@@ -2325,8 +2325,8 @@ The `alertmanager` block configures the alertmanager.
 [max_recv_msg_size: <int> | default = 104857600]
 
 # (experimental) Timeout for reading the state from object storage during the
-# initial sync. 0 = no timeout.
-# CLI flag: -alertmanager.state-read-timeout
+# initial sync. Set to `0` for no timeout.
+# CLI flag: -alertmanager.storage.state-read-timeout
 [state_read_timeout: <duration> | default = 15s]
 
 sharding_ring:
