@@ -146,3 +146,21 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
 	`, testCasesPropagateMatchers)
 }
+
+func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
+	allowedValueTypes := []parser.ValueType{
+		parser.ValueTypeVector,
+		parser.ValueTypeMatrix,
+	}
+	for name, f := range parser.Functions {
+		t.Run(name, func(t *testing.T) {
+			i, err := ast.VectorSelectorArgumentIndex(f.Name)
+			require.NoError(t, err)
+			if i < 0 {
+				return
+			}
+			require.Contains(t, allowedValueTypes, f.ArgTypes[i])
+			require.Contains(t, allowedValueTypes, f.ReturnType)
+		})
+	}
+}
