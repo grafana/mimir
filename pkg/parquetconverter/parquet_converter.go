@@ -400,8 +400,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			c.metaSyncDirForUser(u),
 			prometheus.NewRegistry(), // TODO: we are discarding metrics for now
 			[]block.MetadataFilter{},
-			nil, // TODO: No Meta cache for now
-			0,   // No lookback limit, we take all blocks
+			0, // No lookback limit, we take all blocks
 		)
 		if err != nil {
 			level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
