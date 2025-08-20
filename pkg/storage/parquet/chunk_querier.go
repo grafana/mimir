@@ -86,7 +86,7 @@ func WithMaterializedLabelsFilterCallback(cb search.MaterializedLabelsFilterCall
 	}
 }
 
-func NewParquetChunkQuerier(d *schema.PrometheusParquetChunksDecoder, shardFinder queryable.ShardsFinderFunction, opts ...QuerierOpts) (prom_storage.ChunkQuerier, error) {
+func NewParquetChunkQuerier(d *schema.PrometheusParquetChunksDecoder, shardFinder queryable.ShardsFinderFunction, opts ...QuerierOpts) (*parquetChunkQuerier, error) {
 	cfg := DefaultQuerierOpts
 
 	for _, opt := range opts {
@@ -122,7 +122,7 @@ func (p parquetChunkQuerier) Close() error {
 	return nil
 }
 
-func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) prom_storage.ChunkSeriesSet {
+func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) (labelsSet prom_storage.ChunkSeriesSet, seriesSet prom_storage.ChunkSeriesSet) {
 	ctx, span := tracer.Start(ctx, "parquetChunkQuerier.Select")
 	var err error
 	defer func() {
@@ -150,9 +150,11 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 
 	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
 	if err != nil {
-		return prom_storage.ErrChunkSeriesSet(err)
+		errSet := prom_storage.ErrChunkSeriesSet(err)
+		return errSet, errSet
 	}
-	seriesSet := make([]prom_storage.ChunkSeriesSet, len(shards))
+	labelsSets := make([]prom_storage.ChunkSeriesSet, len(shards))
+	seriesSets := make([]prom_storage.ChunkSeriesSet, len(shards))
 
 	minT, maxT := p.mint, p.maxt
 	if hints != nil {
@@ -164,14 +166,16 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 
 	for i, shard := range shards {
 		errGroup.Go(func() error {
-			ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
-			seriesSet[i] = ss
+			ls, ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
+			labelsSets[i] = ls
+			seriesSets[i] = ss
 			return err
 		})
 	}
 
 	if err := errGroup.Wait(); err != nil {
-		return prom_storage.ErrChunkSeriesSet(err)
+		errSet := prom_storage.ErrChunkSeriesSet(err)
+		return errSet, errSet
 	}
 
 	span.SetAttributes(
@@ -179,7 +183,11 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 		attribute.Bool("skip_chunks", skipChunks),
 	)
 
-	return convert.NewMergeChunkSeriesSet(seriesSet, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
+	if skipChunks {
+		return convert.NewMergeChunkSeriesSet(labelsSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()), nil
+	}
+
+	return convert.NewMergeChunkSeriesSet(labelsSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()), convert.NewMergeChunkSeriesSet(seriesSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
 }
 
 func (p parquetChunkQuerier) queryableShards(ctx context.Context, mint, maxt int64) ([]*queryableShard, error) {
