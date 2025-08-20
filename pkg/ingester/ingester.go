@@ -1757,24 +1757,31 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkAvailableForRead(); err != nil {
 		return nil, err
 	}
+
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
-		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+
+	// When this is not the only replica handling a request, limit reads for overloads
+	if !client.IsOnlyReplicaContext(ctx) {
+		// Check that a permit can be later acquired
+		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+			return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		}
+		finish, err := i.circuitBreaker.tryAcquireReadPermit()
+		if err != nil {
+			return nil, err
+		}
+		start := time.Now()
+		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
+			requestFinish: func(err error) {
+				finish(time.Since(start), err)
+			},
+		})
 	}
 
-	finish, err := i.circuitBreaker.tryAcquireReadPermit()
-	if err != nil {
-		return nil, err
-	}
-	start := time.Now()
-	return context.WithValue(ctx, readReqCtxKey, &readRequestState{
-		requestFinish: func(err error) {
-			finish(time.Since(start), err)
-		},
-	}), nil
+	return ctx, nil
 }
 
 // PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
@@ -1785,7 +1792,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter.read != nil {
+	// When this is not the only replica handling a request, limit reads for overloads
+	if !client.IsOnlyReplicaContext(ctx) && i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {

@@ -899,6 +899,13 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
 	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
 
+	if cfg.isAnyModuleEnabled(All, Write, Ingester) {
+		// Propagate only-replica markers for ingester queries
+		cfg.Server.GRPCTapHandles = append(cfg.Server.GRPCTapHandles, client.OnlyReplicaTapHandle)
+		cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, client.OnlyReplicaServerUnaryInterceptor)
+		cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, client.OnlyReplicaServerStreamInterceptor)
+	}
+
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
 		&cfg.Server,
 		cfg.MultitenancyEnabled,
