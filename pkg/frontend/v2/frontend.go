@@ -223,26 +223,22 @@ func (f *Frontend) stopping(_ error) error {
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
-// RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
-		return nil, nil, fmt.Errorf("frontend not running: %v", s)
+		return nil, nil, nil, fmt.Errorf("frontend not running: %v", s)
 	}
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
-	// cancel is passed to the cleanup function and invoked from there
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
-		httpRequest:  httpRequest,
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
@@ -253,6 +249,15 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		enqueue:  make(chan enqueueResult, 1),
 		response: make(chan queryResultWithBody, 1),
 	}
+
+	return freq, ctx, cancel, nil
+}
+
+// RoundTripGRPC round trips a proto (instead of an HTTP request).
+func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+	spanLogger := spanlogger.FromContext(ctx, f.log)
+	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	freq.httpRequest = httpRequest
 
 	f.requests.put(freq)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
