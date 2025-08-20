@@ -768,7 +768,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	_, err = (&mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "forbidden_value"},
+				{Name: "forbidden_name", Value: "forbidden_value"},
 			},
 		},
 	}).MarshalTo(buf)
