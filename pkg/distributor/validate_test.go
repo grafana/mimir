@@ -751,7 +751,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 		maxLabelValueLength: 5,
 		validationScheme:    model.UTF8Validation,
 	}
-	userID := "testUser"
+	const userID = "testUser"
 	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
 	reg := prometheus.NewPedanticRegistry()
 	s := newSampleValidationMetrics(reg)
