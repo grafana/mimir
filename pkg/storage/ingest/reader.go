@@ -114,7 +114,7 @@ type PartitionReader struct {
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := NewPusherConsumerMetrics(reg)
 	factory := consumerFactoryFunc(func() RecordConsumer {
-		return NewPusherConsumer(DeserializeRecordContent, pusher, kafkaCfg, metrics, logger)
+		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
