@@ -96,12 +96,12 @@ const (
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
+	QuerierQueryPlanner              string = "querier-query-planner"
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCodec               string = "query-frontend-codec"
+	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
-	QuerierQueryPlanner              string = "querier-query-planner"
-	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
@@ -1192,7 +1192,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 	// Since it requires the access to the blocks storage, we enable it only for components
 	// accessing the blocks storage.
-	if !(t.Cfg.isIngesterEnabled() || t.Cfg.isQuerierEnabled() || t.Cfg.isStoreGatewayEnabled() || t.Cfg.isCompactorEnabled()) {
+	if !t.Cfg.isIngesterEnabled() && !t.Cfg.isQuerierEnabled() && !t.Cfg.isStoreGatewayEnabled() && !t.Cfg.isCompactorEnabled() {
 		return nil, nil
 	}
 
