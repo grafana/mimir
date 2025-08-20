@@ -2538,6 +2538,17 @@
         },
         {
           "kind": "field",
+          "name": "store_gateway_replica_load_balancing_strategy",
+          "required": false,
+          "desc": "Store-gateway replica selection strategy to use. Either 'in-order', which is not recommended with zone awareness, or 'random'",
+          "fieldValue": null,
+          "fieldDefaultValue": "random",
+          "fieldFlag": "querier.store-gateway-replica-load-balancing-strategy",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "shuffle_sharding_ingesters_enabled",
           "required": false,
           "desc": "Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
