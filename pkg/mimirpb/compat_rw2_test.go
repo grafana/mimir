@@ -117,6 +117,62 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, expected, &received)
 	})
 
+	t.Run("metadata with UNKNOWN type maps to expected value", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilder(nil)
+		writeRequest := &WriteRequest{
+			TimeseriesRW2: []TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_UNSPECIFIED,
+						HelpRef: syms.GetSymbol("test_metric_help"),
+						UnitRef: syms.GetSymbol("test_metric_unit"),
+					},
+				},
+			},
+		}
+		writeRequest.SymbolsRW2 = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		expected := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: []PreallocTimeseries{
+					{
+						TimeSeries: &TimeSeries{
+							Labels: []LabelAdapter{
+								{
+									Name:  "__name__",
+									Value: "test_metric_total",
+								},
+							},
+							Samples:   []Sample{},
+							Exemplars: []Exemplar{},
+						},
+					},
+				},
+				Metadata: []*MetricMetadata{
+					{
+						MetricFamilyName: "test_metric_total",
+						Type:             UNKNOWN,
+						Help:             "test_metric_help",
+						Unit:             "test_metric_unit",
+					},
+				},
+				unmarshalFromRW2: true,
+			},
+			UnmarshalFromRW2: true,
+		}
+		// Check that the unmarshalled data matches the original data.
+		require.Equal(t, expected, &received)
+	})
+
 	t.Run("rw2 with offset produces expected WriteRequest", func(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
