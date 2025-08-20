@@ -302,6 +302,11 @@ type TSDBConfig struct {
 	// IndexLookupPlanningEnabled controls the collection of statistics and whether to defer some vector selector matchers to sequential scans.
 	// This leads to better performance.
 	IndexLookupPlanningEnabled bool `yaml:"index_lookup_planning_enabled" category:"experimental"`
+
+	// IndexLookupPlanningComparisonPortion controls the portion of queries where a mirrored chunk querier is used to compare
+	// results between queries with and without index lookup planning enabled. The value must be between 0 and 1, where 0
+	// disables comparison and 1 enables it for all queries.
+	IndexLookupPlanningComparisonPortion float64 `yaml:"index_lookup_planning_comparison_portion" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -353,6 +358,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.IndexLookupPlanningEnabled, "blocks-storage.tsdb.index-lookup-planning-enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
 	f.DurationVar(&cfg.HeadStatisticsCollectionFrequency, "blocks-storage.tsdb.head-statistics-collection-frequency", 0, "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.")
+	f.Float64Var(&cfg.IndexLookupPlanningComparisonPortion, "blocks-storage.tsdb.index-lookup-planning-comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second

@@ -2906,6 +2906,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
+		BlockChunkQuerierFunc:                    i.createBlockChunkQuerier,
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -2969,6 +2970,28 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
 	return userDB, nil
+}
+
+// createBlockChunkQuerier creates a BlockChunkQuerierFunc that optionally wraps the default querier with mirroring
+func (i *Ingester) createBlockChunkQuerier(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
+		return defaultQuerier, nil
+	}
+
+	mirroredQuerier := newMirroredChunkQuerierWithMeta(
+		i.metrics.indexLookupComparisonOutcomes,
+		mint, maxt,
+		b.Meta(),
+		i.logger,
+		defaultQuerier,
+	)
+
+	return mirroredQuerier, nil
 }
 
 func (i *Ingester) closeAllTSDB() {

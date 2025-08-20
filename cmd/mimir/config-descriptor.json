@@ -10972,6 +10972,17 @@
               "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_comparison_portion",
+              "required": false,
+              "desc": "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-comparison-portion",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
