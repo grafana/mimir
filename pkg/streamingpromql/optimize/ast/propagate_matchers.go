@@ -272,31 +272,31 @@ func (s stringSet) Contains(key string) bool {
 	return exists
 }
 
-func (set1 stringSet) Intersection(set2 stringSet) stringSet {
-	overlap := make(stringSet, len(set1))
-	for key := range set1 {
-		if set2.Contains(key) {
+func (s stringSet) Intersection(s2 stringSet) stringSet {
+	overlap := make(stringSet, len(s))
+	for key := range s {
+		if s2.Contains(key) {
 			overlap.Add(key)
 		}
 	}
 	return overlap
 }
 
-func (set1 stringSet) Union(set2 stringSet) stringSet {
-	union := make(stringSet, len(set1)+len(set2))
-	for key := range set1 {
+func (s stringSet) Union(s2 stringSet) stringSet {
+	union := make(stringSet, len(s)+len(s2))
+	for key := range s {
 		union.Add(key)
 	}
-	for key := range set2 {
+	for key := range s2 {
 		union.Add(key)
 	}
 	return union
 }
 
-func (set1 stringSet) Difference(set2 stringSet) stringSet {
-	diff := make(stringSet, len(set1))
-	for key := range set1 {
-		if !set2.Contains(key) {
+func (s stringSet) Difference(s2 stringSet) stringSet {
+	diff := make(stringSet, len(s))
+	for key := range s {
+		if !s2.Contains(key) {
 			diff.Add(key)
 		}
 	}
