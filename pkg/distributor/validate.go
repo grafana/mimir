@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -121,6 +122,16 @@ var (
 	)
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
+
+type labelValueTooLongError struct {
+	Label  labels.Label
+	Series string
+	Limit  int
+}
+
+func (e labelValueTooLongError) Error() string {
+	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, e.Series)
+}
 
 // sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig interface {
@@ -454,7 +465,11 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
+			return labelValueTooLongError{
+				Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
+				Series: mimirpb.FromLabelAdaptersToString(ls),
+				Limit:  maxLabelValueLength,
+			}
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
