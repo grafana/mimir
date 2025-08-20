@@ -37,6 +37,11 @@
                               $._config.cortex_compactor_concurrent_rollout_enabled ||
                               $._config.ingest_storage_ingester_autoscaling_enabled ||
                               $._config.enable_rollout_operator_webhook,
+
+    // do not deploy the pod eviction webhook if there is no zone pdb configured.
+    // the eviction webhook can be deployed even if there are no zone pdb configurations.
+    // pod evictions not managed by a zpdb will be allowed and contine to be handled by any other pdb configurations.
+    disable_rollout_operator_eviction_webhook_when_no_zpdb: false,
   },
 
   local ingester_zpdb_enabled =
@@ -52,6 +57,11 @@
     $._config.enable_rollout_operator_webhook,
 
   local zpdb_enabled = ingester_zpdb_enabled || store_gateway_zpdb_enabled,
+
+  local deploy_eviction_webhook_regardless_of_zpdb =
+    $._config.rollout_operator_enabled &&
+    $._config.enable_rollout_operator_webhook &&
+    !$._config.disable_rollout_operator_eviction_webhook_when_no_zpdb,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
@@ -223,7 +233,7 @@
       },
     ]),
 
-  pod_eviction_webhook: if !zpdb_enabled then null else
+  pod_eviction_webhook: if !zpdb_enabled && !deploy_eviction_webhook_regardless_of_zpdb then null else
     validatingWebhookConfiguration.new('pod-eviction-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
