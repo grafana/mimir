@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -345,7 +346,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 				continue
 			}
 
-			if util.StringsContain(serverDeps, m) {
+			if slices.Contains(serverDeps, m) {
 				continue
 			}
 
@@ -734,11 +735,14 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
-	var ing api.Ingester
+	var ing ingester.API
 
 	ing = t.Ingester
 	if t.ActivityTracker != nil {
-		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
+		ing = ingester.NewIngesterActivityTracker(ing, t.ActivityTracker)
+	}
+	if t.Cfg.IncludeTenantIDInProfileLabels {
+		ing = ingester.NewIngesterProfilingWrapper(ing)
 	}
 	t.API.RegisterIngester(ing)
 	return nil, nil

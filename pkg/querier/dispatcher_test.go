@@ -537,3 +537,25 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 	m.messages = append(m.messages, decoded)
 	return nil
 }
+
+func TestDispatcher_MQEDisabled(t *testing.T) {
+	dispatcher := NewDispatcher(log.NewNopLogger(), nil, nil)
+
+	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
+	require.NoError(t, err)
+
+	stream := &mockQueryResultStream{t: t}
+	dispatcher.HandleProtobuf(context.Background(), req, stream)
+
+	expected := []*frontendv2pb.QueryResultStreamRequest{
+		{
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_NOT_FOUND,
+					Message: `MQE is not enabled on this querier`,
+				},
+			},
+		},
+	}
+	require.Equal(t, expected, stream.messages)
+}

@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250811235824-5313fe3063cd
+	github.com/grafana/dskit v0.0.0-20250818234656-8ff9c6532e85
 	github.com/grafana/e2e v0.1.2-0.20250723092121-32adc8201cbe
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -31,7 +31,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.28.1
-	github.com/prometheus/client_golang v1.23.0-rc.1
+	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.1-0.20250801071412-c79a891c6c28
 	github.com/prometheus/prometheus v1.99.0
@@ -73,7 +73,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250801145339-10a0f69acb3a
+	github.com/prometheus/otlptranslator v0.0.2
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/spf13/pflag v1.0.5
@@ -96,7 +96,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.32.0
 	google.golang.org/api v0.239.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.7
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
@@ -340,13 +340,13 @@ require (
 	golang.org/x/tools v0.34.0 // indirect
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250804133106-a7a43d27e69b
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250808182419-3639d5f4ea3d
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250818094545-df8327b99a05
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
