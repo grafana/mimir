@@ -70,7 +70,7 @@ func TestOnlyReplicaClientStreamInterceptor_And_OnlyReplicaServerStreamIntercept
 		return nil
 	}
 
-	require.NoError(t, OnlyReplicaServerStreamInterceptor(nil, &serverStreamMock{ctx: serverIncomingCtx}, nil, serverHandler))
+	require.NoError(t, OnlyReplicaServerStreamInterceptor(nil, &ctxStream{ctx: serverIncomingCtx}, nil, serverHandler))
 
 	// Should inject only replica in the context
 	require.True(t, IsOnlyReplicaContext(serverOutgoingCtx))
@@ -85,13 +85,4 @@ func TestContextWithOnlyReplica(t *testing.T) {
 	t.Run("when is only replica does not exist in a context", func(t *testing.T) {
 		require.False(t, IsOnlyReplicaContext(context.Background()))
 	})
-}
-
-type serverStreamMock struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (m serverStreamMock) Context() context.Context {
-	return m.ctx
 }
