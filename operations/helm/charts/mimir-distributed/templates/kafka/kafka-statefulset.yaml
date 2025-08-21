@@ -97,8 +97,8 @@ spec:
               value: "{{ min 2 $replicas }}"
             - name: KAFKA_NUM_PARTITIONS
               value: "100"
-            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
-              value: "true"
+            - name: KAFKA_LOG_RETENTION_MS
+              value: "86400000" # 1 day
             {{- with .extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
