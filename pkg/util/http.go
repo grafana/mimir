@@ -23,6 +23,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
@@ -144,6 +145,7 @@ const (
 	RawSnappy
 	Gzip
 	Lz4
+	Zstd
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
@@ -221,6 +223,12 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		reader = gzReader
 	case Lz4:
 		reader = lz4.NewReader(reader)
+	case Zstd:
+		var err error
+		reader, err = zstd.NewReader(reader)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create zstd reader: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}
@@ -244,6 +252,9 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		}
 		if compression == Lz4 {
 			return nil, errors.Wrap(err, "decompress lz4")
+		}
+		if compression == Zstd {
+			return nil, errors.Wrap(err, "decompress zstd")
 		}
 		return nil, errors.Wrap(err, "read body")
 	}
