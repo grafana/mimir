@@ -3092,8 +3092,8 @@ kafka:
   # -- Resource requests and limits for Kafka
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: 1
+      memory: 1Gi
     limits: {}
   # -- Node selector for Kafka pods
   nodeSelector: {}
