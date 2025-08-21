@@ -328,12 +328,12 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
-	if c.isAnyModuleEnabled(Distributor, Write, All) {
+	if c.isDistributorEnabled() {
 		if err := c.UsageTracker.ValidateForClient(); err != nil {
 			return errors.Wrap(err, "invalid usage-tracker config")
 		}
 	}
-	if c.isAnyModuleEnabled(UsageTracker) {
+	if c.isUsageTrackerEnabled() {
 		if err := c.UsageTracker.ValidateForUsageTracker(); err != nil {
 			return errors.Wrap(err, "invalid usage-tracker config")
 		}
@@ -416,6 +416,10 @@ func (c *Config) isDistributorEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Distributor, Write)
 }
 
+func (c *Config) isUsageTrackerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(UsageTracker)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
@@ -430,7 +434,7 @@ func (c *Config) validateBucketConfigs() error {
 	}
 
 	// Validate usage tracker snapshots bucket config.
-	if c.isAnyModuleEnabled(All, UsageTracker) && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
+	if c.isUsageTrackerEnabled() && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
 		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
 	}
 
@@ -576,7 +580,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Usage-tracker.
-	if c.isAnyModuleEnabled(All, UsageTracker) {
+	if c.isUsageTrackerEnabled() {
 		if c.UsageTracker.SnapshotsStorage.Backend == bucket.Filesystem {
 			paths = append(paths, pathConfig{
 				name:       "usage tracker snapshot storage filesystem directory",
