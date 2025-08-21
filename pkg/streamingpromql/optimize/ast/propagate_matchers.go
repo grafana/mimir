@@ -175,7 +175,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, bool, error) {
 	// Otherwise, return -1.
 	switch funcName {
 	// Simple
-	case "absent", "changes", "resets":
+	case "changes", "resets":
 		return 0, false, nil
 	// Mathematical
 	case "abs", "sgn", "sqrt", "exp", "deriv", "ln", "log2", "log10", "ceil", "floor", "clamp", "clamp_min", "clamp_max":
@@ -199,7 +199,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, bool, error) {
 	case "histogram_fraction":
 		return 2, false, nil
 	// Aggregation over time
-	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time", "absent_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_last_over_time":
+	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_last_over_time":
 		return 0, false, nil
 	case "quantile_over_time":
 		return 1, false, nil
@@ -212,7 +212,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, bool, error) {
 	case "pi", "time", "vector":
 		return -1, false, nil
 	// Explicitly not supported because it's not valid to propagate matchers across these functions.
-	case "scalar":
+	case "scalar", "absent", "absent_over_time":
 		return -1, false, nil
 	// Explicitly not supported because we want to avoid unexpected interactions with labels or ordering.
 	case "label_join", "label_replace", "info", "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":

@@ -75,9 +75,12 @@ var testCasesPropagateMatchers = map[string]string{
 	`minute(up{foo="bar"}) * down{baz="fob"}`:                                  `minute(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
 	`round(up{foo="bar"}) * down{baz="fob"}`:                                   `round(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
 	`round(up{foo="bar"}, 1) * down{baz="fob"}`:                                `round(up{foo="bar", baz="fob"}, 1) * down{foo="bar", baz="fob"}`,
+	`absent(up{foo="bar99"}) + down{baz="fob"}`:                                `absent(up{foo="bar99"}) + down{baz="fob"}`,
+	`absent(up{foo="bar99"}) + absent(down{baz="fob99"})`:                      `absent(up{foo="bar99"}) + absent(down{baz="fob99"})`,
 
 	// Subqueries
-	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
+	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`:         `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
+	`absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`: `absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`,
 
 	// Aggregations
 	`sum(up) / sum(down)`:                                                                                  `sum(up) / sum(down)`,
