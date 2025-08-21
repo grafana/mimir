@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/prometheus/prometheus/model/labels"
-	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -20,8 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
-
-var tracer = otel.Tracer("pkg/ingester/client")
 
 // StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
 // are streamed from one or more ingesters.
