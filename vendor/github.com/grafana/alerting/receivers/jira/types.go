@@ -39,16 +39,16 @@ type issueStatus struct {
 	StatusCategory keyValue `json:"statusCategory"`
 }
 
+// See https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-post-request-body for all fields
 type issueSearch struct {
-	Expand     []string `json:"expand"`
+	Expand     string   `json:"expand"`
 	Fields     []string `json:"fields"`
 	JQL        string   `json:"jql"`
 	MaxResults int      `json:"maxResults"`
-	StartAt    int      `json:"startAt"`
 }
 
+// see https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-post-response
 type issueSearchResult struct {
-	Total  int     `json:"total"`
 	Issues []issue `json:"issues"`
 }
 
