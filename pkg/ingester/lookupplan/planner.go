@@ -37,8 +37,7 @@ func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlann
 }
 
 func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (_ index.LookupPlan, retErr error) {
-	// If planning is disabled, return the input plan directly
-	if isDisabledPlanning(ctx) {
+	if planningDisabled(ctx) {
 		return inPlan, nil
 	}
 
@@ -158,8 +157,8 @@ func ContextWithDisabledPlanning(ctx context.Context) context.Context {
 	return context.WithValue(ctx, disabledPlanningContextKey, true)
 }
 
-// isDisabledPlanning checks if planning is disabled in the context
-func isDisabledPlanning(ctx context.Context) bool {
+// planningDisabled checks if planning is disabled in the context
+func planningDisabled(ctx context.Context) bool {
 	val := ctx.Value(disabledPlanningContextKey)
 	disabled, ok := val.(bool)
 	return ok && disabled
