@@ -67,7 +67,7 @@ data:
     ingest_storage:
       enabled: true
       kafka:
-        address: 'test-ingest-storage-values-mimir-kafka.citestns.svc:9092'
+        address: 'test-ingest-storage-values-mimir-kafka.citestns.svc.cluster.local.:9092'
         auto_create_topic_default_partitions: 100
         auto_create_topic_enabled: true
         topic: mimir-ingest

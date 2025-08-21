@@ -13,7 +13,6 @@ metadata:
     {}
   namespace: "citestns"
 spec:
-  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
@@ -92,8 +91,8 @@ spec:
           resources:
             limits: {}
             requests:
-              cpu: 100m
-              memory: 512Mi
+              cpu: 1
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -107,20 +106,6 @@ spec:
               mountPath: /opt/kafka/config
             - name: tmp
               mountPath: /tmp
-          livenessProbe:
-            tcpSocket:
-              port: kafka
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          startupProbe:
-            tcpSocket:
-              port: kafka
-            initialDelaySeconds: 30
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 3
           readinessProbe:
             tcpSocket:
               port: kafka
