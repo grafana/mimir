@@ -241,6 +241,7 @@ func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, 
 		Annotations:              annotations.New(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
+		Plan:                     plan,
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)

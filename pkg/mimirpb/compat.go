@@ -355,6 +355,11 @@ func FromFPointsToSamples(points []promql.FPoint) []Sample {
 	return *(*[]Sample)(unsafe.Pointer(&points))
 }
 
+// FromSamplesToFPoints casts []Sample to []promql.FPoint. It uses unsafe.
+func FromSamplesToFPoints(samples []Sample) []promql.FPoint {
+	return *(*[]promql.FPoint)(unsafe.Pointer(&samples))
+}
+
 // FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair. It uses unsafe.
 func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
 	return *(*[]FloatHistogramPair)(unsafe.Pointer(&points))
