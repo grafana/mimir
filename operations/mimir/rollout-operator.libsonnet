@@ -31,14 +31,13 @@
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
 
     rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
-  },
 
-  local rollout_operator_enabled =
-    $._config.multi_zone_ingester_enabled ||
-    $._config.multi_zone_store_gateway_enabled ||
-    $._config.cortex_compactor_concurrent_rollout_enabled ||
-    $._config.ingest_storage_ingester_autoscaling_enabled ||
-    $._config.enable_rollout_operator_webhook,
+    rollout_operator_enabled: $._config.multi_zone_ingester_enabled ||
+                              $._config.multi_zone_store_gateway_enabled ||
+                              $._config.cortex_compactor_concurrent_rollout_enabled ||
+                              $._config.ingest_storage_ingester_autoscaling_enabled ||
+                              $._config.enable_rollout_operator_webhook,
+  },
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
@@ -67,7 +66,7 @@
     container.mixin.readinessProbe.withTimeoutSeconds(1) +
     $.tracing_env_mixin,
 
-  rollout_operator_deployment: if !rollout_operator_enabled then null else
+  rollout_operator_deployment: if !$._config.rollout_operator_enabled then null else
     deployment.new('rollout-operator', 1, [$.rollout_operator_container]) +
     deployment.mixin.metadata.withName('rollout-operator') +
     deployment.mixin.spec.template.spec.withServiceAccountName('rollout-operator') +
@@ -76,7 +75,7 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
     $.newMimirNodeAffinityMatchers($.rollout_operator_node_affinity_matchers),
 
-  rollout_operator_service: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  rollout_operator_service: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     service.new(
       'rollout-operator',
       { name: 'rollout-operator' },
@@ -84,7 +83,7 @@
       servicePort.withProtocol('TCP'),
     ),
 
-  rollout_operator_role: if !rollout_operator_enabled then null else
+  rollout_operator_role: if !$._config.rollout_operator_enabled then null else
     role.new('rollout-operator-role') +
     role.mixin.metadata.withNamespace($._config.namespace) +
     role.withRulesMixin(
@@ -110,7 +109,7 @@
       )
     ),
 
-  rollout_operator_rolebinding: if !rollout_operator_enabled then null else
+  rollout_operator_rolebinding: if !$._config.rollout_operator_enabled then null else
     roleBinding.new('rollout-operator-rolebinding') +
     roleBinding.mixin.metadata.withNamespace($._config.namespace) +
     roleBinding.mixin.roleRef.withApiGroup('rbac.authorization.k8s.io') +
@@ -122,7 +121,7 @@
       namespace: $._config.namespace,
     }),
 
-  rollout_operator_webhook_cert_secret_role: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  rollout_operator_webhook_cert_secret_role: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     role.new('rollout-operator-webhook-cert-secret-role') +
     role.mixin.metadata.withNamespace($._config.namespace) +
     role.withRulesMixin([
@@ -135,7 +134,7 @@
       + policyRule.withResourceNames(['rollout-operator-self-signed-certificate']),
     ]),
 
-  rollout_operator_webhook_cert_secret_rolebinding: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  rollout_operator_webhook_cert_secret_rolebinding: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     roleBinding.new('rollout-operator-webhook-cert-secret-rolebinding') +
     roleBinding.mixin.metadata.withNamespace($._config.namespace) +
     roleBinding.mixin.roleRef.withApiGroup('rbac.authorization.k8s.io') +
@@ -147,7 +146,7 @@
       namespace: $._config.namespace,
     }),
 
-  rollout_operator_webhook_cert_update_clusterrole: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  rollout_operator_webhook_cert_update_clusterrole: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     clusterRole.new('rollout-operator-%s-webhook-cert-update-role' % $._config.namespace) +
     clusterRole.withRulesMixin([
       policyRule.withApiGroups('admissionregistration.k8s.io')
@@ -155,7 +154,7 @@
       + policyRule.withVerbs(['list', 'patch', 'watch']),
     ]),
 
-  rollout_operator_webhook_cert_update_clusterrolebinding: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  rollout_operator_webhook_cert_update_clusterrolebinding: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     clusterRoleBinding.new('rollout-operator-%s-webhook-cert-secret-rolebinding' % $._config.namespace) +
     clusterRoleBinding.mixin.roleRef.withApiGroup('rbac.authorization.k8s.io') +
     clusterRoleBinding.mixin.roleRef.withKind('ClusterRole') +
@@ -166,7 +165,7 @@
       namespace: $._config.namespace,
     }),
 
-  no_downscale_webhook: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  no_downscale_webhook: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     validatingWebhookConfiguration.new('no-downscale-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
@@ -205,7 +204,7 @@
       },
     ]),
 
-  prepare_downscale_webhook: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
+  prepare_downscale_webhook: if !$._config.rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
     mutatingWebhookConfiguration.new('prepare-downscale-%s' % $._config.namespace) +
     mutatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
@@ -244,9 +243,9 @@
       },
     ]),
 
-  rollout_operator_service_account: if !rollout_operator_enabled then null else
+  rollout_operator_service_account: if !$._config.rollout_operator_enabled then null else
     serviceAccount.new('rollout-operator'),
 
-  rollout_operator_pdb: if !rollout_operator_enabled then null else
+  rollout_operator_pdb: if !$._config.rollout_operator_enabled then null else
     $.newMimirPdb('rollout-operator'),
 }

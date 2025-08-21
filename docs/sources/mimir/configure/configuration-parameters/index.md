@@ -233,6 +233,12 @@ activity_tracker:
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
+# (experimental) Include tenant ID in pprof labels for profiling. Currently only
+# supported by the ingester. This can help debug performance issues for specific
+# tenants.
+# CLI flag: -include-tenant-id-in-profile-labels
+[include_tenant_id_in_profile_labels: <boolean> | default = false]
+
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
   # CLI flag: -vault.enabled
@@ -5327,7 +5333,7 @@ dynamic_replication:
   # (experimental) Multiple of the default replication factor that should be
   # used for recent blocks. Minimum value is 2
   # CLI flag: -store-gateway.dynamic-replication.multiple
-  [multiple: <int> | default = 2]
+  [multiple: <int> | default = 5]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by

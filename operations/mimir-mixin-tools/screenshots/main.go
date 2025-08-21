@@ -39,7 +39,7 @@ var customViewportHeight = map[string]int{
 	"mimir-overview-resources":            1700,
 	"mimir-overview-networking":           1100,
 	"mimir-reads-networking":              2000,
-	"mimir-rollout-progress":              800,
+	"mimir-rollout-progress":              1000,
 	"mimir-scaling":                       800,
 	"mimir-slow-queries":                  600,
 	"mimir-tenants":                       1200,

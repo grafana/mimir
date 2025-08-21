@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -60,7 +60,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
-	if !util.StringsContain(supportedInstallationModes, cfg.InstallationMode) {
+	if !slices.Contains(supportedInstallationModes, cfg.InstallationMode) {
 		return errors.Errorf("unsupported installation mode: %q", cfg.InstallationMode)
 
 	}

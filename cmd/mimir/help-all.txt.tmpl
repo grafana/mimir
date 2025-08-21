@@ -1381,6 +1381,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
+  -include-tenant-id-in-profile-labels
+    	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
@@ -3100,7 +3102,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.dynamic-replication.max-time-threshold duration
     	[experimental] Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas. (default 25h0m0s)
   -store-gateway.dynamic-replication.multiple int
-    	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 2)
+    	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 5)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
   -store-gateway.sharding-ring.auto-forget-enabled

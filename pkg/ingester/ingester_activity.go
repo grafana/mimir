@@ -19,11 +19,11 @@ import (
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
 type ActivityTrackerWrapper struct {
-	ing     *Ingester
+	ing     API
 	tracker *activitytracker.ActivityTracker
 }
 
-func NewIngesterActivityTracker(ing *Ingester, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
+func NewIngesterActivityTracker(ing API, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
 	return &ActivityTrackerWrapper{
 		ing:     ing,
 		tracker: tracker,
@@ -31,8 +31,13 @@ func NewIngesterActivityTracker(ing *Ingester, tracker *activitytracker.Activity
 }
 
 func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	// No tracking in Push
+	// No tracking in Push because it is called very frequently
 	return i.ing.Push(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+	// No tracking in PushToStorageAndReleaseRequest because it is called very frequently
+	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {

@@ -1689,7 +1689,7 @@ type mockBucketFailure struct {
 }
 
 func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
-	if util.StringsContain(m.DeleteFailures, name) {
+	if slices.Contains(m.DeleteFailures, name) {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
