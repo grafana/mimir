@@ -50,12 +50,14 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 			continue
 		}
 
-		t.Run(input+" range", func(t *testing.T) {
-			runAndCompare(t, input, expected, makeRangeQuery)
-		})
+		t.Run(input, func(t *testing.T) {
+			t.Run("range query", func(t *testing.T) {
+				runAndCompare(t, input, expected, makeRangeQuery)
+			})
 
-		t.Run(input+" instant", func(t *testing.T) {
-			runAndCompare(t, input, expected, makeInstantQuery)
+			t.Run("instant query", func(t *testing.T) {
+				runAndCompare(t, input, expected, makeInstantQuery)
+			})
 		})
 	}
 }
