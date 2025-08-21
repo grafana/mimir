@@ -68,19 +68,13 @@ var testCasesPropagateMatchers = map[string]string{
 	`rate(up{foo="bar"}[2m]) + delta(down{baz="fob"}[4m])`:                     `rate(up{foo="bar", baz="fob"}[2m]) + delta(down{foo="bar", baz="fob"}[4m])`,
 	`up * -down{foo="bar"}`:                                                    `up{foo="bar"} * -down{foo="bar"}`,
 	`up{foo="bar"} @ 1 + down @ 2`:                                             `up{foo="bar"} @ 1 + down{foo="bar"} @ 2`,
-	`scalar(up{foo="bar"} * down)`:                                             `scalar(up{foo="bar"} * down{foo="bar"})`,
-	`scalar(up{foo="bar"}) * down`:                                             `scalar(up{foo="bar"}) * down`,
-	`scalar(up) * down{foo="bar"}`:                                             `scalar(up) * down{foo="bar"}`,
 	`minute() * down{baz="fob"}`:                                               `minute() * down{baz="fob"}`,
 	`minute(up{foo="bar"}) * down{baz="fob"}`:                                  `minute(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
 	`round(up{foo="bar"}) * down{baz="fob"}`:                                   `round(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
 	`round(up{foo="bar"}, 1) * down{baz="fob"}`:                                `round(up{foo="bar", baz="fob"}, 1) * down{foo="bar", baz="fob"}`,
-	`absent(up{foo="bar99"}) + down{baz="fob"}`:                                `absent(up{foo="bar99"}) + down{baz="fob"}`,
-	`absent(up{foo="bar99"}) + absent(down{baz="fob99"})`:                      `absent(up{foo="bar99"}) + absent(down{baz="fob99"})`,
 
 	// Subqueries
-	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`:         `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
-	`absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`: `absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`,
+	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
 
 	// Aggregations
 	`sum(up) / sum(down)`:                                                                                  `sum(up) / sum(down)`,
@@ -117,9 +111,23 @@ var testCasesPropagateMatchers = map[string]string{
 	`max without (foo, baz) (avg without (foo) (up)) / down{foo="bar", baz="fob", soo="sar"}`:              `max without (foo, baz) (avg without (foo) (up{soo="sar"})) / down{foo="bar", baz="fob", soo="sar"}`,
 	`max by (foo, baz) (avg without (foo) (up)) / down{foo="bar", baz="fob"}`:                              `max by (foo, baz) (avg without (foo) (up{baz="fob"})) / down{foo="bar", baz="fob"}`,
 	`max without (baz) (avg by (foo, baz) (up)) / down{foo="bar", baz="fob"}`:                              `max without (baz) (avg by (foo, baz) (up{foo="bar"})) / down{foo="bar", baz="fob"}`,
+
+	// Not supported
+	`scalar(up{foo="bar"} * down)`:                        `scalar(up{foo="bar"} * down{foo="bar"})`,
+	`scalar(up{foo="bar"}) * down`:                        `scalar(up{foo="bar"}) * down`,
+	`scalar(up) * down{foo="bar"}`:                        `scalar(up) * down{foo="bar"}`,
+	`absent(up{foo="bar99"}) + down{baz="fob"}`:           `absent(up{foo="bar99"}) + down{baz="fob"}`,
+	`absent(up{foo="bar99"}) + absent(down{baz="fob99"})`: `absent(up{foo="bar99"}) + absent(down{baz="fob99"})`,
+	`absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`:                        `absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`,
+	`label_join(up{foo="bar"}, "joint", "-", "boo", "faf") + label_join(down{baz="fob"}, "joint", "-", "boo", "faf")`:       `label_join(up{foo="bar"}, "joint", "-", "boo", "faf") + label_join(down{baz="fob"}, "joint", "-", "boo", "faf")`,
+	`label_replace(up{foo="bar"}, "zoo", "$1", "faf", "(.*)") + label_replace(down{baz="fob"}, "zoo", "$1", "faf", "(.*)")`: `label_replace(up{foo="bar"}, "zoo", "$1", "faf", "(.*)") + label_replace(down{baz="fob"}, "zoo", "$1", "faf", "(.*)")`,
+	`info(up{foo="bar"}) + info(down{baz="fob"})`:                                                                           `info(up{foo="bar"}) + info(down{baz="fob"})`,
+	`sort(up{foo="bar"}) + sort(down{baz="fob"})`:                                                                           `sort(up{foo="bar"}) + sort(down{baz="fob"})`,
+	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`:                                           `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
 }
 
 func TestPropagateMatchers(t *testing.T) {
+	parser.EnableExperimentalFunctions = true
 	ctx := context.Background()
 
 	for input, expected := range testCasesPropagateMatchers {
@@ -141,6 +149,7 @@ func TestPropagateMatchers(t *testing.T) {
 }
 
 func TestPropagateMatchersWithData(t *testing.T) {
+	parser.EnableExperimentalFunctions = true
 	testASTOptimizationPassWithData(t, `
 		load 1m
 			up{foo="bar",baz="fob",boo="far",faf="bob"} 0+1x<num samples>
