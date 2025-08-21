@@ -101,9 +101,11 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 	switch resultType {
 	case parser.ValueTypeScalar:
 		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
-			Node:           r.Inner,
-			TimeRange:      timeRange,
-			RemoteExecutor: m.executor,
+			RootPlan:                 params.Plan,
+			Node:                     r.Inner,
+			TimeRange:                timeRange,
+			RemoteExecutor:           m.executor,
+			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		}), nil
 
 	// TODO

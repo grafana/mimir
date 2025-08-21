@@ -9,24 +9,36 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type ScalarRemoteExec struct {
-	Node           planning.Node
-	TimeRange      types.QueryTimeRange
-	RemoteExecutor RemoteExecutor
+	RootPlan                 *planning.QueryPlan
+	Node                     planning.Node
+	TimeRange                types.QueryTimeRange
+	RemoteExecutor           RemoteExecutor
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	resp ScalarRemoteExecutionResponse
 }
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.Node, s.TimeRange)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange)
 	return err
 }
 
 func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, error) {
-	return s.resp.GetValues(ctx)
+	v, err := s.resp.GetValues(ctx)
+	if err != nil {
+		return types.ScalarData{}, err
+	}
+
+	if err := s.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(v.Samples))*types.FPointSize, limiter.FPointSlices); err != nil {
+		return types.ScalarData{}, err
+	}
+
+	return v, nil
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
