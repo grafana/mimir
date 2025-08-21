@@ -188,14 +188,14 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	head = head[1:]
 
 	for _, p := range head {
-		if _, err := sum.Add(p.H); err != nil {
+		if _, _, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
 		}
 	}
 
 	for _, p := range tail {
-		if _, err := sum.Add(p.H); err != nil {
+		if _, _, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
 		}
@@ -324,12 +324,12 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 			contributionByP = contributionByP.Div(count)
 			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
 
-			change, err := contributionByP.Sub(contributionByAvgSoFar)
+			change, _, err := contributionByP.Sub(contributionByAvgSoFar)
 			if err != nil {
 				return err
 			}
 
-			avgSoFar, err = avgSoFar.Add(change)
+			avgSoFar, _, err = avgSoFar.Add(change)
 			if err != nil {
 				return err
 			}
@@ -698,7 +698,7 @@ func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoin
 	}
 
 	if !isRate || !lastSample.H.DetectReset(secondLastSample.H) {
-		_, err := resultValue.Sub(secondLastSample.H)
+		_, _, err := resultValue.Sub(secondLastSample.H)
 		if err != nil {
 			// Convert the error to an annotation, if we can.
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
