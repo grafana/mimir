@@ -919,8 +919,8 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
 	t.QuerierQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 
-	// If the query-frontend is running in this process, we want to expose its planner through the analysis endpoint, not
-	// the querier's planner.
+	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
+	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
 		analysisHandler := streamingpromql.AnalysisHandler(t.QuerierQueryPlanner)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
