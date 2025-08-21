@@ -71,6 +71,10 @@ var testCasesPropagateMatchers = map[string]string{
 	`scalar(up{foo="bar"} * down)`:                                             `scalar(up{foo="bar"} * down{foo="bar"})`,
 	`scalar(up{foo="bar"}) * down`:                                             `scalar(up{foo="bar"}) * down`,
 	`scalar(up) * down{foo="bar"}`:                                             `scalar(up) * down{foo="bar"}`,
+	`minute() * down{baz="fob"}`:                                               `minute() * down{baz="fob"}`,
+	`minute(up{foo="bar"}) * down{baz="fob"}`:                                  `minute(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
+	`round(up{foo="bar"}) * down{baz="fob"}`:                                   `round(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
+	`round(up{foo="bar"}, 1) * down{baz="fob"}`:                                `round(up{foo="bar", baz="fob"}, 1) * down{foo="bar", baz="fob"}`,
 
 	// Subqueries
 	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
@@ -154,13 +158,14 @@ func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
 	}
 	for name, f := range parser.Functions {
 		t.Run(name, func(t *testing.T) {
-			i, err := ast.VectorSelectorArgumentIndex(f.Name)
+			i, optional, err := ast.VectorSelectorArgumentIndex(f.Name)
 			require.NoError(t, err)
 			if i < 0 {
 				return
 			}
 			require.Contains(t, allowedValueTypes, f.ArgTypes[i])
 			require.Contains(t, allowedValueTypes, f.ReturnType)
+			require.Equal(t, optional, f.Variadic != 0)
 		})
 	}
 }
