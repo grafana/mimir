@@ -3083,9 +3083,12 @@ kafka:
     labels: {}
   # -- Kafka persistence configuration
   persistence:
+    # If false, use emptyDir
     enabled: true
     size: 5Gi
     storageClassName: ""
+    # Additional settings for emptyDir if persistence is disabled
+    emptyDir: {}
   # -- Resource requests and limits for Kafka
   resources:
     requests:

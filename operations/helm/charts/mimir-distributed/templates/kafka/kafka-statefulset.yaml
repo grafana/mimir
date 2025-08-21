@@ -111,10 +111,8 @@ spec:
           securityContext:
             {{- toYaml .containerSecurityContext | nindent 12 }}
           volumeMounts:
-            {{- if .persistence.enabled }}
             - name: kafka-data
               mountPath: /var/lib/kafka
-            {{- end }}
             - name: kafka-config
               mountPath: /opt/kafka/config
             - name: tmp
@@ -148,6 +146,11 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        {{- if not .persistence.enabled }}
+        - name: kafka-data
+          emptyDir:
+            {{- toYaml .persistence.emptyDir | nindent 12 }}
+        {{- end }}
         {{- with .extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
