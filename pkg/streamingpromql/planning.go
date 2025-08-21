@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -42,7 +43,7 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+func NewQueryPlanner(opts EngineOpts, logger log.Logger) *QueryPlanner {
 	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
@@ -63,6 +64,11 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	if opts.EnableSkippingHistogramDecoding {
 		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	}
+
+	// TODO: What order does this need to be in?
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(logger))
 	}
 
 	return planner

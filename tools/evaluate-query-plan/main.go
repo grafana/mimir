@@ -43,9 +43,10 @@ type app struct {
 }
 
 func main() {
+	logger := log.NewLogfmtLogger(os.Stderr)
 	a := &app{
-		planner: streamingpromql.NewQueryPlanner(streamingpromql.NewTestEngineOpts()),
-		logger:  log.NewLogfmtLogger(os.Stderr),
+		planner: streamingpromql.NewQueryPlanner(streamingpromql.NewTestEngineOpts(), logger),
+		logger:  logger,
 	}
 
 	if err := a.Run(); err != nil {

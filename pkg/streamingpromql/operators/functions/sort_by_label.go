@@ -20,11 +20,11 @@ type SortByLabel struct {
 	descending               bool
 	labels                   []string
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	expressionPosition       posrange.PositionRange
 
-	seriesIndex     int
-	originalIndexes []int
-	buffer          *operators.InstantVectorOperatorBuffer
+	expressionPosition posrange.PositionRange
+	seriesIndex        int
+	originalIndexes    []int
+	buffer             *operators.InstantVectorOperatorBuffer
 }
 
 var _ types.InstantVectorOperator = &SortByLabel{}
@@ -46,8 +46,8 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := s.inner.SeriesMetadata(ctx)
+func (s *SortByLabel) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := s.inner.SeriesMetadata(ctx, selectors)
 	if err != nil {
 		return nil, err
 	}

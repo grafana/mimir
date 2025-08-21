@@ -69,8 +69,8 @@ func NewSubquery(
 	}, nil
 }
 
-func (s *Subquery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return s.Inner.SeriesMetadata(ctx)
+func (s *Subquery) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+	return s.Inner.SeriesMetadata(ctx, selectors)
 }
 
 func (s *Subquery) NextSeries(ctx context.Context) error {

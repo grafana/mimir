@@ -45,11 +45,11 @@ func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return m.Selector.ExpressionPosition
 }
 
-func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 
-	return m.Selector.SeriesMetadata(ctx)
+	return m.Selector.SeriesMetadata(ctx, selectors)
 }
 
 func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {

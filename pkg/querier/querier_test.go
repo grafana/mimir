@@ -244,8 +244,9 @@ func TestQuerier(t *testing.T) {
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
+			logger := log.NewNopLogger()
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -322,7 +323,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -408,7 +409,7 @@ func TestBatchMergeChunks(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -706,8 +707,8 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
-
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			logger := log.NewNopLogger()
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
@@ -776,7 +777,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			logger := log.NewNopLogger()
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 
 			// Create the PromQL engine to execute the query.
@@ -898,7 +900,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -926,7 +928,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -964,7 +966,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, hints, matchers).Return([]string{}, nil)
 
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -994,7 +996,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, hints, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1091,8 +1093,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
-
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			logger := log.NewNopLogger()
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1206,8 +1208,8 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
-
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			logger := log.NewNopLogger()
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1429,7 +1431,8 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
 			}
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine))
+			logger := log.NewNopLogger()
+			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, logger, nil, streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, logger))
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)

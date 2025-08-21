@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1253,7 +1254,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner := NewQueryPlanner(opts)
+	planner := NewQueryPlanner(opts, log.NewNopLogger())
 	ctx := context.Background()
 
 	for _, expr := range testCases {
@@ -1307,7 +1308,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.CommonOpts.ActiveQueryTracker = tracker
-	planner := NewQueryPlanner(opts)
+	planner := NewQueryPlanner(opts, log.NewNopLogger())
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())

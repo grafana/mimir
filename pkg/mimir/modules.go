@@ -925,7 +925,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
-	t.QuerierQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+	t.QuerierQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts, util_log.Logger)
 
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
@@ -940,7 +940,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
-	t.QueryFrontendQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+	t.QueryFrontendQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts, util_log.Logger)
 
 	analysisHandler := streamingpromql.AnalysisHandler(t.QueryFrontendQueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)

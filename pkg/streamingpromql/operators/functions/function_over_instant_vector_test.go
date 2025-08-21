@@ -57,7 +57,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		},
 	}
 
-	_, err := operator.SeriesMetadata(ctx)
+	_, err := operator.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	_, err = operator.NextSeries(ctx)
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	// SeriesMetadata should process scalar args
-	_, err := operator.SeriesMetadata(ctx)
+	_, err := operator.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 
 	// NextSeries should pass scalarArgsData to SeriesDataFunc, which validates the arguments

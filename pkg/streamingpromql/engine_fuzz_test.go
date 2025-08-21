@@ -87,8 +87,9 @@ func buildStorage(f *testing.F, dataFile string) storage.Queryable {
 // seedFuzzFunc is a function which actually performs the Fuzz seeding for each query string.
 func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *fuzzTestEnvironment {
 	opts := NewTestEngineOpts()
+	logger := log.NewNopLogger()
 
-	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts, logger), logger)
 	require.NoError(f, err)
 
 	environment := &fuzzTestEnvironment{

@@ -30,6 +30,8 @@ type QuantileAggregation struct {
 	Annotations              *annotations.Annotations
 }
 
+var _ types.InstantVectorOperator = &QuantileAggregation{}
+
 func NewQuantileAggregation(
 	inner types.InstantVectorOperator,
 	param types.ScalarOperator,
@@ -65,7 +67,7 @@ func NewQuantileAggregation(
 	return q, nil
 }
 
-func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (q *QuantileAggregation) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	var err error
 	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
 	if err != nil {
@@ -78,7 +80,7 @@ func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) ([]types.Serie
 		}
 	}
 
-	return q.Aggregation.SeriesMetadata(ctx)
+	return q.Aggregation.SeriesMetadata(ctx, selectors)
 }
 
 func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

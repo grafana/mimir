@@ -77,12 +77,12 @@ func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	if err := m.processScalarArgs(ctx); err != nil {
 		return nil, err
 	}
 
-	metadata, err := m.Inner.SeriesMetadata(ctx)
+	metadata, err := m.Inner.SeriesMetadata(ctx, selectors)
 	if err != nil {
 		return nil, err
 	}

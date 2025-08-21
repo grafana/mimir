@@ -12,7 +12,18 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+func (h *Hints) ToQueryHints() *types.QueryHints {
+	if h == nil {
+		return nil
+	}
+
+	return &types.QueryHints{
+		Include: h.Include,
+	}
+}
 
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
 	return (*parser.VectorMatching)(v)
