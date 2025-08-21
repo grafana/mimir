@@ -38,6 +38,7 @@ type Data struct {
 type Group struct {
 	Tenant          string
 	Name            string  `json:"name"`
+	File            string  `json:"file"`
 	IntervalSeconds float64 `json:"interval"`
 	Rules           []*Rule `json:"rules"`
 
@@ -182,7 +183,7 @@ func printAnalysisResultsCSV(groups []*Group) {
 		}
 
 		fmt.Println(strings.Join([]string{
-			fmt.Sprintf("%s - %s", group.Tenant, group.Name),
+			fmt.Sprintf("%s - %s (%s)", group.Tenant, group.Name, group.File),
 			fmt.Sprintf("%.0f", group.EvaluationInterval().Seconds()),
 			strconv.Itoa(len(group.Rules)),
 			strconv.Itoa(group.rulesStrongConsistencyCount),
