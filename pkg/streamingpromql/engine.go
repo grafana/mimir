@@ -240,6 +240,7 @@ func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, 
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
 		LookbackDelta:            lookbackDelta,
+		Hints:                    plan.Hints,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 	}
 

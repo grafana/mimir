@@ -64,6 +64,11 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	// TODO: What order does this need to be in?
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowBinarySelectorsOptimizationPass())
+	}
+
 	return planner
 }
 

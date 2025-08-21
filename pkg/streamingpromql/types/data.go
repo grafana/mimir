@@ -196,6 +196,10 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 	}
 }
 
+type QueryHints struct {
+	Group []string
+}
+
 type QueryTimeRange struct {
 	StartT               int64 `json:"startT"`               // Start timestamp, in milliseconds since Unix epoch.
 	EndT                 int64 `json:"endT"`                 // End timestamp, in milliseconds since Unix epoch.

@@ -7,8 +7,12 @@ package binops
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sort"
+	"strings"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -45,6 +49,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              types.QueryHints
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -128,6 +133,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints types.QueryHints,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -142,6 +148,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
+		hints:              hints,
 		evaluator:          e,
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
@@ -149,6 +156,33 @@ func NewOneToOneVectorVectorBinaryOperation(
 	}
 
 	return b, nil
+}
+
+func BuildMatchers(metadata []types.SeriesMetadata, hints types.QueryHints) []labels.Matcher {
+	var matchers []labels.Matcher
+
+	for _, field := range hints.Group {
+		var values []string
+
+		for _, series := range metadata {
+			// TODO: Abort if there are more than N values already? Matcher for every single
+			//  value probably isn't fast or useful.
+			val := series.Labels.Get(field)
+			if val != "" {
+				values = append(values, regexp.QuoteMeta(val))
+			}
+		}
+
+		if len(values) != 0 {
+			matchers = append(matchers, labels.Matcher{
+				Type:  labels.MatchRegexp,
+				Name:  field,
+				Value: strings.Join(values, "|"),
+			})
+		}
+	}
+
+	return matchers
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {
@@ -177,6 +211,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		b.Close()
 		return nil, nil
 	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "!!! MATCHERS FROM HINTS: %+v\n", BuildMatchers(b.leftMetadata, b.hints))
 
 	allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, err := b.computeOutputSeries()
 	if err != nil {
@@ -285,9 +321,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			groupKey := groupKeyFunc(s.Labels)
 
 			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-			rightSide, exists := rightSideGroupsMap[string(groupKey)]
-
-			if !exists {
+			rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
+			if !rightExists {
 				// No matching series on the right side.
 				continue
 			}

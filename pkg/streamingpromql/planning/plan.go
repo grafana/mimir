@@ -22,6 +22,7 @@ import (
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node
+	Hints     types.QueryHints
 
 	OriginalExpression string
 }
@@ -145,6 +146,7 @@ type OperatorParameters struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
+	Hints                    types.QueryHints
 	EagerLoadSelectors       bool
 }
 
