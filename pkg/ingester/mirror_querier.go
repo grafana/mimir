@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -60,9 +62,13 @@ func (q *mirroredChunkQuerier) LabelNames(ctx context.Context, hints *storage.La
 }
 
 func (q *mirroredChunkQuerier) Close() error {
-	if errors.Is(q.returnedSeries.Err(), context.Canceled) {
+	if retunedErr := q.returnedSeries.Err(); errors.Is(retunedErr, context.Canceled) {
 		level.Warn(q.logger).Log("msg", "Select was canceled, skipping comparison")
 		q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
+		return q.delegate.Close()
+	} else if retunedErr != nil {
+		level.Error(q.logger).Log("msg", "error reading returned series", "err", retunedErr)
+		q.comparisonOutcomes.WithLabelValues("returned_series_error").Inc()
 		return q.delegate.Close()
 	} else if q.returnedSeries.isUnset() {
 		level.Warn(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
@@ -180,8 +186,14 @@ func (q *mirroredChunkQuerier) recordComparisonOutcome(extraSeries []string, mis
 		q.comparisonOutcomes.WithLabelValues("success").Inc()
 	}
 	if len(extraSeries) > 0 || len(missingSeries) > 0 {
+		tenantID, _ := tenant.TenantID(q.recordedRequest.ctx)
+		traceID, sampled := tracing.ExtractSampledTraceID(q.recordedRequest.ctx)
+
 		level.Warn(q.logger).Log(
 			"msg", "series comparison found differences",
+			"user", tenantID,
+			"trace_id", traceID,
+			"trace_sampled", sampled,
 			"request_min_time", q.recordedRequest.minT,
 			"request_max_time", q.recordedRequest.maxT,
 			"request_sort_series", q.recordedRequest.sortSeries,
