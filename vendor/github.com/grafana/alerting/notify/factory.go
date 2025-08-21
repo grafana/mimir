@@ -74,6 +74,7 @@ func BuildGrafanaReceiverIntegrations(
 	wrapNotifier WrapNotifierFunc,
 	orgID int64,
 	version string,
+	notificationHistorian nfstatus.NotificationHistorian,
 	httpClientOptions ...http.ClientOption,
 ) ([]*Integration, error) {
 	type notificationChannel interface {
@@ -91,7 +92,7 @@ func BuildGrafanaReceiverIntegrations(
 			}
 			n := newInt(client)
 			notify := wrapNotifier(cfg.Name, n)
-			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name)
+			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name, notificationHistorian)
 			integrations = append(integrations, i)
 		}
 	)
@@ -223,6 +224,7 @@ func BuildPrometheusReceiverIntegrations(
 	httpClientOptions []http.ClientOption,
 	logger log.Logger,
 	wrapper WrapNotifierFunc,
+	notificationHistorian nfstatus.NotificationHistorian,
 ) ([]*nfstatus.Integration, error) {
 	var (
 		errs         types.MultiError
@@ -248,7 +250,7 @@ func BuildPrometheusReceiverIntegrations(
 			if wrapper != nil {
 				n = wrapper(name, n)
 			}
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, notificationHistorian))
 		}
 	)
 
@@ -313,6 +315,7 @@ func BuildReceiversIntegrations(
 	notifierFunc WrapNotifierFunc,
 	version string,
 	logger log.Logger,
+	notificationHistorian nfstatus.NotificationHistorian,
 ) (map[string][]*Integration, error) {
 	nameToReceiver := make(map[string]*APIReceiver, len(apiReceivers))
 	for _, receiver := range apiReceivers {
@@ -328,7 +331,7 @@ func BuildReceiversIntegrations(
 
 	integrationsMap := make(map[string][]*Integration, len(apiReceivers))
 	for name, apiReceiver := range nameToReceiver {
-		integrations, err := BuildReceiverIntegrations(tenantID, apiReceiver, templ, images, decryptFn, decodeFn, emailSender, httpClientOptions, notifierFunc, version, logger)
+		integrations, err := BuildReceiverIntegrations(tenantID, apiReceiver, templ, images, decryptFn, decodeFn, emailSender, httpClientOptions, notifierFunc, version, logger, notificationHistorian)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build receiver %s: %w", name, err)
 		}
@@ -351,6 +354,7 @@ func BuildReceiverIntegrations(
 	wrapNotifierFunc WrapNotifierFunc,
 	version string,
 	logger log.Logger,
+	notificationHistorian nfstatus.NotificationHistorian,
 ) ([]*Integration, error) {
 	var integrations []*Integration
 	if len(receiver.Integrations) > 0 {
@@ -371,13 +375,14 @@ func BuildReceiverIntegrations(
 			wrapNotifierFunc,
 			tenantID,
 			version,
+			notificationHistorian,
 			httpClientOptions...,
 		)
 		if err != nil {
 			return nil, err
 		}
 	}
-	mimir, err := BuildPrometheusReceiverIntegrations(receiver.ConfigReceiver, tmpls, httpClientOptions, logger, wrapNotifierFunc)
+	mimir, err := BuildPrometheusReceiverIntegrations(receiver.ConfigReceiver, tmpls, httpClientOptions, logger, wrapNotifierFunc, notificationHistorian)
 	if err != nil {
 		return nil, err
 	}
