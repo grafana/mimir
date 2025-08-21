@@ -271,7 +271,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.isAnyModuleEnabled(Ingester, Write, All) {
+	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -297,7 +297,7 @@ func (c *Config) Validate(log log.Logger) error {
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
 		// grafana/mimir#7822). Otherwise, log the fact and move on.
-		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+		if c.isIngesterEnabled() || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
 		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
@@ -326,7 +326,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Vault.Validate(); err != nil {
 		return errors.Wrap(err, "invalid vault config")
 	}
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
@@ -351,13 +351,13 @@ func (c *Config) ValidateLimits(limits *validation.Limits) error {
 	return limits.Validate()
 }
 
-func (c *Config) isModuleEnabled(m string) bool {
+func (c *Config) isModuleExplicitlyTargeted(m string) bool {
 	return slices.Contains(c.Target, m)
 }
 
-func (c *Config) isAnyModuleEnabled(modules ...string) bool {
+func (c *Config) isAnyModuleExplicitlyTargeted(modules ...string) bool {
 	for _, m := range modules {
-		if c.isModuleEnabled(m) {
+		if c.isModuleExplicitlyTargeted(m) {
 			return true
 		}
 	}
@@ -365,16 +365,52 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	return false
 }
 
+func (c *Config) isIngesterEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ingester, Write)
+}
+
+func (c *Config) isAlertManagerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(AlertManager, Backend)
+}
+
+func (c *Config) isRulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ruler, Backend)
+}
+
+func (c *Config) isStoreGatewayEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway, Backend)
+}
+
+func (c *Config) isCompactorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Compactor, Backend)
+}
+
+func (c *Config) isQueryFrontendEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryFrontend, Read)
+}
+
+func (c *Config) isQuerySchedulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryScheduler, Backend)
+}
+
+func (c *Config) isQuerierEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Querier, Read)
+}
+
+func (c *Config) isDistributorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Distributor, Write)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
 	// Validate alertmanager bucket config.
-	if c.isAnyModuleEnabled(AlertManager, Backend) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if c.isAlertManagerEnabled() && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.BackendLocal {
+	if c.isRulerEnabled() && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -430,7 +466,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
@@ -440,7 +476,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ingester.
-	if c.isAnyModuleEnabled(All, Ingester, Write) {
+	if c.isIngesterEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "tsdb directory",
 			cfgValue:   c.BlocksStorage.TSDB.Dir,
@@ -449,7 +485,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Store-gateway.
-	if c.isAnyModuleEnabled(All, StoreGateway, Backend) {
+	if c.isStoreGatewayEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "bucket store sync directory",
 			cfgValue:   c.BlocksStorage.BucketStore.SyncDir,
@@ -458,7 +494,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Compactor.
-	if c.isAnyModuleEnabled(All, Compactor, Backend) {
+	if c.isCompactorEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "compactor data directory",
 			cfgValue:   c.Compactor.DataDir,
@@ -467,7 +503,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ruler.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) {
+	if c.isRulerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "ruler data directory",
 			cfgValue:   c.Ruler.RulePath,
@@ -492,7 +528,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -782,7 +818,6 @@ type Mimir struct {
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -800,6 +835,13 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
+	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,
+	// and support for sending queries directly to queriers via the Prometheus HTTP API endpoints is removed.
+	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
+	// including when running in monolithic and read/write modes.
+	QuerierQueryPlanner *streamingpromql.QueryPlanner
 }
 
 // New makes a new Mimir.
