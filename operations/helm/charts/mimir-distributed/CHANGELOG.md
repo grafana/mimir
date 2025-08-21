@@ -38,7 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
 * [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
 
-## 5.8.0-rc.0
+## 5.8.0
 
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231

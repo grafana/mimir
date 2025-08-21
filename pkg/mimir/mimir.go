@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -113,25 +114,26 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API                   api.Config                      `yaml:"api"`
-	Server                server.Config                   `yaml:"server"`
-	Distributor           distributor.Config              `yaml:"distributor"`
-	Querier               querier.Config                  `yaml:"querier"`
-	IngesterClient        client.Config                   `yaml:"ingester_client"`
-	Ingester              ingester.Config                 `yaml:"ingester"`
-	Flusher               flusher.Config                  `yaml:"flusher"`
-	LimitsConfig          validation.Limits               `yaml:"limits"`
-	Worker                querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
-	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
-	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
-	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor             compactor.Config                `yaml:"compactor"`
-	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
-	Vault                 vault.Config                    `yaml:"vault"`
+	API                            api.Config                      `yaml:"api"`
+	Server                         server.Config                   `yaml:"server"`
+	Distributor                    distributor.Config              `yaml:"distributor"`
+	Querier                        querier.Config                  `yaml:"querier"`
+	IngesterClient                 client.Config                   `yaml:"ingester_client"`
+	Ingester                       ingester.Config                 `yaml:"ingester"`
+	Flusher                        flusher.Config                  `yaml:"flusher"`
+	LimitsConfig                   validation.Limits               `yaml:"limits"`
+	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor                      compactor.Config                `yaml:"compactor"`
+	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
+	IncludeTenantIDInProfileLabels bool                            `yaml:"include_tenant_id_in_profile_labels" category:"experimental"`
+	Vault                          vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -180,6 +182,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
 	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
+	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", false, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -273,7 +276,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.isAnyModuleEnabled(Ingester, Write, All) {
+	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -299,7 +302,7 @@ func (c *Config) Validate(log log.Logger) error {
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
 		// grafana/mimir#7822). Otherwise, log the fact and move on.
-		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+		if c.isIngesterEnabled() || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
 		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
@@ -338,7 +341,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Vault.Validate(); err != nil {
 		return errors.Wrap(err, "invalid vault config")
 	}
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
@@ -363,13 +366,13 @@ func (c *Config) ValidateLimits(limits *validation.Limits) error {
 	return limits.Validate()
 }
 
-func (c *Config) isModuleEnabled(m string) bool {
-	return util.StringsContain(c.Target, m)
+func (c *Config) isModuleExplicitlyTargeted(m string) bool {
+	return slices.Contains(c.Target, m)
 }
 
-func (c *Config) isAnyModuleEnabled(modules ...string) bool {
+func (c *Config) isAnyModuleExplicitlyTargeted(modules ...string) bool {
 	for _, m := range modules {
-		if c.isModuleEnabled(m) {
+		if c.isModuleExplicitlyTargeted(m) {
 			return true
 		}
 	}
@@ -377,16 +380,52 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	return false
 }
 
+func (c *Config) isIngesterEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ingester, Write)
+}
+
+func (c *Config) isAlertManagerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(AlertManager, Backend)
+}
+
+func (c *Config) isRulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ruler, Backend)
+}
+
+func (c *Config) isStoreGatewayEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway, Backend)
+}
+
+func (c *Config) isCompactorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Compactor, Backend)
+}
+
+func (c *Config) isQueryFrontendEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryFrontend, Read)
+}
+
+func (c *Config) isQuerySchedulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryScheduler, Backend)
+}
+
+func (c *Config) isQuerierEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Querier, Read)
+}
+
+func (c *Config) isDistributorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Distributor, Write)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
 	// Validate alertmanager bucket config.
-	if c.isAnyModuleEnabled(AlertManager, Backend) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if c.isAlertManagerEnabled() && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.BackendLocal {
+	if c.isRulerEnabled() && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -447,7 +486,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
@@ -457,7 +496,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ingester.
-	if c.isAnyModuleEnabled(All, Ingester, Write) {
+	if c.isIngesterEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "tsdb directory",
 			cfgValue:   c.BlocksStorage.TSDB.Dir,
@@ -466,7 +505,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Store-gateway.
-	if c.isAnyModuleEnabled(All, StoreGateway, Backend) {
+	if c.isStoreGatewayEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "bucket store sync directory",
 			cfgValue:   c.BlocksStorage.BucketStore.SyncDir,
@@ -475,7 +514,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Compactor.
-	if c.isAnyModuleEnabled(All, Compactor, Backend) {
+	if c.isCompactorEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "compactor data directory",
 			cfgValue:   c.Compactor.DataDir,
@@ -484,7 +523,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ruler.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) {
+	if c.isRulerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "ruler data directory",
 			cfgValue:   c.Ruler.RulePath,
@@ -509,7 +548,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -810,7 +849,6 @@ type Mimir struct {
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -831,6 +869,13 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
+	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,
+	// and support for sending queries directly to queriers via the Prometheus HTTP API endpoints is removed.
+	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
+	// including when running in monolithic and read/write modes.
+	QuerierQueryPlanner *streamingpromql.QueryPlanner
 }
 
 // New makes a new Mimir.
