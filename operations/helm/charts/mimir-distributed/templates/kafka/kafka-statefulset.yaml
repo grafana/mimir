@@ -78,7 +78,7 @@ spec:
             - name: KAFKA_LISTENERS
               value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
             - name: KAFKA_ADVERTISED_LISTENERS
-              value: PLAINTEXT://$(_POD_NAME).{{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}-headless.{{ $.Release.Namespace }}.svc:9092
+              value: PLAINTEXT://$(_POD_NAME).{{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}-headless.{{ $.Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:9092
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
               # Kafka fails to resolve DNS name with a trailing dot, e.g. "example.cluster.local." Thus, "trimSuffix" is here for the clusterDomain.
               value: "{{ range $i := until (int $replicas) }}{{ $i }}@{{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}-{{ $i }}.{{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}-headless.{{ $.Release.Namespace }}.svc.{{ trimSuffix "." $.Values.global.clusterDomain }}:9093{{ if lt $i (sub (int $replicas) 1) }},{{ end }}{{ end }}"
