@@ -275,9 +275,11 @@
 
   local cpuHPAQuery(with_ready_trigger) = (
     if with_ready_trigger then
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the configured percentile value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
       // When computing the actual CPU utilization, We only take in account ready pods.
       if $._config.autoscaling_cpu_hpa_use_irate then
@@ -305,9 +307,11 @@
           ) * 1000
         |||
     else
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the configured percentile value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
       // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
