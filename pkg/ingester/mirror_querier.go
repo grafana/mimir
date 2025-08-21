@@ -60,13 +60,13 @@ func (q *mirroredChunkQuerier) LabelNames(ctx context.Context, hints *storage.La
 }
 
 func (q *mirroredChunkQuerier) Close() error {
-	if q.returnedSeries.isUnset() {
-		level.Warn(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
-		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
-		return q.delegate.Close()
-	} else if errors.Is(q.returnedSeries.Err(), context.Canceled) {
+	if errors.Is(q.returnedSeries.Err(), context.Canceled) {
 		level.Warn(q.logger).Log("msg", "Select was canceled, skipping comparison")
 		q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
+		return q.delegate.Close()
+	} else if q.returnedSeries.isUnset() {
+		level.Warn(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
+		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
 		return q.delegate.Close()
 	}
 
