@@ -4,7 +4,7 @@ aliases:
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: Versioning
 title: About Grafana Mimir versioning
-weight: 50
+weight: 35
 ---
 
 # About Grafana Mimir versioning
@@ -88,6 +88,8 @@ The following features are currently experimental:
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
   - `-ruler.min-rule-evaluation-interval`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -117,6 +119,10 @@ The following features are currently experimental:
     - `-distributor.otel-promote-scope-metadata`
   - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative values and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
     - `distributor.otel-native-delta-ingestion`
+  - Configure metric and label name validation scheme
+    - `-validation.name-validation-scheme`
+  - Configure metric and label name translation strategy in OTLP endpoint
+    - `-distributor.otel-translation-strategy`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -202,6 +208,10 @@ The following features are currently experimental:
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`
     - `-ingester.rejection-prioritizer.calibration-interval`
+  - Postings for matchers cache sharing and invalidation. Sharing allows caches to be shared across multiple TSDBs. Invalidation allows cache entries to be marked as invalid, after which they'll be lazily evicted when they hit their normal TTL or when the cache hits its max size.
+    - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -211,15 +221,12 @@ The following features are currently experimental:
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
-  - `-query-frontend.querier-forget-delay`
-  - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
-  - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
@@ -249,12 +256,6 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-burst-size`
-- Memcached client
-  - Customise write and read buffer size
-    - `-<prefix>.memcached.write-buffer-size-bytes`
-    - `-<prefix>.memcached.read-buffer-size-bytes`
-  - Alternate DNS service discovery backend
-    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -294,6 +295,5 @@ The following features or configuration parameters are currently deprecated and 
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- Support for Redis-based caching
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.

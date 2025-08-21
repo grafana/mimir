@@ -3,6 +3,7 @@
 package cardinality
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -204,22 +205,11 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		case a.Type < b.Type:
-			return -1
-		case a.Type > b.Type:
-			return 1
-		case a.Value < b.Value:
-			return -1
-		case a.Value > b.Value:
-			return 1
-		default:
-			return 0
-		}
+		return cmp.Or(
+			strings.Compare(a.Name, b.Name),
+			cmp.Compare(a.Type, b.Type),
+			strings.Compare(a.Value, b.Value),
+		)
 	})
 
 	return matchers, nil
@@ -261,12 +251,11 @@ func extractLabelNames(values url.Values) ([]model.LabelName, error) {
 	}
 
 	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
-	for _, labelNameParam := range labelNamesParams {
-		labelName := model.LabelName(labelNameParam)
-		if !labelName.IsValid() {
-			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelNameParam)
+	for _, labelName := range labelNamesParams {
+		if !model.UTF8Validation.IsValidLabelName(labelName) {
+			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelName)
 		}
-		labelNames = append(labelNames, labelName)
+		labelNames = append(labelNames, model.LabelName(labelName))
 	}
 
 	// Ensure stable sorting (improves query results cache hit ratio).

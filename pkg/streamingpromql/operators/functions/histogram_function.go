@@ -28,6 +28,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+const (
+	// intentionallyEmptyMetricName exists for annotations compatibility with prometheus.
+	// Now prometheus has delayed __name__ removal. Mimir doesn't yet, and we always remove __name__.
+	// Because of complication in implementing this in prometheus (see https://github.com/prometheus/prometheus/pull/16794),
+	// the name is always dropped if delayed __name__ removal is disabled.
+	// The name is dropped even if the function is the first one invoked on the vector selector.
+	// Mimir doesn't have delayed __name__ removal, so to stay close to prometheus, we never display the label in some annotations and warnings.
+	intentionallyEmptyMetricName = ""
+)
+
 // HistogramFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
@@ -324,7 +334,7 @@ func (h *HistogramFunction) saveFloatsToGroup(fPoints []promql.FPoint, le string
 	if err != nil {
 		// The le label was invalid. Record it:
 		h.annotations.Add(annotations.NewBadBucketLabelWarning(
-			h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
+			intentionallyEmptyMetricName,
 			le,
 			h.inner.ExpressionPosition(),
 		))
@@ -405,7 +415,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
+				intentionallyEmptyMetricName, h.inner.ExpressionPosition(),
 			))
 			continue
 		}
@@ -543,7 +553,7 @@ func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, series
 
 	if forcedMonotonicity {
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex),
+			intentionallyEmptyMetricName,
 			q.innerExpressionPosition,
 		))
 	}

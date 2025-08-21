@@ -28,10 +28,9 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -41,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -215,6 +215,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
+			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
 
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.GetUserGrafanaState), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
@@ -264,8 +265,11 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool)
+	}
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
-		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
+		pushConfig.MaxRecvMsgSize, newRequestBuffers, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
@@ -297,23 +301,8 @@ func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus
 	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
-// Ingester is defined as an interface to allow for alternative implementations
-// of ingesters to be passed into the API.RegisterIngester() method.
-type Ingester interface {
-	client.IngesterServer
-	FlushHandler(http.ResponseWriter, *http.Request)
-	ShutdownHandler(http.ResponseWriter, *http.Request)
-	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
-	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
-	PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request)
-	UserRegistryHandler(http.ResponseWriter, *http.Request)
-	TenantsHandler(http.ResponseWriter, *http.Request)
-	TenantTSDBHandler(http.ResponseWriter, *http.Request)
-	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
-}
-
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i Ingester) {
+func (a *API) RegisterIngester(i ingester.API) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
@@ -473,6 +462,10 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
 }
 
+func (a *API) RegisterEvaluationAPI(handler http.Handler) {
+	a.RegisterRoute("/api/v1/evaluate", handler, true, true, "POST")
+}
+
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
 }
@@ -482,10 +475,6 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)
-}
-
-func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
-	frontendv1pb.RegisterFrontendServer(a.server.GRPC, f)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {

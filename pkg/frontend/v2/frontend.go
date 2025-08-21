@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -39,7 +40,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
-	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -91,6 +91,10 @@ func (cfg *Config) Validate() error {
 	return cfg.GRPCClientConfig.Validate()
 }
 
+func (cfg *Config) IsSchedulerConfigured() bool {
+	return cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+}
+
 type Limits interface {
 	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 	QueryIngestersWithin(user string) time.Duration
@@ -123,10 +127,11 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID      uint64
-	request      *httpgrpc.HTTPRequest
-	userID       string
-	statsEnabled bool
+	queryID         uint64
+	httpRequest     *httpgrpc.HTTPRequest
+	protobufRequest proto.Message
+	userID          string
+	statsEnabled    bool
 
 	ctx context.Context
 
@@ -219,7 +224,7 @@ func (f *Frontend) stopping(_ error) error {
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
 		return nil, nil, fmt.Errorf("frontend not running: %v", s)
@@ -231,16 +236,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req))
-
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
 	// cancel is passed to the cleanup function and invoked from there
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
-		request:      req,
+		httpRequest:  httpRequest,
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
@@ -266,39 +268,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}()
 
-	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
-
-enqueueAgain:
-	spanLogger.DebugLog("msg", "enqueuing request")
-
-	var cancelCh chan<- uint64
-	select {
-	case <-ctx.Done():
-		spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
-		return nil, nil, ctx.Err()
-
-	case f.requestsCh <- freq:
-		// Enqueued, let's wait for response.
-		enqRes := <-freq.enqueue
-		if enqRes.status == waitForResponse {
-			cancelCh = enqRes.cancelCh
-			break // go wait for response.
-		} else if enqRes.status == failed {
-			if enqRes.clientErr != nil {
-				// It failed because of a client error. No need to retry.
-				return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
-			}
-
-			retries--
-			if retries > 0 {
-				spanLogger.DebugLog("msg", "enqueuing request failed, will retry")
-				goto enqueueAgain
-			}
-		}
-
-		spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
-
-		return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	cancelCh, err := f.enqueueRequestWithRetries(ctx, freq, spanLogger)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
@@ -307,15 +279,14 @@ enqueueAgain:
 	case <-ctx.Done():
 		spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
 
-		if cancelCh != nil {
-			select {
-			case cancelCh <- freq.queryID:
-				// cancellation sent.
-			default:
-				// failed to cancel, ignore.
-				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
-			}
+		select {
+		case cancelCh <- freq.queryID:
+			// cancellation sent.
+		default:
+			// failed to cancel, ignore.
+			level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 		}
+
 		return nil, nil, ctx.Err()
 
 	case resp := <-freq.response:
@@ -336,6 +307,40 @@ enqueueAgain:
 		}
 		return resp.queryResult.HttpResponse, body, nil
 	}
+}
+
+func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest, spanLogger *spanlogger.SpanLogger) (chan<- uint64, error) {
+	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
+
+	for attempt := range maxAttempts {
+		spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
+
+		select {
+		case <-ctx.Done():
+			spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
+			return nil, ctx.Err()
+
+		case f.requestsCh <- freq:
+			// Enqueued in our worker queue, let's wait for response from scheduler.
+			enqRes := <-freq.enqueue
+			switch enqRes.status {
+			case waitForResponse:
+				// Succeeded, go wait for response from querier.
+				return enqRes.cancelCh, nil
+			case failed:
+				if enqRes.clientErr != nil {
+					// It failed because of a client error. No need to retry.
+					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+				}
+			}
+
+			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.
+		}
+	}
+
+	spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
+
+	return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 }
 
 type cleanupReadCloser struct {
@@ -391,6 +396,52 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
+	firstMessage, err := f.receiveFromStream(stream)
+	if err != nil {
+		return err
+	}
+	if firstMessage == nil {
+		return errors.New("received EOF at start of stream")
+	}
+
+	switch d := firstMessage.Data.(type) {
+	case *frontendv2pb.QueryResultStreamRequest_Metadata:
+		return f.receiveResultForHTTPRequest(userID, firstMessage, d, stream)
+	default:
+		return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
+	}
+}
+
+func (f *Frontend) receiveFromStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (*frontendv2pb.QueryResultStreamRequest, error) {
+	resp, err := stream.Recv()
+	if err == nil {
+		return resp, nil
+	}
+
+	if errors.Is(err, io.EOF) {
+		return nil, nil
+	}
+
+	if errors.Is(err, context.Canceled) {
+		if cause := context.Cause(stream.Context()); cause != nil {
+			return nil, fmt.Errorf("aborted streaming on canceled context: %w", cause)
+		}
+	}
+
+	return nil, fmt.Errorf("failed to receive query result stream message: %w", err)
+}
+
+func (f *Frontend) receiveResultForHTTPRequest(userID string, firstMessage *frontendv2pb.QueryResultStreamRequest, metadata *frontendv2pb.QueryResultStreamRequest_Metadata, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
+	req := f.requests.get(firstMessage.QueryID)
+
+	if req == nil {
+		return fmt.Errorf("query %d not found", firstMessage.QueryID)
+	}
+
+	if req.userID != userID {
+		return fmt.Errorf("expected metadata for user: %q, got: %q", req.userID, userID)
+	}
+
 	reader, writer := io.Pipe()
 	defer func(c *io.PipeWriter) {
 		if err := c.CloseWithError(err); err != nil {
@@ -398,66 +449,46 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 	}(writer)
 
-	metadataReceived := false
-
-	for {
-		var resp *frontendv2pb.QueryResultStreamRequest
-		resp, err = stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if errors.Is(err, context.Canceled) {
-				if cause := context.Cause(stream.Context()); cause != nil {
-					return fmt.Errorf("aborted streaming on canceled context: %w", cause)
-				}
-			}
-			return fmt.Errorf("failed to receive query result stream message: %w", err)
-		}
-		switch d := resp.Data.(type) {
-		case *frontendv2pb.QueryResultStreamRequest_Metadata:
-			if metadataReceived {
-				return fmt.Errorf("metadata for query ID %d received more than once", resp.QueryID)
-			}
-			req := f.requests.get(resp.QueryID)
-			if req == nil {
-				return fmt.Errorf("query %d not found", resp.QueryID)
-			}
-			if req.userID != userID {
-				return fmt.Errorf("expected metadata for user: %s, got: %s", req.userID, userID)
-			}
-			res := queryResultWithBody{
-				queryResult: &frontendv2pb.QueryResultRequest{
-					QueryID: resp.QueryID,
-					Stats:   d.Metadata.Stats,
-					HttpResponse: &httpgrpc.HTTPResponse{
-						Code:    d.Metadata.Code,
-						Headers: d.Metadata.Headers,
-					},
-				},
-				bodyStream: reader,
-			}
-			select {
-			case req.response <- res: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
-				metadataReceived = true
-			default:
-				level.Warn(f.log).Log("msg", "failed to write query result to the response channel",
-					"queryID", resp.QueryID, "user", req.userID)
-			}
-		case *frontendv2pb.QueryResultStreamRequest_Body:
-			if !metadataReceived {
-				return fmt.Errorf("result body for query ID %d received before metadata", resp.QueryID)
-			}
-			_, err = writer.Write(d.Body.Chunk)
-			if err != nil {
-				return fmt.Errorf("failed to write query result body chunk: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown query result stream message type: %T", resp.Data)
-		}
+	res := queryResultWithBody{
+		queryResult: &frontendv2pb.QueryResultRequest{
+			QueryID: firstMessage.QueryID,
+			Stats:   metadata.Metadata.Stats,
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code:    metadata.Metadata.Code,
+				Headers: metadata.Metadata.Headers,
+			},
+		},
+		bodyStream: reader,
 	}
 
-	return nil
+	select {
+	case req.response <- res:
+		// Should always be possible unless QueryResultStream is called multiple times with the same queryID.
+	default:
+		level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", firstMessage.QueryID, "user", req.userID)
+		return fmt.Errorf("failed to write query result to the response channel for query ID %d for user %q", firstMessage.QueryID, userID)
+	}
+
+	for {
+		resp, err := f.receiveFromStream(stream)
+		if err != nil {
+			return err
+		}
+		if resp == nil {
+			// EOF. We are done.
+			return nil
+		}
+
+		d, ok := resp.Data.(*frontendv2pb.QueryResultStreamRequest_Body)
+		if !ok {
+			return fmt.Errorf("unexpected query result stream message type after first message: %T", resp.Data)
+		}
+
+		_, err = writer.Write(d.Body.Chunk)
+		if err != nil {
+			return fmt.Errorf("failed to write query result body chunk: %w", err)
+		}
+	}
 }
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return

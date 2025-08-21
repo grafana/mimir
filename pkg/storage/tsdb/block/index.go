@@ -6,6 +6,7 @@
 package block
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"hash/crc32"
@@ -13,7 +14,6 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -404,8 +404,8 @@ func sanitizeChunkSequence(chks []chunks.Meta, mint, maxt int64, clampChunks boo
 		return nil, nil
 	}
 	// First, ensure that chunks are ordered by their start time.
-	sort.Slice(chks, func(i, j int) bool {
-		return chks[i].MinTime < chks[j].MinTime
+	slices.SortFunc(chks, func(a, b chunks.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	// Remove duplicates, complete outsiders and near outsiders.

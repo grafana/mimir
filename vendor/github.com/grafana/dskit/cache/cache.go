@@ -87,26 +87,22 @@ type Allocator interface {
 
 const (
 	BackendMemcached = "memcached"
-	BackendRedis     = "redis"
 )
 
 type BackendConfig struct {
 	Backend   string                `yaml:"backend"`
 	Memcached MemcachedClientConfig `yaml:"memcached"`
-	Redis     RedisClientConfig     `yaml:"redis"`
 }
 
 // Validate the config.
 func (cfg *BackendConfig) Validate() error {
-	if cfg.Backend != "" && cfg.Backend != BackendMemcached && cfg.Backend != BackendRedis {
+	if cfg.Backend != "" && cfg.Backend != BackendMemcached {
 		return fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
 	}
 
 	switch cfg.Backend {
 	case BackendMemcached:
 		return cfg.Memcached.Validate()
-	case BackendRedis:
-		return cfg.Redis.Validate()
 	}
 	return nil
 }
@@ -118,8 +114,6 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 	case BackendMemcached:
 		return NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
-	case BackendRedis:
-		return NewRedisClient(logger, cacheName, cfg.Redis, reg)
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

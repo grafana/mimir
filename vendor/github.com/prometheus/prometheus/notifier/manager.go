@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
@@ -92,7 +93,7 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 }
 
 // NewManager is the manager constructor.
-func NewManager(o *Options, logger *slog.Logger) *Manager {
+func NewManager(o *Options, nameValidationScheme model.ValidationScheme, logger *slog.Logger) *Manager {
 	if o.Do == nil {
 		o.Do = do
 	}
@@ -102,6 +103,28 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+
+	for _, rc := range o.RelabelConfigs {
+		switch rc.NameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			rc.NameValidationScheme = nameValidationScheme
+		}
+	}
+
+	for i, rc := range o.RelabelConfigs {
+		switch rc.NameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			//nolint:staticcheck // model.NameValidationScheme is deprecated.
+			o.RelabelConfigs[i].NameValidationScheme = model.NameValidationScheme
+			logger.Warn(
+				"notifier.NewManager: using default metric/label name validation scheme",
+				"relabel_config", i,
+				"scheme", o.RelabelConfigs[i].NameValidationScheme,
+			)
+		}
 	}
 
 	n := &Manager{
@@ -133,6 +156,13 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	for i, rc := range n.opts.RelabelConfigs {
+		switch rc.NameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			n.opts.RelabelConfigs[i].NameValidationScheme = conf.GlobalConfig.MetricNameValidationScheme
+		}
+	}
 
 	amSets := make(map[string]*alertmanagerSet)
 	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
@@ -254,7 +284,10 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 			select {
 			case <-n.stopRequested:
 				return
-			case ts := <-tsets:
+			case ts, ok := <-tsets:
+				if !ok {
+					break
+				}
 				n.reload(ts)
 			}
 		}

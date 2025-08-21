@@ -76,7 +76,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -122,6 +123,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -201,7 +204,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -247,6 +251,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -326,7 +332,8 @@ spec:
           configMap:
             name: test-oss-logical-multizone-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -372,3 +379,5 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []

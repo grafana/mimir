@@ -4,19 +4,17 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
-
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type SeriesDataRingBuffer struct {
-	data []types.InstantVectorSeriesData
+type SeriesDataRingBuffer[T any] struct {
+	data []T
 
 	startIndex       int // Position in data of the first series.
 	firstSeriesIndex int // Series index of the first series in the buffer.
 	seriesCount      int // Number of series in the buffer.
 }
 
-func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesIndex int) {
+func (b *SeriesDataRingBuffer[T]) Append(d T, seriesIndex int) {
 	if b.seriesCount == 0 {
 		// We're about to add the first series.
 		b.firstSeriesIndex = seriesIndex
@@ -27,7 +25,7 @@ func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesInd
 	if len(b.data) == b.seriesCount {
 		// Buffer is full, need to grow it.
 		newSize := max(len(b.data)*2, 2) // Grow by powers of two, and ensure we have at least 2 slots.
-		newData := make([]types.InstantVectorSeriesData, newSize)
+		newData := make([]T, newSize)
 		copy(newData, b.data[b.startIndex:])
 		copy(newData[len(b.data)-b.startIndex:], b.data[:b.startIndex])
 		b.startIndex = 0
@@ -39,7 +37,7 @@ func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesInd
 }
 
 // Remove removes and returns the first series in the buffer, and panics if that is not the series with index seriesIndex.
-func (b *SeriesDataRingBuffer) Remove(seriesIndex int) types.InstantVectorSeriesData {
+func (b *SeriesDataRingBuffer[T]) Remove(seriesIndex int) T {
 	if b.seriesCount == 0 {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but buffer is empty", seriesIndex))
 	}
@@ -50,7 +48,8 @@ func (b *SeriesDataRingBuffer) Remove(seriesIndex int) types.InstantVectorSeries
 
 	idx := b.startIndex % len(b.data)
 	d := b.data[idx]
-	b.data[idx] = types.InstantVectorSeriesData{} // Clear the slot.
+	var empty T
+	b.data[idx] = empty // Clear the slot.
 	b.startIndex = (b.startIndex + 1) % len(b.data)
 	b.firstSeriesIndex++
 	b.seriesCount--
@@ -64,7 +63,7 @@ func (b *SeriesDataRingBuffer) Remove(seriesIndex int) types.InstantVectorSeries
 
 // RemoveFirst removes and returns the first series in the buffer.
 // Calling RemoveFirst on an empty buffer panics.
-func (b *SeriesDataRingBuffer) RemoveFirst() types.InstantVectorSeriesData {
+func (b *SeriesDataRingBuffer[T]) RemoveFirst() T {
 	if b.seriesCount == 0 {
 		panic("attempted to remove first series of empty buffer")
 	}
@@ -72,7 +71,7 @@ func (b *SeriesDataRingBuffer) RemoveFirst() types.InstantVectorSeriesData {
 	return b.Remove(b.firstSeriesIndex)
 }
 
-func (b *SeriesDataRingBuffer) Get(seriesIndex int) types.InstantVectorSeriesData {
+func (b *SeriesDataRingBuffer[T]) Get(seriesIndex int) T {
 	if b.seriesCount == 0 {
 		panic(fmt.Sprintf("attempted to get series at index %v, but buffer is empty", seriesIndex))
 	}
@@ -86,10 +85,10 @@ func (b *SeriesDataRingBuffer) Get(seriesIndex int) types.InstantVectorSeriesDat
 	return b.data[(b.startIndex+offsetFromFirst)%len(b.data)]
 }
 
-func (b *SeriesDataRingBuffer) IsPresent(seriesIndex int) bool {
+func (b *SeriesDataRingBuffer[T]) IsPresent(seriesIndex int) bool {
 	return seriesIndex >= b.firstSeriesIndex && seriesIndex < (b.firstSeriesIndex+b.seriesCount)
 }
 
-func (b *SeriesDataRingBuffer) Size() int {
+func (b *SeriesDataRingBuffer[T]) Size() int {
 	return b.seriesCount
 }

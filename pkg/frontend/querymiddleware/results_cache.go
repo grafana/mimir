@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -13,7 +14,6 @@ import (
 	"hash/fnv"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -32,7 +32,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -47,7 +46,7 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached}
 
 	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
@@ -62,12 +61,11 @@ type ResultsCacheConfig struct {
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
 	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
-	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {
-	if cfg.Backend != "" && !util.StringsContain(supportedResultsCacheBackends, cfg.Backend) {
+	if cfg.Backend != "" && !slices.Contains(supportedResultsCacheBackends, cfg.Backend) {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
@@ -76,11 +74,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
-	case cache.BackendRedis:
-		if err := cfg.Redis.Validate(); err != nil {
-			return errors.Wrap(err, "query-frontend results cache")
-		}
-
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -375,15 +368,14 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		return extents, nil
 	}
 
-	sort.Slice(extents, func(i, j int) bool {
-		if extents[i].Start == extents[j].Start {
+	slices.SortFunc(extents, func(a, b Extent) int {
+		if a.Start == b.Start {
 			// as an optimization, for two extents starts at the same time, we
-			// put bigger extent at the front of the slice, which helps
+			// put the bigger extent at the front of the slice, which helps
 			// to reduce the amount of merge we have to do later.
-			return extents[i].End > extents[j].End
+			return cmp.Compare(b.End, a.End)
 		}
-
-		return extents[i].Start < extents[j].Start
+		return cmp.Compare(a.Start, b.Start)
 	})
 
 	// Merge any extents - potentially overlapping

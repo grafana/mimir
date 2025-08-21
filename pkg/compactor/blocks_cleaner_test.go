@@ -503,7 +503,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, 2, nil)
 	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, 2, nil)
 
-	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, 16, logger)
+	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, 16, 16, logger)
 	idx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 
@@ -1689,7 +1689,7 @@ type mockBucketFailure struct {
 }
 
 func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
-	if util.StringsContain(m.DeleteFailures, name) {
+	if slices.Contains(m.DeleteFailures, name) {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)

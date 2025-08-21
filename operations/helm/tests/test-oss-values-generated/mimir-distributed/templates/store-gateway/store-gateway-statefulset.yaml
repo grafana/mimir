@@ -65,7 +65,8 @@ spec:
           configMap:
             name: test-oss-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -110,6 +111,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

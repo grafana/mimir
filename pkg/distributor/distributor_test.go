@@ -204,7 +204,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
 			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -602,7 +602,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -707,7 +707,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
+	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -959,7 +959,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.AlreadyExists, newReplicasDidNotMatchError("instance0", "instance2").Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH},
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -978,7 +978,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1523,7 +1523,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -2219,14 +2219,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
+		return strings.Compare(a.Name, b.Name)
 	})
 	return ret
 }
@@ -4673,8 +4666,8 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 							return false
 						}
 
-						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
-							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+						slices.SortFunc(cardinalityMap.Items, func(l, r *client.LabelValueSeriesCount) int {
+							return strings.Compare(l.LabelName, r.LabelName)
 						})
 						return assert.EqualValues(t, testData.expectedResult, cardinalityMap)
 					}, 1*time.Second, 50*time.Millisecond)
@@ -5071,8 +5064,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
-	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
-	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
+	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH}
+	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS}
 
 	type testCase struct {
 		name              string
@@ -5613,11 +5606,14 @@ type prepConfig struct {
 	// If empty, it defaults to the ingestion storage type configured in the test.
 	ingesterIngestionType ingesterIngestionType
 
-	queryDelay       time.Duration
-	pushDelay        time.Duration
-	shuffleShardSize int
-	limits           *validation.Limits
-	numDistributors  int
+	queryDelay         time.Duration
+	pushDelay          time.Duration
+	shuffleShardSize   int
+	limits             *validation.Limits
+	overrides          func(*validation.Limits) *validation.Overrides
+	reg                *prometheus.Registry
+	costAttributionMgr *costattribution.Manager
+	numDistributors    int
 
 	replicationFactor                  int
 	enableTracker                      bool
@@ -6005,9 +6001,17 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			}
 		}
 
-		overrides := validation.NewOverrides(*cfg.limits, nil)
-		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		var overrides *validation.Overrides
+		if cfg.overrides != nil {
+			overrides = cfg.overrides(cfg.limits)
+		} else {
+			overrides = validation.NewOverrides(*cfg.limits, nil)
+		}
+		reg := cfg.reg
+		if reg == nil {
+			reg = prometheus.NewPedanticRegistry()
+		}
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -7291,7 +7295,7 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
-	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata

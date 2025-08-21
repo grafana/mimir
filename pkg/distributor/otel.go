@@ -61,6 +61,8 @@ type OTLPHandlerLimits interface {
 	OTelConvertHistogramsToNHCB(id string) bool
 	OTelPromoteScopeMetadata(id string) bool
 	OTelNativeDeltaIngestion(id string) bool
+	OTelTranslationStrategy(id string) otlptranslator.TranslationStrategyOption
+	NameValidationScheme(id string) model.ValidationScheme
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -135,7 +137,7 @@ func OTLPHandler(
 			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
 		}
-		if labelValueTooLongErr := (LabelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
+		if labelValueTooLongErr := (labelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
 			// Translate from Mimir to OTel domain terminology
 			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
 		}
@@ -284,7 +286,6 @@ func newOTLPParser(
 		if err != nil {
 			return err
 		}
-		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		if resourceAttributePromotionConfig == nil {
 			resourceAttributePromotionConfig = limits
@@ -294,24 +295,28 @@ func newOTLPParser(
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(tenantID)
+		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
+		convOpts := conversionOptions{
+			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
+			enableCTZeroIngestion:             enableCTZeroIngestion,
+			enableStartTimeQuietZero:          enableStartTimeQuietZero,
+			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+			convertHistogramsToNHCB:           convertHistogramsToNHCB,
+			promoteScopeMetadata:              promoteScopeMetadata,
+			promoteResourceAttributes:         promoteResourceAttributes,
+			allowDeltaTemporality:             allowDeltaTemporality,
+			allowUTF8:                         !translationStrategy.ShouldEscape(),
+		}
 		metrics, metricsDropped, err := otelMetricsToTimeseries(
 			ctx,
 			otlpConverter,
 			otlpReq.Metrics(),
-			conversionOptions{
-				addSuffixes:                       addSuffixes,
-				enableCTZeroIngestion:             enableCTZeroIngestion,
-				enableStartTimeQuietZero:          enableStartTimeQuietZero,
-				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
-				convertHistogramsToNHCB:           convertHistogramsToNHCB,
-				promoteScopeMetadata:              promoteScopeMetadata,
-				promoteResourceAttributes:         promoteResourceAttributes,
-				allowDeltaTemporality:             allowDeltaTemporality,
-			},
+			convOpts,
 			spanLogger,
 		)
 		if metricsDropped > 0 {
@@ -343,9 +348,39 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		req.Metadata, err = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
+		return err
+	}
+}
 
-		return nil
+// validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
+// Any inconsistency at this point indicates a programming error, so we panic on errors.
+func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, tenantID string) {
+	validationScheme := limits.NameValidationScheme(tenantID)
+	switch validationScheme {
+	case model.LegacyValidation:
+		if !translationStrategy.ShouldEscape() {
+			panic(fmt.Errorf(
+				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
+				validationScheme, translationStrategy,
+			))
+		}
+	case model.UTF8Validation:
+		if translationStrategy.ShouldEscape() {
+			panic(fmt.Errorf(
+				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
+				validationScheme, translationStrategy,
+			))
+		}
+	default:
+		panic(fmt.Errorf("unhandled name validation scheme: %s", validationScheme))
+	}
+
+	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+	if addSuffixes && !translationStrategy.ShouldAddSuffixes() {
+		panic(fmt.Errorf("OTel metric suffixes are enabled, but incompatible OTel translation strategy: %s", translationStrategy))
+	} else if !addSuffixes && translationStrategy.ShouldAddSuffixes() {
+		panic(fmt.Errorf("OTel metric suffixes are disabled, but incompatible OTel translation strategy: %s", translationStrategy))
 	}
 }
 
@@ -474,7 +509,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
+func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) ([]*mimirpb.MetricMetadata, error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -487,8 +522,8 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 
 	namer := otlptranslator.MetricNamer{
 		Namespace:          "",
-		WithMetricSuffixes: addSuffixes,
-		UTF8Allowed:        false,
+		WithMetricSuffixes: opts.addSuffixes,
+		UTF8Allowed:        opts.allowUTF8,
 	}
 
 	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
@@ -498,10 +533,14 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
+				name, err := namer.Build(otlp.TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					return nil, err
+				}
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: name,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -510,7 +549,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 		}
 	}
 
-	return metadata
+	return metadata, nil
 }
 
 type conversionOptions struct {
@@ -522,6 +561,7 @@ type conversionOptions struct {
 	promoteScopeMetadata              bool
 	promoteResourceAttributes         []string
 	allowDeltaTemporality             bool
+	allowUTF8                         bool
 }
 
 func otelMetricsToTimeseries(
@@ -540,6 +580,7 @@ func otelMetricsToTimeseries(
 		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
 		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 		AllowDeltaTemporality:               opts.allowDeltaTemporality,
+		AllowUTF8:                           opts.allowUTF8,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
@@ -590,6 +631,8 @@ func (c *otlpMimirConverter) Err() error {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
+// If you provide exemplars they will be placed on the first float or
+// histogram sample.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -619,11 +662,22 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetDescription(metadata[i].GetHelp())
 				metric.SetUnit(metadata[i].GetUnit())
 			}
-			for _, sample := range ts.Samples {
+			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetDoubleValue(sample.Value)
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 
@@ -636,7 +690,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				metric.SetUnit(metadata[i].GetUnit())
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-			for _, histogram := range ts.Histograms {
+			for i, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)
@@ -653,6 +707,17 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				datapoint.SetSum(histogram.GetSum())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
+				if i == 0 {
+					for _, tsEx := range ts.Exemplars {
+						ex := datapoint.Exemplars().AppendEmpty()
+						ex.SetDoubleValue(histogram.Sum / 10.0) // Doesn't really matter, just a placeholder
+						ex.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
+						for _, label := range tsEx.Labels {
+							ex.FilteredAttributes().PutStr(label.Name, label.Value)
+						}
+					}
+				}
 			}
 		}
 	}
@@ -695,12 +760,12 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 }
 
 type otelAttributeValueTooLongError struct {
-	LabelValueTooLongError
+	labelValueTooLongError
 }
 
 func (e otelAttributeValueTooLongError) Error() string {
 	return fmt.Sprintf(
 		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-		e.Limit, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series),
+		e.Limit, e.Label.Name, e.Label.Value, e.Series,
 	)
 }

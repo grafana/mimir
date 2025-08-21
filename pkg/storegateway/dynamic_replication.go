@@ -22,7 +22,7 @@ type DynamicReplicationConfig struct {
 func (cfg *DynamicReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"dynamic-replication.enabled", false, "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.")
 	f.DurationVar(&cfg.MaxTimeThreshold, prefix+"dynamic-replication.max-time-threshold", 25*time.Hour, "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.")
-	f.IntVar(&cfg.Multiple, prefix+"dynamic-replication.multiple", 2, "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2")
+	f.IntVar(&cfg.Multiple, prefix+"dynamic-replication.multiple", 5, "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2")
 }
 
 func (cfg *DynamicReplicationConfig) Validate() error {

@@ -3,6 +3,7 @@
 package ruler
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,14 +30,12 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -96,39 +94,20 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
-	opts, err := cfg.GRPCClientConfig.DialOption(
-		[]grpc.UnaryClientInterceptor{
-			middleware.ClientUserHeaderInterceptor,
-		},
-		nil,
-		util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, invalidClusterValidation, logger),
-	)
-	if err != nil {
-		return nil, err
-	}
-	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
-	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
-
-	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(cfg.Address, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return httpgrpc.NewHTTPClient(conn), nil
+func DialQueryFrontend(cfg QueryFrontendConfig, prometheusHTTPPrefix string, reg prometheus.Registerer, logger log.Logger) (http.RoundTripper, *url.URL, error) {
+	return dialQueryFrontendGRPC(cfg, prometheusHTTPPrefix, reg, logger)
 }
 
 // Middleware provides a mechanism to inspect outgoing remote querier requests.
-type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
+type Middleware func(ctx context.Context, req *http.Request) error
 
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
-	client                             httpgrpc.HTTPClient
+	client                             http.RoundTripper
 	retryLimiter                       *rate.Limiter
 	timeout                            time.Duration
 	middlewares                        []Middleware
-	promHTTPPrefix                     string
+	promHTTPURL                        *url.URL
 	logger                             log.Logger
 	preferredQueryResultResponseFormat string
 	decoders                           map[string]decoder
@@ -139,11 +118,11 @@ var protobufDecoderInstance = protobufDecoder{}
 
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
 func NewRemoteQuerier(
-	client httpgrpc.HTTPClient,
+	client http.RoundTripper,
 	timeout time.Duration,
 	maxRetryRate float64, // maxRetryRate is the maximum number of retries for failed queries per second.
 	preferredQueryResultResponseFormat string,
-	prometheusHTTPPrefix string,
+	prometheusHTTPURL *url.URL,
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
@@ -152,7 +131,7 @@ func NewRemoteQuerier(
 		timeout:                            timeout,
 		retryLimiter:                       rate.NewLimiter(rate.Limit(maxRetryRate), 1),
 		middlewares:                        middlewares,
-		promHTTPPrefix:                     prometheusHTTPPrefix,
+		promHTTPURL:                        prometheusHTTPURL,
 		logger:                             logger,
 		preferredQueryResultResponseFormat: preferredQueryResultResponseFormat,
 		decoders: map[string]decoder{
@@ -178,52 +157,52 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 		return nil, errors.Wrapf(err, "unable to marshal read request")
 	}
 
-	req := httpgrpc.HTTPRequest{
-		Method: http.MethodPost,
-		Url:    q.promHTTPPrefix + readEndpointPath,
-		Body:   snappy.Encode(nil, data),
-		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
-			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
-		}),
+	ctx, cancel := context.WithTimeout(ctx, q.timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, q.promHTTPURL.JoinPath(readEndpointPath).String(), bytes.NewBuffer(snappy.Encode(nil, data)))
+	if err != nil {
+		return nil, err
 	}
+	req.Header = injectHTTPReadConsistencyHeader(ctx, http.Header{
+		textproto.CanonicalMIMEHeaderKey("Content-Encoding"):                 []string{"snappy"},
+		textproto.CanonicalMIMEHeaderKey("Accept-Encoding"):                  []string{"snappy"},
+		textproto.CanonicalMIMEHeaderKey("Content-Type"):                     []string{"application/x-protobuf"},
+		textproto.CanonicalMIMEHeaderKey("User-Agent"):                       []string{version.UserAgent()},
+		textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"): []string{"0.1.0"},
+	})
 
 	for _, mdw := range q.middlewares {
-		if err := mdw(ctx, &req); err != nil {
+		if err := mdw(ctx, req); err != nil {
 			return nil, err
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, q.timeout)
-	defer cancel()
-
-	resp, err := q.client.Handle(ctx, &req)
+	resp, err := q.client.RoundTrip(req)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
 			level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
 		}
 		return nil, err
 	}
-	if resp.Code/100 != 2 {
-		return nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
+
+	defer resp.Body.Close()
+	body, err := httpgrpcutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, httpgrpc.Errorf(resp.StatusCode, "error reading response body for status code %d: %s", resp.StatusCode, err)
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, httpgrpc.Errorf(resp.StatusCode, "unexpected response status code %d: %s", resp.StatusCode, string(body))
 	}
 	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
 
-	var contentType string
-	for _, h := range resp.GetHeaders() {
-		if strings.ToLower(h.GetKey()) == "content-type" {
-			contentType = h.GetValues()[0]
-			break
-		}
-	}
+	contentType := resp.Header.Get("Content-Type")
 	if len(contentType) > 0 && contentType != "application/x-protobuf" {
 		return nil, errors.Errorf("unexpected response content type %s expected application/x-protobuf", contentType)
 	}
 
-	uncompressed, err := snappy.Decode(nil, resp.Body)
+	uncompressed, err := snappy.Decode(nil, body)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading response")
 	}
@@ -242,6 +221,12 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	return remote.FromQueryResult(sortSeries, res), nil
 }
 
+// ReadMultiple implements Prometheus remote.ReadClient.
+// As of writing this the method is not used by the ruler and the prometheus remote queryable implementation.
+func (q *RemoteQuerier) ReadMultiple(context.Context, []*prompb.Query, bool) (storage.SeriesSet, error) {
+	return nil, errors.New("ReadMultiple is not supported by ruler.RemoteQuerier; open a bug report if you see this error")
+}
+
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.New(ctx, q.logger, tracer, "ruler.RemoteQuerier.Query")
@@ -251,36 +236,41 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 }
 
 func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
+	ctx, cancel := context.WithTimeout(ctx, q.timeout)
+	defer cancel()
+
 	req, err := q.createRequest(ctx, query, ts)
 	if err != nil {
 		return promql.Vector{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, q.timeout)
-	defer cancel()
-
-	resp, err := q.sendRequest(ctx, &req, logger)
+	resp, err := q.sendRequest(req, logger)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
 			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		}
 		return promql.Vector{}, err
 	}
-	if resp.Code/100 != 2 {
-		return promql.Vector{}, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
+	defer resp.Body.Close()
+	body, err := httpgrpcutil.ReadAll(resp.Body)
+	if err != nil {
+		return promql.Vector{}, httpgrpc.Errorf(resp.StatusCode, "error reading response body for status code %d: %s", resp.StatusCode, err)
+	}
+	if resp.StatusCode/100 != 2 {
+		return promql.Vector{}, httpgrpc.Errorf(resp.StatusCode, "unexpected response status code %d: %s", resp.StatusCode, string(body))
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
-	contentTypeHeader := getHeader(resp.Headers, "Content-Type")
+	contentTypeHeader := resp.Header.Get("Content-Type")
 	decoder, ok := q.decoders[contentTypeHeader]
 	if !ok {
 		return promql.Vector{}, fmt.Errorf("unknown response content type '%s'", contentTypeHeader)
 	}
 
-	return decoder.Decode(resp.Body)
+	return decoder.Decode(body)
 }
 
-func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time.Time) (httpgrpc.HTTPRequest, error) {
+func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time.Time) (*http.Request, error) {
 	args := make(url.Values)
 	args.Set("query", query)
 	if !ts.IsZero() {
@@ -295,31 +285,31 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	case formatProtobuf:
 		acceptHeader = protobufDecoderInstance.ContentType() + "," + jsonDecoderInstance.ContentType()
 	default:
-		return httpgrpc.HTTPRequest{}, fmt.Errorf("unknown response format '%s'", q.preferredQueryResultResponseFormat)
+		return nil, fmt.Errorf("unknown response format '%s'", q.preferredQueryResultResponseFormat)
 	}
 
-	req := httpgrpc.HTTPRequest{
-		Method: http.MethodPost,
-		Url:    q.promHTTPPrefix + queryEndpointPath,
-		Body:   body,
-		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},
-		}),
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, q.promHTTPURL.JoinPath(queryEndpointPath).String(), bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
 	}
+	req.Header = injectHTTPReadConsistencyHeader(ctx, http.Header{
+		textproto.CanonicalMIMEHeaderKey("User-Agent"):     []string{version.UserAgent()},
+		textproto.CanonicalMIMEHeaderKey("Content-Type"):   []string{mimeTypeFormPost},
+		textproto.CanonicalMIMEHeaderKey("Content-Length"): []string{strconv.Itoa(len(body))},
+		textproto.CanonicalMIMEHeaderKey("Accept"):         []string{acceptHeader},
+	})
 
 	for _, mdw := range q.middlewares {
-		if err := mdw(ctx, &req); err != nil {
-			return httpgrpc.HTTPRequest{}, err
+		if err := mdw(ctx, req); err != nil {
+			return nil, err
 		}
 	}
 
 	return req, nil
 }
 
-func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest, logger log.Logger) (*httpgrpc.HTTPResponse, error) {
+func (q *RemoteQuerier) sendRequest(req *http.Request, logger log.Logger) (*http.Response, error) {
+	ctx := req.Context()
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
@@ -330,13 +320,20 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	retry := backoff.New(ctx, retryConfig)
 
 	for {
-		resp, err := q.client.Handle(ctx, req)
+		resp, err := q.client.RoundTrip(req)
 		if err == nil {
 			// Responses with status codes 4xx should always be considered erroneous.
 			// These errors shouldn't be retried because it is expected that
 			// running the same query gives rise to the same 4xx error.
-			if resp.Code/100 == 4 {
-				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+			if resp.StatusCode/100 == 4 {
+				defer resp.Body.Close()
+
+				body, err := httpgrpcutil.ReadAll(resp.Body)
+				if err != nil {
+					return nil, httpgrpc.Errorf(resp.StatusCode, "error reading response body for status code %d: %s", resp.StatusCode, err)
+				}
+
+				return nil, httpgrpc.Error(resp.StatusCode, string(body))
 			}
 			return resp, nil
 		}
@@ -386,37 +383,21 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 // WithOrgIDMiddleware attaches 'X-Scope-OrgID' header value to the outgoing request by inspecting the passed context.
 // In case the expression to evaluate corresponds to a federated rule, the ExtractTenantIDs function will take care
 // of normalizing and concatenating source tenants by separating them with a '|' character.
-func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
+func WithOrgIDMiddleware(ctx context.Context, req *http.Request) error {
 	orgID, err := ExtractTenantIDs(ctx)
 	if err != nil {
 		return err
 	}
-	req.Headers = append(req.Headers, &httpgrpc.Header{
-		Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
-		Values: []string{orgID},
-	})
+	req.Header.Set(user.OrgIDHeaderName, orgID)
 	return nil
 }
 
-func getHeader(headers []*httpgrpc.Header, name string) string {
-	for _, h := range headers {
-		if h.Key == name && len(h.Values) > 0 {
-			return h.Values[0]
-		}
-	}
-
-	return ""
-}
-
-// injectHTTPGrpcReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
+// injectHTTPReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
 // it as an HTTP header to the list of input headers. This is required to propagate the read consistency
 // through the network when issuing an HTTPgRPC request.
-func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
+func injectHTTPReadConsistencyHeader(ctx context.Context, headers http.Header) http.Header {
 	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		headers = append(headers, &httpgrpc.Header{
-			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
-			Values: []string{level},
-		})
+		headers[textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader)] = []string{level}
 	}
 
 	return headers

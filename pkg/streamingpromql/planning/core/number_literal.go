@@ -5,9 +5,11 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -56,12 +58,20 @@ func (n *NumberLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func (n *NumberLiteral) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.ExpressionPosition.ToPrometheusType())
+func MaterializeNumberLiteral(n *NumberLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.ExpressionPosition())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
 func (n *NumberLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
+}
+
+func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
+}
+
+func (n *NumberLiteral) ExpressionPosition() posrange.PositionRange {
+	return n.GetExpressionPosition().ToPrometheusType()
 }

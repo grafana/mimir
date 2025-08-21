@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1231,7 +1232,7 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		}
 		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
 		_, ok := testedFns[expectedFn]
-		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
+		assert.Truef(t, ok || slices.Contains(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
 	}
 }
 
@@ -2394,8 +2395,8 @@ func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHi
 
 	// Honor the sorting.
 	if sorted {
-		sort.Slice(filtered, func(i, j int) bool {
-			return labels.Compare(filtered[i].Labels(), filtered[j].Labels()) < 0
+		slices.SortFunc(filtered, func(a, b storage.Series) int {
+			return labels.Compare(a.Labels(), b.Labels())
 		})
 	}
 

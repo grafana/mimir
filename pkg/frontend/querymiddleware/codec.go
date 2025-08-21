@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -67,9 +68,6 @@ const (
 	statusError = "error"
 
 	totalShardsControlHeader = "Sharding-Control"
-
-	// Instant query specific options
-	instantSplitControlHeader = "Instant-Split-Control"
 
 	operationEncode = "encode"
 	operationDecode = "decode"
@@ -301,7 +299,17 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	// Merge the responses.
-	sort.Sort(byFirstTime(promResponses))
+	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
+		aTime := int64(-1)
+		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
+			aTime = a.Data.Result[0].Samples[0].TimestampMs
+		}
+		bTime := int64(-1)
+		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
+			bTime = b.Data.Result[0].Samples[0].TimestampMs
+		}
+		return cmp.Compare(aTime, bTime)
+	})
 
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
@@ -396,7 +404,9 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 	for h, hv := range httpH {
 		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
 	}
-	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+	slices.SortFunc(headers, func(a, b *PrometheusHeader) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return headers
 }
 
@@ -655,18 +665,6 @@ func decodeOptions(r *http.Request, opts *Options) {
 			opts.ShardingDisabled = true
 		}
 	}
-
-	for _, value := range r.Header.Values(instantSplitControlHeader) {
-		splitInterval, err := time.ParseDuration(value)
-		if err != nil {
-			continue
-		}
-		// Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
-		opts.InstantSplitInterval = splitInterval.Nanoseconds()
-		if opts.InstantSplitInterval < 1 {
-			opts.InstantSplitDisabled = true
-		}
-	}
 }
 
 func decodeCacheDisabledOption(r *http.Request) bool {
@@ -872,12 +870,6 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 	if o.TotalShards > 0 {
 		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
-	}
-	if o.InstantSplitDisabled {
-		req.Header.Set(instantSplitControlHeader, "0")
-	}
-	if o.InstantSplitInterval > 0 {
-		req.Header.Set(instantSplitControlHeader, time.Duration(o.InstantSplitInterval).String())
 	}
 }
 

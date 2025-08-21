@@ -4,13 +4,37 @@ aliases:
 description: Learn how to configure Grafana Mimir to use Kafka for ingest storage.
 menuTitle: Kafka
 title: Configure the Grafana Mimir Kafka backend
-weight: 66
+weight: 130
 ---
 
 # Configure the Grafana Mimir Kafka backend
 
 Grafana Mimir supports using Kafka for the first layer of ingestion. This is an experimental feature released in Mimir 2.14.
 This page is incomplete. It will be updated as the ingest storage feature matures and moves out of the experimental phase.
+
+## Configure ingest storage
+
+Set the following configuration flags to enable Grafana Mimir to use ingest storage through a Kafka backend:
+
+- `-ingest-storage.enabled=true`<br />
+  You must explicitly enable the ingest storage architecture in all Mimir components.
+
+- `-ingest-storage.kafka.address=<host:port>`<br />
+  The `<host:port>` is the address of the Kafka broker used to bootstrap the connection.
+
+- `-ingest-storage.kafka.topic=<name>`<br />
+  The `<name>` is the name of the Kafka topic that is used for ingesting data.
+- `-ingest-storage.kafka.auto-create-topic-default-partitions=<number>`<br />
+  If the configured topic doesn't exist in the Kafka backend, the Mimir components, either consumers or producers,
+  create the topic on first access. The `<number>` parameter sets the number of partitions to create when the topic is automatically created. The number of partitions must be at least the number of ingesters in one zone.
+
+Additionally, you can use these recommended configuration options when running Grafana Mimir with ingest storage architecture:
+
+- `-distributor.remote-timeout=5s`<br />
+  Use this setting to increase the default remote write timeout. This is recommended for writing to Kafka, because pushing
+  to Kafka-compatible backends might be slower than writing to directly to ingesters.
+
+Refer to Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) for detailed descriptions of all available configuration options.
 
 ## Different Kafka backend implementations
 

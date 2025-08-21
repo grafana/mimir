@@ -4,7 +4,7 @@ aliases:
 description: Learn how to write metrics from OpenTelemetry Collector into Mimir
 menuTitle: OpenTelemetry Collector
 title: Configure the OpenTelemetry Collector to write metrics into Mimir
-weight: 150
+weight: 120
 ---
 
 # Configure the OpenTelemetry Collector to write metrics into Mimir
@@ -126,6 +126,7 @@ Grafana Cloud automatically promotes the following OTel resource attributes to l
 - `cloud.availability_zone`
 - `cloud.region`
 - `container.name`
+- `deployment.environment`
 - `deployment.environment.name`
 - `k8s.cluster.name`
 - `k8s.container.name`

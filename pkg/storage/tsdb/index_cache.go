@@ -8,6 +8,7 @@ package tsdb
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/alecthomas/units"
@@ -18,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -28,9 +28,6 @@ const (
 	// IndexCacheBackendMemcached is the value for the Memcached index cache backend.
 	IndexCacheBackendMemcached = cache.BackendMemcached
 
-	// IndexCacheBackendRedis is the value for the Redis index cache backend.
-	IndexCacheBackendRedis = cache.BackendRedis
-
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory
 
@@ -38,7 +35,7 @@ const (
 )
 
 var (
-	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached, IndexCacheBackendRedis}
+	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
 	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
 )
@@ -57,17 +54,16 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 
 	cfg.InMemory.RegisterFlagsWithPrefix(prefix+"inmemory.", f)
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
-	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 }
 
 // Validate the config.
 func (cfg *IndexCacheConfig) Validate() error {
-	if !util.StringsContain(supportedIndexCacheBackends, cfg.Backend) {
+	if !slices.Contains(supportedIndexCacheBackends, cfg.Backend) {
 		return errUnsupportedIndexCacheBackend
 	}
 
 	// Validate backend config only when not using the in-memory cache.
-	if cfg.Backend == IndexCacheBackendMemcached || cfg.Backend == IndexCacheBackendRedis {
+	if cfg.Backend == IndexCacheBackendMemcached {
 		if err := cfg.BackendConfig.Validate(); err != nil {
 			return err
 		}
@@ -91,8 +87,6 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 		return newInMemoryIndexCache(cfg.InMemory, logger, registerer)
 	case IndexCacheBackendMemcached:
 		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
-	case IndexCacheBackendRedis:
-		return newRedisIndexCache(cfg.Redis, logger, registerer)
 	default:
 		return nil, errUnsupportedIndexCacheBackend
 	}
@@ -122,20 +116,6 @@ func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, 
 	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
-	}
-
-	return indexcache.NewTracingIndexCache(c, logger), nil
-}
-
-func newRedisIndexCache(cfg cache.RedisClientConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
-	client, err := cache.NewRedisClient(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
-	if err != nil {
-		return nil, errors.Wrap(err, "create index cache redis client")
-	}
-
-	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
-	if err != nil {
-		return nil, errors.Wrap(err, "create redis-based index cache")
 	}
 
 	return indexcache.NewTracingIndexCache(c, logger), nil

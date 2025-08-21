@@ -49,7 +49,7 @@ type headIndexReader struct {
 	mint, maxt int64
 }
 
-func (h *headIndexReader) Close() error {
+func (*headIndexReader) Close() error {
 	return nil
 }
 
@@ -115,7 +115,7 @@ func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name st
 }
 
 func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, ms...)
+	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, h.head.Meta().ULID, ms...)
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -320,6 +320,11 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 	}
 	slices.Sort(names)
 	return names, nil
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return h.head.opts.IndexLookupPlanner
 }
 
 // Chunks returns a ChunkReader against the block.
