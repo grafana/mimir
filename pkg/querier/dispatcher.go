@@ -21,6 +21,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -115,6 +118,10 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 }
 
 func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStream, t mimirpb.QueryErrorType, msg string, logger log.Logger) {
+	span := trace.SpanFromContext(ctx)
+	span.SetStatus(codes.Error, msg)
+	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", t.String()), attribute.String("msg", msg)))
+
 	err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
@@ -130,6 +137,9 @@ func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStre
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
+
 	if d.engine == nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, "MQE is not enabled on this querier")
 		return
@@ -164,7 +174,10 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
 		resp.WriteError(ctx, errorTypeForError(err), err.Error())
+		return
 	}
+
+	span.SetStatus(codes.Ok, "evaluation completed successfully")
 }
 
 func errorTypeForError(err error) mimirpb.QueryErrorType {
