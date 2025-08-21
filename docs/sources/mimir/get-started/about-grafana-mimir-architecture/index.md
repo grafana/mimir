@@ -44,7 +44,7 @@ Diagram! (WIP)
 
 Ingest storage architecture offers the following advantages over classic architecture:
 
-- Increased reliability and resilience in the event of sudden spikes in query traffic and ingest volume
+- Increased reliability and resilience in the event of sudden spikes in query traffic or ingest volume
 - Decoupled read and write paths to prevent performance interference
 - Less stateful, easier to manage ingesters
 - Reduced high cross-availability zone data transfer costs through using object storage
