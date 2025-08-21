@@ -522,6 +522,75 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsEliminated: 1,
 			expectedSelectorsInspected:  2,
 		},
+		"duplicate expression with nested functions calls, where inner and outer functions are same": {
+			expr: `clamp_min(rate(foo[5m]), 1) + clamp_min(rate(foo[5m]), 1)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- DeduplicateAndMerge: deduplicate and merge
+							- FunctionCall: clamp_min(...)
+								- param 0: DeduplicateAndMerge: deduplicate and merge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+								- param 1: NumberLiteral: 1
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
+		"duplicate expression with nested functions calls, where only inner functions are same": {
+			expr: `clamp_min(rate(foo[5m]), 1) + clamp_max(rate(foo[5m]), 1)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge: deduplicate and merge
+						- FunctionCall: clamp_min(...)
+							- param 0: ref#1 Duplicate
+								- DeduplicateAndMerge: deduplicate and merge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+							- param 1: NumberLiteral: 1
+					- RHS: DeduplicateAndMerge: deduplicate and merge
+						- FunctionCall: clamp_max(...)
+							- param 0: ref#1 Duplicate ...
+							- param 1: NumberLiteral: 1
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
+		"duplicate expression with duplicate aggregation over a duplicate function call": {
+			expr: `max(rate(foo[5m])) + min(rate(foo[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: max
+						- ref#1 Duplicate
+							- DeduplicateAndMerge: deduplicate and merge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: AggregateExpression: min
+						- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
+		"duplicate expression with different aggregation over a duplicate function call": {
+			expr: `max(rate(foo[5m])) + min(rate(foo[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: max
+						- ref#1 Duplicate
+							- DeduplicateAndMerge: deduplicate and merge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: AggregateExpression: min
+						- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
+		},
 	}
 
 	ctx := context.Background()

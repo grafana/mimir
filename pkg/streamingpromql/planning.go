@@ -370,7 +370,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			}
 		}
 
-		// Wrap with DeduplicateAndMerge if the function needs it
 		if functionNeedsDeduplication(fnc) {
 			return &core.DeduplicateAndMerge{
 				Inner:                      f,
