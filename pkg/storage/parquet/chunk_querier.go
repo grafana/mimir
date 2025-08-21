@@ -150,11 +150,18 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 		minT, maxT = hints.Start, hints.End
 	}
 	skipChunks := hints != nil && hints.Func == "series"
-	errGroup, ctx := errgroup.WithContext(ctx)
+	errGroup, _ := errgroup.WithContext(ctx)
 	errGroup.SetLimit(p.opts.concurrency)
 
 	for i, shard := range shards {
 		errGroup.Go(func() error {
+			// TODO
+			// There's a problem here: the iterator we get (and return) will be tied to the context
+			// we pass here. If we pass the group's context, it will always be canceled by the time
+			// of iterator. If we pass the parent ctx (as we are currently doing), goroutines
+			// are not canceled early if one of them fails. The latter is not ideal, but at least
+			// it works. Ideally we'd have different contexts for each step: the creation of the
+			// iterator, and the iteration itself.
 			ls, ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
 			labelsSets[i] = ls
 			seriesSets[i] = ss
