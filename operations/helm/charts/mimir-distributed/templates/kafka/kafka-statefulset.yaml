@@ -11,7 +11,6 @@ metadata:
     {{- toYaml .podAnnotations | nindent 4 }}
   namespace: {{ $.Release.Namespace | quote }}
 spec:
-  podManagementPolicy: Parallel
   replicas: {{ $replicas }}
   selector:
     matchLabels:
@@ -120,20 +119,6 @@ spec:
             {{- with .extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          livenessProbe:
-            tcpSocket:
-              port: kafka
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          startupProbe:
-            tcpSocket:
-              port: kafka
-            initialDelaySeconds: 30
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 3
           readinessProbe:
             tcpSocket:
               port: kafka
