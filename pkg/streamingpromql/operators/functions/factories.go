@@ -46,13 +46,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstant
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-
-		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-		}
-
-		return o, nil
+		return NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
@@ -95,12 +89,7 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc Insta
 			return nil, fmt.Errorf("expected 0 or 1 argument for %s, got %v", name, len(args))
 		}
 
-		var o types.InstantVectorOperator = NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-		}
-
-		return o, nil
+		return NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
@@ -143,13 +132,7 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, nil, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
-
-		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-		}
-
-		return o, nil
+		return NewFunctionOverRangeVector(inner, nil, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange), nil
 	}
 }
 
@@ -175,10 +158,6 @@ func PredictLinearFactory(args []types.Operator, _ labels.Labels, memoryConsumpt
 
 	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
 
-	if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-		o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-	}
-
 	return o, nil
 }
 
@@ -203,10 +182,6 @@ func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, memoryConsu
 	}
 
 	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
-
-	if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-		o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-	}
 
 	return o, nil
 }
@@ -269,11 +244,9 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, me
 		},
 	}
 
-	o := NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 }
-
+	
 func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -318,9 +291,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels,
 		},
 	}
 
-	o := NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 }
 
 func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -378,8 +349,7 @@ func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memory
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	o := NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 }
 
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
@@ -406,8 +376,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Functio
 			SeriesMetadataFunction: DropSeriesName,
 		}
 
-		o := NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition, timeRange)
-		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+		return NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
@@ -439,8 +408,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memory
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	o := NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 }
 
 func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -461,8 +429,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.La
 		return nil, fmt.Errorf("expected an instant vector for 2nd argument for histogram_quantile, got %T", args[1])
 	}
 
-	o := NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange), nil
 }
 
 func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -489,8 +456,7 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 		return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
 	}
 
-	o := NewHistogramFractionFunction(lower, upper, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return NewHistogramFractionFunction(lower, upper, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange), nil
 }
 
 func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -514,7 +480,7 @@ func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, me
 	}
 
 	o := NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	return o, nil
 }
 
 func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
@@ -657,7 +623,7 @@ func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 	}
 
 	o := NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+	return o
 }
 
 func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -686,13 +652,7 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ 
 		return nil, fmt.Errorf("expected third argument for %s to be a scalar, got %T", functionName, args[2])
 	}
 
-	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
-
-	if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
-		o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
-	}
-
-	return o, nil
+	return NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange), nil
 }
 
 func init() {
