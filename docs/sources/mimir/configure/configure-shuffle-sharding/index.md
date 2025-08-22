@@ -124,7 +124,7 @@ Partitions in the ring can have different states that affect shuffle sharding:
 
 If you're running a Grafana Mimir cluster with ingest storage and shuffle sharding disabled, you can enable it immediately:
 
-1. Enable shuffle sharding by setting `-ingest-storage.ingestion-partition-tenant-shard-size` to the desired value.
+1. Enable shuffle sharding by setting `-ingest-storage.ingestion-partition-tenant-shard-size` to the desired value globally, or configure `ingestion_partitions_tenant_shard_size` in the runtime configuration for specific tenants.
 2. The change takes effect immediately for new writes.
 3. Queries automatically use ShuffleShardWithLookback to ensure data consistency.
 
