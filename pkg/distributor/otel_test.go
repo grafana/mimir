@@ -1719,3 +1719,105 @@ type fakeResourceAttributePromotionConfig struct {
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return []string{"resource.attr"}
 }
+
+func TestOTelInfoSuffixPreservation(t *testing.T) {
+	testCases := []struct {
+		name                string
+		metricName          string
+		unit                string
+		translationStrategy otlptranslator.TranslationStrategyOption
+		expectedMetricName  string
+		metricType          string
+	}{
+		{
+			name:                "preserve info suffix with no translation strategy",
+			metricName:          "jvmruntime_info",
+			unit:                "",
+			translationStrategy: otlptranslator.NoTranslation,
+			expectedMetricName:  "jvmruntime_info",
+			metricType:          "gauge",
+		},
+		{
+			name:                "preserve info suffix with underscore escaping without suffixes",
+			metricName:          "jvmruntime_info",
+			unit:                "",
+			translationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes,
+			expectedMetricName:  "jvmruntime_info",
+			metricType:          "gauge",
+		},
+		{
+			name:                "preserve info suffix with underscore escaping with suffixes empty unit",
+			metricName:          "jvmruntime_info",
+			unit:                "",
+			translationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+			expectedMetricName:  "jvmruntime_info",
+			metricType:          "gauge",
+		},
+		{
+			name:                "preserve info suffix when unit is info",
+			metricName:          "jvmruntime_info",
+			unit:                "info",
+			translationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+			expectedMetricName:  "jvmruntime_info",
+			metricType:          "gauge",
+		},
+		{
+			name:                "add info suffix when unit is info and metric lacks info",
+			metricName:          "jvmruntime",
+			unit:                "info",
+			translationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+			expectedMetricName:  "jvmruntime_info",
+			metricType:          "gauge",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			md := pmetric.NewMetrics()
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", "test-service")
+			rm.Resource().Attributes().PutStr("service.instance.id", "test-instance")
+
+			m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName(tc.metricName)
+			m.SetUnit(tc.unit)
+
+			if tc.metricType == "counter" {
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(true)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(1)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			} else {
+				dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetIntValue(1)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			}
+
+			converter := newOTLPMimirConverter()
+			convOpts := conversionOptions{
+				addSuffixes: tc.translationStrategy.ShouldAddSuffixes(),
+				allowUTF8:   !tc.translationStrategy.ShouldEscape(),
+			}
+
+			timeseries, _, err := otelMetricsToTimeseries(context.Background(), converter, md, convOpts, util_log.Logger)
+			require.NoError(t, err)
+
+			var actualMetricName string
+			for i := range timeseries {
+				for _, label := range timeseries[i].Labels {
+					if label.Name == "__name__" && label.Value != "target_info" {
+						actualMetricName = label.Value
+						break
+					}
+				}
+				if actualMetricName != "" {
+					break
+				}
+			}
+
+			assert.Equal(t, tc.expectedMetricName, actualMetricName)
+		})
+	}
+}
