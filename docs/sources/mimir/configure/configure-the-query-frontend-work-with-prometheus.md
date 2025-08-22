@@ -38,7 +38,6 @@ server:
 
 frontend:
   split_queries_by_interval: 24h
-  align_queries_with_step: true
   cache_results: true
 
   results_cache:
