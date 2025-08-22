@@ -203,6 +203,12 @@ func (p *Payload) SerializeBody(w io.Writer) error {
 	return nil
 }
 
+// WritePayload serializes the payload in IPC format
+// into the provided writer.
+func (p *Payload) WritePayload(w io.Writer) (int, error) {
+	return writeIPCPayload(w, *p)
+}
+
 func (p *Payload) Release() {
 	if p.meta != nil {
 		p.meta.Release()

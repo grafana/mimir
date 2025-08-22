@@ -66,7 +66,7 @@ func (m MessageType) String() string {
 
 // Message is an IPC message, including metadata and body.
 type Message struct {
-	refCount int64
+	refCount atomic.Int64
 	msg      *flatbuf.Message
 	meta     *memory.Buffer
 	body     *memory.Buffer
@@ -80,12 +80,13 @@ func NewMessage(meta, body *memory.Buffer) *Message {
 	}
 	meta.Retain()
 	body.Retain()
-	return &Message{
-		refCount: 1,
-		msg:      flatbuf.GetRootAsMessage(meta.Bytes(), 0),
-		meta:     meta,
-		body:     body,
+	m := &Message{
+		msg:  flatbuf.GetRootAsMessage(meta.Bytes(), 0),
+		meta: meta,
+		body: body,
 	}
+	m.refCount.Add(1)
+	return m
 }
 
 func newMessageFromFB(meta *flatbuf.Message, body *memory.Buffer) *Message {
@@ -93,27 +94,28 @@ func newMessageFromFB(meta *flatbuf.Message, body *memory.Buffer) *Message {
 		panic("arrow/ipc: nil buffers")
 	}
 	body.Retain()
-	return &Message{
-		refCount: 1,
-		msg:      meta,
-		meta:     memory.NewBufferBytes(meta.Table().Bytes),
-		body:     body,
+	m := &Message{
+		msg:  meta,
+		meta: memory.NewBufferBytes(meta.Table().Bytes),
+		body: body,
 	}
+	m.refCount.Add(1)
+	return m
 }
 
 // Retain increases the reference count by 1.
 // Retain may be called simultaneously from multiple goroutines.
 func (msg *Message) Retain() {
-	atomic.AddInt64(&msg.refCount, 1)
+	msg.refCount.Add(1)
 }
 
 // Release decreases the reference count by 1.
 // Release may be called simultaneously from multiple goroutines.
 // When the reference count goes to zero, the memory is freed.
 func (msg *Message) Release() {
-	debug.Assert(atomic.LoadInt64(&msg.refCount) > 0, "too many releases")
+	debug.Assert(msg.refCount.Load() > 0, "too many releases")
 
-	if atomic.AddInt64(&msg.refCount, -1) == 0 {
+	if msg.refCount.Add(-1) == 0 {
 		msg.meta.Release()
 		msg.body.Release()
 		msg.msg = nil
@@ -144,7 +146,7 @@ type MessageReader interface {
 type messageReader struct {
 	r io.Reader
 
-	refCount int64
+	refCount atomic.Int64
 	msg      *Message
 
 	mem memory.Allocator
@@ -157,22 +159,24 @@ func NewMessageReader(r io.Reader, opts ...Option) MessageReader {
 		opt(cfg)
 	}
 
-	return &messageReader{r: r, refCount: 1, mem: cfg.alloc}
+	mr := &messageReader{r: r, mem: cfg.alloc}
+	mr.refCount.Add(1)
+	return mr
 }
 
 // Retain increases the reference count by 1.
 // Retain may be called simultaneously from multiple goroutines.
 func (r *messageReader) Retain() {
-	atomic.AddInt64(&r.refCount, 1)
+	r.refCount.Add(1)
 }
 
 // Release decreases the reference count by 1.
 // When the reference count goes to zero, the memory is freed.
 // Release may be called simultaneously from multiple goroutines.
 func (r *messageReader) Release() {
-	debug.Assert(atomic.LoadInt64(&r.refCount) > 0, "too many releases")
+	debug.Assert(r.refCount.Load() > 0, "too many releases")
 
-	if atomic.AddInt64(&r.refCount, -1) == 0 {
+	if r.refCount.Add(-1) == 0 {
 		if r.msg != nil {
 			r.msg.Release()
 			r.msg = nil
@@ -184,7 +188,7 @@ func (r *messageReader) Release() {
 // underlying stream.
 // It is valid until the next call to Message.
 func (r *messageReader) Message() (*Message, error) {
-	var buf = make([]byte, 4)
+	buf := make([]byte, 4)
 	_, err := io.ReadFull(r.r, buf)
 	if err != nil {
 		return nil, fmt.Errorf("arrow/ipc: could not read continuation indicator: %w", err)

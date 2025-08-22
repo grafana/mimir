@@ -12,17 +12,19 @@ import (
 	"strings"
 	"time"
 
-	gokitlog "github.com/go-kit/log"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/mimir/cmd/otelconvert/parquet"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/cmd/otelconvert/arrow"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -35,8 +37,8 @@ func validateConvertConfig(cfg config) error {
 	if cfg.dest == "" && !cfg.count {
 		return fmt.Errorf("must use either --dest or --count")
 	}
-	if cfg.outputFormat != "protobuf" && cfg.outputFormat != "json" && cfg.outputFormat != "arrow" {
-		return fmt.Errorf("--output-format must be one of 'json' or 'protobuf'")
+	if cfg.outputFormat != "protobuf" && cfg.outputFormat != "json" && cfg.outputFormat != "arrow" && cfg.outputFormat != "parquet" {
+		return fmt.Errorf("--output-format must be one of 'json', 'protobuf', 'arrow', or 'parquet'")
 	}
 
 	return nil
@@ -150,7 +152,9 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 	batchCount := 0
 	postingsCount := 0
+	totalPostings := 0
 
+	parquetWriteManager := parquet.NewWriteManager(10_000_000, uint64(cfg.batchSize))
 	for p.Next() {
 		if err = p.Err(); err != nil {
 			return fmt.Errorf("iterate postings: %w", err)
@@ -158,7 +162,11 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 		// Flush a full batch to disk.
 		if postingsCount >= cfg.batchSize {
-			batchCount, err = writeBatchChunks(mds, cfg, batchCount)
+			if totalPostings%1000 == 0 {
+				log.Printf("processed %d postings", totalPostings)
+			}
+
+			batchCount, err = writeBatchChunks(mds, cfg, batchCount, parquetWriteManager)
 			if err != nil {
 				return fmt.Errorf("write metrics data to file: %w", err)
 			}
@@ -275,16 +283,19 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 		}
 
 		postingsCount++
+		totalPostings++
 		builder.Reset()
 	}
 
 	// Flush any remaining partial batch to disk.
 	if mds.Size() > 0 {
-		_, err = writeBatchChunks(mds, cfg, batchCount)
+		_, err = writeBatchChunks(mds, cfg, batchCount, parquetWriteManager)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
 		}
 	}
+
+	parquetWriteManager.Stop()
 
 	return nil
 }
@@ -299,18 +310,33 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int) (int, error) {
-	for interval, md := range mds.Chunks() {
-		if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
-			return batchCount, fmt.Errorf("write batch chunk: %w", err)
-		}
+func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int, wm *parquet.WriteManager) (int, error) {
+	err := writeParquetBatch(mds.Chunks(), cfg, wm)
+	if err != nil {
+		return batchCount, fmt.Errorf("write batch chunk: %w", err)
 	}
+	//for interval, md := range mds.Chunks() {
+	//	if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
+	//		return batchCount, fmt.Errorf("write batch chunk: %w", err)
+	//	}
+	//}
 
 	if cfg.count {
 		log.Printf("batch %d: %d bytes written overall", batchCount, writtenBytesCount)
 	}
 
 	return batchCount + 1, nil
+}
+
+func writeParquetBatch(mds map[int64]*metricsv1.MetricsData, cfg config, wm *parquet.WriteManager) error {
+	for _, md := range mds {
+		err := wm.Write(md, cfg.dest)
+		if err != nil {
+			return fmt.Errorf("write parquet files: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64, batchCount int) error {
@@ -344,6 +370,20 @@ func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64,
 		if err != nil {
 			return fmt.Errorf("marshal arrow message: %w", err)
 		}
+	case "parquet":
+		//batch, err := arrow.MarshalBatch(md)
+		//if err != nil {
+		//	return fmt.Errorf("marshal arrow batch: %w", err)
+		//}
+		//
+		//err = parquet.Write(batch, cfg.dest)
+		//if err != nil {
+		//	return fmt.Errorf("write parquet files: %w", err)
+		//}
+
+		//log.Printf("wrote batch %d of chunk %d to disk\n", batchCount, chunkInterval)
+		// we're already writing
+		return nil
 	default:
 		return fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
 	}
@@ -450,6 +490,10 @@ func labelsToAttributes(builder labels.ScratchBuilder, resourceAttributeLabels m
 }
 
 func translateToOTELHistogramBuckets(spans []histogram.Span, itr histogram.BucketIterator[uint64]) *metricsv1.ExponentialHistogramDataPoint_Buckets {
+	if len(spans) == 0 {
+		return nil
+	}
+
 	numBktCounts := 0
 	for spanIdx, span := range spans {
 		if spanIdx > 0 {

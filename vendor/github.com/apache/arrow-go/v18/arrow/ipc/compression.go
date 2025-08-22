@@ -105,7 +105,7 @@ type lz4Decompressor struct {
 }
 
 func (z *lz4Decompressor) Close() {
-	z.Reader.Reset(nil)
+	z.Reset(nil)
 }
 
 func getDecompressor(codec flatbuf.CompressionType) decompressor {
