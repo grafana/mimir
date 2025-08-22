@@ -122,6 +122,8 @@ type MultitenantAlertmanagerConfig struct {
 
 	// Enable experimental pre-notification hooks.
 	EnableNotifyHooks bool `yaml:"enable_notify_hooks" category:"experimental"`
+
+	NotificationHistory NotificationHistoryConfig `yaml:"notification_history" category:"experimental"`
 }
 
 const (
@@ -161,6 +163,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
 	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
+
+	cfg.NotificationHistory.RegisterFlagsWithPrefix("alertmanager.notification-history", f)
 }
 
 // Validate config and returns error on failure
@@ -1118,6 +1122,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
+		NotificationHistory:               am.cfg.NotificationHistory,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
