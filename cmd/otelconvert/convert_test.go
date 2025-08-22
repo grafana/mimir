@@ -14,6 +14,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestConvert(t *testing.T) {
+
+}
+
 func TestProtobufVsJson(t *testing.T) {
 	numDps := 10000000
 	dps := make([]*metricsv1.NumberDataPoint, numDps)
