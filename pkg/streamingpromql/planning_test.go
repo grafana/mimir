@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -1090,6 +1089,378 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"unary negation - should deduplicate and merge": {
+			expr:      `-some_metric`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  2,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_UNARY_EXPRESSION,
+						Details: marshalDetails(&core.UnaryExpressionDetails{
+							Op:                 core.UNARY_SUB,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
+						}),
+						Type:           "UnaryExpression",
+						Children:       []int64{0},
+						Description:    `-`,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"OR binary operation - should deduplicate and merge": {
+			expr:      `metric_a or metric_b`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  3,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric_a"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 8},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric_a"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric_b"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 12, End: 20},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric_b"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_LOR,
+							VectorMatching:     &core.VectorMatching{Card: 3},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
+						}),
+						Type:           "BinaryExpression",
+						Children:       []int64{0, 1},
+						Description:    `LHS or RHS`,
+						ChildrenLabels: []string{"LHS", "RHS"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{2},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"time transformation - should deduplicate and merge": {
+			expr:      `hour(some_metric)`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  2,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_HOUR,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
+						}),
+						Type:           "FunctionCall",
+						Children:       []int64{0},
+						Description:    `hour(...)`,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"range vector function which drops __name__ - should deduplicate and merge": {
+			expr:      `rate(some_metric[5m])`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  2,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Range:              5 * time.Minute,
+							ExpressionPosition: core.PositionRange{Start: 5, End: 20},
+						}),
+						Type:        "MatrixSelector",
+						Description: `{__name__="some_metric"}[5m0s]`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_RATE,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
+						}),
+						Type:           "FunctionCall",
+						Children:       []int64{0},
+						Description:    `rate(...)`,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"instant vector function which drops __name__ - should deduplicate and merge": {
+			expr:      `abs(some_metric)`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  2,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_ABS,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 16},
+						}),
+						Type:           "FunctionCall",
+						Children:       []int64{0},
+						Description:    `abs(...)`,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"label_join - should deduplicate and merge": {
+			expr:      `label_join(some_metric, "new_label", "-", "label1", "label2")`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  6,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 11, End: 22},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "new_label",
+							ExpressionPosition: core.PositionRange{Start: 24, End: 35},
+						}),
+						Type:        "StringLiteral",
+						Description: `"new_label"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "-",
+							ExpressionPosition: core.PositionRange{Start: 37, End: 40},
+						}),
+						Type:        "StringLiteral",
+						Description: `"-"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "label1",
+							ExpressionPosition: core.PositionRange{Start: 42, End: 50},
+						}),
+						Type:        "StringLiteral",
+						Description: `"label1"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "label2",
+							ExpressionPosition: core.PositionRange{Start: 52, End: 60},
+						}),
+						Type:        "StringLiteral",
+						Description: `"label2"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_LABEL_JOIN,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 61},
+						}),
+						Type:           "FunctionCall",
+						Children:       []int64{0, 1, 2, 3, 4},
+						Description:    `label_join(...)`,
+						ChildrenLabels: []string{"param 0", "param 1", "param 2", "param 3", "param 4"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{5},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"label_replace - should deduplicate and merge": {
+			expr:      `label_replace(some_metric, "dst", "$1", "src", "(.+)")`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  6,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 14, End: 25},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "dst",
+							ExpressionPosition: core.PositionRange{Start: 27, End: 32},
+						}),
+						Type:        "StringLiteral",
+						Description: `"dst"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "$1",
+							ExpressionPosition: core.PositionRange{Start: 34, End: 38},
+						}),
+						Type:        "StringLiteral",
+						Description: `"$1"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "src",
+							ExpressionPosition: core.PositionRange{Start: 40, End: 45},
+						}),
+						Type:        "StringLiteral",
+						Description: `"src"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						Details: marshalDetails(&core.StringLiteralDetails{
+							Value:              "(.+)",
+							ExpressionPosition: core.PositionRange{Start: 47, End: 53},
+						}),
+						Type:        "StringLiteral",
+						Description: `"(.+)"`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_LABEL_REPLACE,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 54},
+						}),
+						Type:           "FunctionCall",
+						Children:       []int64{0, 1, 2, 3, 4},
+						Description:    `label_replace(...)`,
+						ChildrenLabels: []string{"param 0", "param 1", "param 2", "param 3", "param 4"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{5},
+						Description:    `deduplicate and merge`,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
@@ -1673,604 +2044,6 @@ func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string,
 	}
 
 	require.Equal(t, strings.TrimSpace(expected), builder.String())
-}
-
-func TestPlanDeduplicateAndMerge(t *testing.T) {
-	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
-
-	testCases := map[string]struct {
-		expr      string
-		timeRange types.QueryTimeRange
-
-		expectedPlan *planning.EncodedQueryPlan
-	}{
-		"unary negation - should deduplicate and merge": {
-			expr:      `-some_metric`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_UNARY_EXPRESSION,
-						Details: marshalDetails(&core.UnaryExpressionDetails{
-							Op:                 core.UNARY_SUB,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
-						}),
-						Type:           "UnaryExpression",
-						Children:       []int64{0},
-						Description:    `-`,
-						ChildrenLabels: []string{""},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{1},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"OR binary operation - should deduplicate and merge": {
-			expr:      `metric_a or metric_b`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  3,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "metric_a"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 0, End: 8},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="metric_a"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "metric_b"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 12, End: 20},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="metric_b"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
-						Details: marshalDetails(&core.BinaryExpressionDetails{
-							Op:                 core.BINARY_LOR,
-							VectorMatching:     &core.VectorMatching{Card: 3},
-							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
-						}),
-						Type:           "BinaryExpression",
-						Children:       []int64{0, 1},
-						Description:    `LHS or RHS`,
-						ChildrenLabels: []string{"LHS", "RHS"},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{2},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"vector scalar binary operation - should deduplicate and merge": {
-			expr:      `2 * some_metric`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  3,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
-						Details: marshalDetails(&core.NumberLiteralDetails{
-							Value:              2,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
-						}),
-						Type:        "NumberLiteral",
-						Description: `2`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
-						Details: marshalDetails(&core.BinaryExpressionDetails{
-							Op:                 core.BINARY_MUL,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
-						}),
-						Type:           "BinaryExpression",
-						Children:       []int64{0, 1},
-						Description:    `LHS * RHS`,
-						ChildrenLabels: []string{"LHS", "RHS"},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{2},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"time transformation  - should deduplicate and merge": {
-			expr:      `hour(some_metric)`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_HOUR,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `hour(...)`,
-						ChildrenLabels: []string{""},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{1},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"range vector function which drops __name__ - should deduplicate and merge": {
-			expr:      `rate(some_metric[5m])`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
-						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							Range:              5 * time.Minute,
-							ExpressionPosition: core.PositionRange{Start: 5, End: 20},
-						}),
-						Type:        "MatrixSelector",
-						Description: `{__name__="some_metric"}[5m0s]`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `rate(...)`,
-						ChildrenLabels: []string{""},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{1},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"instant vector function which drops __name__ - should deduplicate and merge": {
-			expr:      `abs(some_metric)`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_ABS,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 16},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `abs(...)`,
-						ChildrenLabels: []string{""},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{1},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"label_join - should deduplicate and merge": {
-			expr:      `label_join(some_metric, "new_label", "-", "label1", "label2")`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  6,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 11, End: 22},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "new_label",
-							ExpressionPosition: core.PositionRange{Start: 24, End: 35},
-						}),
-						Type:        "StringLiteral",
-						Description: `"new_label"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "-",
-							ExpressionPosition: core.PositionRange{Start: 37, End: 40},
-						}),
-						Type:        "StringLiteral",
-						Description: `"-"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "label1",
-							ExpressionPosition: core.PositionRange{Start: 42, End: 50},
-						}),
-						Type:        "StringLiteral",
-						Description: `"label1"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "label2",
-							ExpressionPosition: core.PositionRange{Start: 52, End: 60},
-						}),
-						Type:        "StringLiteral",
-						Description: `"label2"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_LABEL_JOIN,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 61},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0, 1, 2, 3, 4},
-						Description:    `label_join(...)`,
-						ChildrenLabels: []string{"param 0", "param 1", "param 2", "param 3", "param 4"},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{5},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"label_replace - should deduplicate and merge": {
-			expr:      `label_replace(some_metric, "dst", "$1", "src", "(.+)")`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  6,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 14, End: 25},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "dst",
-							ExpressionPosition: core.PositionRange{Start: 27, End: 32},
-						}),
-						Type:        "StringLiteral",
-						Description: `"dst"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "$1",
-							ExpressionPosition: core.PositionRange{Start: 34, End: 38},
-						}),
-						Type:        "StringLiteral",
-						Description: `"$1"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "src",
-							ExpressionPosition: core.PositionRange{Start: 40, End: 45},
-						}),
-						Type:        "StringLiteral",
-						Description: `"src"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_STRING_LITERAL,
-						Details: marshalDetails(&core.StringLiteralDetails{
-							Value:              "(.+)",
-							ExpressionPosition: core.PositionRange{Start: 47, End: 53},
-						}),
-						Type:        "StringLiteral",
-						Description: `"(.+)"`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_LABEL_REPLACE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 54},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0, 1, 2, 3, 4},
-						Description:    `label_replace(...)`,
-						ChildrenLabels: []string{"param 0", "param 1", "param 2", "param 3", "param 4"},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
-						Type:           "DeduplicateAndMerge",
-						Children:       []int64{5},
-						Description:    `deduplicate and merge`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"last_over_time - should not deduplicate and merge": {
-			expr:      `last_over_time(some_metric[5m])`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
-						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							Range:              5 * time.Minute,
-							ExpressionPosition: core.PositionRange{Start: 15, End: 30},
-						}),
-						Type:        "MatrixSelector",
-						Description: `{__name__="some_metric"}[5m0s]`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_LAST_OVER_TIME,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `last_over_time(...)`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"sort - should not deduplicate and merge": {
-			expr:      `sort(some_metric)`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_SORT,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `sort(...)`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"absent - should not deduplicate and merge": {
-			expr:      `absent(some_metric)`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 7, End: 18},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_ABSENT,
-							AbsentLabels:       []mimirpb.LabelAdapter{},
-							ExpressionPosition: core.PositionRange{Start: 0, End: 19},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `absent(...)`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-		"absent_over_time - should not deduplicate and merge": {
-			expr:      `absent_over_time(some_metric[5m])`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Nodes: []*planning.EncodedNode{
-					{
-						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
-						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							Range:              5 * time.Minute,
-							ExpressionPosition: core.PositionRange{Start: 17, End: 32},
-						}),
-						Type:        "MatrixSelector",
-						Description: `{__name__="some_metric"}[5m0s]`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
-						Details: marshalDetails(&core.FunctionCallDetails{
-							Function:           functions.FUNCTION_ABSENT_OVER_TIME,
-							AbsentLabels:       []mimirpb.LabelAdapter{},
-							ExpressionPosition: core.PositionRange{Start: 0, End: 33},
-						}),
-						Type:           "FunctionCall",
-						Children:       []int64{0},
-						Description:    `absent_over_time(...)`,
-						ChildrenLabels: []string{""},
-					},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			testCase.expectedPlan.OriginalExpression = testCase.expr
-
-			reg := prometheus.NewPedanticRegistry()
-			opts := NewTestEngineOpts()
-			opts.CommonOpts.Reg = reg
-			planner := NewQueryPlannerWithoutOptimizationPasses(opts)
-
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
-			require.NoError(t, err)
-
-			// Encode plan, confirm it matches what we expect
-			encoded, err := originalPlan.ToEncodedPlan(true, true)
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectedPlan, encoded)
-
-			// Decode plan, confirm it matches the original plan
-			decodedPlan, _, err := encoded.ToDecodedPlan()
-			require.NoError(t, err)
-			require.Equal(t, originalPlan, decodedPlan)
-
-		})
-	}
 }
 
 func timestampOf(ts int64) *time.Time {
