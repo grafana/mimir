@@ -68,6 +68,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 	}
 	defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
+	panic("test")
 	_, err = convert.ConvertTSDBBlock(
 		ctx,
 		bkt,
