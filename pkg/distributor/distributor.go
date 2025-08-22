@@ -502,7 +502,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters:  validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
-		discardedSamplesPerUserSeriesLimit: validation.DiscardedSamplesCounter(reg, reasonPerUserSeriesLimit),
+		discardedSamplesPerUserSeriesLimit: validation.DiscardedSamplesCounter(reg, reasonPerUserActiveSeriesLimit),
 		discardedSamplesRateLimited:        validation.DiscardedSamplesCounter(reg, reasonRateLimited),
 		discardedRequestsRateLimited:       validation.DiscardedRequestsCounter(reg, reasonRateLimited),
 		discardedExemplarsRateLimited:      validation.DiscardedExemplarsCounter(reg, reasonRateLimited),
