@@ -12514,6 +12514,17 @@
         },
         {
           "kind": "field",
+          "name": "max_notification_batch_size",
+          "required": false,
+          "desc": "Maximum number of notifications to send to Alertmanager in one request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "ruler.max-notification-batch-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "notification_timeout",
           "required": false,
           "desc": "HTTP timeout duration when sending notifications to the Alertmanager.",
