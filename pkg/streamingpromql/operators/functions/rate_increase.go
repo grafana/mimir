@@ -123,7 +123,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	}
 
 	delta := lastPoint.H.CopyToSchema(desiredSchema)
-	_, err := delta.Sub(firstPoint.H)
+	_, _, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		for _, p := range points {
 			if p.H.DetectReset(previousValue) {
 				// Counter reset.
-				if _, err := delta.Add(previousValue); err != nil {
+				if _, _, err := delta.Add(previousValue); err != nil {
 					return err
 				}
 			}
@@ -368,7 +368,7 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta, err := lastPoint.H.Copy().Sub(firstPoint.H)
+	delta, _, err := lastPoint.H.Copy().Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
