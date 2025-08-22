@@ -12,19 +12,17 @@ import (
 	"strings"
 	"time"
 
-	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-
 	gokitlog "github.com/go-kit/log"
-	"github.com/grafana/mimir/cmd/otelconvert/parquet"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
+	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/cmd/otelconvert/arrow"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -46,83 +44,149 @@ func validateConvertConfig(cfg config) error {
 
 type chunkedMetricsData struct {
 	resourceAttributeLabels map[string]struct{}
-	mds                     map[int64]*metricsv1.MetricsData
+	data                    map[int64]map[string]*uncomposedMetric
 }
 
-func newChunkedMetricsData(resourceAttributeLabels map[string]struct{}) *chunkedMetricsData {
-	return &chunkedMetricsData{
-		resourceAttributeLabels: resourceAttributeLabels,
-		mds:                     make(map[int64]*metricsv1.MetricsData),
-	}
+type uncomposedMetric struct {
+	metricName    string
+	resourceAttrs []*commonv1.KeyValue
+	scopeAttrs    []*commonv1.KeyValue
+	metricAttrs   []*commonv1.KeyValue
+	gauges        []*metricsv1.NumberDataPoint
+	histograms    []*metricsv1.ExponentialHistogramDataPoint
 }
 
-func (cmd *chunkedMetricsData) Chunks() map[int64]*metricsv1.MetricsData {
-	return cmd.mds
-}
-
-func (cmd *chunkedMetricsData) Size() int {
-	if len(cmd.mds) == 0 {
-		return 0
-	}
-
-	size := 0
-
-	for _, md := range cmd.mds {
-		size += proto.Size(md)
-	}
-
-	return size
-}
-
-func (cmd *chunkedMetricsData) Reset() {
-	for interval := range cmd.mds {
-		delete(cmd.mds, interval)
-	}
-}
-
-func (cmd *chunkedMetricsData) AppendGauge(lbls labels.ScratchBuilder, interval int64, gauge *metricsv1.Metric_Gauge) {
-	rm := cmd.baseRM(lbls)
-	rm.ScopeMetrics[0].Metrics[0].Data = gauge
-
-	if _, ok := cmd.mds[interval]; !ok {
-		cmd.mds[interval] = &metricsv1.MetricsData{}
-		cmd.mds[interval].Reset()
-	}
-	cmd.mds[interval].ResourceMetrics = append(cmd.mds[interval].ResourceMetrics, rm)
-}
-
-func (cmd *chunkedMetricsData) AppendHistogram(lbls labels.ScratchBuilder, interval int64, histogram *metricsv1.Metric_ExponentialHistogram) {
-	rm := cmd.baseRM(lbls)
-	rm.ScopeMetrics[0].Metrics[0].Data = histogram
-
-	if _, ok := cmd.mds[interval]; !ok {
-		cmd.mds[interval] = &metricsv1.MetricsData{}
-		cmd.mds[interval].Reset()
-	}
-	cmd.mds[interval].ResourceMetrics = append(cmd.mds[interval].ResourceMetrics, rm)
-}
-
-func (cmd *chunkedMetricsData) baseRM(lbls labels.ScratchBuilder) *metricsv1.ResourceMetrics {
-	metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
-
-	return &metricsv1.ResourceMetrics{
+func (m *uncomposedMetric) toResourceMetrics() (*metricsv1.ResourceMetrics, error) {
+	rm := &metricsv1.ResourceMetrics{
 		Resource: &resourcev1.Resource{
-			Attributes: resourceAttrs,
+			Attributes: m.resourceAttrs,
 		},
 		ScopeMetrics: []*metricsv1.ScopeMetrics{
 			{
 				Scope: &commonv1.InstrumentationScope{
-					Attributes: scopeAttrs,
+					Attributes: m.scopeAttrs,
 				},
 				Metrics: []*metricsv1.Metric{
 					{
-						Name:     metricName,
-						Metadata: metricAttrs,
+						Name:     m.metricName,
+						Metadata: m.metricAttrs,
 					},
 				},
 			},
 		},
 	}
+
+	if m.gauges != nil && m.histograms != nil {
+		return nil, fmt.Errorf("both gauge and histogram metrics associated with metric %s", m.metricName)
+	} else if m.histograms != nil {
+		rm.ScopeMetrics[0].Metrics[0].Data = &metricsv1.Metric_ExponentialHistogram{
+			ExponentialHistogram: &metricsv1.ExponentialHistogram{
+				DataPoints: m.histograms,
+			},
+		}
+	} else {
+		rm.ScopeMetrics[0].Metrics[0].Data = &metricsv1.Metric_Gauge{
+			Gauge: &metricsv1.Gauge{
+				DataPoints: m.gauges,
+			},
+		}
+	}
+
+	return rm, nil
+}
+
+func newChunkedMetricsData(resourceAttributeLabels map[string]struct{}) *chunkedMetricsData {
+	return &chunkedMetricsData{
+		resourceAttributeLabels: resourceAttributeLabels,
+		data:                    make(map[int64]map[string]*uncomposedMetric),
+	}
+}
+
+func (cmd *chunkedMetricsData) Chunks() (map[int64]*metricsv1.MetricsData, error) {
+	res := make(map[int64]*metricsv1.MetricsData, len(cmd.data))
+
+	for interval, postings := range cmd.data {
+		res[interval] = &metricsv1.MetricsData{}
+		res[interval].Reset()
+
+		for _, m := range postings {
+			rms, err := m.toResourceMetrics()
+			if err != nil {
+				return nil, fmt.Errorf("construct resource metrics: %w", err)
+			}
+
+			res[interval].ResourceMetrics = append(res[interval].ResourceMetrics, rms)
+		}
+	}
+
+	return res, nil
+}
+
+func (cmd *chunkedMetricsData) Size() (int, error) {
+	if len(cmd.data) == 0 {
+		return 0, nil
+	}
+
+	chks, err := cmd.Chunks()
+	if err != nil {
+		return 0, fmt.Errorf("build chunks: %w", err)
+	}
+
+	size := 0
+
+	for _, md := range chks {
+		size += proto.Size(md)
+	}
+
+	return size, nil
+}
+
+func (cmd *chunkedMetricsData) Reset() {
+	for interval := range cmd.data {
+		delete(cmd.data, interval)
+	}
+}
+
+func (cmd *chunkedMetricsData) AppendGauges(lbls labels.ScratchBuilder, interval int64, gauges []*metricsv1.NumberDataPoint) {
+	if _, ok := cmd.data[interval]; !ok {
+		cmd.data[interval] = make(map[string]*uncomposedMetric)
+	}
+
+	lbls.Sort()
+	sortedLabels := lbls.Labels().String()
+
+	if _, ok := cmd.data[interval][sortedLabels]; !ok {
+		metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
+		cmd.data[interval][sortedLabels] = &uncomposedMetric{
+			metricName:    metricName,
+			resourceAttrs: resourceAttrs,
+			scopeAttrs:    scopeAttrs,
+			metricAttrs:   metricAttrs,
+		}
+	}
+
+	cmd.data[interval][sortedLabels].gauges = append(cmd.data[interval][sortedLabels].gauges, gauges...)
+}
+
+func (cmd *chunkedMetricsData) AppendHistograms(lbls labels.ScratchBuilder, interval int64, histograms []*metricsv1.ExponentialHistogramDataPoint) {
+	if _, ok := cmd.data[interval]; !ok {
+		cmd.data[interval] = make(map[string]*uncomposedMetric)
+	}
+
+	lbls.Sort()
+	sortedLabels := lbls.Labels().String()
+
+	if _, ok := cmd.data[interval][sortedLabels]; !ok {
+		metricName, resourceAttrs, scopeAttrs, metricAttrs := labelsToAttributes(lbls, cmd.resourceAttributeLabels)
+		cmd.data[interval][sortedLabels] = &uncomposedMetric{
+			metricName:    metricName,
+			resourceAttrs: resourceAttrs,
+			scopeAttrs:    scopeAttrs,
+			metricAttrs:   metricAttrs,
+		}
+	}
+
+	cmd.data[interval][sortedLabels].histograms = append(cmd.data[interval][sortedLabels].histograms, histograms...)
 }
 
 func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error {
@@ -189,8 +253,8 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 		var (
 			intervalMS = cfg.chunkSize.Milliseconds()
 
-			gauges = make(map[int64]*metricsv1.Metric_Gauge)
-			histos = make(map[int64]*metricsv1.Metric_ExponentialHistogram)
+			gauges = make(map[int64][]*metricsv1.NumberDataPoint)
+			histos = make(map[int64][]*metricsv1.ExponentialHistogramDataPoint)
 
 			chkItr chunkenc.Iterator
 		)
@@ -214,11 +278,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 					interval := snapToInterval(ts, intervalMS)
 
-					if _, ok := gauges[interval]; !ok {
-						gauges[interval] = &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{}}
-					}
-
-					gauges[interval].Gauge.DataPoints = append(gauges[interval].Gauge.DataPoints, &metricsv1.NumberDataPoint{
+					gauges[interval] = append(gauges[interval], &metricsv1.NumberDataPoint{
 						TimeUnixNano: uint64(time.UnixMilli(ts).UnixNano()),
 						Value:        &metricsv1.NumberDataPoint_AsDouble{AsDouble: val},
 					})
@@ -227,11 +287,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 					interval := snapToInterval(ts, intervalMS)
 
-					if _, ok := histos[interval]; !ok {
-						histos[interval] = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
-					}
-
-					histos[interval].ExponentialHistogram.DataPoints = append(histos[interval].ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
+					histos[interval] = append(histos[interval], &metricsv1.ExponentialHistogramDataPoint{
 						TimeUnixNano:  uint64(time.UnixMilli(ts).UnixNano()),
 						Count:         h.Count,
 						Sum:           &h.Sum,
@@ -246,11 +302,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 
 					interval := snapToInterval(ts, intervalMS)
 
-					if _, ok := histos[interval]; !ok {
-						histos[interval] = &metricsv1.Metric_ExponentialHistogram{ExponentialHistogram: &metricsv1.ExponentialHistogram{}}
-					}
-
-					histos[interval].ExponentialHistogram.DataPoints = append(histos[interval].ExponentialHistogram.DataPoints, &metricsv1.ExponentialHistogramDataPoint{
+					histos[interval] = append(histos[interval], &metricsv1.ExponentialHistogramDataPoint{
 						TimeUnixNano:  uint64(time.UnixMilli(ts).UnixNano()),
 						Count:         uint64(fh.Count),
 						Sum:           &fh.Sum,
@@ -269,17 +321,19 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 		if len(gauges) > 0 && len(histos) > 0 {
 			return fmt.Errorf("both float and histogram values associated with metric: %s", builder.Labels().String())
 		} else if len(gauges) > 0 {
-			for interval, gauge := range gauges {
-				mds.AppendGauge(builder, interval, gauge)
+			for interval, g := range gauges {
+				mds.AppendGauges(builder, interval, g)
 			}
 		} else if len(histos) > 0 {
-			for interval, hist := range histos {
-				mds.AppendHistogram(builder, interval, hist)
+			for interval, h := range histos {
+				mds.AppendHistograms(builder, interval, h)
 			}
 		}
 
 		if verbose {
-			log.Printf("current batch size: %d\n", mds.Size())
+			if mdsSize, err := mds.Size(); err != nil {
+				log.Printf("current batch size: %d\n", mdsSize)
+			}
 		}
 
 		postingsCount++
@@ -288,7 +342,11 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 	}
 
 	// Flush any remaining partial batch to disk.
-	if mds.Size() > 0 {
+	mdsSize, err := mds.Size()
+	if err != nil {
+		return fmt.Errorf("get size: %w", err)
+	}
+	if mdsSize > 0 {
 		_, err = writeBatchChunks(mds, cfg, batchCount, parquetWriteManager)
 		if err != nil {
 			return fmt.Errorf("write metrics data to file: %w", err)
@@ -310,10 +368,21 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int, wm *parquet.WriteManager) (int, error) {
-	err := writeParquetBatch(mds.Chunks(), cfg, wm)
+func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int) (int, error) {
+	//err := writeParquetBatch(mds.Chunks(), cfg, wm)
+	//if err != nil {
+	//	return batchCount, fmt.Errorf("write batch chunk: %w", err)
+	//}
+
+	chks, err := mds.Chunks()
 	if err != nil {
-		return batchCount, fmt.Errorf("write batch chunk: %w", err)
+		return batchCount, fmt.Errorf("build chunks: %w", err)
+	}
+
+	for interval, md := range chks {
+		if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
+			return batchCount, fmt.Errorf("write batch chunk: %w", err)
+		}
 	}
 	//for interval, md := range mds.Chunks() {
 	//	if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
