@@ -2168,10 +2168,11 @@ func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, r
 	}
 
 	return ring.DoUntilQuorumConfig{
-		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
-		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
-		ZoneSorter:       zoneSorter,
-		Logger:           spanlogger.FromContext(ctx, d.log),
+		MinimizeRequests:    d.cfg.MinimizeIngesterRequests,
+		HedgingDelay:        d.cfg.MinimiseIngesterRequestsHedgingDelay,
+		ZoneSorter:          zoneSorter,
+		Logger:              spanlogger.FromContext(ctx, d.log),
+		IncludeReplicaCount: d.cfg.IngestStorageConfig.Enabled,
 	}
 }
 
