@@ -145,9 +145,6 @@ References to partitions being added or removed correspond to ingesters being sc
 - After the configured time expires (`-ingester.partition-ring.delete-inactive-partition-after`, default 13 hours), each ingester removes itself and its partition from the ring automatically
 - Note: This only removes the logical partition from the ring; the underlying Kafka partitions remain unchanged
 
-{{< admonition type="note" >}}
-Unlike the traditional ingester ring approach, partition shuffle sharding doesn't require zone-awareness since partition ownership is distributed across zones through the ingester instances.
-{{< /admonition >}}
 
 ### Query-frontend and query-scheduler shuffle sharding
 
