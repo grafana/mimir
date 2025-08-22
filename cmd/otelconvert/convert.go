@@ -497,6 +497,9 @@ func labelsToAttributes(builder labels.ScratchBuilder, resourceAttributeLabels m
 				},
 			})
 			return
+		} else if lbl.Name == "__name__" {
+			name = lbl.Value
+			return
 		}
 
 		metricAttrs = append(metricAttrs, &commonv1.KeyValue{
@@ -505,10 +508,6 @@ func labelsToAttributes(builder labels.ScratchBuilder, resourceAttributeLabels m
 				Value: &commonv1.AnyValue_StringValue{StringValue: lbl.Value},
 			},
 		})
-
-		if lbl.Name == "__name__" {
-			name = lbl.Value
-		}
 	})
 
 	return name, resourceAttrs, scopeAttrs, metricAttrs
