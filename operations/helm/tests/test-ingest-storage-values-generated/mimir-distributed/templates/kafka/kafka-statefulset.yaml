@@ -84,10 +84,8 @@ spec:
               value: "1"
             - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
               value: "1"
-            - name: KAFKA_NUM_PARTITIONS
-              value: "100"
-            - name: KAFKA_LOG_RETENTION_MS
-              value: "86400000" # 1 day
+            - name: KAFKA_LOG_RETENTION_HOURS
+              value: "24"
           resources:
             limits: {}
             requests:
