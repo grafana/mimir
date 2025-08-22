@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -621,17 +622,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		hints.Func = "series"
 	}
 
-	chunkSeriesSet := q.Select(ctx, true, hints, matchers...)
-	// NOTE: we want to be able to iterate labels and chunks separately, so we
-	// load everything into slices and return iterators over those slices. This
-	// does defeat the purpose of streaming, but: currently, the querier does
-	// not support streaming results, the iterator we get from q.Select is
-	// already backed by a slice. So we are not losing as much as it may seem.
-	// We are planning to implement proper streaming.
-	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, req.SkipChunks)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
-	}
+	labelsSet, chunkSeriesSet := q.Select(ctx, true, hints, matchers...)
 
 	spanLogger.DebugLog(
 		"msg", "createLabelsAndChunksIterators",
@@ -639,17 +630,15 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		"num_shards", len(shardReaders),
 		"hints", hints,
 		"matchers", matchers,
-		"numLabels", len(lbls),
-		"numAggrChks", len(aggrChunks),
 		"skipChunks", req.SkipChunks,
 	)
 
-	labelsIt := newConcreteIterator(lbls)
+	labelsIt := toLabelsIterator(labelsSet)
 	if req.SkipChunks {
 		return labelsIt, nil, nil
 	}
 
-	return labelsIt, newConcreteIterator(aggrChunks), nil
+	return labelsIt, toAggChunksIterator(chunkSeriesSet), nil
 }
 
 type materializedLabelsShardFilter struct {
@@ -1176,43 +1165,6 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-// toLabelsAndAggChunksSlice pulls all labels and chunks from the
-// storage.ChunkSeriesSet and returns them as slices, converting the chunks to
-// storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
-// empty.
-func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
-	var seriesLabels []labels.Labels
-	var aggrChunks [][]storepb.AggrChunk
-
-	for chunkSeriesSet.Next() {
-		chunkSeries := chunkSeriesSet.At()
-		lbls := chunkSeries.Labels()
-		seriesLabels = append(seriesLabels, lbls)
-
-		if skipChunks {
-			continue
-		}
-
-		// Convert chunks to storepb.AggrChunk
-		var aggrChunkList []storepb.AggrChunk
-		it := chunkSeries.Iterator(nil)
-		for it.Next() {
-			meta := it.At()
-			aggrChunkList = append(aggrChunkList, storepb.AggrChunk{
-				MinTime: meta.MinTime,
-				MaxTime: meta.MaxTime,
-				Raw: storepb.Chunk{
-					Type: prometheusChunkEncodingToStorePBChunkType(meta.Chunk.Encoding()),
-					Data: meta.Chunk.Bytes(),
-				},
-			})
-		}
-		aggrChunks = append(aggrChunks, aggrChunkList)
-	}
-
-	return seriesLabels, aggrChunks, chunkSeriesSet.Err()
-}
-
 func prometheusChunkEncodingToStorePBChunkType(enc chunkenc.Encoding) storepb.Chunk_Encoding {
 	switch enc {
 	case chunkenc.EncXOR:
@@ -1262,4 +1214,78 @@ func (s *ParquetBucketStore) recordLabelNamesCallResult(stats *safeQueryStats) {
 
 func (s *ParquetBucketStore) recordLabelValuesCallResult(stats *safeQueryStats) {
 	// TODO implement for proper stats reporting
+}
+
+func toAggChunksIterator(set storage.ChunkSeriesSet) iterator[[]storepb.AggrChunk] {
+	return &chunkSeriesSetToAggChunksIterator{
+		set: set,
+	}
+}
+
+func toLabelsIterator(set storage.ChunkSeriesSet) iterator[labels.Labels] {
+	return &chunkSeriesSetToLabelsIterator{
+		set: set,
+	}
+}
+
+type chunkSeriesSetToAggChunksIterator struct {
+	set storage.ChunkSeriesSet
+
+	it      chunks.Iterator
+	current []storepb.AggrChunk
+	err     error
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) At() []storepb.AggrChunk {
+	return c.current
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) Err() error {
+	if c.err != nil {
+		return c.err
+	}
+	return c.set.Err()
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) Next() bool {
+	if !c.set.Next() {
+		return false
+	}
+	c.current = c.current[:0]
+
+	chunkSeries := c.set.At()
+	if chunkSeries == nil {
+		return true
+	}
+
+	c.it = chunkSeries.Iterator(c.it)
+	for c.it.Next() {
+		meta := c.it.At()
+		c.current = append(c.current, storepb.AggrChunk{
+			MinTime: meta.MinTime,
+			MaxTime: meta.MaxTime,
+			Raw: storepb.Chunk{
+				Type: prometheusChunkEncodingToStorePBChunkType(meta.Chunk.Encoding()),
+				Data: meta.Chunk.Bytes(),
+			},
+		})
+	}
+	c.err = c.it.Err()
+	return c.err == nil
+}
+
+type chunkSeriesSetToLabelsIterator struct {
+	set storage.ChunkSeriesSet
+}
+
+func (c *chunkSeriesSetToLabelsIterator) At() labels.Labels {
+	return c.set.At().Labels()
+}
+
+func (c *chunkSeriesSetToLabelsIterator) Err() error {
+	return c.set.Err()
+}
+
+func (c *chunkSeriesSetToLabelsIterator) Next() bool {
+	return c.set.Next()
 }
