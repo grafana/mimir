@@ -137,7 +137,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="pre_ingestion_per_user_series_limit",user="user-1"} %d
+					cortex_discarded_samples_total{group="",reason="per_user_active_series_limit",user="user-1"} %d
 				`, expectedDiscardedSamples)), "cortex_discarded_samples_total"))
 			} else {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(""), "cortex_discarded_samples_total"))
