@@ -426,8 +426,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			},
 		}
 
-		// Unary negation drops the __name__ label, so wrap in DeduplicateAndMerge to be deduplicated and merged.
-		if expr.Op == parser.SUB {
+		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
 			return &core.DeduplicateAndMerge{
 				Inner:                      unaryExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
