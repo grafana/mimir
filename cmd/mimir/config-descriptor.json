@@ -14984,6 +14984,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "state_read_timeout",
+          "required": false,
+          "desc": "Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "alertmanager.storage.state-read-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,

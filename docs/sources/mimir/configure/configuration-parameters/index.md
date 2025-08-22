@@ -2335,6 +2335,11 @@ The `alertmanager` block configures the alertmanager.
 # CLI flag: -alertmanager.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Timeout for reading the state from object storage during the
+# initial sync. Set to `0` for no timeout.
+# CLI flag: -alertmanager.storage.state-read-timeout
+[state_read_timeout: <duration> | default = 15s]
+
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
