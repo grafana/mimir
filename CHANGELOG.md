@@ -32,6 +32,7 @@
 * [ENHANCEMENT] OTLP: Stick to OTLP vocabulary on invalid label value length error. #12273
 * [ENHANCEMENT] Elide SeriesChunksStreamReader.StartBuffering span on queries; show as events on parent span. #12257
 * [ENHANCEMENT] Ruler: Add `-ruler.max-notification-batch-size` CLI flag that can be used to configure the maximum Alertmanager notification batch size. #12469
+* [BUGFIX] Compactor: Fix compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [ENHANCEMENT] Ingester: Skip read path load shedding when an ingester is the only available replica. #12448
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
