@@ -73,6 +73,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
+	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -142,6 +143,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
@@ -209,6 +211,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.UsageTracker.RegisterFlags(f, logger)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
@@ -218,9 +221,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 	return CommonConfigInheritance{
 		Storage: map[string]*bucket.StorageBackendConfig{
-			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+			"blocks_storage":                  &c.BlocksStorage.Bucket.StorageBackendConfig,
+			"ruler_storage":                   &c.RulerStorage.StorageBackendConfig,
+			"alertmanager_storage":            &c.AlertmanagerStorage.StorageBackendConfig,
+			"usage_tracker_snapshots_storage": &c.UsageTracker.SnapshotsStorage.StorageBackendConfig,
 		},
 		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
@@ -234,6 +238,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
+			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
 		},
 	}
 }
@@ -323,6 +328,16 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
+	if c.isDistributorEnabled() {
+		if err := c.UsageTracker.ValidateForClient(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
+	}
+	if c.isUsageTrackerEnabled() {
+		if err := c.UsageTracker.ValidateForUsageTracker(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
+	}
 	if err := c.Vault.Validate(); err != nil {
 		return errors.Wrap(err, "invalid vault config")
 	}
@@ -401,6 +416,10 @@ func (c *Config) isDistributorEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Distributor, Write)
 }
 
+func (c *Config) isUsageTrackerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(UsageTracker)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
@@ -412,6 +431,11 @@ func (c *Config) validateBucketConfigs() error {
 	// Validate ruler bucket config.
 	if c.isRulerEnabled() && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
+	}
+
+	// Validate usage tracker snapshots bucket config.
+	if c.isUsageTrackerEnabled() && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
+		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
 	}
 
 	return errs.Err()
@@ -551,6 +575,17 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 				name:       "alertmanager storage local directory",
 				cfgValue:   c.AlertmanagerStorage.Local.Path,
 				checkValue: c.AlertmanagerStorage.Local.Path,
+			})
+		}
+	}
+
+	// Usage-tracker.
+	if c.isUsageTrackerEnabled() {
+		if c.UsageTracker.SnapshotsStorage.Backend == bucket.Filesystem {
+			paths = append(paths, pathConfig{
+				name:       "usage tracker snapshot storage filesystem directory",
+				cfgValue:   c.UsageTracker.SnapshotsStorage.Filesystem.Directory,
+				checkValue: filepath.Join(c.UsageTracker.SnapshotsStorage.Filesystem.Directory, usagetracker.SnapshotsStoragePrefix),
 			})
 		}
 	}
@@ -830,6 +865,9 @@ type Mimir struct {
 	ActivityTracker                  *activitytracker.ActivityTracker
 	Vault                            *vault.Vault
 	UsageStatsReporter               *usagestats.Reporter
+	UsageTracker                     *usagetracker.UsageTracker
+	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing         *ring.Ring
 	BlockBuilder                     *blockbuilder.BlockBuilder
 	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager            *continuoustest.Manager
@@ -1082,6 +1120,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 		if t.Ingester != nil {
 			if err := t.Ingester.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Ingester not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
+		if t.UsageTracker != nil {
+			if err := t.UsageTracker.CheckReady(r.Context()); err != nil {
+				http.Error(w, "Usage Tracker not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}
