@@ -3,22 +3,22 @@ aliases:
   - ../configuring/configuring-shuffle-sharding/
   - configuring-shuffle-sharding/
   - ../operators-guide/configure/configure-shuffle-sharding/
-description: Learn how to configure shuffle sharding with ingest storage.
+description: Learn how to configure shuffle sharding.
 menuTitle: Shuffle sharding
-title: Configure Grafana Mimir shuffle sharding with ingest storage
+title: Configure Grafana Mimir shuffle sharding
 weight: 140
 ---
 
-# Configure Grafana Mimir shuffle sharding with ingest storage
+# Configure Grafana Mimir shuffle sharding
 
 Grafana Mimir leverages sharding to horizontally scale both single- and multi-tenant clusters beyond the capacity of a single node.
 
 ## Background
 
-When using ingest storage, Grafana Mimir uses a partition-based sharding strategy that distributes the workload across a subset of partitions.
-On the write path, each tenant's series are sharded across a subset of the partitions, and each partition is owned by one or more ingesters for high availability.
-The size of this subset, which is the number of partitions, is configured using the `shard size` parameter, which by default is `0`.
-This default value means that each tenant uses all available partitions, in order to fairly balance resources such as CPU and memory usage, and to maximize the usage of these resources across the cluster.
+Grafana Mimir uses a sharding strategy that distributes the workload across a subset of the instances or partitions that run a given component.
+For example, on the write path, each tenant's series are sharded across a subset of the partitions.
+The size of this subset, which is the number of partitions, is configured using the shard size parameter, which by default is `0`.
+This default value means that each tenant uses all available instances, in order to fairly balance resources such as CPU and memory, and to maximize the usage of these resources across the cluster.
 
 In a multi-tenant cluster this default (`0`) value introduces the following downsides:
 
@@ -32,37 +32,38 @@ Configuring a shard size value higher than `0` enables shuffle sharding. The goa
 Shuffle sharding is a technique that isolates different tenant's workloads and gives each tenant a single-tenant experience, even if they're running in a shared cluster.
 For more information about how AWS describes shuffle sharding, refer to [What is shuffle sharding?](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/).
 
-With ingest storage, shuffle sharding assigns each tenant a shard that is composed of a subset of the partitions.
-This technique minimizes the number of overlapping partitions between two tenants.
+Shuffle sharding assigns each tenant a shard that is composed of a subset of the Grafana Mimir instances or a subset of Kafka partitions.
+This technique minimizes the number of overlapping instances between two tenants.
 Shuffle sharding provides the following benefits:
 
-- An outage on some partitions or their owner ingesters only affects a subset of tenants.
-- A misbehaving tenant only affects the partitions in its shard.
-  Assuming that each tenant shard is relatively small compared to the total number of partitions in the cluster, it's likely that any other tenant uses different partitions or that only a subset of partitions match the affected partitions.
+- An outage on some Grafana Mimir cluster instances, Kafka partitions, or nodes only affect a subset of tenants.
+- A misbehaving tenant only affects its shard instances or partitions.
+  Assuming that each tenant shard is relatively small compared to the total number of instances or partitions in the cluster, it’s likely that any other tenant runs on different instances or partitions or that only a subset of instances match the affected instances.
 
-Using shuffle sharding doesn't require more resources, but can result in unbalanced load across partitions.
+Using shuffle sharding doesn’t require more resources, but can result in unbalanced instances or partitions.
 
-### Low overlapping partitions probability
+### Low overlapping instances/partition probability
 
-For example, in a Grafana Mimir cluster that has 50 partitions and assigns each tenant four out of 50 partitions, by shuffling partitions between each tenant, there are 230,000 possible combinations.
+For example, in a Grafana Mimir cluster that runs 50 Kafka partitions and assigns each tenant four out of 50 partitions, by shuffling partitions between each tenant, there are 230,000 possible combinations.
 
 Randomly picking two tenants yields the following probabilities:
 
 - 71% chance that they do not share any partition
 - 26% chance that they share only 1 partition
-- 2.7% chance that they share 2 partitions
-- 0.08% chance that they share 3 partitions
+- 2.7% chance that they share 2 partition
+- 0.08% chance that they share 3 partition
 - 0.0004% chance that their partitions fully overlap
 
 ![Shuffle sharding probability](shuffle-sharding-probability.png)
 
 [//]: # "Diagram source of shuffle-sharding probability at https://docs.google.com/spreadsheets/d/1FXbiWTXi6bdERtamH-IfmpgFq1fNL4GP_KX_yJvbRi4/edit"
 
-## Grafana Mimir shuffle sharding with ingest storage
+## Grafana Mimir shuffle sharding
 
-When using ingest storage, Grafana Mimir supports shuffle sharding in the following components:
+Grafana Mimir supports shuffle sharding in the following components:
 
 - [Partitions (write and read path)](#partitions-shuffle-sharding)
+- [Ingesters](#ingesters-shuffle-sharding-in-classic-architecture)
 - [Query-frontend / Query-scheduler](#query-frontend-and-query-scheduler-shuffle-sharding)
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
@@ -72,79 +73,126 @@ When using ingest storage, Grafana Mimir supports shuffle sharding in the follow
 When you run Grafana Mimir with the default configuration, shuffle sharding is disabled and you need to explicitly enable it by increasing the shard size either globally or for a given tenant.
 
 {{< admonition type="note" >}}
-If the shard size value is equal to or higher than the number of available partitions, for example where `-ingest-storage.ingestion-partition-tenant-shard-size` is higher than the number of active partitions, then shuffle sharding is disabled and all partitions are used again.
+If the shard size value is equal to or higher than the number of available instances or partitions, for example where `-ingest-storage.ingestion-partition-tenant-shard-size` is higher than the number of active partitions, then shuffle sharding is disabled and all partitions are used.
 {{< /admonition >}}
 
 ### Guaranteed properties
 
-The Grafana Mimir shuffle sharding implementation for partitions provides the following benefits:
+The Grafana Mimir shuffle sharding implementation provides the following benefits:
 
 - **Stability**<br />
-  Given a consistent state of the partition ring, the shuffle sharding algorithm always selects the same partitions for a given tenant, even across different machines.
+  Given a consistent state of the hash ring, the shuffle sharding algorithm always selects the same instances for a given tenant, even across different machines.
 - **Consistency**<br />
-  Adding or removing a partition from the ring leads to, at most, only one partition changed in each tenant's shard.
+  Adding or removing an instance from the hash ring leads to, at most, only one instance changed in each tenant's shard.
 - **Shuffling**<br />
-  Probabilistically and for a large enough cluster, shuffle sharding ensures that every tenant receives a different set of partitions with a reduced number of overlapping partitions between two tenants, which improves failure isolation.
+  Probabilistically and for a large enough cluster, shuffle sharding ensures that every tenant receives a different set of instances with a reduced number of overlapping instances between two tenants, which improves failure isolation.
+- **Zone-awareness**<br />
+  When you enable [zone-aware replication](../configure-zone-aware-replication/), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Partitions shuffle sharding
 
-By default, when using ingest storage, the Grafana Mimir distributor divides the received series among all active partitions.
+Without shuffle sharding when using ingest storage, the Grafana Mimir distributor divides the received series among all active partitions. With shuffle-sharding the distributor divides each tenant's series among multiple partitions.
 
-When you enable partition shuffle sharding, the distributor on the write path divides each tenant's series among `-ingest-storage.ingestion-partition-tenant-shard-size` number of partitions, while on the read path, the querier queries only the ingesters owning partitions that are part of the tenant's shard.
+Configuring shuffle sharding on the write path automatically also enables shuffle sharding on the read path too.
 
-The shard size can be overridden on a per-tenant basis by setting `ingestion_partitions_tenant_shard_size` in the overrides section of the runtime configuration.
+You can configure the default shard size for all tenants by setting - `-ingest-storage.ingestion-partition-tenant-shard-size=<size>` or its YAML equavalent. The shard size can be overridden on a per-tenant basis by setting `ingestion_partitions_tenant_shard_size` in the `overrides` section of the runtime configuration.
 
-#### Partitions write path
+#### Partitions shuffle sharding on the write path
 
-To enable shuffle sharding for partitions on the write path, configure the following flag (or its respective YAML configuration option) on the distributor:
+With partition shuffle sharding, the distributor divides each tenant's series among `-ingest-storage.ingestion-partition-tenant-shard-size` number of partitions.
 
-- `-ingest-storage.ingestion-partition-tenant-shard-size=<size>`<br />
-  `<size>`: Set the size to the number of partitions each tenant's series should be sharded to. If `<size>` is `0` or is greater than the number of active partitions in the cluster, the tenant's series are sharded across all active partitions.
-
-#### Partitions read path
+#### Partitions shuffle sharding read path
 
 When shuffle sharding is enabled for the write path, the read path automatically uses the same configuration to query only the relevant partition owners (ingesters). The querier uses the ShuffleShardWithLookback algorithm to:
 
 - Include all partitions in the tenant's current shard
 - Include partitions that were recently part of the tenant's shard (within the lookback period)
 - Include INACTIVE partitions that are transitioning to a read-only state
-- Exclude PENDING partitions that are not yet active
+- Exclude PENDING partitions that have not yet received any traffic.
 
-This ensures query consistency during partition lifecycle transitions such as scaling events.
-
-#### Partition states and their impact
-
-Partitions in the ring can have different states that affect shuffle sharding:
-
-- **PENDING**: New partitions being added but not yet active. These are excluded from shuffle sharding.
-- **ACTIVE**: Fully operational partitions that receive writes and serve reads.
-- **INACTIVE**: Read-only partitions being scaled down. These remain in the shard for querying during the lookback period.
+This ensures query consistency during partition lifecycle transitions such as adding or removing ingesters. For more information about the hash ring and the state of partitions see [Hash ring](../../references/architecture/hash-ring/)
 
 #### Rollout strategy
 
-If you're running a Grafana Mimir cluster with ingest storage and shuffle sharding disabled, you can enable it immediately:
+If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying for any series currently in the ingesters:
 
-1. Enable shuffle sharding by setting `-ingest-storage.ingestion-partition-tenant-shard-size` to the desired value globally, or configure `ingestion_partitions_tenant_shard_size` in the runtime configuration for specific tenants.
-2. The change takes effect immediately for new writes.
-3. Queries automatically use ShuffleShardWithLookback to ensure data consistency.
+1. Explicitly disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`, since this is enabled by default.
+1. Enable shuffle sharding on the distributor write path.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
-#### Scaling considerations
+#### Limitation: Decreasing the tenant shard size
+
+The shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when shuffle sharding is enabled for distributors on the read path. This is because when shuffle sharding is disabled, the queriers check all ingesters for blocks, whereas when it's enabled, they only check the ones that are assigned to that tenant through the shuffle-shard.
+
+To safely decrease the tenant shard size, follow these steps.
+
+1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
+1. Decrease the configured tenant shard size.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+
+Decreasing the tenant shard size without following this procedure could lead to inaccurate or incomplete query results. The queriers and rulers can’t determine the previous shard size and could miss an ingester with data for a given tenant. When you change a tenant’s shard size, the tenant’s series are assigned to a new set of partitions with only new samples distributed to it. Samples written before the shard size change remain in the previously-assigned partition set and the ingesters consuming those partitions. Because the queriers can't determine the previous set of ingesters through the sharding ring, they must check all ingesters for the series until the value set in `blocks-storage.tsdb.retention-period` has passed. At this point, you can query the series from object storage through the store-gateway.
 
 {{< admonition type="note" >}}
-References to partitions being added or removed correspond to ingesters being scaled out or scaled in. The partition ring manages the logical partitions that map to ingesters, not the underlying Kafka partitions. When scaling out ingesters, ensure the Kafka cluster has the corresponding partition created and ready to receive traffic before starting the new ingester.
+The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding for ingesters effectively decreases the tenant shard size.
 {{< /admonition >}}
 
-**Scaling up partitions:**
-- New partitions start in PENDING state and are excluded from shuffle sharding
-- Once partitions transition to ACTIVE state, they become eligible for shuffle sharding
-- The ShuffleShardWithLookback algorithm ensures queries include both old and new partitions during the transition
+### Ingesters shuffle sharding in classic architecture
 
-**Scaling down partitions:**
-- Partitions transition to INACTIVE state and stop receiving new writes
-- INACTIVE partitions remain queryable during the lookback period
-- After the configured time expires (`-ingester.partition-ring.delete-inactive-partition-after`, default 13 hours), each ingester removes itself and its partition from the ring automatically
-- Note: This only removes the logical partition from the ring; the underlying Kafka partitions remain unchanged
+By default, the Grafana Mimir distributor divides the received series among all running ingesters.
 
+When you enable ingester shuffle sharding, the distributor and ruler on the write path divide each tenant series among `-distributor.ingestion-tenant-shard-size` number of ingesters, while on the read path, the querier and ruler queries only the subset of ingesters that hold the series for a given tenant.
+
+The shard size can be overridden on a per-tenant basis by setting `ingestion_tenant_shard_size` in the overrides section of the runtime configuration.
+
+#### Ingesters write path
+
+To enable shuffle sharding for ingesters on the write path, configure the following flags (or their respective YAML configuration options) on the distributor, ingester, and ruler:
+
+- `-distributor.ingestion-tenant-shard-size=<size>`<br />
+  `<size>`: Set the size to the number of ingesters each tenant series should be sharded to. If `<size>` is `0` or is greater than the number of available ingesters in the Grafana Mimir cluster, the tenant series are sharded across all ingesters.
+
+#### Ingesters read path
+
+Assuming that you have enabled shuffle sharding for the write path, to enable shuffle sharding for ingesters on the read path, configure the following flags (or their respective YAML configuration options) on the querier and ruler:
+
+- `-distributor.ingestion-tenant-shard-size=<size>`
+
+The following flag is set appropriately by default to enable shuffle sharding for ingesters on the read path. If you need to modify its defaults:
+
+- `-querier.shuffle-sharding-ingesters-enabled=true`<br />
+  Shuffle sharding for ingesters on the read path can be explicitly enabled or disabled.
+    - If shuffle sharding is enabled, queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since now - `-blocks-storage.tsdb.retention-period`. Otherwise, the request is sent to all ingesters.
+
+If you enable ingesters shuffle sharding only for the write path, queriers and rulers on the read path always query all ingesters instead of querying the subset of ingesters that belong to the tenant's shard.
+Keeping ingesters shuffle sharding enabled only on the write path does not lead to incorrect query results, but might increase query latency.
+
+#### Rollout strategy
+
+If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying for any series currently in the ingesters:
+
+1. Explicitly disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`, since this is enabled by default.
+1. Enable shuffle sharding on the ingester write path.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+
+#### Limitation: Decreasing the tenant shard size
+
+The shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when shuffle sharding is enabled for ingesters on the read path. This is because when shuffle sharding is disabled, the queriers check all ingesters for blocks, whereas when it's enabled, they only check the ones that are assigned to that tenant through the shuffle-shard.
+
+To safely decrease the tenant shard size, follow these steps.
+
+1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
+1. Decrease the configured tenant shard size.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+
+Decreasing the tenant shard size without following this procedure could lead to inaccurate or incomplete query results. The queriers and rulers can’t determine the previous shard size and could miss an ingester with data for a given tenant. When you change a tenant’s shard size, the tenant’s series are assigned to a new set of ingesters with only new samples distributed to it. Samples written before the shard size change remain in the previously-assigned ingester set. Because the queriers can't determine the previous set of ingesters through the sharding ring, they must check all ingesters for the series until the value set in `blocks-storage.tsdb.retention-period` has passed. At this point, you can query the series from object storage through the store-gateway.
+
+{{< admonition type="note" >}}
+The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding for ingesters effectively decreases the tenant shard size.
+{{< /admonition >}}
 
 ### Query-frontend and query-scheduler shuffle sharding
 
