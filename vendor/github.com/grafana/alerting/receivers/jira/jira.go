@@ -30,12 +30,7 @@ const (
 )
 
 // Notifier implements a Notifier for JIRA notifications. Can use V2 and V3 API to create issues, depending on Config.URL
-// https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-post.
-//
-// It supports updating existing issues if they can be found by some criteria.
-// To search for issues it uses the following API endpoint:
-//
-//	https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-post
+// https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-post
 type Notifier struct {
 	*receivers.Base
 	tmpl    *templates.Template
@@ -212,7 +207,7 @@ func (n *Notifier) searchExistingIssue(ctx context.Context, logger log.Logger, g
 
 	level.Debug(logger).Log("msg", "search for recent issues", "jql", requestBody.JQL)
 
-	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, "search/jql", requestBody, logger)
+	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, "search", requestBody, logger)
 	if err != nil {
 		return nil, shouldRetry, fmt.Errorf("HTTP request to JIRA API: %w", err)
 	}
@@ -223,12 +218,12 @@ func (n *Notifier) searchExistingIssue(ctx context.Context, logger log.Logger, g
 		return nil, false, err
 	}
 
-	if len(issueSearchResult.Issues) == 0 {
+	if issueSearchResult.Total == 0 {
 		level.Debug(logger).Log("msg", "found no existing issue")
 		return nil, false, nil
 	}
 
-	if len(issueSearchResult.Issues) > 1 {
+	if issueSearchResult.Total > 1 {
 		level.Warn(logger).Log("msg", "more than one issue matched, selecting the most recently resolved", "selected_issue", issueSearchResult.Issues[0].Key)
 	}
 
@@ -267,6 +262,7 @@ func getSearchJql(conf Config, groupID string, firing bool) issueSearch {
 		JQL:        jql.String(),
 		MaxResults: 2,
 		Fields:     []string{"status"},
+		Expand:     []string{},
 	}
 }
 
