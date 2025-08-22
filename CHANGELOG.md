@@ -25,6 +25,7 @@
 * [ENHANCEMENT] Ingester: Improve the performance of active series custom trackers matchers. #12184
 * [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. Sharing and head cache invalidation can be enabled via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and the number of metric versions per cache can be configured via -`blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
 * [ENHANCEMENT] Overrides-exporter: The overrides-exporter can now export arbitrary fields from the limits configuration. Metric names are automatically discovered from YAML tags in the limits structure, eliminating the need to maintain hardcoded lists when adding new exportable metrics. #12244
+* [ENHANCEMENT] Ruler: Add `-ruler.max-notification-batch-size` CLI flag that can be used to configure the maximum Alertmanager notification batch size. #12469
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
 * [BUGFIX] Store-gateway: Fix potential goroutine leak by passing the scoped context in LabelValues. #12048
 * [BUGFIX] Distributor: Fix pooled memory reuse bug that can cause corrupt data to appear in the err-mimir-label-value-too-long error message. #12048
