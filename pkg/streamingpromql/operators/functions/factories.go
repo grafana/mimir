@@ -246,7 +246,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, me
 
 	return NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 }
-	
+
 func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.

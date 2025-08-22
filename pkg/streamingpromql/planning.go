@@ -487,7 +487,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_DAY_OF_YEAR, functions.FUNCTION_DAYS_IN_MONTH,
 		functions.FUNCTION_HOUR, functions.FUNCTION_MINUTE, functions.FUNCTION_MONTH,
 		functions.FUNCTION_YEAR,
-		// Range vector functions that drop __name__
+		// Range vector functions
 		functions.FUNCTION_AVG_OVER_TIME, functions.FUNCTION_CHANGES,
 		functions.FUNCTION_COUNT_OVER_TIME, functions.FUNCTION_DELTA,
 		functions.FUNCTION_DERIV, functions.FUNCTION_IDELTA, functions.FUNCTION_INCREASE,
