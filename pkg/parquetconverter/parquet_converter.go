@@ -290,13 +290,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		defer func() {
-			if r := recover(); r != nil {
-				level.Error(c.logger).Log("msg", "parquet-converter discovery goroutine panicked", "panic", r)
-				panic(r) // Re-panic to force service restart
-			}
-		}()
-
 		discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
 		defer discoveryTicker.Stop()
 
@@ -305,26 +298,12 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			case <-gCtx.Done():
 				return nil
 			case <-discoveryTicker.C:
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							level.Error(c.logger).Log("msg", "parquet-converter discoverAndEnqueueBlocks panicked", "panic", r)
-						}
-					}()
-					c.discoverAndEnqueueBlocks(gCtx)
-				}()
+				c.discoverAndEnqueueBlocks(gCtx)
 			}
 		}
 	})
 
 	g.Go(func() error {
-		defer func() {
-			if r := recover(); r != nil {
-				level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
-				panic(r) // Re-panic to force service restart
-			}
-		}()
-
 		for {
 			select {
 			case <-gCtx.Done():
@@ -340,22 +319,14 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					}
 				}
 
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", task.Meta.ULID.String())
-						}
-					}()
+				c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+				c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
 
-					c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
-					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
+				waitTime := time.Since(task.EnqueuedAt)
+				c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
 
-					waitTime := time.Since(task.EnqueuedAt)
-					c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
-
-					ulogger := util_log.WithUserID(task.UserID, c.logger)
-					c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
-				}()
+				ulogger := util_log.WithUserID(task.UserID, c.logger)
+				c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
 			}
 		}
 	})
