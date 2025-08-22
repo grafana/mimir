@@ -130,6 +130,10 @@ If you're running a Grafana Mimir cluster with ingest storage and shuffle shardi
 
 #### Scaling considerations
 
+{{< admonition type="note" >}}
+References to partitions being added or removed correspond to ingesters being scaled out or scaled in. The partition ring manages the logical partitions that map to ingesters, not the underlying Kafka partitions. When scaling out ingesters, ensure the Kafka cluster has the corresponding partition created and ready to receive traffic before starting the new ingester.
+{{< /admonition >}}
+
 **Scaling up partitions:**
 - New partitions start in PENDING state and are excluded from shuffle sharding
 - Once partitions transition to ACTIVE state, they become eligible for shuffle sharding
