@@ -7,6 +7,7 @@ set -eu -o pipefail
 
 conflict_files=$(find . \
   -path "./vendor" -prune \
+  -o -path "./.pkg" -prune \
   -o -type f \
     \( \
       -name "*.go" \
