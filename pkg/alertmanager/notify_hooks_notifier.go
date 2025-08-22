@@ -29,6 +29,7 @@ import (
 
 var (
 	ErrNoContent = errors.New("no content")
+	ExtraDataKey = "extraData"
 )
 
 type notifyHooksLimits interface {
@@ -170,6 +171,12 @@ type hookData struct {
 	Status      string         `json:"status"`
 	Alerts      []*types.Alert `json:"alerts"`
 	GroupLabels model.LabelSet `json:"groupLabels"`
+
+	ExtraData json.RawMessage `json:"extraData,omitempty"`
+}
+
+func withExtraData(ctx context.Context, extraData json.RawMessage) context.Context {
+	return context.WithValue(ctx, ExtraDataKey, extraData)
 }
 
 func (n *notifyHooksNotifier) getData(ctx context.Context, l log.Logger, alerts []*types.Alert) *hookData {
@@ -239,6 +246,9 @@ func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url stri
 	if err != nil {
 		return nil, 0, err
 	}
+
+	// Add additional data from pre-notify hook to the context
+	ctx = withExtraData(ctx, result.ExtraData)
 
 	return result.Alerts, 0, nil
 }
