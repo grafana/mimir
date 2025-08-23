@@ -24,12 +24,12 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats Statistics
+	stats index.Statistics
 
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,

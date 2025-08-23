@@ -5,6 +5,7 @@ package lookupplan
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,7 +27,7 @@ type plan struct {
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, matchers []*labels.Matcher, stats Statistics) (plan, error) {
+func newScanOnlyPlan(ctx context.Context, matchers []*labels.Matcher, stats index.Statistics) (plan, error) {
 	p := plan{
 		predicates:     make([]planPredicate, 0, len(matchers)),
 		indexPredicate: make([]bool, 0, len(matchers)),

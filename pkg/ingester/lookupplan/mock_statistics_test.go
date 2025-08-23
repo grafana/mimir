@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// mockStatistics implements the Statistics interface with hardcoded data for testing
+// mockStatistics implements the index.Statistics interface with hardcoded data for testing
 type mockStatistics struct {
 	// seriesPerValue maps label name -> label value -> number of series
 	seriesPerValue map[string]map[string]uint64
@@ -282,7 +282,7 @@ func generateRandomString(seed, length int) string {
 	return string(result)
 }
 
-// errorMockStatistics implements Statistics interface but always returns errors
+// errorMockStatistics implements index.Statistics interface but always returns errors
 type errorMockStatistics struct{}
 
 func newErrorMockStatistics() *errorMockStatistics {
