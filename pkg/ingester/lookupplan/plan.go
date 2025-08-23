@@ -5,10 +5,10 @@ package lookupplan
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const (
