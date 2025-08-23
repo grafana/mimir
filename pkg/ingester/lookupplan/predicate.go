@@ -5,9 +5,9 @@ package lookupplan
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const costPerPostingListRetrieval = 10.0
@@ -97,8 +97,7 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
 			matchesAnyValues = seriesBehindSelectedValues > 0
 		} else {
-			var labelNameCardinality uint64
-			labelNameCardinality = stats.LabelValuesCardinality(ctx, m.Name)
+			labelNameCardinality := stats.LabelValuesCardinality(ctx, m.Name)
 			matchesAnyValues = labelNameCardinality > 0
 			if m.Matches("") {
 				// The matcher selects all series, which don't have this label.
