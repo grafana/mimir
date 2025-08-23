@@ -29,7 +29,6 @@ import (
 
 var (
 	ErrNoContent = errors.New("no content")
-	ExtraDataKey = "extraData"
 )
 
 type notifyHooksLimits interface {
@@ -183,6 +182,12 @@ type hookData struct {
 
 	ExtraData json.RawMessage `json:"extraData,omitempty"`
 }
+
+type extraDataKey int
+
+const (
+	ExtraDataKey extraDataKey = iota
+)
 
 func withExtraData(ctx context.Context, extraData json.RawMessage) context.Context {
 	return context.WithValue(ctx, ExtraDataKey, extraData)
