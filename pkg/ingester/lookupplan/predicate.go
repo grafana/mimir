@@ -5,6 +5,7 @@ package lookupplan
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -26,13 +27,13 @@ type planPredicate struct {
 	indexScanCost float64
 }
 
-func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats Statistics) (planPredicate, error) {
+func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) (planPredicate, error) {
 	var err error
 	pred := planPredicate{
 		matcher:         m,
 		singleMatchCost: m.SingleMatchCost(),
 	}
-	pred.labelNameUniqueVals, err = stats.LabelValuesCount(ctx, m.Name)
+	pred.labelNameUniqueVals = stats.LabelValuesCount(ctx, m.Name)
 	if err != nil {
 		return planPredicate{}, fmt.Errorf("error getting label values count for label %s: %w", m.Name, err)
 	}
@@ -74,7 +75,7 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
 }
 
-func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) (uint64, error) {
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) (uint64, error) {
 	var (
 		seriesBehindSelectedValues uint64
 		matchesAnyValues           bool
@@ -84,20 +85,20 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 	switch m.Type {
 	case labels.MatchEqual, labels.MatchNotEqual:
 		if m.Value == "" {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name)
+			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name)
 			// The matcher selects all series, which don't have this label.
 			seriesBehindSelectedValues = stats.TotalSeries() - seriesBehindSelectedValues
 		} else {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
+			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
 		}
 		matchesAnyValues = seriesBehindSelectedValues > 0
 	case labels.MatchRegexp, labels.MatchNotRegexp:
 		if setMatches := m.SetMatches(); len(setMatches) > 0 {
-			seriesBehindSelectedValues, err = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
+			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
 			matchesAnyValues = seriesBehindSelectedValues > 0
 		} else {
 			var labelNameCardinality uint64
-			labelNameCardinality, err = stats.LabelValuesCardinality(ctx, m.Name)
+			labelNameCardinality = stats.LabelValuesCardinality(ctx, m.Name)
 			matchesAnyValues = labelNameCardinality > 0
 			if m.Matches("") {
 				// The matcher selects all series, which don't have this label.
