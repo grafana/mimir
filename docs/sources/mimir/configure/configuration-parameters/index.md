@@ -5960,6 +5960,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
+  # (experimental) How frequently to collect head statistics, which are used in
+  # query execution optimization. 0 to disable.
+  # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
+  [head_statistics_collection_frequency: <duration> | default = 0s]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
