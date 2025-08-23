@@ -32,7 +32,7 @@ Classic architecture is still supported in Grafana Mimir version 3.0. However, t
 
 Compared with classic architecture, ingest storage architecture fundamentally changes how Grafana Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
 
-Ingest storage architecture mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses object storage as a central data transfer pipeline between the write and read paths.
+Ingest storage architecture mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses Kafka as a central data transfer pipeline between the write and read paths.
 
 Here's an overview of how ingest storage architecture works (WIP):
 
