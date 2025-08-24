@@ -21,28 +21,30 @@ To get started, you can run Grafana Mimir in [monolithic mode](../../references/
 
 ## About ingest storage architecture
 
+Ingest storage architecture uses Kafka as a central pipeline to decouple read and write operations, making Grafana Mimir more reliable and scalable.
+
 Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir.
 
-Ingest storage architecture is designed to enhance reliability, support growth, and enable use cases at an even larger scale. It enables you to run more robust and cost-effective Mimir deployments.
+Ingest storage architecture enhances reliability, supports growth, and enables larger-scale use cases. It helps you run more robust and cost-effective Mimir deployments.
 
 {{< admonition type="note" >}}
-Classic architecture is still supported in Grafana Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new deployment of Grafana Mimir.{{< /admonition >}}
+Classic architecture is still supported in Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new Mimir deployment.{{< /admonition >}}
 
 ### How ingest storage architecture works
 
-Compared with classic architecture, ingest storage architecture fundamentally changes how Grafana Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
+Compared with classic architecture, ingest storage architecture fundamentally changes how Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
 
-Ingest storage architecture mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses Kafka as a central data transfer pipeline between the write and read paths.
+Ingest storage architecture mitigates this issue by decoupling the read and write paths and reducing the statefulness of ingesters. It uses Kafka as a central data transfer pipeline between the write and read paths.
 
 Here's an overview of how ingest storage architecture works:
 
-- Distributors serve as the entry point for write requests. They validate requests, apply transformations, and forward samples to the storage layer.
-- Distributors connect to a single Kafka topic and shard each write request to multiple partitions within that topic. They briefly buffer sharded write requests to the same partition before sending them to the Kafka broker.
-- The Kafka broker that leads each partition durably persists the write requests and optionally replicates them to other brokers before acknowledging the write.
-- After Kafka confirms persistence, distributors acknowledge the write requests back to the client.
-- Ingesters continuously consume write requests from Kafka partitions. Each ingester consumes from a single partition, requiring at least as many partitions as ingesters.
-- Multiple ingesters across different zones can consume from the same partition to provide high availability on the read path.
-- After fetching write requests from Kafka partitions, each ingester adds them to in-memory state and persists them to disk, making the samples available for query results.
+- Distributors receive write requests and validate them, apply transformations, and forward samples to the storage layer.
+- Distributors connect to a Kafka topic and shard each write request across multiple partitions, briefly buffering requests before sending them to the Kafka broker.
+- Kafka brokers persist the write requests durably and optionally replicate them to other brokers before acknowledging the write.
+- Distributors acknowledge the write requests back to the client after Kafka confirms persistence.
+- Ingesters consume write requests from Kafka partitions continuously, with each ingester consuming from a single partition.
+- Multiple ingesters across different zones consume from the same partition to provide high availability on the read path.
+- Ingesters add the fetched write requests to in-memory state and persist them to disk, making the samples available for queries.
 
 Diagram! (WIP)
 
