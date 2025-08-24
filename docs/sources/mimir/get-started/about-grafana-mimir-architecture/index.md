@@ -34,9 +34,15 @@ Compared with classic architecture, ingest storage architecture fundamentally ch
 
 Ingest storage architecture mitigates this issue through decoupling the read and write paths and significantly reducing the statefulness of ingesters. It instead uses Kafka as a central data transfer pipeline between the write and read paths.
 
-Here's an overview of how ingest storage architecture works (WIP):
+Here's an overview of how ingest storage architecture works:
 
-- .
+- Distributors serve as the entry point for write requests. They validate requests, apply transformations, and forward samples to the storage layer.
+- Distributors connect to a single Kafka topic and shard each write request to multiple partitions within that topic. They briefly buffer sharded write requests to the same partition before sending them to the Kafka broker.
+- The Kafka broker that leads each partition durably persists the write requests and optionally replicates them to other brokers before acknowledging the write.
+- After Kafka confirms persistence, distributors acknowledge the write requests back to the client.
+- Ingesters continuously consume write requests from Kafka partitions. Each ingester consumes from a single partition, requiring at least as many partitions as ingesters.
+- Multiple ingesters across different zones can consume from the same partition to provide high availability on the read path.
+- After fetching write requests from Kafka partitions, each ingester adds them to in-memory state and persists them to disk, making the samples available for query results.
 
 Diagram! (WIP)
 
