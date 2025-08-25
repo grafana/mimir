@@ -14,6 +14,7 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -77,10 +78,13 @@ const (
 	UTF8Validation
 )
 
-var (
-	_ yaml.Marshaler = UnsetValidation
-	_ fmt.Stringer   = UnsetValidation
-)
+var _ interface {
+	yaml.Marshaler
+	yaml.Unmarshaler
+	json.Marshaler
+	json.Unmarshaler
+	fmt.Stringer
+} = new(ValidationScheme)
 
 // String returns the string representation of s.
 func (s ValidationScheme) String() string {
@@ -114,15 +118,41 @@ func (s *ValidationScheme) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal(&scheme); err != nil {
 		return err
 	}
-	switch scheme {
+	return s.Set(scheme)
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (s ValidationScheme) MarshalJSON() ([]byte, error) {
+	switch s {
+	case UnsetValidation:
+		return json.Marshal("")
+	case UTF8Validation, LegacyValidation:
+		return json.Marshal(s.String())
+	default:
+		return nil, fmt.Errorf("unhandled ValidationScheme: %d", s)
+	}
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (s *ValidationScheme) UnmarshalJSON(bytes []byte) error {
+	var repr string
+	if err := json.Unmarshal(bytes, &repr); err != nil {
+		return err
+	}
+	return s.Set(repr)
+}
+
+// Set implements the pflag.Value interface.
+func (s *ValidationScheme) Set(text string) error {
+	switch text {
 	case "":
 		// Don't change the value.
-	case "legacy":
+	case LegacyValidation.String():
 		*s = LegacyValidation
-	case "utf8":
+	case UTF8Validation.String():
 		*s = UTF8Validation
 	default:
-		return fmt.Errorf("unrecognized ValidationScheme: %q", scheme)
+		return fmt.Errorf("unrecognized ValidationScheme: %q", text)
 	}
 	return nil
 }
@@ -172,6 +202,11 @@ func (s ValidationScheme) IsValidLabelName(labelName string) bool {
 	default:
 		panic(fmt.Sprintf("Invalid name validation scheme requested: %s", s))
 	}
+}
+
+// Type implements the pflag.Value interface.
+func (s ValidationScheme) Type() string {
+	return "validationScheme"
 }
 
 type EscapingScheme int
