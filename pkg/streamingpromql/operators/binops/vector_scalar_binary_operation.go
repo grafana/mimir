@@ -253,11 +253,19 @@ func (v *VectorScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 }
 
 func (v *VectorScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := v.Scalar.Prepare(ctx, params)
-	if err != nil {
+	if err := v.Scalar.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return v.Vector.Prepare(ctx, params)
+}
+
+func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
+	if err := v.Scalar.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return v.Vector.Finalize(ctx)
 }
 
 func (v *VectorScalarBinaryOperation) Close() {

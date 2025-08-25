@@ -40,6 +40,7 @@ func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limi
 		ReturnSampleTimestamps:   returnSampleTimestamps,
 	}
 }
+
 func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.Selector.ExpressionPosition
 }
@@ -189,6 +190,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	v.Stats = params.QueryStats
 	return v.Selector.Prepare(ctx, params)
+}
+
+func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
+	// Nothing to do.
+	return nil
 }
 
 func (v *InstantVectorSelector) Close() {

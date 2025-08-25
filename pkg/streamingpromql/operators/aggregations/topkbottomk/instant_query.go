@@ -301,6 +301,14 @@ func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams)
 	return t.Param.Prepare(ctx, params)
 }
 
+func (t *InstantQuery) Finalize(ctx context.Context) error {
+	if err := t.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return t.Param.Finalize(ctx)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()

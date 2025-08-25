@@ -147,6 +147,10 @@ func (d *DeduplicateAndMerge) Prepare(ctx context.Context, params *types.Prepare
 	return d.Inner.Prepare(ctx, params)
 }
 
+func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
+	return d.Inner.Finalize(ctx)
+}
+
 func (d *DeduplicateAndMerge) Close() {
 	d.Inner.Close()
 

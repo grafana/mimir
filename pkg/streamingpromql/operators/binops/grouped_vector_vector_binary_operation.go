@@ -203,6 +203,10 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
+		if err := g.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		g.Close()
 		return nil, nil
 	}
@@ -216,6 +220,11 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
+
+		if err := g.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		g.Close()
 		return nil, nil
 	}
@@ -759,11 +768,19 @@ func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.Posit
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := g.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := g.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return g.Right.Prepare(ctx, params)
+}
+
+func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	if err := g.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return g.Right.Finalize(ctx)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

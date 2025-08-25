@@ -16,6 +16,7 @@ import (
 type TestOperator struct {
 	Series                   []labels.Labels
 	Data                     []types.InstantVectorSeriesData
+	Finalized                bool
 	Closed                   bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -68,6 +69,11 @@ func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.Memor
 
 func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
+	return nil
+}
+
+func (t *TestOperator) Finalize(_ context.Context) error {
+	t.Finalized = true
 	return nil
 }
 

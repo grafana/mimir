@@ -252,6 +252,10 @@ func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return c.Inner.Prepare(ctx, params)
 }
 
+func (c *CountValues) Finalize(ctx context.Context) error {
+	return c.Inner.Finalize(ctx)
+}
+
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()
