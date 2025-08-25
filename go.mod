@@ -18,7 +18,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
 	github.com/grafana/dskit v0.0.0-20250818234656-8ff9c6532e85
-	github.com/grafana/e2e v0.1.2-0.20250723092121-32adc8201cbe
+	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
 	github.com/json-iterator/go v1.1.12
@@ -30,9 +30,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.28.1
-	github.com/prometheus/client_golang v1.23.0
+	github.com/prometheus/client_golang v1.23.1-0.20250825092754-3692d7faba80
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.65.1-0.20250819181232-918f8992af49
+	github.com/prometheus/common v0.65.1-0.20250825082953-9deefbac4820
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
