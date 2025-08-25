@@ -481,7 +481,7 @@ func findFunction(name string) (functions.Function, bool) {
 // This is determined by whether the function drops the __name__ label or otherwise manipulates it.
 func functionNeedsDeduplication(fnc functions.Function) bool {
 	switch fnc {
-	// Functions that need deduplication (drop __name__ label)
+	// Functions that need deduplication (manipulate labels)
 	case
 		// Time transformation functions
 		functions.FUNCTION_DAY_OF_MONTH,
