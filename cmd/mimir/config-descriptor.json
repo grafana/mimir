@@ -7817,6 +7817,17 @@
         },
         {
           "kind": "field",
+          "name": "rewrite_histogram_queries",
+          "required": false,
+          "desc": "Set to true to enable rewriting histogram queries for a more efficient order of execution.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.rewrite-histogram-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "rewrite_propagate_matchers",
           "required": false,
           "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
