@@ -3,23 +3,19 @@
 
 set -eu -o pipefail
 
-# Check for git merge conflict markers in source files, excluding vendor directory.
+# Check for git merge conflict markers in source files, using git ls-files to respect .gitignore.
 
-conflict_files=$(find . \
-  -path "./vendor" -prune \
-  -o -type f \
-    \( \
-      -name "*.go" \
-      -o -name "*.yml" \
-      -o -name "*.yaml" \
-      -o -name "*.json" \
-      -o -name "*.md" \
-      -o -name "*.txt" \
-      -o -name "*.sh" \
-      -o -name "*.jsonnet" \
-      -o -name "*.libsonnet" \
-    \) \
-  -print \
+conflict_files=$(git ls-files --exclude-standard --cached -- \
+  '*.go' \
+  '*.yml' \
+  '*.yaml' \
+  '*.json' \
+  '*.md' \
+  '*.txt' \
+  '*.sh' \
+  '*.jsonnet' \
+  '*.libsonnet' \
+  | grep -v '^vendor/' \
   | xargs grep -l "^<<<<<<<\|^=======\|^>>>>>>>" 2>/dev/null || true \
 )
 
