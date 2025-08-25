@@ -70,17 +70,17 @@ spec:
               subPath: token
       containers:
         - name: create-secret
-          image: bitnami/kubectl:latest
+          image: alpine/kubectl:latest
           imagePullPolicy: IfNotPresent
           command:
-            - /bin/bash
+            - /bin/sh
             - -exuc
             - |
               # In case, the admin resources have already been created, the provisioner job
               # does not write the token files to the bootstrap mount.
               # Therefore, secrets are only created if the respective token files exist.
-              # Note: the following bash commands should always return a success status code. 
-              # Therefore, in case the token file does not exist, the first clause of the 
+              # Note: the following bash commands should always return a success status code.
+              # Therefore, in case the token file does not exist, the first clause of the
               # or-operation is successful.
               ! test -s /bootstrap/token-write-team-a || \
                 kubectl --namespace "{{ .Release.Namespace }}" create secret generic "test-enterprise-values-mimir-team-a" \
