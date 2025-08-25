@@ -235,13 +235,24 @@ The PodSecurityPolicy resource enforces this setting.
 ## Monitor the health of your Grafana Mimir cluster
 
 To monitor the health of your Grafana Mimir cluster, which is also known as
-_metamonitoring_, you can use ready-made Grafana dashboards, and Prometheus
+_meta-monitoring_, you can use ready-made Grafana dashboards, and Prometheus
 alerting and recording rules.
 For more information, see [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
+{{< admonition type="note" >}}
+The Grafana Mimir Helm chart contains built-in configurations for meta-monitoring that use the Grafana Agent, which is now **deprecated**. We no longer recommend using this approach. Instead we recommend an approach that is based on [Kubernetes Monitoring Helm chart](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring).
+{{< /admonition >}}
+
+[Kubernetes Monitoring](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring) comes with the [built-in Mimir integration](https://github.com/grafana/k8s-monitoring-helm/blob/main/charts/k8s-monitoring/charts/feature-integrations/docs/integrations/mimir.md), that can collect metrics, logs and traces from Grafana Mimir. It configures [Grafana Alloy](https://grafana.com/docs/alloy/latest/) to handle all scraping and log collection automatically.
+
+Refer to the [meta-monitoring example](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/examples/meta-monitoring) in the Kubernetes Monitoring Helm chart for guidance. Update the [`destinations`](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/destinations) section to specify where to send the metrics, logs, and traces collected from Grafana Mimir or GEM. Metrics must be sent to Prometheus or a Prometheus-compatible backend (e.g. another Mimir instance, Grafana Cloud Metrics, etc). You can configure multiple metrics, logs, and/or traces destinations to forward data to several backends simultaneously.
+
+For more meta-monitoring topics see [Monitor Grafana Mimir](https://grafana.com/docs/mimir/latest/operations/monitoring/).
+
+### Deprecated meta-monitoring approach
+
 The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
-logs from Mimir. It assigns the correct labels for you so that the dashboards
-and alerts simply work. The chart uses the Grafana Agent to ship metrics to
+logs from Mimir. The chart uses the Grafana Agent to ship metrics to
 a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
 Metrics) server.
 
@@ -279,8 +290,6 @@ Metrics) server.
            headers:
              X-Scope-OrgID: metamonitoring
    ```
-
-   For details about how to set up the credentials, see [Collecting metrics and logs from Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/).
 
 Your Grafana Mimir cluster can now ingest metrics in production.
 
