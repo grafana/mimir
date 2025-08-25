@@ -62,15 +62,16 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	nodeMaterializers := map[planning.NodeType]planning.NodeMaterializer{
-		planning.NODE_TYPE_VECTOR_SELECTOR:      planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-		planning.NODE_TYPE_MATRIX_SELECTOR:      planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
-		planning.NODE_TYPE_AGGREGATE_EXPRESSION: planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
-		planning.NODE_TYPE_BINARY_EXPRESSION:    planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
-		planning.NODE_TYPE_FUNCTION_CALL:        planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
-		planning.NODE_TYPE_NUMBER_LITERAL:       planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
-		planning.NODE_TYPE_STRING_LITERAL:       planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
-		planning.NODE_TYPE_UNARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
-		planning.NODE_TYPE_SUBQUERY:             planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_VECTOR_SELECTOR:       planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
+		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
+		planning.NODE_TYPE_AGGREGATE_EXPRESSION:  planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
+		planning.NODE_TYPE_BINARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
+		planning.NODE_TYPE_FUNCTION_CALL:         planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
+		planning.NODE_TYPE_NUMBER_LITERAL:        planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
+		planning.NODE_TYPE_STRING_LITERAL:        planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
+		planning.NODE_TYPE_UNARY_EXPRESSION:      planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
+		planning.NODE_TYPE_SUBQUERY:              planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 
 		planning.NODE_TYPE_DUPLICATE: planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 	}

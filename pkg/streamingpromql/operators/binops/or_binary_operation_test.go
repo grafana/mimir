@@ -243,7 +243,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 		},
 		// OrBinaryOperation does not handle the case where both sides contain series with identical labels, and
 		// instead relies on DeduplicateAndMerge to handle merging series with identical labels.
-		// Given NewOrBinaryOperation wraps the OrBinaryOperation in a DeduplicateAndMerge, we can still test this
+		// Given OrBinaryOperation is expected to be wrapped in a DeduplicateAndMerge, we can still test this
 		// here.
 		"same series on both sides, one series": {
 			leftSeries: []labels.Labels{
@@ -305,6 +305,8 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 				posrange.PositionRange{},
 			)
 
+			// Wrap OrBinaryOperation in a DeduplicateAndMerge as would happen at the planning level
+			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker)
 			actualSeriesMetadata, err := op.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
