@@ -34,10 +34,10 @@ type PusherCloser interface {
 	Close() []error
 }
 
-// pusherConsumer receives records from Kafka and pushes them to the storage.
-// Each time a batch of records is received from Kafka, we instantiate a new pusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
-type pusherConsumer struct {
-	metrics *pusherConsumerMetrics
+// PusherConsumer receives records from Kafka and pushes them to the storage.
+// Each time a batch of records is received from Kafka, we instantiate a new PusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
+type PusherConsumer struct {
+	metrics *PusherConsumerMetrics
 	logger  log.Logger
 
 	kafkaConfig KafkaConfig
@@ -45,12 +45,12 @@ type pusherConsumer struct {
 	pusher Pusher
 }
 
-// newPusherConsumer creates a new pusherConsumer instance.
-func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
+// NewPusherConsumer creates a new PusherConsumer instance.
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
-	return &pusherConsumer{
+	return &PusherConsumer{
 		pusher:      pusher,
 		kafkaConfig: kafkaCfg,
 		metrics:     metrics,
@@ -58,9 +58,9 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	}
 }
 
-// Consume implements the recordConsumer interface.
+// Consume implements the RecordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
-func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnErr error) {
+func (c PusherConsumer) Consume(ctx context.Context, records []Record) (returnErr error) {
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
@@ -80,7 +80,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	ctx, cancel := context.WithCancelCause(ctx)
 
 	// Now, unmarshal the records into the channel.
-	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
+	go func(unmarshalCtx context.Context, records []Record, ch chan<- parsedRecord) {
 		defer close(ch)
 
 		for index, r := range records {
@@ -157,7 +157,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	return nil
 }
 
-func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
+func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
 	if c.kafkaConfig.IngestionConcurrencyMax == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
@@ -176,8 +176,8 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 	)
 }
 
-func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
-	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "pusherConsumer.pushToStorage")
+func (c PusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "PusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
