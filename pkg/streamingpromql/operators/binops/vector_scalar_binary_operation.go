@@ -48,7 +48,7 @@ func NewVectorScalarBinaryOperation(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) (types.InstantVectorOperator, error) {
+) (*VectorScalarBinaryOperation, error) {
 	var f binaryOperationFunc
 
 	if returnBool {
