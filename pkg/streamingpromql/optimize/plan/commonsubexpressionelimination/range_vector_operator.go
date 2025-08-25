@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -308,10 +307,6 @@ func (d *RangeVectorDuplicationConsumer) NextSeries(ctx context.Context) error {
 
 func (d *RangeVectorDuplicationConsumer) NextStepSamples() (*types.RangeVectorStepData, error) {
 	return d.Buffer.NextStepSamples(d.consumerIndex)
-}
-
-func (d *RangeVectorDuplicationConsumer) Range() time.Duration {
-	return d.Buffer.Inner.Range()
 }
 
 func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionRange {

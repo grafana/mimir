@@ -5,7 +5,6 @@ package types
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
@@ -55,11 +54,6 @@ type InstantVectorOperator interface {
 // RangeVectorOperator represents all operators that produce range vectors.
 type RangeVectorOperator interface {
 	SeriesOperator
-
-	// Range returns the time range selected by this operator at each time step.
-	//
-	// For example, if this operator represents the selector "some_metric[5m]", Range returns 5 minutes.
-	Range() time.Duration
 
 	// NextSeries advances to the next series produced by this operator, or EOS if no more series are available.
 	// SeriesMetadata must be called exactly once before calling NextSeries.

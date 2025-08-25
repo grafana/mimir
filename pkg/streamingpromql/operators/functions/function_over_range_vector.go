@@ -32,8 +32,7 @@ type FunctionOverRangeVector struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	timeRange    types.QueryTimeRange
-	rangeSeconds float64
+	timeRange types.QueryTimeRange
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -92,8 +91,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		m.metricNames.CaptureMetricNames(metadata)
 	}
 
-	m.rangeSeconds = m.Inner.Range().Seconds()
-
 	if m.Func.SeriesMetadataFunction.Func != nil {
 		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
 	}
@@ -144,7 +141,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
