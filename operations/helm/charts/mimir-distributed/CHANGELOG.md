@@ -29,9 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [CHANGE] Grafana Agent: Deprecate `metaMonitoring.grafanaAgent` values. #12307
-  * Grafana Agent was deprecated in early 2024 and reaches End-of-Support at the end of 2025.
-  * Instead of provisioning the agent's Kubernetes resources with the chart's `metaMonitoring.grafanaAgent.enabled`, collect Mimir's meta-monitoring data with an external collector. It's recommended to use Grafana k8s-monitoring, which manages the creation and lifecycle of Alloy instances and has built-in support for collecting telemetry from Grafana LGTM stacks.
+* [ENHANCEMENT] Support `GOMEMLIMIT` configuration via `global.goMemLimitPercentage` or per-component `goMemLimitPercentage`, applied to distributor, ingester, querier, query-frontend, store-gateway, and compactor.  
+* [CHANGE] Store-gateway: When no `goMemLimitPercentage` is set, default `GOMEMLIMIT` to `resources.requests.memory` (legacy behavior preserved).
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964

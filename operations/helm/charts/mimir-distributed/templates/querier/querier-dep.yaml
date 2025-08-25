@@ -111,6 +111,34 @@ spec:
             {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
           {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
+          {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "querier") }}
+          {{- if or .Values.global.extraEnv .Values.querier.env $cpu_request $goml }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.querier.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
+            {{- if $goml }}
+            - name: "GOMEMLIMIT"
+              value: {{ $goml | toString | toYaml }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.querier.extraEnvFrom }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.querier.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- if $cpu_request }}
             {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
             {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
