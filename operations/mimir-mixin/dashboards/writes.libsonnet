@@ -580,7 +580,26 @@ local filename = 'mimir-writes.json';
       ),
     )
     .addRow(
-      $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
+      $.kvStoreRow('HA tracker', 'distributor', 'distributor-hatracker')
+      .addPanel(
+        local title = 'Elected replica changes';
+        $.timeseriesPanel('Elected replica changes') +
+        $.queryPanel(
+          'sum(rate(cortex_ha_tracker_elected_replica_changes_total{%s}[$__rate_interval]))'
+          % $.namespaceMatcher(),
+          'changes',
+        ) +
+        {
+          fieldConfig+: { defaults+: { unit: '/s' } },
+          options+: { legend+: { showLegend: false } },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The total number of times the elected replica has changed for all tenants combined.
+          |||
+        )
+      ),
     )
     .addRow(
       $.kvStoreRow('Distributor - key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
