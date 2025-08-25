@@ -106,9 +106,12 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+			Annotations:              params.Annotations,
 		}), nil
 
-	// TODO
+	// TODO: instant vectors
+	// TODO: range vectors
+
 	default:
 		return nil, fmt.Errorf("unsupported child result type for RemoteExecution: got %v", resultType)
 	}

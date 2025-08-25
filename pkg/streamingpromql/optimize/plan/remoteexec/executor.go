@@ -5,6 +5,8 @@ package remoteexec
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/util/annotations"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -21,18 +23,32 @@ type RemoteExecutor interface {
 }
 
 type ScalarRemoteExecutionResponse interface {
+	RemoteExecutionResponse
+
 	GetValues(ctx context.Context) (types.ScalarData, error)
-	Close()
 }
 
 type InstantVectorRemoteExecutionResponse interface {
+	RemoteExecutionResponse
 	// TODO: series metadata
 	// TODO: series data
-	Close()
 }
 
 type RangeVectorRemoteExecutionResponse interface {
+	RemoteExecutionResponse
 	// TODO: series metadata
 	// TODO: series data
+}
+
+type RemoteExecutionResponse interface {
+	// GetEvaluationInfo returns the annotations and total number of samples read as part of the remote evaluation.
+	//
+	// It can only be called once the response has been read, and can only be called before Close is called.
+	GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error)
+
+	// Close cleans up any resources associated with this request.
+	// If the request is still inflight, it is cancelled.
 	Close()
 }
+
+
