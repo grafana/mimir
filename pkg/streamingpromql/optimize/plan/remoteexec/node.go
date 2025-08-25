@@ -109,7 +109,16 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			Annotations:              params.Annotations,
 		}), nil
 
-	// TODO: instant vectors
+	case parser.ValueTypeVector:
+		return planning.NewSingleUseOperatorFactory(&InstantVectorRemoteExec{
+			RootPlan:                 params.Plan,
+			Node:                     r.Inner,
+			TimeRange:                timeRange,
+			RemoteExecutor:           m.executor,
+			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+			Annotations:              params.Annotations,
+		}), nil
+
 	// TODO: range vectors
 
 	default:

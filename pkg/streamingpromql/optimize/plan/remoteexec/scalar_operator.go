@@ -22,8 +22,11 @@ type ScalarRemoteExec struct {
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 
-	resp ScalarRemoteExecutionResponse
+	resp      ScalarRemoteExecutionResponse
+	finalized bool
 }
+
+var _ types.ScalarOperator = &ScalarRemoteExec{}
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	s.QueryStats = params.QueryStats
@@ -39,23 +42,21 @@ func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, err
 		return types.ScalarData{}, err
 	}
 
-	if err := s.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(v.Samples))*types.FPointSize, limiter.FPointSlices); err != nil {
+	if err := accountForFPointMemoryConsumption(v.Samples, s.MemoryConsumptionTracker); err != nil {
 		return types.ScalarData{}, err
-	}
-
-	annos, totalSamples, err := s.resp.GetEvaluationInfo(ctx)
-	if err != nil {
-		return types.ScalarData{}, err
-	}
-
-	s.Annotations.Merge(annos)
-
-	if s.QueryStats != nil {
-		// FIXME: once we support evaluating multiple nodes at once, only do this once per request, not once per requested node
-		s.QueryStats.TotalSamples += totalSamples
 	}
 
 	return v, nil
+}
+
+func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
+	if s.finalized {
+		return nil
+	}
+
+	s.finalized = true
+
+	return finalise(ctx, s.resp, s.Annotations, s.QueryStats)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
@@ -67,5 +68,3 @@ func (s *ScalarRemoteExec) Close() {
 		s.resp.Close()
 	}
 }
-
-var _ types.ScalarOperator = &ScalarRemoteExec{}
