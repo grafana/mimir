@@ -2049,3 +2049,13 @@ func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string,
 func timestampOf(ts int64) *time.Time {
 	return core.TimeFromTimestamp(&ts)
 }
+
+func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
+	for fnc, name := range functions.Function_name {
+		t.Run(name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				functionNeedsDeduplication(functions.Function(fnc))
+			}, "functionNeedsDeduplication should handle %s", name)
+		})
+	}
+}

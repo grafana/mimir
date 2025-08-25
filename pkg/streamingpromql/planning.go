@@ -573,7 +573,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		return false
 
 	default:
-		panic(fmt.Sprintf("functionNeedsDeduplication: unknown function %v", fnc))
+		panic(fmt.Sprintf("functionNeedsDeduplication: unexpected function %v", fnc))
 	}
 }
 
