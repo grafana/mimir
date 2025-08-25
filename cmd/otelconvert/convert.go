@@ -76,15 +76,15 @@ func (m *uncomposedMetric) toResourceMetrics() (*metricsv1.ResourceMetrics, erro
 		},
 	}
 
-	if m.gauges != nil && m.histograms != nil {
-		return nil, fmt.Errorf("both gauge and histogram metrics associated with metric %s", m.metricName)
-	} else if m.histograms != nil {
+	if m.histograms != nil {
 		rm.ScopeMetrics[0].Metrics[0].Data = &metricsv1.Metric_ExponentialHistogram{
 			ExponentialHistogram: &metricsv1.ExponentialHistogram{
 				DataPoints: m.histograms,
 			},
 		}
-	} else {
+	}
+
+	if m.gauges != nil {
 		rm.ScopeMetrics[0].Metrics[0].Data = &metricsv1.Metric_Gauge{
 			Gauge: &metricsv1.Gauge{
 				DataPoints: m.gauges,
@@ -218,7 +218,7 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 	postingsCount := 0
 	totalPostings := 0
 
-	parquetWriteManager := parquet.NewWriteManager(10_000_000, uint64(cfg.batchSize))
+	parquetWriteManager := parquet.NewWriteManager(1_000_000, uint64(cfg.batchSize))
 	for p.Next() {
 		if err = p.Err(); err != nil {
 			return fmt.Errorf("iterate postings: %w", err)
@@ -318,13 +318,13 @@ func convertBlock(ctx context.Context, cfg config, logger gokitlog.Logger) error
 			}
 		}
 
-		if len(gauges) > 0 && len(histos) > 0 {
-			return fmt.Errorf("both float and histogram values associated with metric: %s", builder.Labels().String())
-		} else if len(gauges) > 0 {
+		if len(gauges) > 0 {
 			for interval, g := range gauges {
 				mds.AppendGauges(builder, interval, g)
 			}
-		} else if len(histos) > 0 {
+		}
+
+		if len(histos) > 0 {
 			for interval, h := range histos {
 				mds.AppendHistograms(builder, interval, h)
 			}
@@ -368,27 +368,17 @@ func commaStringToMap(s string) map[string]struct{} {
 	return res
 }
 
-func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int) (int, error) {
-	//err := writeParquetBatch(mds.Chunks(), cfg, wm)
-	//if err != nil {
-	//	return batchCount, fmt.Errorf("write batch chunk: %w", err)
-	//}
-
+func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int, wm *parquet.WriteManager) (int, error) {
 	chks, err := mds.Chunks()
 	if err != nil {
 		return batchCount, fmt.Errorf("build chunks: %w", err)
 	}
 
 	for interval, md := range chks {
-		if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
+		if err := writeBatchChunk(md, cfg, interval, batchCount, wm); err != nil {
 			return batchCount, fmt.Errorf("write batch chunk: %w", err)
 		}
 	}
-	//for interval, md := range mds.Chunks() {
-	//	if err := writeBatchChunk(md, cfg, interval, batchCount); err != nil {
-	//		return batchCount, fmt.Errorf("write batch chunk: %w", err)
-	//	}
-	//}
 
 	if cfg.count {
 		log.Printf("batch %d: %d bytes written overall", batchCount, writtenBytesCount)
@@ -397,18 +387,7 @@ func writeBatchChunks(mds *chunkedMetricsData, cfg config, batchCount int) (int,
 	return batchCount + 1, nil
 }
 
-func writeParquetBatch(mds map[int64]*metricsv1.MetricsData, cfg config, wm *parquet.WriteManager) error {
-	for _, md := range mds {
-		err := wm.Write(md, cfg.dest)
-		if err != nil {
-			return fmt.Errorf("write parquet files: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64, batchCount int) error {
+func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64, batchCount int, wm *parquet.WriteManager) error {
 	sizeBeforeDedupe := proto.Size(md)
 	if cfg.dedupe {
 		deduplicate(md)
@@ -440,18 +419,13 @@ func writeBatchChunk(md *metricsv1.MetricsData, cfg config, chunkInterval int64,
 			return fmt.Errorf("marshal arrow message: %w", err)
 		}
 	case "parquet":
-		//batch, err := arrow.MarshalBatch(md)
-		//if err != nil {
-		//	return fmt.Errorf("marshal arrow batch: %w", err)
-		//}
-		//
-		//err = parquet.Write(batch, cfg.dest)
-		//if err != nil {
-		//	return fmt.Errorf("write parquet files: %w", err)
-		//}
+		err = wm.Write(md, cfg.dest)
+		if err != nil {
+			return fmt.Errorf("write parquet files: %w", err)
+		}
 
 		//log.Printf("wrote batch %d of chunk %d to disk\n", batchCount, chunkInterval)
-		// we're already writing
+		// we're already writing a file
 		return nil
 	default:
 		return fmt.Errorf("unsupported output format: %s", cfg.outputFormat)
