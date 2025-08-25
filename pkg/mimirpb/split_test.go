@@ -443,6 +443,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
 		"skipUnmarshalingExemplars",
+		"skipNormalizeMetricName",
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",

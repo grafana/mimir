@@ -18,6 +18,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 			SkipLabelValidation:       true,
 			SkipLabelCountValidation:  true,
 			skipUnmarshalingExemplars: true,
+			skipNormalizeMetricName:   true,
 		}
 
 		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
@@ -26,6 +27,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.True(t, rw2.SkipLabelValidation)
 		require.True(t, rw2.SkipLabelCountValidation)
 		require.True(t, rw2.skipUnmarshalingExemplars)
+		require.True(t, rw2.skipNormalizeMetricName)
 	})
 
 	t.Run("nil request turns into nil request", func(t *testing.T) {
@@ -588,6 +590,7 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
 		"skipUnmarshalingExemplars",
+		"skipNormalizeMetricName",
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",
