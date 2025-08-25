@@ -30,8 +30,10 @@ type ScalarRemoteExecutionResponse interface {
 
 type InstantVectorRemoteExecutionResponse interface {
 	RemoteExecutionResponse
-	// TODO: series metadata
-	// TODO: series data
+
+	GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error)
+
+	GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error)
 }
 
 type RangeVectorRemoteExecutionResponse interface {
@@ -43,12 +45,12 @@ type RangeVectorRemoteExecutionResponse interface {
 type RemoteExecutionResponse interface {
 	// GetEvaluationInfo returns the annotations and total number of samples read as part of the remote evaluation.
 	//
-	// It can only be called once the response has been read, and can only be called before Close is called.
+	// If there is any unread part of the response remaining, it is exhausted.
+	//
+	// It can only be called before Close is called.
 	GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error)
 
 	// Close cleans up any resources associated with this request.
 	// If the request is still inflight, it is cancelled.
 	Close()
 }
-
-
