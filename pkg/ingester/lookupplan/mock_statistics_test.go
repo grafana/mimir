@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// mockStatistics implements the Statistics interface with hardcoded data for testing
+// mockStatistics implements the index.Statistics interface with hardcoded data for testing
 type mockStatistics struct {
 	// seriesPerValue maps label name -> label value -> number of series
 	seriesPerValue map[string]map[string]uint64
@@ -59,7 +59,7 @@ func (m *mockStatistics) TotalSeries() uint64 {
 	return m.totalSeries
 }
 
-func (m *mockStatistics) LabelValuesCount(_ context.Context, name string) (uint64, error) {
+func (m *mockStatistics) LabelValuesCount(_ context.Context, name string) uint64 {
 	values := m.seriesPerValue[name]
 
 	count := uint64(0)
@@ -68,10 +68,10 @@ func (m *mockStatistics) LabelValuesCount(_ context.Context, name string) (uint6
 			count++
 		}
 	}
-	return count, nil
+	return count
 }
 
-func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, values ...string) (uint64, error) {
+func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, values ...string) uint64 {
 	labelValues := m.seriesPerValue[name]
 
 	if len(values) == 0 {
@@ -80,7 +80,7 @@ func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, 
 		for _, seriesCount := range labelValues {
 			total += seriesCount
 		}
-		return total, nil
+		return total
 	}
 
 	// Return cardinality for specific values
@@ -90,7 +90,7 @@ func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, 
 			total += seriesCount
 		}
 	}
-	return total, nil
+	return total
 }
 
 // newHighCardinalityMockStatistics creates a mockStatistics with higher cardinality
@@ -280,25 +280,6 @@ func generateRandomString(seed, length int) string {
 		seed++
 	}
 	return string(result)
-}
-
-// errorMockStatistics implements Statistics interface but always returns errors
-type errorMockStatistics struct{}
-
-func newErrorMockStatistics() *errorMockStatistics {
-	return &errorMockStatistics{}
-}
-
-func (e *errorMockStatistics) TotalSeries() uint64 {
-	return 1000 // Return some non-zero value so planning can start
-}
-
-func (e *errorMockStatistics) LabelValuesCount(context.Context, string) (uint64, error) {
-	return 0, fmt.Errorf("mock statistics error: failed to get label values count")
-}
-
-func (e *errorMockStatistics) LabelValuesCardinality(context.Context, string, ...string) (uint64, error) {
-	return 0, fmt.Errorf("mock statistics error: failed to get label values cardinality")
 }
 
 func newSingleValueStatistics() *mockStatistics {
