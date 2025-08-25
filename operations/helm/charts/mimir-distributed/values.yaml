@@ -616,6 +616,10 @@ alertmanager:
     route:
         receiver: default-receiver
 
+  # -- use an existing Kubernetes secret for the fallback config for alertmanager.
+  # if set, ignores alertmanager.fallbackConfig
+  fallbackConfigExistingSecret: ""
+
   extraArgs: {}
 
   # Pod Labels
