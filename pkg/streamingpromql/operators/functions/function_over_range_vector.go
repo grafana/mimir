@@ -201,6 +201,22 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 	return nil
 }
 
+func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
+	err := m.Inner.Finalize(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, sa := range m.ScalarArgs {
+		err := sa.Finalize(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
