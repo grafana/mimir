@@ -906,6 +906,8 @@ distributor:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
+
 
   resources:
     requests:
@@ -1006,6 +1008,7 @@ ingester:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1859,6 +1862,7 @@ querier:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -1979,6 +1983,7 @@ query_frontend:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -2071,6 +2076,7 @@ query_scheduler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -2167,6 +2173,7 @@ store_gateway:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -3244,6 +3251,8 @@ nginx:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
   # Ingress configuration
   ingress:
     # -- Specifies whether an ingress for the nginx should be created
@@ -3656,6 +3665,10 @@ gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
+
+
 
   ingress:
     enabled: false
