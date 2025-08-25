@@ -1147,6 +1147,16 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	))
 }
 
+// bucketWithoutUpdatedAt is a wrapper that removes UpdatedAt support from a bucket
+type bucketWithoutUpdatedAt struct {
+	objstore.Bucket
+}
+
+func (b *bucketWithoutUpdatedAt) SupportedIterOptions() []objstore.IterOptionType {
+	// Return only Recursive, excluding UpdatedAt
+	return []objstore.IterOptionType{objstore.Recursive}
+}
+
 func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
 
@@ -1159,12 +1169,17 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), objectTime, objectTime))
 	}
 
-	userBucket := bucket.NewUserBucketClient(tenant, b, nil)
+	// Create a bucket that supports UpdatedAt (original filesystem bucket)
+	userBucketWithUpdatedAt := bucket.NewUserBucketClient(tenant, b, nil)
+
+	// Create a bucket that doesn't support UpdatedAt (wrapped filesystem bucket)
+	bucketWithoutUpdatedAt := &bucketWithoutUpdatedAt{b}
+	userBucketWithoutUpdatedAt := bucket.NewUserBucketClient(tenant, bucketWithoutUpdatedAt, nil)
 
 	emptyBlockID := ulid.ULID{}
 	require.NotEqual(t, blockID, emptyBlockID)
 	empty := true
-	err := userBucket.Iter(context.Background(), emptyBlockID.String(), func(_ string) error {
+	err := userBucketWithUpdatedAt.Iter(context.Background(), emptyBlockID.String(), func(_ string) error {
 		empty = false
 		return nil
 	})
@@ -1176,16 +1191,33 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 		blockID              ulid.ULID
 		cutoff               time.Time
 		expectedLastModified time.Time
+		bucket               objstore.InstrumentedBucket
 	}{
-		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}},
-		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}},
-		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime},
-		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime},
+		{name: "no objects (in the bucket with UpdatedAt support)", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}, bucket: userBucketWithUpdatedAt},
+		{name: "no objects (in the bucket without UpdatedAt support)", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects newer than delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}, bucket: userBucketWithUpdatedAt},
+		{name: "objects newer than delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects equal to delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime, bucket: userBucketWithUpdatedAt},
+		{name: "objects equal to delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects older than delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime, bucket: userBucketWithUpdatedAt},
+		{name: "objects older than delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime, bucket: userBucketWithoutUpdatedAt},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lastModified, err := stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, userBucket, tc.cutoff)
+			// Create a BlocksCleaner with the appropriate bucket to test the correct path
+			var baseBucket objstore.Bucket
+			if tc.bucket == userBucketWithUpdatedAt {
+				baseBucket = b
+			} else {
+				baseBucket = bucketWithoutUpdatedAt
+			}
+
+			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, log.NewNopLogger(), nil)
+			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
