@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/prometheus/prometheus/util/annotations"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
@@ -27,15 +27,15 @@ func NewRemoteExecutor(frontend *Frontend) *RemoteExecutor {
 }
 
 func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	logger, ctx := spanlogger.New(ctx, r.frontend.log, tracer, "RemoteExecution.Scalar")
-	defer logger.Finish() // TODO: defer this until response is closed or error is returned
+	logger, ctx := spanlogger.New(ctx, r.frontend.log, tracer, "RemoteExecution.Scalar") // This span will either be closed below or in scalarExecutionResponse.Close().
 
 	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
 	if err != nil {
+		logger.Finish()
 		return nil, err
 	}
 
-	return &scalarExecutionResponse{stream}, nil
+	return &scalarExecutionResponse{stream, logger}, nil
 }
 
 func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
@@ -83,16 +83,13 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 }
 
 type scalarExecutionResponse struct {
-	stream *ProtobufResponseStream
+	stream     *ProtobufResponseStream
+	spanLogger *spanlogger.SpanLogger
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
 	msg, err := r.stream.Next()
 	if err != nil {
-		return types.ScalarData{}, err
-	}
-
-	if err := errorFromMessage(msg); err != nil {
 		return types.ScalarData{}, err
 	}
 
@@ -106,27 +103,76 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, fmt.Errorf("expected ScalarValue, got %T", resp.Message)
 	}
 
-	// TODO: add to memory consumption estimate
 	return types.ScalarData{
 		Samples: mimirpb.FromSamplesToFPoints(scalar.Values),
 	}, nil
 }
 
-func (r *scalarExecutionResponse) Close() {
-	// TODO: cancel context started to ensure stream is cleaned up
+func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+	return readEvaluationCompleted(r.stream)
 }
 
-func errorFromMessage(msg *frontendv2pb.QueryResultStreamRequest) error {
-	e := msg.GetError()
+func (r *scalarExecutionResponse) Close() {
+	r.stream.Close()
+	r.spanLogger.Finish()
+}
 
-	if e == nil {
-		return nil
-	}
-
-	errorType, err := e.Type.ToPrometheusString()
+func readEvaluationCompleted(stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
+	msg, err := stream.Next()
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
 
-	return apierror.New(apierror.Type(errorType), e.Message)
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, 0, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	completion := resp.GetEvaluationCompleted()
+	if completion == nil {
+		return nil, 0, fmt.Errorf("expected EvaluationCompleted, got %T", resp.Message)
+	}
+
+	annos, totalSamples := decodeEvaluationCompletedMessage(completion)
+	return annos, totalSamples, nil
+}
+
+func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (annotations.Annotations, int64) {
+	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
+
+	annos := make(annotations.Annotations, count)
+	for _, a := range msg.Annotations.Infos {
+		annos.Add(newRemoteInfo(a))
+	}
+
+	for _, a := range msg.Annotations.Warnings {
+		annos.Add(newRemoteWarning(a))
+	}
+
+	return annos, msg.Stats.TotalSamples
+}
+
+// Prometheus' annotations.Annotations type stores Golang error types, and checks if they
+// are annotations.PromQLInfo or annotations.PromQLWarning, so this type allows us to
+// create errors with arbitrary strings received from remote executors that satisfies
+// this requirement.
+type remoteAnnotation struct {
+	msg   string
+	inner error
+}
+
+func newRemoteWarning(msg string) error {
+	return &remoteAnnotation{msg: msg, inner: annotations.PromQLWarning}
+}
+
+func newRemoteInfo(msg string) error {
+	return &remoteAnnotation{msg: msg, inner: annotations.PromQLInfo}
+}
+
+func (r remoteAnnotation) Error() string {
+	return r.msg
+}
+
+func (r remoteAnnotation) Unwrap() error {
+	return r.inner
 }
