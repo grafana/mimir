@@ -11775,7 +11775,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		// metric family name, we ignore this metadata.
 		return nil
 	}
-	
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
 			MetricMetadata: MetricMetadata{
