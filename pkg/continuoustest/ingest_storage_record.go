@@ -23,6 +23,7 @@ import (
 )
 
 type IngestStorageRecordTestConfig struct {
+	Enabled                  bool               `yaml:"enabled"`
 	Kafka                    ingest.KafkaConfig `yaml:"-"`
 	ConsumerGroup            string             `yaml:"consumer_group"`
 	MaxJumpLimitPerPartition int                `yaml:"max_jump_size"`
@@ -31,7 +32,7 @@ type IngestStorageRecordTestConfig struct {
 }
 
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
-	// cfg.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
+	f.BoolVar(&cfg.Enabled, "tests.ingest-storage-record.enabled", false, "Whether the test for ingest-storage record correctness is enabled.")
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
 	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
 	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. ")
@@ -115,6 +116,10 @@ func (t *IngestStorageRecordTest) Name() string {
 
 // Init implements Test.
 func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error {
+	if !t.cfg.Enabled {
+		return nil
+	}
+
 	level.Info(t.logger).Log("msg", "starting kafka client")
 
 	kc, err := ingest.NewKafkaReaderClient(
@@ -131,12 +136,16 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 	t.client = kc
 	t.adminClient = kadm.NewClient(kc)
 
-	// On every startup, we just skip to the end and run from there. We
 	return nil
 }
 
 // Run implements Test.
 func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error {
+	if !t.cfg.Enabled {
+		return nil
+	}
+
+	// Find where the last run stopped at.
 	topics, err := t.adminClient.ListTopics(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to ping kafka: %w", err)
@@ -157,6 +166,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	}
 	committedOffsets := offResp.Offsets()
 
+	// Get the lastest offsets, so we can look at the total amount to process for the current run.
 	endOffsetsResp, err := t.adminClient.ListEndOffsets(ctx, "ingest")
 	if err != nil {
 		return fmt.Errorf("fetch end offsets error: %w", err)
@@ -200,6 +210,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	t.client.AddConsumePartitions(startOffsets)
 
+	// Spin up workers to evaluate records in parallel.
 	const numWorkers = 4
 	jobs := make(chan kgo.Fetches)
 	var wg sync.WaitGroup
@@ -219,6 +230,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		}()
 	}
 
+	// Poll fetches, until we've consumed a satisfactory number of records, and give work to the workers.
 	recordsProcessedThisBatch := 0
 	numFetches := 0
 	for recordsRemainingInBatch > 0 {
@@ -240,13 +252,14 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	timeTaken := time.Since(now)
 	level.Info(t.logger).Log("msg", "run complete", "size", recordsProcessedThisBatch, "totalOffsetsIncrease", totalOffsetDiff, "time", timeTaken)
 
-	// Update to the end.
-	// Seek to the end of all partitions, including the ones we skipped this run.
+	// In case we stopped polling early due to volume, seek everything to the latest offsets. The next run wil pick up from there.
+	// We seek to the end of all partitions, including the ones we skipped this run, so they will be included next time.
 	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
 
 	return nil
 }
 
+// testBatch runs the test on each record in a fetch, stopping at the first record that fails.
 func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 	report := batchReport{}
 	fetches.EachRecord(func(rec *kgo.Record) {
@@ -267,6 +280,7 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 	return report.err
 }
 
+// batchReport contains the running results of testing a batch.
 type batchReport struct {
 	err                 error
 	avgCompressionRatio float64
