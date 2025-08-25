@@ -35,7 +35,7 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "tests.ingest-storage-record.enabled", false, "Whether the test for ingest-storage record correctness is enabled.")
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
 	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
-	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. ")
+	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch.")
 	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
 
@@ -145,7 +145,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		return nil
 	}
 
-	// Find where the last run stopped at.
+	// Find where the last run stopped at, if any.
 	topics, err := t.adminClient.ListTopics(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to ping kafka: %w", err)
@@ -166,7 +166,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	}
 	committedOffsets := offResp.Offsets()
 
-	// Get the lastest offsets, so we can look at the total amount to process for the current run.
+	// Get the absolute latest offsets, so we can look at the total amount to process for the current run.
 	endOffsetsResp, err := t.adminClient.ListEndOffsets(ctx, "ingest")
 	if err != nil {
 		return fmt.Errorf("fetch end offsets error: %w", err)
@@ -181,13 +181,14 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
 	totalOffsetDiff := int64(0)
 	for partition, endOffset := range endOffsets {
-		// If we never committed an offset for this partition yet, we skip it to avoid processing a week of data.
+		// If we never committed an offset for this partition yet, we just ignore it on the current run.
+		// It likely has a ton of history that hasn't been processed yet. We'll still seek to the end later on and pick up on the next time around.
 		committedOffset, ok := committedOffsets["ingest"][partition]
 		if !ok {
 			continue
 		}
 
-		// If there are a huge number of records written to a partition, skip it.
+		// If there are a huge number of records written to a partition, skip it. We'll seek to the end and process it next run.
 		diff := endOffset.At - committedOffset.At
 		if diff > int64(t.cfg.MaxJumpLimitPerPartition) {
 			level.Warn(t.logger).Log(
