@@ -26,7 +26,6 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 
 		return seriesMetadata, nil
 	},
-	NeedsSeriesDeduplication: true,
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
@@ -137,10 +136,4 @@ type SeriesMetadataFunctionDefinition struct {
 	//
 	// If Func is nil, the input series are used as-is.
 	Func SeriesMetadataFunction
-
-	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
-	//
-	// This should be set to true if Func modifies the input series labels in such a way that duplicates may be
-	// present in the output series labels (eg. dropping a label).
-	NeedsSeriesDeduplication bool
 }

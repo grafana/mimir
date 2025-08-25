@@ -239,8 +239,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, me
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc: PassthroughData,
 		SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
-			Func:                     LabelJoinFactory(dstLabel, separator, srcLabels),
-			NeedsSeriesDeduplication: true,
+			Func: LabelJoinFactory(dstLabel, separator, srcLabels),
 		},
 	}
 
@@ -286,8 +285,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels,
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc: PassthroughData,
 		SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
-			Func:                     LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
-			NeedsSeriesDeduplication: true,
+			Func: LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
 		},
 	}
 
