@@ -313,6 +313,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}
+		// Only 'or' and scalar/vector expressions need deduplication.
+		// All other variations either can't produce duplicate series (e.g., 'and' and 'unless')
+		// or deduplication is handled by the operator (e.g., vector/vector expressions).
 		if expr.Op == parser.LOR {
 			return &core.DeduplicateAndMerge{
 				Inner:                      binExpr,
