@@ -49,7 +49,7 @@ func (d *DeduplicateAndMerge) EquivalentTo(other planning.Node) bool {
 }
 
 func (d *DeduplicateAndMerge) Describe() string {
-	return "deduplicate and merge"
+	return ""
 }
 
 func (d *DeduplicateAndMerge) ChildrenLabels() []string {
