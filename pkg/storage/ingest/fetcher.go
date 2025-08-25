@@ -492,7 +492,9 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 func (r *ConcurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
-	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
+	if r.metrics != nil {
+		instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
+	}
 
 	var (
 		doubleFetchedBytes             = 0
@@ -514,7 +516,9 @@ func (r *ConcurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 		}
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
-	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
+	if r.metrics != nil {
+		r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
+	}
 
 	if skippedRecordsCount > 0 {
 		spanlogger.FromContext(f.Records[0].Context, r.logger).DebugLog(
@@ -551,7 +555,10 @@ func (r *ConcurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 
 	// Build the Fetch request.
 	req := r.buildFetchRequest(fw, leaderEpoch)
-	r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
+
+	if r.metrics != nil {
+		r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
+	}
 
 	// Send the Fetch request to the leader broker.
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
@@ -628,7 +635,9 @@ func (r *ConcurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 
 	observeMetrics := func(m kgo.FetchBatchMetrics) {
 		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
-		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
+		if r.metrics != nil {
+			r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
+		}
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)

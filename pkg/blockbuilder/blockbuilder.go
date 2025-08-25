@@ -273,6 +273,10 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRec  *kgo.Record
 	)
 
+	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
+
+	}
+
 	fetcher, ferr := ingest.NewConcurrentFetchers(
 		ctx,
 		b.kafkaClient,
@@ -285,7 +289,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		false,
 		5*time.Second,
 		nil,
-		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+		ingest.NewGenericOffsetReader(func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
 		backoff.Config{
 			MinBackoff: 100 * time.Millisecond,
 			MaxBackoff: 1 * time.Second,
