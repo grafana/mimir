@@ -330,7 +330,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		return report.Error(fmt.Errorf("failed to unmarshal record from ingest topic: %w", err))
 	}
 
-	ser := ingest.VersionTwoRecordSerializer{}
+	ser := ingest.RecordSerializerFromVersion(2)
 	v2Records, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
 	if len(v2Records) == 0 {
 		return report.Error(fmt.Errorf("no records returned after v2 conversion"))

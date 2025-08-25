@@ -103,13 +103,17 @@ func ParseRecordVersion(rec *kgo.Record) int {
 }
 
 func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
-	switch cfg.ProducerRecordVersion {
+	return RecordSerializerFromVersion(cfg.ProducerRecordVersion)
+}
+
+func RecordSerializerFromVersion(version int) recordSerializer {
+	switch version {
 	case 0:
 		return versionZeroRecordSerializer{}
 	case 1:
 		return versionOneRecordSerializer{}
 	case 2:
-		return VersionTwoRecordSerializer{}
+		return versionTwoRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -144,9 +148,9 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 	return records, nil
 }
 
-type VersionTwoRecordSerializer struct{}
+type versionTwoRecordSerializer struct{}
 
-func (v VersionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
 	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
 	defer mimirpb.ReuseRW2(reqv2)
 	if err != nil {
