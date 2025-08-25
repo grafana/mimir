@@ -4,6 +4,7 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,10 +25,12 @@ import (
 )
 
 type fakeNotifier struct {
-	calls [][]*types.Alert
+	ctxForTesting context.Context
+	calls         [][]*types.Alert
 }
 
-func (m *fakeNotifier) Notify(_ context.Context, alerts ...*types.Alert) (bool, error) {
+func (m *fakeNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
+	m.ctxForTesting = ctx
 	m.calls = append(m.calls, alerts)
 	return false, nil
 }
@@ -182,7 +185,9 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		`"endsAt":"0001-01-01T00:00:00Z",` +
 		`"generatorURL":"",` +
 		`"UpdatedAt":"0001-01-01T00:00:00Z",` +
-		`"Timeout":false}]}`
+		`"Timeout":false}],` +
+		`"extraData": {"foo": "bar"}` +
+		`}`
 
 	t.Run("hook invoked", func(t *testing.T) {
 		f := newTestHooksFixture(t, http.StatusOK, okResponse)
@@ -192,6 +197,24 @@ func TestNotifyHooksNotifier(t *testing.T) {
 
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
 		f.assertMetricsSuccess(t, 1, 0)
+	})
+	t.Run("hook invoked with extra data", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
+		ctx := makeContext()
+
+		_, err := f.notifier.Notify(ctx, makeAlert("foo")...)
+		require.NoError(t, err)
+
+		type testExtraData struct {
+			Foo string `json:"foo"`
+		}
+
+		extraDataRaw := f.upstream.ctxForTesting.Value(ExtraDataKey).(json.RawMessage)
+		extraData := testExtraData{}
+		err = json.Unmarshal(extraDataRaw, &extraData)
+		require.NoError(t, err)
+
+		require.Equal(t, "bar", extraData.Foo)
 	})
 	t.Run("hook not invoked when empty url configured", func(t *testing.T) {
 		f := newTestHooksFixture(t, http.StatusOK, okResponse)
