@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"math"
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
@@ -99,6 +100,8 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		mergeShards, _ = strconv.Atoi(sc)
 		if mergeShards < 0 {
 			mergeShards = 0
+		} else if mergeShards > int(math.MaxUint32) {
+			mergeShards = int(math.MaxUint32)
 		}
 	}
 
@@ -107,6 +110,8 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		splitGroups, _ = strconv.Atoi(sc)
 		if splitGroups < 0 {
 			splitGroups = 0
+		} else if splitGroups > int(math.MaxUint32) {
+			splitGroups = int(math.MaxUint32)
 		}
 	}
 
