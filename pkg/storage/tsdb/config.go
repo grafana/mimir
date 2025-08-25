@@ -258,8 +258,7 @@ type TSDBConfig struct {
 
 	// HeadPostingsForMatchersCacheMaxItems is the maximum size (in number of items) of cached postings for matchers elements in the Head.
 	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
-	// Deprecated: use max bytes limit instead.
-	HeadPostingsForMatchersCacheMaxItems int `yaml:"head_postings_for_matchers_cache_size" category:"deprecated"`
+	HeadPostingsForMatchersCacheMaxItems int `yaml:"head_postings_for_matchers_cache_size" category:"experimental"`
 
 	// HeadPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in the Head.
 	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
@@ -274,8 +273,7 @@ type TSDBConfig struct {
 
 	// BlockPostingsForMatchersCacheMaxItems is the maximum size of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
-	// Deprecated: use max bytes limit instead.
-	BlockPostingsForMatchersCacheMaxItems int `yaml:"block_postings_for_matchers_cache_size" category:"deprecated"`
+	BlockPostingsForMatchersCacheMaxItems int `yaml:"block_postings_for_matchers_cache_size" category:"experimental"`
 
 	// BlockPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
