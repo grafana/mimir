@@ -20,7 +20,6 @@ type Subquery struct {
 
 	SubqueryTimestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	SubqueryOffset    int64  // In milliseconds
-	SubqueryRange     time.Duration
 
 	expressionPosition posrange.PositionRange
 
@@ -60,7 +59,6 @@ func NewSubquery(
 		SubqueryTimeRange:        subqueryTimeRange,
 		SubqueryTimestamp:        subqueryTimestamp,
 		SubqueryOffset:           subqueryOffset.Milliseconds(),
-		SubqueryRange:            subqueryRange,
 		expressionPosition:       expressionPosition,
 		rangeMilliseconds:        subqueryRange.Milliseconds(),
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
@@ -159,14 +157,6 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	}
 
 	return sum
-}
-
-func (s *Subquery) StepCount() int {
-	return s.ParentQueryTimeRange.StepCount
-}
-
-func (s *Subquery) Range() time.Duration {
-	return s.SubqueryRange
 }
 
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
