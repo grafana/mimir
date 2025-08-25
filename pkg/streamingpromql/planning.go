@@ -555,7 +555,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_LABEL_REPLACE:
 		return true
 
-	// Functions that do NOT need deduplication (preserve __name__ label)
+	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)
 	case
 		functions.FUNCTION_ABSENT,
 		functions.FUNCTION_ABSENT_OVER_TIME,
