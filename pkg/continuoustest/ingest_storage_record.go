@@ -349,7 +349,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	v2Rec := v2Records[0]
 
 	if string(rec.Key) != string(v2Rec.Key) {
-		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key)))
+		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s", string(v2Rec.Key), string(rec.Key)))
 	}
 
 	if version != 2 {

@@ -3,9 +3,10 @@ package continuoustest
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestDropExactDuplicates(t *testing.T) {
@@ -307,10 +308,10 @@ func TestDropExactDuplicates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := dropExactDuplicates(tt.input)
-			
+
 			// Check that the result has the expected length
 			assert.Equal(t, len(tt.expected), len(result), "Result length mismatch")
-			
+
 			// Check that all expected items are present in the result
 			for i, expected := range tt.expected {
 				require.Less(t, i, len(result), "Result has fewer items than expected")
@@ -319,7 +320,7 @@ func TestDropExactDuplicates(t *testing.T) {
 				assert.Equal(t, expected.Type, result[i].Type, "Type mismatch at index %d", i)
 				assert.Equal(t, expected.Unit, result[i].Unit, "Unit mismatch at index %d", i)
 			}
-			
+
 			// Check that the result doesn't contain any exact duplicates
 			seen := make(map[string]bool)
 			for _, item := range result {
@@ -360,7 +361,7 @@ func TestDropExactDuplicatesPreservesOrder(t *testing.T) {
 	}
 
 	result := dropExactDuplicates(input)
-	
+
 	// The first occurrence of metric1 should be preserved
 	assert.Equal(t, "metric1", result[0].MetricFamilyName)
 	assert.Equal(t, "metric2", result[1].MetricFamilyName)
