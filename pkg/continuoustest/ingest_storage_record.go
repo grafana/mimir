@@ -13,13 +13,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 type IngestStorageRecordTestConfig struct {
@@ -158,6 +159,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	if err != nil {
 		if errors.Is(err, kerr.GroupIDNotFound) {
 			// ignore.
+			err = nil
 		}
 		return fmt.Errorf("fetch offsets error: %w", err)
 	}
@@ -237,7 +239,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	for recordsRemainingInBatch > 0 {
 		fetches := t.client.PollFetches(ctx)
 		if errs := fetches.Errors(); len(errs) > 0 {
-			level.Error(t.logger).Log("fetch errors", "err", fetches.Err())
+			level.Error(t.logger).Log("msg", "fetch errors", "err", fetches.Err())
 			break
 		}
 		numFetches++
@@ -255,7 +257,10 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 	// In case we stopped polling early due to volume, seek everything to the latest offsets. The next run wil pick up from there.
 	// We seek to the end of all partitions, including the ones we skipped this run, so they will be included next time.
-	t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
+	_, err = t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
+	if err != nil {
+		level.Error(t.logger).Log("msg", "failed to commit offsets", "err", err)
+	}
 
 	return nil
 }
@@ -332,16 +337,19 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 
 	ser := ingest.RecordSerializerFromVersion(2)
 	v2Records, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
+	if err != nil {
+		return report.Error(fmt.Errorf("failed to serialize to v2: %w", err))
+	}
 	if len(v2Records) == 0 {
 		return report.Error(fmt.Errorf("no records returned after v2 conversion"))
 	}
 	if len(v2Records) > 1 {
-		return report.Error(fmt.Errorf("A V1 record was split when converted to its smaller V2 counterpart. This is highly unusual"))
+		return report.Error(fmt.Errorf("a V1 record was split when converted to its smaller V2 counterpart. This is highly unusual"))
 	}
 	v2Rec := v2Records[0]
 
 	if string(rec.Key) != string(v2Rec.Key) {
-		return report.Error(fmt.Errorf("Key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key)))
+		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s.", string(v2Rec.Key), string(rec.Key)))
 	}
 
 	if version != 2 {
@@ -358,13 +366,13 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	}
 
 	if v2Req.SkipLabelValidation != req.SkipLabelValidation {
-		return report.Error(fmt.Errorf("SkipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation))
+		return report.Error(fmt.Errorf("skipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation))
 	}
 	if v2Req.SkipLabelCountValidation != req.SkipLabelCountValidation {
-		return report.Error(fmt.Errorf("SkipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation))
+		return report.Error(fmt.Errorf("skipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation))
 	}
 	if v2Req.Source != req.Source {
-		return report.Error(fmt.Errorf("Source did not match, original: %d, v2: %d", req.Source, v2Req.Source))
+		return report.Error(fmt.Errorf("source did not match, original: %d, v2: %d", req.Source, v2Req.Source))
 	}
 	if v2Req.SymbolsRW2 != nil {
 		return report.Error(fmt.Errorf("v2 record had a SymbolsRW2 unmarshalling field left populated"))
@@ -380,7 +388,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		})
 		if !cmp.Equal(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata) {
 			diff := cmp.Diff(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata)
-			return report.Error(fmt.Errorf("Metadata did not match (adjusting for ordering, exact duplicates dropped). numTimeseries: %d, numMetadata: %d,\noriginalMetadata: %v,\nv2Metadata: %v\n Diff: %s", len(req.Timeseries), len(req.Metadata), req.Metadata, v2Req.Metadata, diff))
+			return report.Error(fmt.Errorf("metadata did not match (adjusting for ordering, exact duplicates dropped). numTimeseries: %d, numMetadata: %d,\noriginalMetadata: %v,\nv2Metadata: %v\n Diff: %s", len(req.Timeseries), len(req.Metadata), req.Metadata, v2Req.Metadata, diff))
 		}
 	}
 
@@ -391,11 +399,11 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		// Yes metadata -> There may be extra metadata carrier timeseries in the result, but they must be empty. We'll assert that later.
 		if len(req.Metadata) == 0 {
 			if len(req.Timeseries) != len(v2Req.Timeseries) {
-				return report.Error(fmt.Errorf("Mismatched count of timeseries on a request with no metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
+				return report.Error(fmt.Errorf("mismatched count of timeseries on a request with no metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
 			}
 		} else {
 			if len(req.Timeseries) > len(v2Req.Timeseries) {
-				return report.Error(fmt.Errorf("Too few timeseries returned on a request carrying metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
+				return report.Error(fmt.Errorf("too few timeseries returned on a request carrying metadata, orig: %d, v2: %d", len(req.Timeseries), len(v2Req.Timeseries)))
 			}
 		}
 		extraTimeseriesCount := len(v2Req.Timeseries) - len(req.Timeseries)
@@ -406,7 +414,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 			t.metrics.exemplarsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Exemplars)))
 			t.metrics.histogramsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Histograms)))
 			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
-				return report.Error(fmt.Errorf("Timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries))
+				return report.Error(fmt.Errorf("timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries))
 			}
 		}
 
@@ -415,13 +423,13 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 			extraTimeseries := v2Req.Timeseries[len(v2Req.Timeseries)-extraTimeseriesCount:]
 			for _, extra := range extraTimeseries {
 				if len(extra.Samples) > 0 {
-					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained samples: %v", extra))
+					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained samples: %v", extra))
 				}
 				if len(extra.Exemplars) > 0 {
-					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained exemplars: %v", extra))
+					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained exemplars: %v", extra))
 				}
 				if len(extra.Histograms) > 0 {
-					return report.Error(fmt.Errorf("Extra timeseries (that did not match to an input timeseries) contained histograms: %v", extra))
+					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained histograms: %v", extra))
 				}
 			}
 		}
@@ -476,6 +484,9 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
+	if this.CreatedTimestamp != that1.CreatedTimestamp {
+		return false
+	}
 	if len(this.Labels) != len(that1.Labels) {
 		return false
 	}
@@ -510,9 +521,6 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 		if !this.Histograms[i].Equal(&that1.Histograms[i]) {
 			return false
 		}
-	}
-	if this.CreatedTimestamp != that1.CreatedTimestamp {
-		return false
 	}
 	return true
 }
