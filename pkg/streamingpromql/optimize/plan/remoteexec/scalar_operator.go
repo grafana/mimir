@@ -51,6 +51,7 @@ func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, err
 	s.Annotations.Merge(annos)
 
 	if s.QueryStats != nil {
+		// FIXME: once we support evaluating multiple nodes at once, only do this once per request, not once per requested node
 		s.QueryStats.TotalSamples += totalSamples
 	}
 
