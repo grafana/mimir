@@ -107,8 +107,8 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 	case *parser.SubqueryExpr:
 		return mapper.extractVectorSelectors(e.Expr)
 	case *parser.Call:
-		if i, optional, _ := VectorSelectorArgumentIndex(e.Func.Name); i >= 0 {
-			if optional && len(e.Args) <= i {
+		if i, _ := VectorSelectorArgumentIndex(e.Func.Name); i >= 0 {
+			if len(e.Args) <= i {
 				return nil, nil
 			}
 			return mapper.extractVectorSelectors(e.Args[i])
@@ -166,59 +166,58 @@ func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupin
 }
 
 // VectorSelectorArgumentIndex returns the index of the argument that contains the vector selector,
-// or -1 if the function does not support matcher propagation. The second return value indicates
-// if the vector selector is optional in the function call, and the third return value is an error
+// or -1 if the function does not support matcher propagation. The second return value is an error
 // if the function is not recognized (for tests).
-func VectorSelectorArgumentIndex(funcName string) (int, bool, error) {
+func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	// If the function is eligible for matcher propagation, return the index of the argument
 	// that contains the vector selector (may be embedded in other kinds of expressions).
 	// Otherwise, return -1.
 	switch funcName {
 	// Simple
 	case "changes", "resets":
-		return 0, false, nil
+		return 0, nil
 	// Mathematical
 	case "abs", "sgn", "sqrt", "exp", "deriv", "ln", "log2", "log10", "ceil", "floor", "clamp", "clamp_min", "clamp_max":
-		return 0, false, nil
+		return 0, nil
 	case "round":
-		return 0, true, nil
+		return 0, nil
 	// More complicated mathematical functions
 	case "double_exponential_smoothing", "predict_linear":
-		return 0, false, nil
+		return 0, nil
 	// Trigonometric
 	case "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "sin", "sinh", "tan", "tanh", "deg", "rad":
-		return 0, false, nil
+		return 0, nil
 	// Differences between samples (using matrix selectors)
 	case "rate", "delta", "increase", "idelta", "irate":
-		return 0, false, nil
+		return 0, nil
 	// Histogram-related
 	case "histogram_avg", "histogram_count", "histogram_sum", "histogram_stddev", "histogram_stdvar":
-		return 0, false, nil
+		return 0, nil
 	case "histogram_quantile":
-		return 1, false, nil
+		return 1, nil
 	case "histogram_fraction":
-		return 2, false, nil
+		return 2, nil
 	// Aggregation over time
 	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_last_over_time":
-		return 0, false, nil
+		return 0, nil
 	case "quantile_over_time":
-		return 1, false, nil
+		return 1, nil
 	// Time
 	case "minute", "hour", "day_of_week", "day_of_month", "day_of_year", "days_in_month", "month", "year":
-		return 0, true, nil
+		return 0, nil
 	case "timestamp":
-		return 0, false, nil
+		return 0, nil
 	// No vector/matrix selectors
 	case "pi", "time", "vector":
-		return -1, false, nil
+		return -1, nil
 	// Explicitly not supported because it's not valid to propagate matchers across these functions.
 	case "scalar", "absent", "absent_over_time":
-		return -1, false, nil
+		return -1, nil
 	// Explicitly not supported because we want to avoid unexpected interactions with labels or ordering.
 	case "label_join", "label_replace", "info", "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
-		return -1, false, nil
+		return -1, nil
 	default:
-		return -1, false, fmt.Errorf("function support unknown: %s", funcName)
+		return -1, fmt.Errorf("function support unknown: %s", funcName)
 	}
 }
 

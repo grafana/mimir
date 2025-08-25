@@ -113,21 +113,21 @@ var testCasesPropagateMatchers = map[string]string{
 	`max without (baz) (avg by (foo, baz) (up)) / down{foo="bar", baz="fob"}`:                              `max without (baz) (avg by (foo, baz) (up{foo="bar"})) / down{foo="bar", baz="fob"}`,
 
 	// Not supported
-	`scalar(up{foo="bar"} * down)`:                        `scalar(up{foo="bar"} * down{foo="bar"})`,
-	`scalar(up{foo="bar"}) * down`:                        `scalar(up{foo="bar"}) * down`,
-	`scalar(up) * down{foo="bar"}`:                        `scalar(up) * down{foo="bar"}`,
-	`absent(up{foo="bar99"}) + down{baz="fob"}`:           `absent(up{foo="bar99"}) + down{baz="fob"}`,
-	`absent(up{foo="bar99"}) + absent(down{baz="fob99"})`: `absent(up{foo="bar99"}) + absent(down{baz="fob99"})`,
-	`absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`:                        `absent_over_time(rate(up{foo="bar99"}[5m])[30m:1m]) + absent_over_time(rate(down[5m])[30m:1m])`,
+	`scalar(up{foo="bar"} * down)`:                                       `scalar(up{foo="bar"} * down{foo="bar"})`,
+	`scalar(up{foo="bar"}) * down`:                                       `scalar(up{foo="bar"}) * down`,
+	`scalar(up) * down{foo="bar"}`:                                       `scalar(up) * down{foo="bar"}`,
+	`absent(up{foo="bar99"}) + down{baz="fob"}`:                          `absent(up{foo="bar99"}) + down{baz="fob"}`,
+	`absent(up{foo="bar99"}) + absent(down{baz="fob99"})`:                `absent(up{foo="bar99"}) + absent(down{baz="fob99"})`,
+	`absent_over_time(up{foo="bar99"}[5m]) + absent_over_time(down[5m])`: `absent_over_time(up{foo="bar99"}[5m]) + absent_over_time(down[5m])`,
 	`label_join(up{foo="bar"}, "joint", "-", "boo", "faf") + label_join(down{baz="fob"}, "joint", "-", "boo", "faf")`:       `label_join(up{foo="bar"}, "joint", "-", "boo", "faf") + label_join(down{baz="fob"}, "joint", "-", "boo", "faf")`,
 	`label_replace(up{foo="bar"}, "zoo", "$1", "faf", "(.*)") + label_replace(down{baz="fob"}, "zoo", "$1", "faf", "(.*)")`: `label_replace(up{foo="bar"}, "zoo", "$1", "faf", "(.*)") + label_replace(down{baz="fob"}, "zoo", "$1", "faf", "(.*)")`,
-	`info(up{foo="bar"}) + info(down{baz="fob"})`:                                                                           `info(up{foo="bar"}) + info(down{baz="fob"})`,
-	`sort(up{foo="bar"}) + sort(down{baz="fob"})`:                                                                           `sort(up{foo="bar"}) + sort(down{baz="fob"})`,
-	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`:                                           `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
+	`info(up{foo="bar"}) + info(down{baz="fob"})`:                                 `info(up{foo="bar"}) + info(down{baz="fob"})`,
+	`sort(up{foo="bar"}) + sort(down{baz="fob"})`:                                 `sort(up{foo="bar"}) + sort(down{baz="fob"})`,
+	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`: `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
 }
 
 func TestPropagateMatchers(t *testing.T) {
-	parser.EnableExperimentalFunctions = true
+	enableExperimentalFunctionsIfNeeded(t)
 	ctx := context.Background()
 
 	for input, expected := range testCasesPropagateMatchers {
@@ -149,7 +149,7 @@ func TestPropagateMatchers(t *testing.T) {
 }
 
 func TestPropagateMatchersWithData(t *testing.T) {
-	parser.EnableExperimentalFunctions = true
+	enableExperimentalFunctionsIfNeeded(t)
 	testASTOptimizationPassWithData(t, `
 		load 1m
 			up{foo="bar",baz="fob",boo="far",faf="bob"} 0+1x<num samples>
@@ -170,14 +170,21 @@ func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
 	}
 	for name, f := range parser.Functions {
 		t.Run(name, func(t *testing.T) {
-			i, optional, err := ast.VectorSelectorArgumentIndex(f.Name)
+			i, err := ast.VectorSelectorArgumentIndex(f.Name)
 			require.NoError(t, err)
 			if i < 0 {
 				return
 			}
 			require.Contains(t, allowedValueTypes, f.ArgTypes[i])
 			require.Contains(t, allowedValueTypes, f.ReturnType)
-			require.Equal(t, optional, f.Variadic != 0)
 		})
 	}
+}
+
+func enableExperimentalFunctionsIfNeeded(t *testing.T) {
+	if parser.EnableExperimentalFunctions {
+		return
+	}
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
 }
