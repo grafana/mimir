@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -168,6 +169,9 @@ func TestMimir(t *testing.T) {
 		},
 		Frontend: frontend.CombinedFrontendConfig{
 			QueryEngine: "prometheus",
+			FrontendV2: v2.Config{
+				SchedulerAddress: "localhost",
+			},
 		},
 		MemberlistKV: memberlist.KVConfig{
 			WatchPrefixBufferSize: 128,

@@ -461,14 +461,6 @@ func (t *testRangeVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testRangeVectorOperator) StepCount() int {
-	return 1
-}
-
-func (t *testRangeVectorOperator) Range() time.Duration {
-	return t.stepRange
-}
-
 func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil

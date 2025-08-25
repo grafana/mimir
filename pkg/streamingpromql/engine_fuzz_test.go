@@ -118,12 +118,12 @@ func testInstantQueries(t *testing.T, startT time.Time, query string, testEnviro
 
 	// if the Prometheus engine can not prepare the query then we expect the MQE to also fail
 	if prometheusError != nil {
-		require.Errorf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
+		require.Errorf(t, mqeError, "Failed to create query: Prometheus' engine returned error, but MQE returned no error.\nQuery: %q", query)
 		return
 	}
-
-	require.NotNil(t, prometheusQuery)
-	require.NotNil(t, mqeQuery)
+	require.NoError(t, mqeError, "Failed to create query: MQE returned error, but Prometheus' engine returned no error.\nQuery: %q", query)
+	require.NotNilf(t, prometheusQuery, "Failed to create query: Prometheus' engine query expected not to be nil.\nQuery: %q", query)
+	require.NotNilf(t, mqeQuery, "Failed to create query: MQE engine query expected not to be nil.\nQuery: %q", query)
 
 	executeQueriesAndCompareResults(t, *testEnvironment, mqeQuery, prometheusQuery, query)
 }
@@ -136,12 +136,12 @@ func testRangeQueries(t *testing.T, startT time.Time, endT time.Time, step time.
 	// Note - prometheus validates time ranges and steps in http api handler, so it will not return an error at query preparation time
 	// Note - max resolution size (end-start/step) is validated in codec.go so we don't validate that here either
 	if prometheusError != nil || startT.After(endT) {
-		require.NotNilf(t, mqeError, "Prometheus' engine returned error %v, but MQE returned no error", prometheusError)
+		require.Errorf(t, mqeError, "Failed to create query: Prometheus' engine returned error, but MQE returned no error.\nQuery: %q", query)
 		return
 	}
-
-	require.NotNil(t, prometheusQuery)
-	require.NotNil(t, mqeQuery)
+	require.NoError(t, mqeError, "Failed to create query: MQE returned error, but Prometheus' engine returned no error.\nQuery: %q", query)
+	require.NotNilf(t, prometheusQuery, "Failed to create query: Prometheus' engine query expected not to be nil.\nQuery: %q", query)
+	require.NotNilf(t, mqeQuery, "Failed to create query: MQE engine query expected not to be nil.\nQuery: %q", query)
 
 	executeQueriesAndCompareResults(t, *testEnvironment, mqeQuery, prometheusQuery, query)
 }

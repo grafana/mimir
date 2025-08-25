@@ -107,7 +107,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
-		g.histogramSums[outputIdx], err = g.histogramSums[outputIdx].Add(p.H)
+		g.histogramSums[outputIdx], _, err = g.histogramSums[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms

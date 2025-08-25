@@ -36,6 +36,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
+* [ENHANCEMENT] Add support for `revisionhistorylimit` for all deployments. #12323
 * [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
 
 ## 5.8.0

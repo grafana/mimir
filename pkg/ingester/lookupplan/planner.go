@@ -37,6 +37,10 @@ func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlann
 }
 
 func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (_ index.LookupPlan, retErr error) {
+	if planningDisabled(ctx) {
+		return inPlan, nil
+	}
+
 	var allPlans []plan
 	defer func(start time.Time) {
 		var abortedEarly bool
@@ -143,4 +147,19 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		logger.DebugLog(logKvs...)
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
+}
+
+type contextKey string
+
+const disabledPlanningContextKey contextKey = "disabled_planning"
+
+func ContextWithDisabledPlanning(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disabledPlanningContextKey, true)
+}
+
+// planningDisabled checks if planning is disabled in the context
+func planningDisabled(ctx context.Context) bool {
+	val := ctx.Value(disabledPlanningContextKey)
+	disabled, ok := val.(bool)
+	return ok && disabled
 }

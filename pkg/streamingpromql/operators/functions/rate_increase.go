@@ -38,7 +38,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
@@ -51,6 +51,8 @@ func rate(isRate bool) RangeVectorStepFunction {
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
+
+		rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
@@ -123,7 +125,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	}
 
 	delta := lastPoint.H.CopyToSchema(desiredSchema)
-	_, err := delta.Sub(firstPoint.H)
+	_, _, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +135,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		for _, p := range points {
 			if p.H.DetectReset(previousValue) {
 				// Counter reset.
-				if _, err := delta.Add(previousValue); err != nil {
+				if _, _, err := delta.Add(previousValue); err != nil {
 					return err
 				}
 			}
@@ -309,7 +311,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -322,6 +324,8 @@ func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.Scal
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
+
+	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 	if fCount >= 2 {
 		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
@@ -368,7 +372,7 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta, err := lastPoint.H.Copy().Sub(firstPoint.H)
+	delta, _, err := lastPoint.H.Copy().Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}

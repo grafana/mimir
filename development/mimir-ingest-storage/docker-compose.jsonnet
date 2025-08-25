@@ -4,6 +4,7 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.usage_tracker +
     self.nginx +
     self.minio +
     self.grafana +
@@ -104,6 +105,42 @@ std.manifestYamlDoc({
       name: 'mimir-block-builder-scheduler-0',
       target: 'block-builder-scheduler',
       publishedHttpPort: 8019,
+    }),
+  },
+
+  usage_tracker:: {
+    'usage-tracker-zone-a-0': mimirService({
+      name: 'usage-tracker-zone-a-0',
+      target: 'usage-tracker',
+      publishedHttpPort: 8010,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+    'usage-tracker-zone-a-1': mimirService({
+      name: 'usage-tracker-zone-a-1',
+      target: 'usage-tracker',
+      publishedHttpPort: 8011,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+    'usage-tracker-zone-b-0': mimirService({
+      name: 'usage-tracker-zone-b-0',
+      target: 'usage-tracker',
+      publishedHttpPort: 8012,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
     }),
   },
 
