@@ -208,6 +208,10 @@ The following features are currently experimental:
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`
     - `-ingester.rejection-prioritizer.calibration-interval`
+  - Postings for matchers cache sharing and invalidation. Sharing allows caches to be shared across multiple TSDBs. Invalidation allows cache entries to be marked as invalid, after which they'll be lazily evicted when they hit their normal TTL or when the cache hits its max size.
+    - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -217,14 +221,12 @@ The following features are currently experimental:
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
-  - `-query-frontend.querier-forget-delay`
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
-  - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.

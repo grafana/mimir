@@ -461,13 +461,14 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
 			var err error
+			var _ bool
 
 			if canMutateLeft {
-				res, err = lH.Add(rH)
+				res, _, err = lH.Add(rH)
 			} else if canMutateRight {
-				res, err = rH.Add(lH)
+				res, _, err = rH.Add(lH)
 			} else {
-				res, err = lH.Copy().Add(rH)
+				res, _, err = lH.Copy().Add(rH)
 			}
 
 			if err != nil {
@@ -486,13 +487,14 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
 			var err error
+			var _ bool
 
 			if canMutateLeft {
-				res, err = lH.Sub(rH)
+				res, _, err = lH.Sub(rH)
 			} else if canMutateRight {
-				res, err = rH.Mul(-1).Add(lH)
+				res, _, err = rH.Mul(-1).Add(lH)
 			} else {
-				res, err = lH.Copy().Sub(rH)
+				res, _, err = lH.Copy().Sub(rH)
 			}
 
 			if err != nil {

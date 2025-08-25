@@ -821,7 +821,7 @@ func (u *userShardingStrategy) FilterUsers(context.Context, []string) ([]string,
 }
 
 func (u *userShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
-	if util.StringsContain(u.users, userID) {
+	if slices.Contains(u.users, userID) {
 		return nil
 	}
 

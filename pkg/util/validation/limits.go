@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -57,6 +57,7 @@ const (
 	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
 	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
+	MaxActiveSeriesPerUserFlag                = "distributor.max-active-series-per-user"
 	RequestRateFlag                           = "distributor.request-rate-limit"
 	RequestBurstSizeFlag                      = "distributor.request-burst-size"
 	IngestionRateFlag                         = "distributor.ingestion-rate-limit"
@@ -111,15 +112,16 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate          float64 `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize     int     `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate        float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize   int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples      bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user"`
+	RequestRate            float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize       int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate          float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize     int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor   float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples        bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel         string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel         string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters          int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
 	// We should only update the timestamp if the difference
 	// between the stored timestamp and the time we received a sample at
 	// is more than this duration.
@@ -209,7 +211,7 @@ type Limits struct {
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
-	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
+	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
 	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
@@ -308,6 +310,7 @@ type Limits struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&l.MaxActiveSeriesPerUser, MaxActiveSeriesPerUserFlag, 0, "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.")
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
@@ -616,21 +619,6 @@ func (l *Limits) Validate() error {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
-		// Generate translation strategy based on other settings.
-		switch validationScheme {
-		case model.LegacyValidation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
-			}
-		case model.UTF8Validation:
-			if l.OTelMetricSuffixesEnabled {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
-			} else {
-				l.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported OTLP translation strategy %q", l.OTelTranslationStrategy)
 	}
@@ -638,14 +626,14 @@ func (l *Limits) Validate() error {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
 		}
-		cfg.MetricNameValidationScheme = validationScheme
+		cfg.NameValidationScheme = validationScheme
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 
@@ -837,6 +825,18 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // Zero means disabled.
 func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
+}
+
+// MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
+func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
+	overrides := o.getOverridesForUser(userID)
+	limit := overrides.MaxActiveSeriesPerUser
+	// TODO temporary to simplify testing.
+	if limit == 0 {
+		// Fallback to MaxGlobalSeriesPerUser if no per-user active series limit is set.
+		limit = overrides.MaxGlobalSeriesPerUser
+	}
+	return limit
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
@@ -1131,7 +1131,7 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	relabelConfigs := o.getOverridesForUser(userID).MetricRelabelConfigs
 	validationScheme := o.NameValidationScheme(userID)
 	for i := range relabelConfigs {
-		relabelConfigs[i].MetricNameValidationScheme = validationScheme
+		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
 }
@@ -1443,7 +1443,30 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 }
 
 func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	return otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	if strategy != "" {
+		return strategy
+	}
+
+	// Generate translation strategy based on other settings.
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
+	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	case model.LegacyValidation:
+		if suffixesEnabled {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case model.UTF8Validation:
+		if suffixesEnabled {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		} else {
+			strategy = otlptranslator.NoTranslation
+		}
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
+	}
+	return strategy
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.

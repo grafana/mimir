@@ -73,19 +73,40 @@ const (
 	checkContextEveryNIterations = 128
 )
 
-type errorType string
+type errorNum int
+
+type errorType struct {
+	num errorNum
+	str string
+}
 
 const (
-	errorNone          errorType = ""
-	errorTimeout       errorType = "timeout"
-	errorCanceled      errorType = "canceled"
-	errorExec          errorType = "execution"
-	errorBadData       errorType = "bad_data"
-	errorInternal      errorType = "internal"
-	errorUnavailable   errorType = "unavailable"
-	errorNotFound      errorType = "not_found"
-	errorNotAcceptable errorType = "not_acceptable"
+	ErrorNone errorNum = iota
+	ErrorTimeout
+	ErrorCanceled
+	ErrorExec
+	ErrorBadData
+	ErrorInternal
+	ErrorUnavailable
+	ErrorNotFound
+	ErrorNotAcceptable
 )
+
+var (
+	errorNone          = errorType{ErrorNone, ""}
+	errorTimeout       = errorType{ErrorTimeout, "timeout"}
+	errorCanceled      = errorType{ErrorCanceled, "canceled"}
+	errorExec          = errorType{ErrorExec, "execution"}
+	errorBadData       = errorType{ErrorBadData, "bad_data"}
+	errorInternal      = errorType{ErrorInternal, "internal"}
+	errorUnavailable   = errorType{ErrorUnavailable, "unavailable"}
+	errorNotFound      = errorType{ErrorNotFound, "not_found"}
+	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
+)
+
+// OverrideErrorCode can be used to override status code for different error types.
+// Return false to fall back to default status code.
+type OverrideErrorCode func(errorNum, error) (code int, override bool)
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -95,7 +116,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("%s: %s", e.typ, e.err)
+	return fmt.Sprintf("%s: %s", e.typ.str, e.err)
 }
 
 // ScrapePoolsRetriever provide the list of all scrape pools.
@@ -164,7 +185,7 @@ type RuntimeInfo struct {
 type Response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
-	ErrorType errorType   `json:"errorType,omitempty"`
+	ErrorType string      `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
 	Infos     []string    `json:"infos,omitempty"`
@@ -223,6 +244,8 @@ type API struct {
 	statsRenderer       StatsRenderer
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	// Allows customizing the default mapping
+	overrideErrorCode OverrideErrorCode
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -268,6 +291,7 @@ func NewAPI(
 	validIntervalCTZeroIngestion time.Duration,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
+	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -296,6 +320,7 @@ func NewAPI(
 		statsRenderer:       DefaultStatsRenderer,
 		notificationsGetter: notificationsGetter,
 		notificationsSub:    notificationsSub,
+		overrideErrorCode:   overrideErrorCode,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -446,7 +471,7 @@ func invalidParamError(err error, parameter string) apiFuncResult {
 	}, nil, nil}
 }
 
-func (api *API) options(*http.Request) apiFuncResult {
+func (*API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
@@ -519,7 +544,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -528,7 +553,7 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func (api *API) parseQuery(r *http.Request) apiFuncResult {
+func (*API) parseQuery(r *http.Request) apiFuncResult {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -791,8 +816,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		name = model.UnescapeName(name, model.ValueEncodingEscaping)
 	}
 
-	label := model.LabelName(name)
-	if !label.IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
@@ -999,7 +1023,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
-func (api *API) dropSeries(_ *http.Request) apiFuncResult {
+func (*API) dropSeries(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, &apiError{errorInternal, errors.New("not implemented")}, nil, nil}
 }
 
@@ -1693,7 +1717,7 @@ type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
 
-func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveRuntimeInfo(*http.Request) apiFuncResult {
 	status, err := api.runtimeInfo()
 	if err != nil {
 		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
@@ -1701,18 +1725,18 @@ func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
 	return apiFuncResult{status, nil, nil, nil}
 }
 
-func (api *API) serveBuildInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveBuildInfo(*http.Request) apiFuncResult {
 	return apiFuncResult{api.buildInfo, nil, nil, nil}
 }
 
-func (api *API) serveConfig(_ *http.Request) apiFuncResult {
+func (api *API) serveConfig(*http.Request) apiFuncResult {
 	cfg := &prometheusConfig{
 		YAML: api.config().String(),
 	}
 	return apiFuncResult{cfg, nil, nil, nil}
 }
 
-func (api *API) serveFlags(_ *http.Request) apiFuncResult {
+func (api *API) serveFlags(*http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
@@ -1750,7 +1774,7 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 	return result
 }
 
-func (api *API) serveTSDBBlocks(_ *http.Request) apiFuncResult {
+func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
 	blockMetas, err := api.db.BlockMetas()
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error getting block metadata: %w", err)}, nil, nil}
@@ -2031,7 +2055,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&Response{
 		Status:    statusError,
-		ErrorType: apiErr.typ,
+		ErrorType: apiErr.typ.str,
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
@@ -2042,29 +2066,41 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
-	switch apiErr.typ {
-	case errorBadData:
-		code = http.StatusBadRequest
-	case errorExec:
-		code = http.StatusUnprocessableEntity
-	case errorCanceled:
-		code = statusClientClosedConnection
-	case errorTimeout:
-		code = http.StatusServiceUnavailable
-	case errorInternal:
-		code = http.StatusInternalServerError
-	case errorNotFound:
-		code = http.StatusNotFound
-	case errorNotAcceptable:
-		code = http.StatusNotAcceptable
-	default:
-		code = http.StatusInternalServerError
+	if api.overrideErrorCode != nil {
+		if newCode, override := api.overrideErrorCode(apiErr.typ.num, apiErr.err); override {
+			code = newCode
+		} else {
+			code = getDefaultErrorCode(apiErr.typ)
+		}
+	} else {
+		code = getDefaultErrorCode(apiErr.typ)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if n, err := w.Write(b); err != nil {
 		api.logger.Error("error writing response", "bytesWritten", n, "err", err)
+	}
+}
+
+func getDefaultErrorCode(errType errorType) int {
+	switch errType {
+	case errorBadData:
+		return http.StatusBadRequest
+	case errorExec:
+		return http.StatusUnprocessableEntity
+	case errorCanceled:
+		return statusClientClosedConnection
+	case errorTimeout:
+		return http.StatusServiceUnavailable
+	case errorInternal:
+		return http.StatusInternalServerError
+	case errorNotFound:
+		return http.StatusNotFound
+	case errorNotAcceptable:
+		return http.StatusNotAcceptable
+	default:
+		return http.StatusInternalServerError
 	}
 }
 

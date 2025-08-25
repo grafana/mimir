@@ -80,7 +80,6 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 //   - err error.
 type RangeVectorStepFunction func(
 	step *types.RangeVectorStepData,
-	rangeSeconds float64,
 	scalarArgsData []types.ScalarData,
 	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,

@@ -2,6 +2,12 @@
   _config+:: {
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
 
+    // If true, compute the scaling metric using irate(), otherwise, use rate()
+    autoscaling_cpu_hpa_use_irate: false,
+
+    // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
+    autoscaling_memory_hpa_require_metrics: false,
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
@@ -269,37 +275,67 @@
 
   local cpuHPAQuery(with_ready_trigger) = (
     if with_ready_trigger then
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the 95th percentile value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
       // When computing the actual CPU utilization, We only take in account ready pods.
-      |||
-        quantile_over_time(0.95,
-          sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
-            and
-            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-          )[15m:]
-        ) * 1000
-      |||
+      if $._config.autoscaling_cpu_hpa_use_irate then
+        // We use irate() instead of rate() because it is more reliable when scrapes fail. It calculates
+        // the metric from the last two data points in the range, whereas rate() extrapolates missing
+        // values over the full window, which can underestimate CPU utilization and trigger unnecessary
+        // downscaling. To prevent overscaling, we use a lower percentile in irate() compared to rate().
+        |||
+          quantile_over_time(0.65,
+            sum(
+              sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+            )[15m:]
+          ) * 1000
+        |||
+      else
+        |||
+          quantile_over_time(0.95,
+            sum(
+              sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+            )[15m:]
+          ) * 1000
+        |||
     else
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
-      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
       // of containers there are running at any given time, without suffering the PromQL lookback period.
-      |||
-        max_over_time(
-          sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
-            and
-            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-          )[15m:]
-        ) * 1000
-      |||
+      if $._config.autoscaling_cpu_hpa_use_irate then
+        |||
+          quantile_over_time(0.75,
+            sum(
+              sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+            )[15m:]
+          ) * 1000
+        |||
+      else
+        |||
+          max_over_time(
+            sum(
+              sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+            )[15m:]
+          ) * 1000
+        |||
   ),
 
   local memoryHPAQuery(with_ready_trigger) =
@@ -309,37 +345,65 @@
         // all replicas over 15m.
         //
         // When computing the actual memory utilization, We only take in account ready pods.
-        |||
-          quantile_over_time(0.95,
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        if $._config.autoscaling_memory_hpa_require_metrics then
+          |||
+            quantile_over_time(0.95,
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+                )
+              )[15m:]
+            )
+          |||
+        else
+          |||
+            quantile_over_time(0.95,
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+                ) or vector(0)
+              )[15m:]
+            )
+          |||
       else
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
         // all replicas over 15m.
         //
-        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
         // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
         // of containers there are running at any given time, without suffering the PromQL lookback period.
-        |||
-          max_over_time(
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        if $._config.autoscaling_memory_hpa_require_metrics then
+          |||
+            max_over_time(
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+                )
+              )[15m:]
+            )
+          |||
+        else
+          |||
+            max_over_time(
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+                ) or vector(0)
+              )[15m:]
+            )
+          |||
     ) + (
-      // Add pods that were terminated due to an OOM in the memory calculation.
+      // Add pods that were terminated due to an OOM in the memory calculation. We use `or vector(0)` here unlike in the main memory
+      // query because we want to ensure this part of the calculation always returns a value even when no OOM killed pods are found.
+      // This prevents the entire memory metric from becoming unavailable.
       |||
         +
         sum(

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+//go:build slicelabels
 
 package labels
 
@@ -445,7 +445,7 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
@@ -453,7 +453,7 @@ func NewScratchBuilder(n int) ScratchBuilder {
 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -462,7 +462,7 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 
@@ -477,7 +477,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 }
 
 // UnsafeAddBytes adds a name/value pair, using []byte instead of string.
-// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// The default version of this function is unsafe, hence the name.
 // This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: string(name), Value: string(value)})

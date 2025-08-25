@@ -191,4 +191,5 @@ spec:
               {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "compactor") | nindent 10 }}
 {{- end }}

@@ -30775,7 +30775,7 @@ data:
                    ]
                 },
                 "gridPos": {
-                   "h": 13,
+                   "h": 20,
                    "w": 10,
                    "x": 0,
                    "y": 0
@@ -31848,10 +31848,10 @@ data:
                 },
                 "fill": 1,
                 "gridPos": {
-                   "h": 3,
-                   "w": 10,
-                   "x": 0,
-                   "y": 13
+                   "h": 4,
+                   "w": 8,
+                   "x": 16,
+                   "y": 16
                 },
                 "id": 10,
                 "legend": {
@@ -31960,7 +31960,7 @@ data:
                    ]
                 },
                 "gridPos": {
-                   "h": 8,
+                   "h": 12,
                    "w": 6,
                    "x": 10,
                    "y": 8
@@ -43022,7 +43022,33 @@ data:
                             },
                             "unit": "short"
                          },
-                         "overrides": [ ]
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
                       },
                       "id": 7,
                       "links": [ ],
@@ -43041,6 +43067,12 @@ data:
                             "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
                             "legendLink": null
                          }
                       ],

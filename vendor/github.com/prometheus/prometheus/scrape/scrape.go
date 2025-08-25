@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
+	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -154,10 +155,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, err
 	}
 
-	switch cfg.MetricNameValidationScheme {
-	case model.LegacyValidation, model.UTF8Validation:
-	default:
-		return nil, errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
+	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
+		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	var escapingScheme model.EscapingScheme
 	escapingScheme, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme)
@@ -331,10 +330,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
-	switch cfg.MetricNameValidationScheme {
-	case model.LegacyValidation, model.UTF8Validation:
-	default:
-		return errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
+	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
+		return errors.New("scrapePool.reload: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	sp.validationScheme = cfg.MetricNameValidationScheme
 	var escapingScheme model.EscapingScheme
@@ -484,7 +481,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 		for _, t := range targets {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
-			t.LabelsRange(func(_ labels.Label) { nonEmpty = true })
+			t.LabelsRange(func(labels.Label) { nonEmpty = true })
 			switch {
 			case nonEmpty:
 				all = append(all, t)

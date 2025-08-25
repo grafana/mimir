@@ -204,6 +204,7 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
           {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "ingester") }}
           {{- if or .Values.global.extraEnv .Values.ingester.env $cpu_request $goml }}
@@ -233,7 +234,12 @@ spec:
             {{- with .Values.ingester.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if $cpu_request }}
+            {{- /* copy logic from operations/mimir/ingester.libsonnet */}}
+            {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString)) }}
           {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ingester" "env" $defaultEnv) | nindent 10 }}
 ---
 {{ end }}
 {{ end }}

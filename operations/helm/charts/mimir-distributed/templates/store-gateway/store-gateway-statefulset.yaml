@@ -201,6 +201,7 @@ spec:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
           {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
           {{- $goml := include "mimir.gomemlimit" (dict "ctx" . "component" "store-gateway") -}}
@@ -225,16 +226,15 @@ spec:
             - name: "GOMEMLIMIT"
               value: {{ include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
             {{- end }}
+          {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled $cpu_request_plus_four | toString)) }}
           {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.store_gateway.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- if $mem_request }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMEMLIMIT" "value" (include "mimir.siToBytes" (dict "value" $mem_request) | toString)) }}
           {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "store-gateway" "env" $defaultEnv) | nindent 10 }}
 
 ---
 {{ end }}

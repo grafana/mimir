@@ -1331,6 +1331,10 @@ func testDistributorNameValidation(
 		},
 	)
 
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", baseFlags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+
 	queryFrontendFlags := mergeFlags(baseFlags, map[string]string{
 		"-query-frontend.cache-results":                      "true",
 		"-query-frontend.results-cache.backend":              "memcached",
@@ -1338,6 +1342,7 @@ func testDistributorNameValidation(
 		"-query-frontend.query-stats-enabled":                strconv.FormatBool(false),
 		"-query-frontend.query-sharding-total-shards":        "32",
 		"-query-frontend.query-sharding-max-sharded-queries": "128",
+		"-query-frontend.scheduler-address":                  queryScheduler.NetworkGRPCEndpoint(),
 	})
 
 	// Start the query-frontend.
@@ -1347,7 +1352,7 @@ func testDistributorNameValidation(
 	querierFlags := mergeFlags(
 		baseFlags,
 		map[string]string{
-			"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
+			"-querier.scheduler-address": queryScheduler.NetworkGRPCEndpoint(),
 		},
 	)
 

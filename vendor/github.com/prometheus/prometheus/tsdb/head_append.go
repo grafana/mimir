@@ -148,7 +148,7 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
-func (h *Head) Appender(_ context.Context) storage.Appender {
+func (h *Head) Appender(context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
@@ -785,7 +785,10 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 
 	switch {
 	case h != nil:
-		zeroHistogram := &histogram.Histogram{}
+		zeroHistogram := &histogram.Histogram{
+			// The CTZeroSample represents a counter reset by definition.
+			CounterResetHint: histogram.CounterReset,
+		}
 		s.Lock()
 
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
@@ -823,7 +826,10 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
 	case fh != nil:
-		zeroFloatHistogram := &histogram.FloatHistogram{}
+		zeroFloatHistogram := &histogram.FloatHistogram{
+			// The CTZeroSample represents a counter reset by definition.
+			CounterResetHint: histogram.CounterReset,
+		}
 		s.Lock()
 
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
@@ -1231,6 +1237,10 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
 				s.V = 0 // Note that this is modifying the copy which is what will be appended but the WAL got the NaN already.
 			}
+
+			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
+			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
+
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1238,6 +1248,12 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
@@ -1319,6 +1335,12 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
+			newlyStale := value.IsStaleNaN(s.H.Sum)
+			staleToNonStale := false
+			if series.lastHistogramValue != nil {
+				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
+				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
+			}
 			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1326,6 +1348,12 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				acc.histogramsAppended--
@@ -1407,6 +1435,12 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
+			newlyStale := value.IsStaleNaN(s.FH.Sum)
+			staleToNonStale := false
+			if series.lastFloatHistogramValue != nil {
+				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
+				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
+			}
 			ok, chunkCreated = series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1414,6 +1448,12 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				acc.histogramsAppended--

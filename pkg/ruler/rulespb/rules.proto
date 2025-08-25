@@ -45,6 +45,11 @@ message RuleGroupDesc {
   ];
 
   bool align_evaluation_time_on_interval = 12;
+
+  repeated cortexpb.LabelPair labels = 14 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
 }
 
 // RuleDesc is a proto representation of a Prometheus Rule

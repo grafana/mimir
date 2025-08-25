@@ -168,7 +168,14 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
-	s.populateInitialJobs(ctx)
+
+	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
+		return
+	}
+
+	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger))
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -354,20 +361,15 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore) {
 	// Note that the lock is already held because we're in startup mode.
-	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, time.Now().Add(-s.cfg.LookbackOnNoCommit))
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
-		return
-	}
 
-	offFinder := newOffsetFinder(s.adminClient, s.logger)
+	endTime := time.Now()
+	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
 	for _, off := range consumeOffs {
-		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
-			off.start, off.resume, off.end, time.Now(), s.cfg.JobSize,
-			time.Now().Add(-s.cfg.MaxScanAge), s.logger)
+		o, err := probeInitialJobOffsets(ctx, offStore, off.topic, off.partition,
+			off.start, off.resume, off.end, endTime, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue

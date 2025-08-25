@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r354-d48a2220
+  tag: r356-e92d6700
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -570,6 +570,7 @@ alertmanager:
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- Allows to override the container image of the alertmanager component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
@@ -874,6 +875,7 @@ distributor:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1259,6 +1261,7 @@ overrides_exporter:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   annotations: {}
 
@@ -1352,6 +1355,7 @@ ruler:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1481,6 +1485,7 @@ ruler_querier:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1603,6 +1608,7 @@ ruler_query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1719,6 +1725,7 @@ ruler_query_scheduler:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -1811,6 +1818,7 @@ querier:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1949,6 +1957,7 @@ query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -2069,6 +2078,7 @@ query_scheduler:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -3069,6 +3079,80 @@ minio:
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 
+kafka:
+  # -- Enable Kafka for ingest-storage architecture (demo purposes only)
+  enabled: false
+
+  image:
+    # -- The container image registry
+    registry: docker.io
+    # -- The container image repository
+    repository: apache/kafka-native
+    # -- The container image tag
+    tag: 4.0.0
+    # -- The container image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Kafka service port
+  service:
+    port: 9092
+    controllerPort: 9093
+    # -- Service type
+    type: ClusterIP
+    # -- Service annotations
+    annotations: {}
+    # -- Service labels
+    labels: {}
+  # -- Kafka persistence configuration
+  persistence:
+    # If false, use emptyDir
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+    # Additional settings for emptyDir if persistence is disabled
+    emptyDir: {}
+  # -- Resource requests and limits for Kafka
+  resources:
+    requests:
+      cpu: 1
+      memory: 1Gi
+    limits: {}
+  # -- Node selector for Kafka pods
+  nodeSelector: {}
+  # -- Tolerations for Kafka pods
+  tolerations: []
+  # -- Affinity for Kafka pods
+  affinity: {}
+  # -- Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+  # -- The name of the PriorityClass for Kafka pods
+  priorityClassName: null
+  # -- Labels for Kafka pods
+  podLabels: {}
+  # -- Annotations for Kafka pods
+  podAnnotations: {}
+  # -- Security context for Kafka pods
+  securityContext:
+    fsGroup: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container security context for Kafka containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    allowPrivilegeEscalation: false
+  # -- Grace period to allow Kafka to shutdown before it is killed
+  terminationGracePeriodSeconds: 30
+  # -- Additional environment variables for Kafka
+  extraEnv: []
+  # -- Additional environment variables from secrets or configmaps
+  extraEnvFrom: []
+
 # -- DEPRECATED: use the 'gateway' section instead. For a migration guide refer to
 # https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/
 #
@@ -3079,6 +3163,7 @@ nginx:
   enabled: true
   # -- Number of replicas for nginx
   replicas: 1
+  revisionHistoryLimit: null
   # -- Enable logging of 2xx and 3xx HTTP requests
   verboseLogging: true
   autoscaling:
@@ -3475,6 +3560,7 @@ gateway:
 
   # -- Number of replicas for the Deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- HorizontalPodAutoscaler
   autoscaling:
@@ -3869,7 +3955,7 @@ metaMonitoring:
     labels:
       grafana_dashboard: "1"
 
-  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator, Grafana Agent (deprecated), and/or Grafana Alloy
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
@@ -3938,7 +4024,9 @@ metaMonitoring:
   #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
 
-  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  # -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+  # Users are recommended to switch to Grafana k8s-monitoring, that orchestrates the lifecycle of Grafana Alloy instances, and comes with built-in support for monitoring Grafana LGTM stacks (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
+  # metaMonitoring.grafanaAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
@@ -4136,6 +4224,8 @@ metaMonitoring:
         # matchLabelKeys:
         #   - pod-template-hash
 
+# -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+# Users are recommended to switch to Grafana k8s-monitoring (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
   podSecurityContext:
@@ -4168,7 +4258,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r354-b6fd979a
+    tag: r356-a65da497
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4287,6 +4377,7 @@ admin_api:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   annotations: {}
   service:
@@ -4453,6 +4544,7 @@ graphite:
   querier:
     # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
     replicas: 2
+    revisionHistoryLimit: null
 
     schemasConfiguration:
       storageSchemas: |-
@@ -4544,6 +4636,7 @@ graphite:
 
   write_proxy:
     replicas: 2
+    revisionHistoryLimit: null
 
     service:
       annotations: {}
@@ -4770,6 +4863,7 @@ federation_frontend:
 
   # -- Number of replicas for the federation-frontend
   replicas: 2
+  revisionHistoryLimit: null
   # -- Deployment strategy for the federation-frontend pods
   strategy:
     type: RollingUpdate
@@ -4886,6 +4980,7 @@ continuous_test:
     # tag: 2.16.0
   # -- Number of replicas to start of continuous test
   replicas: 1
+  revisionHistoryLimit: null
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
   # -- The endpoints to use for writing to and reading metrics from your instance.

@@ -226,7 +226,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
-	exp.MetricNameValidationScheme = model.LegacyValidation
+	exp.NameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))
@@ -1640,7 +1640,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1655,7 +1655,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1670,7 +1670,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1685,7 +1685,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			verify: func(t *testing.T, cfg Limits) {
 				t.Helper()
-				assert.Equal(t, OTelTranslationStrategyValue(otlptranslator.NoTranslation), cfg.OTelTranslationStrategy)
+				assert.Equal(t, OTelTranslationStrategyValue(""), cfg.OTelTranslationStrategy)
 			},
 			expectedErr: nil,
 		},
@@ -1953,17 +1953,17 @@ func TestExtensionMarshalling(t *testing.T) {
 
 		val, err := yaml.Marshal(overrides)
 		require.NoError(t, err)
-		fmt.Println(string(val))
 		require.Contains(t, string(val),
 			`test:
     test_extension_struct:
         foo: 0
     test_extension_string: ""
+    max_active_series_per_user: 0
     request_rate: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","request_rate":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","max_active_series_per_user":0,`)
 	})
 
 	t.Run("marshal limits with partial extension values", func(t *testing.T) {
@@ -1982,12 +1982,13 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 421237
     test_extension_string: ""
+    max_active_series_per_user: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","max_active_series_per_user":0,"request_rate":0,`)
 	})
 
 	t.Run("marshal limits with default extension values", func(t *testing.T) {
@@ -2001,12 +2002,13 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 42
     test_extension_string: default string extension value
+    max_active_series_per_user: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","max_active_series_per_user":0,"request_rate":0,`)
 	})
 }
 
@@ -2164,6 +2166,109 @@ func TestLimitsCanonicalizeQueries(t *testing.T) {
 			require.Equal(t, tc.expectedQueries, limits.BlockedQueries)
 		})
 	}
+}
+
+func TestOverrides_OTelTranslationStrategy(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		limits                      map[string]*Limits
+		tenantID                    string
+		expectedTranslationStrategy otlptranslator.TranslationStrategyOption
+	}{
+		{
+			name: "explicit strategy takes precedence",
+			limits: map[string]*Limits{
+				"tenant1": {
+					OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
+					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
+					OTelMetricSuffixesEnabled: false,
+				},
+			},
+			tenantID:                    "tenant1",
+			expectedTranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		},
+		{
+			name: "auto-deduced: legacy validation + suffixes enabled",
+			limits: map[string]*Limits{
+				"tenant1": {
+					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
+					NameValidationScheme:      ValidationSchemeValue(model.LegacyValidation),
+					OTelMetricSuffixesEnabled: true,
+				},
+			},
+			tenantID:                    "tenant1",
+			expectedTranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		},
+		{
+			name: "auto-deduced: legacy validation + suffixes disabled",
+			limits: map[string]*Limits{
+				"tenant1": {
+					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
+					NameValidationScheme:      ValidationSchemeValue(model.LegacyValidation),
+					OTelMetricSuffixesEnabled: false,
+				},
+			},
+			tenantID:                    "tenant1",
+			expectedTranslationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes,
+		},
+		{
+			name: "auto-deduced: utf8 validation + suffixes enabled",
+			limits: map[string]*Limits{
+				"tenant1": {
+					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
+					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
+					OTelMetricSuffixesEnabled: true,
+				},
+			},
+			tenantID:                    "tenant1",
+			expectedTranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
+		},
+		{
+			name: "auto-deduced: utf8 validation + suffixes disabled",
+			limits: map[string]*Limits{
+				"tenant1": {
+					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
+					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
+					OTelMetricSuffixesEnabled: false,
+				},
+			},
+			tenantID:                    "tenant1",
+			expectedTranslationStrategy: otlptranslator.NoTranslation,
+		},
+		{
+			name:                        "uses defaults for unknown tenant",
+			limits:                      map[string]*Limits{},
+			tenantID:                    "unknown",
+			expectedTranslationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes, // Default: legacy + suffixes disabled
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			defaults := getDefaultLimits()
+			overrides := NewOverrides(defaults, NewMockTenantLimits(tc.limits))
+
+			result := overrides.OTelTranslationStrategy(tc.tenantID)
+			assert.Equal(t, tc.expectedTranslationStrategy, result)
+		})
+	}
+
+	t.Run("panics on unknown name validation scheme", func(t *testing.T) {
+		limits := map[string]*Limits{
+			"tenant1": {
+				OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
+				NameValidationScheme:      ValidationSchemeValue(999), // Invalid scheme
+				OTelMetricSuffixesEnabled: true,
+			},
+		}
+
+		defaults := getDefaultLimits()
+		overrides := NewOverrides(defaults, NewMockTenantLimits(limits))
+
+		assert.Panics(t, func() {
+			overrides.OTelTranslationStrategy("tenant1")
+		})
+	})
 }
 
 func getDefaultLimits() Limits {

@@ -10,7 +10,7 @@ import (
 // This error is a struct instead of a globally generic error so that computed reference sizes are smaller.
 type ErrContextsTrackerClosed struct{}
 
-func (e ErrContextsTrackerClosed) Error() string {
+func (ErrContextsTrackerClosed) Error() string {
 	return "contexts tracker is closed"
 }
 
@@ -20,7 +20,7 @@ func (e ErrContextsTrackerClosed) Error() string {
 // This error is a struct instead of a globally generic error so that computed reference sizes are smaller.
 type ErrContextsTrackerCanceled struct{}
 
-func (e ErrContextsTrackerCanceled) Error() string {
+func (ErrContextsTrackerCanceled) Error() string {
 	return "contexts tracker has been canceled"
 }
 
