@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -18,11 +19,15 @@ type ScalarRemoteExec struct {
 	TimeRange                types.QueryTimeRange
 	RemoteExecutor           RemoteExecutor
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	Annotations              *annotations.Annotations
+	QueryStats               *types.QueryStats
 
 	resp ScalarRemoteExecutionResponse
 }
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	s.QueryStats = params.QueryStats
+
 	var err error
 	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange)
 	return err
@@ -36,6 +41,17 @@ func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, err
 
 	if err := s.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(v.Samples))*types.FPointSize, limiter.FPointSlices); err != nil {
 		return types.ScalarData{}, err
+	}
+
+	annos, totalSamples, err := s.resp.GetEvaluationInfo(ctx)
+	if err != nil {
+		return types.ScalarData{}, err
+	}
+
+	s.Annotations.Merge(annos)
+
+	if s.QueryStats != nil {
+		s.QueryStats.TotalSamples += totalSamples
 	}
 
 	return v, nil
