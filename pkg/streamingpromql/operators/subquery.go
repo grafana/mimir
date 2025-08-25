@@ -161,10 +161,6 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	return sum
 }
 
-func (s *Subquery) StepCount() int {
-	return s.ParentQueryTimeRange.StepCount
-}
-
 func (s *Subquery) Range() time.Duration {
 	return s.SubqueryRange
 }

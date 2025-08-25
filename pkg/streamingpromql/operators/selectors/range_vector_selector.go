@@ -53,10 +53,6 @@ func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.Serie
 	return m.Selector.SeriesMetadata(ctx)
 }
 
-func (m *RangeVectorSelector) StepCount() int {
-	return m.Selector.TimeRange.StepCount
-}
-
 func (m *RangeVectorSelector) Range() time.Duration {
 	return m.Selector.Range
 }

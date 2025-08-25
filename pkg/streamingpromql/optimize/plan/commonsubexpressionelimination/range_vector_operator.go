@@ -310,10 +310,6 @@ func (d *RangeVectorDuplicationConsumer) NextStepSamples() (*types.RangeVectorSt
 	return d.Buffer.NextStepSamples(d.consumerIndex)
 }
 
-func (d *RangeVectorDuplicationConsumer) StepCount() int {
-	return d.Buffer.Inner.StepCount()
-}
-
 func (d *RangeVectorDuplicationConsumer) Range() time.Duration {
 	return d.Buffer.Inner.Range()
 }

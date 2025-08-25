@@ -56,10 +56,6 @@ type InstantVectorOperator interface {
 type RangeVectorOperator interface {
 	SeriesOperator
 
-	// StepCount returns the number of time steps produced for each series by this operator.
-	// StepCount must only be called after calling SeriesMetadata.
-	StepCount() int
-
 	// Range returns the time range selected by this operator at each time step.
 	//
 	// For example, if this operator represents the selector "some_metric[5m]", Range returns 5 minutes.
