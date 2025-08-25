@@ -772,8 +772,8 @@ github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
 github.com/grafana/dskit/user
-# github.com/grafana/e2e v0.1.2-0.20250723092121-32adc8201cbe
-## explicit; go 1.19
+# github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
+## explicit; go 1.23.0
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
@@ -1160,7 +1160,7 @@ github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
 github.com/prometheus/alertmanager/ui
-# github.com/prometheus/client_golang v1.23.0
+# github.com/prometheus/client_golang v1.23.1-0.20250825092754-3692d7faba80
 ## explicit; go 1.23.0
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -1179,7 +1179,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
 # github.com/prometheus/client_model v0.6.2
 ## explicit; go 1.22.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.65.1-0.20250819181232-918f8992af49
+# github.com/prometheus/common v0.65.1-0.20250825082953-9deefbac4820
 ## explicit; go 1.23.0
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
