@@ -32,8 +32,7 @@ type FunctionOverRangeVector struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	timeRange    types.QueryTimeRange
-	rangeSeconds float64
+	timeRange types.QueryTimeRange
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -92,8 +91,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		m.metricNames.CaptureMetricNames(metadata)
 	}
 
-	m.rangeSeconds = m.Inner.Range().Seconds()
-
 	if m.Func.SeriesMetadataFunction.Func != nil {
 		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
 	}
@@ -144,7 +141,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -196,6 +193,22 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 
 	for _, sa := range m.ScalarArgs {
 		err := sa.Prepare(ctx, params)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
+	err := m.Inner.Finalize(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, sa := range m.ScalarArgs {
+		err := sa.Finalize(ctx)
 		if err != nil {
 			return err
 		}

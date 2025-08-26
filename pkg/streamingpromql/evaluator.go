@@ -87,8 +87,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 
 	defer e.engine.activeQueryTracker.Delete(queryID)
 
-	err = e.root.Prepare(ctx, &types.PrepareParams{QueryStats: e.stats})
-	if err != nil {
+	if err := e.root.Prepare(ctx, &types.PrepareParams{QueryStats: e.stats}); err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
 	}
 
@@ -115,6 +114,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 
 	default:
 		return fmt.Errorf("operator type %T produces unknown result type", root)
+	}
+
+	if err := e.root.Finalize(ctx); err != nil {
+		return err
+	}
+
+	if e.engine.pedantic {
+		// Finalize the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
+		if err := e.root.Finalize(ctx); err != nil {
+			return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
+		}
 	}
 
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.

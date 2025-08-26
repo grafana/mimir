@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"iter"
 	"math"
 	"strconv"
 	"time"
@@ -45,28 +46,20 @@ var (
 	errUnknownPartitionLeader                   = fmt.Errorf("unknown partition leader")
 )
 
-type record struct {
-	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
-	ctx      context.Context
-	tenantID string
-	content  []byte
-	version  int
-}
-
-type recordConsumer interface {
+type RecordConsumer interface {
 	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
 	// are also needed to be in order to avoid ingesting samples out of order.
 	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
-	Consume(context.Context, []record) error
+	Consume(context.Context, iter.Seq[*kgo.Record]) error
 }
 
 type consumerFactory interface {
-	consumer() recordConsumer
+	consumer() RecordConsumer
 }
 
-type consumerFactoryFunc func() recordConsumer
+type consumerFactoryFunc func() RecordConsumer
 
-func (c consumerFactoryFunc) consumer() recordConsumer {
+func (c consumerFactoryFunc) consumer() RecordConsumer {
 	return c()
 }
 
@@ -101,9 +94,9 @@ type PartitionReader struct {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	metrics := newPusherConsumerMetrics(reg)
-	factory := consumerFactoryFunc(func() recordConsumer {
-		return newPusherConsumer(pusher, kafkaCfg, metrics, logger)
+	metrics := NewPusherConsumerMetrics(reg)
+	factory := consumerFactoryFunc(func() RecordConsumer {
+		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
@@ -541,7 +534,6 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	if fetches.NumRecords() == 0 {
 		return nil
 	}
-	records := make([]record, 0, fetches.NumRecords())
 
 	var (
 		minOffset = math.MaxInt
@@ -550,14 +542,6 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	fetches.EachRecord(func(rec *kgo.Record) {
 		minOffset = min(minOffset, int(rec.Offset))
 		maxOffset = max(maxOffset, int(rec.Offset))
-		records = append(records, record{
-			// This context carries the tracing data for this individual record;
-			// kotel populates this data when it fetches the messages.
-			ctx:      rec.Context,
-			tenantID: string(rec.Key),
-			content:  rec.Value,
-			version:  ParseRecordVersion(rec),
-		})
 	})
 
 	boff := backoff.New(ctx, backoff.Config{
@@ -580,7 +564,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
 		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
 		consumeCtx := context.WithoutCancel(ctx)
-		err := consumer.Consume(consumeCtx, records)
+		err := consumer.Consume(consumeCtx, recordsAll(fetches))
 		if err == nil {
 			level.Debug(logger).Log("msg", "closing consumer after successful consumption")
 			// The context might have been cancelled in the meantime, so we return here instead of breaking the loop and returning the context error
@@ -597,6 +581,18 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	}
 	// Because boff is set to retry forever, the only error here is when the context is cancelled.
 	return boff.ErrCause()
+}
+
+// recordsAll returns an iterator over all records in the given fetches.
+// It's equivalent to fetches.EachRecord().
+func recordsAll(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
+	return func(yield func(*kgo.Record) bool) {
+		for recIter := fetches.RecordIter(); !recIter.Done(); {
+			if !yield(recIter.Next()) {
+				return
+			}
+		}
+	}
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {

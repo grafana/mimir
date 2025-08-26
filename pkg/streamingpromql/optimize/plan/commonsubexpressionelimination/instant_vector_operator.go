@@ -19,16 +19,19 @@ type InstantVectorDuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	consumerCount int
-
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	nextSeriesIndex []int // One entry per consumer.
-	buffer          *SeriesDataRingBuffer[types.InstantVectorSeriesData]
+	consumers []*instantVectorConsumerState
+	buffer    *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
 	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
 	prepared bool
+}
+
+type instantVectorConsumerState struct {
+	nextSeriesIndex int // -1 if this consumer is closed.
+	finalized       bool
 }
 
 func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
@@ -40,9 +43,8 @@ func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memory
 }
 
 func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplicationConsumer {
-	consumerIndex := b.consumerCount
-	b.consumerCount++
-	b.nextSeriesIndex = append(b.nextSeriesIndex, 0)
+	consumerIndex := len(b.consumers)
+	b.consumers = append(b.consumers, &instantVectorConsumerState{})
 
 	return &InstantVectorDuplicationConsumer{
 		Buffer:        b,
@@ -62,7 +64,7 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]
 
 	b.seriesMetadataCount++
 
-	if b.seriesMetadataCount == b.consumerCount {
+	if b.seriesMetadataCount == len(b.consumers) {
 		// We can safely return the original series metadata, as we're not going to return this to another consumer.
 		metadata := b.seriesMetadata
 		b.seriesMetadata = nil
@@ -81,9 +83,10 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]
 }
 
 func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
-	nextSeriesIndex := b.nextSeriesIndex[consumerIndex]
-	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
-	b.nextSeriesIndex[consumerIndex]++
+	consumer := b.consumers[consumerIndex]
+	nextSeriesIndex := consumer.nextSeriesIndex
+	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumer)
+	consumer.nextSeriesIndex++
 
 	buffered := b.buffer.IsPresent(nextSeriesIndex)
 	if buffered {
@@ -111,20 +114,18 @@ func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consume
 	return d.Clone(b.MemoryConsumptionTracker)
 }
 
-func (b *InstantVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
-	thisConsumerPosition := b.nextSeriesIndex[consumerIndex]
-
-	for otherConsumerIndex, otherConsumerPosition := range b.nextSeriesIndex {
-		if otherConsumerIndex == consumerIndex {
+func (b *InstantVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumer *instantVectorConsumerState) bool {
+	for _, otherConsumer := range b.consumers {
+		if otherConsumer == consumer {
 			continue
 		}
 
-		if otherConsumerPosition == -1 {
+		if otherConsumer.nextSeriesIndex == -1 {
 			// This consumer is closed.
 			continue
 		}
 
-		if otherConsumerPosition <= thisConsumerPosition {
+		if otherConsumer.nextSeriesIndex <= consumer.nextSeriesIndex {
 			return false
 		}
 	}
@@ -133,35 +134,36 @@ func (b *InstantVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(cons
 }
 
 func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
-	if b.nextSeriesIndex[consumerIndex] == -1 {
+	consumer := b.consumers[consumerIndex]
+	if consumer.nextSeriesIndex == -1 {
 		// We've already closed this consumer, nothing more to do.
 		return
 	}
 
 	lowestNextSeriesIndexOfOtherConsumers := math.MaxInt
-	for otherConsumerIndex, nextSeriesIndex := range b.nextSeriesIndex {
+	for otherConsumerIndex, otherConsumer := range b.consumers {
 		if consumerIndex == otherConsumerIndex {
 			continue
 		}
 
-		if nextSeriesIndex == -1 {
+		if otherConsumer.nextSeriesIndex == -1 {
 			// Already closed.
 			continue
 		}
 
-		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, nextSeriesIndex)
+		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, otherConsumer.nextSeriesIndex)
 	}
 
 	if lowestNextSeriesIndexOfOtherConsumers == math.MaxInt {
 		// All other consumers are already closed. Close everything.
-		b.nextSeriesIndex[consumerIndex] = -1
+		consumer.nextSeriesIndex = -1
 		b.close()
 		return
 	}
 
 	// If this consumer was the lagging consumer, free any data that was being buffered for it.
-	for b.nextSeriesIndex[consumerIndex] < lowestNextSeriesIndexOfOtherConsumers {
-		seriesIdx := b.nextSeriesIndex[consumerIndex]
+	for consumer.nextSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
+		seriesIdx := consumer.nextSeriesIndex
 
 		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
 		if b.buffer.IsPresent(seriesIdx) {
@@ -169,10 +171,10 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
 		}
 
-		b.nextSeriesIndex[consumerIndex]++
+		consumer.nextSeriesIndex++
 	}
 
-	b.nextSeriesIndex[consumerIndex] = -1
+	consumer.nextSeriesIndex = -1
 }
 
 func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -184,6 +186,32 @@ func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *ty
 	}
 	b.prepared = true
 	return nil
+}
+
+func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
+	consumer := b.consumers[consumerIndex]
+
+	if consumer.finalized {
+		return nil
+	}
+
+	consumer.finalized = true
+
+	if !b.allConsumersFinalized() {
+		return nil
+	}
+
+	return b.Inner.Finalize(ctx)
+}
+
+func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.finalized {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (b *InstantVectorDuplicationBuffer) close() {
@@ -220,6 +248,10 @@ func (d *InstantVectorDuplicationConsumer) ExpressionPosition() posrange.Positio
 
 func (d *InstantVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
+}
+
+func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
+	return d.Buffer.Finalize(ctx, d.consumerIndex)
 }
 
 func (d *InstantVectorDuplicationConsumer) Close() {

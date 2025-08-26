@@ -174,6 +174,10 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
+		if err := b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		b.Close()
 		return nil, nil
 	}
@@ -187,6 +191,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.SeriesMetadataSlicePool.Put(&allMetadata, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
+
+		if err := b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		b.Close()
 		return nil, nil
 	}
@@ -588,12 +597,19 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *ope
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := b.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := b.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
 
 	return b.Right.Prepare(ctx, params)
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	if err := b.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return b.Right.Finalize(ctx)
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {

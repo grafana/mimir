@@ -1815,6 +1815,422 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "usage_tracker_client",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "ignore_rejected_series",
+              "required": false,
+              "desc": "Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.usage-tracker-client.ignore-rejected-series",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "max_recv_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max receive message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.grpc-max-recv-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_send_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max send message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.grpc-max-send-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "grpc_compression",
+                  "required": false,
+                  "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.grpc-compression",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit",
+                  "required": false,
+                  "desc": "Rate limit for gRPC client; 0 means disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.grpc-client-rate-limit",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit_burst",
+                  "required": false,
+                  "desc": "Rate limit burst for gRPC client.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.grpc-client-rate-limit-burst",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "backoff_on_ratelimits",
+                  "required": false,
+                  "desc": "Enable backoff and retry when we hit rate limits.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.backoff-on-ratelimits",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "backoff_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "min_period",
+                      "required": false,
+                      "desc": "Minimum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100000000,
+                      "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.backoff-min-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_period",
+                      "required": false,
+                      "desc": "Maximum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.backoff-max-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "Number of times to backoff and retry before failing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.backoff-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_stream_window_size",
+                  "required": false,
+                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.initial-stream-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_connection_window_size",
+                  "required": false,
+                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.initial-connection-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_base_delay",
+                  "required": false,
+                  "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.connect-backoff-base-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_max_delay",
+                  "required": false,
+                  "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "cluster_validation",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "label",
+                      "required": false,
+                      "desc": "Optionally define the cluster validation label.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.cluster-validation.label",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "prefer_availability_zone",
+              "required": false,
+              "desc": "Preferred availability zone to query usage-trackers.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.usage-tracker-client.prefer-availability-zone",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "requests_hedging_delay",
+              "required": false,
+              "desc": "Delay before initiating requests to further usage-trackers (e.g. in other zones).",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "distributor.usage-tracker-client.requests-hedging-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "reusable_workers",
+              "required": false,
+              "desc": "Number of pre-allocated workers used to send requests to usage-trackers. If 0, no workers pool will be used and a new goroutine will be spawned for each request.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "distributor.usage-tracker-client.reusable-workers",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -4277,6 +4693,16 @@
       "required": false,
       "desc": "",
       "blockEntries": [
+        {
+          "kind": "field",
+          "name": "max_active_series_per_user",
+          "required": false,
+          "desc": "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.max-active-series-per-user",
+          "fieldType": "int"
+        },
         {
           "kind": "field",
           "name": "request_rate",
@@ -7391,6 +7817,17 @@
         },
         {
           "kind": "field",
+          "name": "rewrite_propagate_matchers",
+          "required": false,
+          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.rewrite-propagate-matchers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -7686,7 +8123,7 @@
               "kind": "field",
               "name": "auto_create_topic_enabled",
               "required": false,
-              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start.",
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "ingest-storage.kafka.auto-create-topic-enabled",
@@ -7696,7 +8133,7 @@
               "kind": "field",
               "name": "auto_create_topic_default_partitions",
               "required": false,
-              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration).",
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
               "fieldValue": null,
               "fieldDefaultValue": -1,
               "fieldFlag": "ingest-storage.kafka.auto-create-topic-default-partitions",
@@ -7757,7 +8194,7 @@
               "kind": "field",
               "name": "fetch_concurrency_max",
               "required": false,
-              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.",
+              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.fetch-concurrency-max",
@@ -12506,6 +12943,17 @@
         },
         {
           "kind": "field",
+          "name": "max_notification_batch_size",
+          "required": false,
+          "desc": "Maximum number of notifications to send to Alertmanager in one request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "ruler.max-notification-batch-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "notification_timeout",
           "required": false,
           "desc": "HTTP timeout duration when sending notifications to the Alertmanager.",
@@ -14971,6 +15419,17 @@
           "fieldFlag": "alertmanager.max-recv-msg-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "state_read_timeout",
+          "required": false,
+          "desc": "Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "alertmanager.storage.state-read-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",
@@ -18198,6 +18657,3334 @@
           "fieldDefaultValue": "custom",
           "fieldFlag": "usage-stats.installation-mode",
           "fieldType": "string"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "usage_tracker",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "True to enable the usage-tracker.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-tracker.enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "do_not_apply_series_limits",
+          "required": false,
+          "desc": "If true, the usage-tracker service tracks all series and does not apply series limits.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-tracker.do-not-apply-series-limits",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "use_global_series_limits",
+          "required": false,
+          "desc": "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-tracker.use-global-series-limits",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "partitions",
+          "required": false,
+          "desc": "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.",
+          "fieldValue": null,
+          "fieldDefaultValue": 64,
+          "fieldFlag": "usage-tracker.partitions",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "partition_reconcile_interval",
+          "required": false,
+          "desc": "Interval to reconcile partitions.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "usage-tracker.partition-reconcile-interval",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "lost_partitions_shutdown_grace_period",
+          "required": false,
+          "desc": "Time to wait before shutting down a partition handler that is no longer owned by this instance.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "usage-tracker.lost-partitions-shutdown-grace-period",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "max_partitions_to_create_per_reconcile",
+          "required": false,
+          "desc": "Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "usage-tracker.max-partitions-to-create-per-reconcile",
+          "fieldType": "int"
+        },
+        {
+          "kind": "block",
+          "name": "instance_ring",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "block",
+              "name": "kvstore",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "store",
+                  "required": false,
+                  "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "memberlist",
+                  "fieldFlag": "usage-tracker.instance-ring.store",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "The prefix for the keys in the store. Should end with a /.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "collectors/",
+                  "fieldFlag": "usage-tracker.instance-ring.prefix",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "consul",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "host",
+                      "required": false,
+                      "desc": "Hostname and port of Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "localhost:8500",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.hostname",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "acl_token",
+                      "required": false,
+                      "desc": "ACL Token used to interact with Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.acl-token",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "http_client_timeout",
+                      "required": false,
+                      "desc": "HTTP timeout when talking to Consul",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "usage-tracker.instance-ring.consul.client-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consistent_reads",
+                      "required": false,
+                      "desc": "Enable consistent reads to Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.instance-ring.consul.consistent-reads",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_rate_limit",
+                      "required": false,
+                      "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "usage-tracker.instance-ring.consul.watch-rate-limit",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_burst_size",
+                      "required": false,
+                      "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "usage-tracker.instance-ring.consul.watch-burst-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cas_retry_delay",
+                      "required": false,
+                      "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "usage-tracker.instance-ring.consul.cas-retry-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "etcd",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "endpoints",
+                      "required": false,
+                      "desc": "The etcd endpoints to connect to.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": [],
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.endpoints",
+                      "fieldType": "list of strings"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The dial timeout for the etcd connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.dial-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "The maximum number of retries to do for failed ops.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.max-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "username",
+                      "required": false,
+                      "desc": "Etcd username.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "password",
+                      "required": false,
+                      "desc": "Etcd password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.password",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "multi",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "primary",
+                      "required": false,
+                      "desc": "Primary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.primary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "secondary",
+                      "required": false,
+                      "desc": "Secondary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.secondary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_enabled",
+                      "required": false,
+                      "desc": "Mirror writes to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.instance-ring.multi.mirror-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_timeout",
+                      "required": false,
+                      "desc": "Timeout for storing value to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "usage-tracker.instance-ring.multi.mirror-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "heartbeat_period",
+              "required": false,
+              "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "usage-tracker.instance-ring.heartbeat-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "heartbeat_timeout",
+              "required": false,
+              "desc": "The heartbeat timeout after which usage-trackers are considered unhealthy within the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "usage-tracker.instance-ring.heartbeat-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 4,
+              "fieldFlag": "usage-tracker.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldFlag": "usage-tracker.instance-ring.instance-id",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_interface_names",
+              "required": false,
+              "desc": "List of network interface names to look up when finding the instance IP address.",
+              "fieldValue": null,
+              "fieldDefaultValue": [],
+              "fieldFlag": "usage-tracker.instance-ring.instance-interface-names",
+              "fieldType": "list of strings"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to -server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.instance-ring.instance-port",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring. Default is auto-detected.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.instance-ring.instance-addr",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.instance-ring.instance-availability-zone",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "usage-tracker.instance-ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "partition_ring",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "block",
+              "name": "kvstore",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "store",
+                  "required": false,
+                  "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "memberlist",
+                  "fieldFlag": "usage-tracker.partition-ring.store",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "The prefix for the keys in the store. Should end with a /.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "collectors/",
+                  "fieldFlag": "usage-tracker.partition-ring.prefix",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "consul",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "host",
+                      "required": false,
+                      "desc": "Hostname and port of Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "localhost:8500",
+                      "fieldFlag": "usage-tracker.partition-ring.consul.hostname",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "acl_token",
+                      "required": false,
+                      "desc": "ACL Token used to interact with Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.consul.acl-token",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "http_client_timeout",
+                      "required": false,
+                      "desc": "HTTP timeout when talking to Consul",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "usage-tracker.partition-ring.consul.client-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consistent_reads",
+                      "required": false,
+                      "desc": "Enable consistent reads to Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.partition-ring.consul.consistent-reads",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_rate_limit",
+                      "required": false,
+                      "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "usage-tracker.partition-ring.consul.watch-rate-limit",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_burst_size",
+                      "required": false,
+                      "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "usage-tracker.partition-ring.consul.watch-burst-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cas_retry_delay",
+                      "required": false,
+                      "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "usage-tracker.partition-ring.consul.cas-retry-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "etcd",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "endpoints",
+                      "required": false,
+                      "desc": "The etcd endpoints to connect to.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": [],
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.endpoints",
+                      "fieldType": "list of strings"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The dial timeout for the etcd connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.dial-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "The maximum number of retries to do for failed ops.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.max-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "username",
+                      "required": false,
+                      "desc": "Etcd username.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "password",
+                      "required": false,
+                      "desc": "Etcd password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.etcd.password",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "multi",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "primary",
+                      "required": false,
+                      "desc": "Primary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.multi.primary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "secondary",
+                      "required": false,
+                      "desc": "Secondary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.partition-ring.multi.secondary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_enabled",
+                      "required": false,
+                      "desc": "Mirror writes to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.partition-ring.multi.mirror-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_timeout",
+                      "required": false,
+                      "desc": "Timeout for storing value to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "usage-tracker.partition-ring.multi.mirror-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "events_storage_writer",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "usage-tracker.events-storage.writer.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.writer.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "usage-tracker.events-storage.writer.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.writer.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.events-storage.writer.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
+              "fieldValue": null,
+              "fieldDefaultValue": -1,
+              "fieldFlag": "usage-tracker.events-storage.writer.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "usage-tracker.events-storage.writer.producer-max-record-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "usage-tracker.events-storage.writer.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.writer.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.writer.fetch-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.events-storage.writer.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "usage-tracker.events-storage.writer.max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 150,
+              "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-batch-size",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_queue_capacity",
+              "required": false,
+              "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-queue-capacity",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_target_flushes_per_shard",
+              "required": false,
+              "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 80,
+              "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-target-flushes-per-shard",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_estimated_bytes_per_sample",
+              "required": false,
+              "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample",
+              "fieldType": "int"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "events_storage_reader",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "usage-tracker.events-storage.reader.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.events-storage.reader.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "usage-tracker.events-storage.reader.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.reader.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.events-storage.reader.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
+              "fieldValue": null,
+              "fieldDefaultValue": -1,
+              "fieldFlag": "usage-tracker.events-storage.reader.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "usage-tracker.events-storage.reader.producer-max-record-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "usage-tracker.events-storage.reader.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.reader.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.reader.fetch-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.events-storage.reader.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "usage-tracker.events-storage.reader.max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 150,
+              "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-batch-size",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_queue_capacity",
+              "required": false,
+              "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-queue-capacity",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_target_flushes_per_shard",
+              "required": false,
+              "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 80,
+              "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-target-flushes-per-shard",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_estimated_bytes_per_sample",
+              "required": false,
+              "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-estimated-bytes-per-sample",
+              "fieldType": "int"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "snapshots_metadata_writer",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
+              "fieldValue": null,
+              "fieldDefaultValue": -1,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.producer-max-record-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.fetch-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.ingestion-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 150,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.ingestion-concurrency-batch-size",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_queue_capacity",
+              "required": false,
+              "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.ingestion-concurrency-queue-capacity",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_target_flushes_per_shard",
+              "required": false,
+              "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 80,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.ingestion-concurrency-target-flushes-per-shard",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_estimated_bytes_per_sample",
+              "required": false,
+              "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "usage-tracker.snapshots-metadata.writer.ingestion-concurrency-estimated-bytes-per-sample",
+              "fieldType": "int"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "snapshots_metadata_reader",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
+              "fieldValue": null,
+              "fieldDefaultValue": -1,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.producer-max-record-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.fetch-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_max",
+              "required": false,
+              "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.ingestion-concurrency-max",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 150,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.ingestion-concurrency-batch-size",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_queue_capacity",
+              "required": false,
+              "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.ingestion-concurrency-queue-capacity",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_target_flushes_per_shard",
+              "required": false,
+              "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 80,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.ingestion-concurrency-target-flushes-per-shard",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_estimated_bytes_per_sample",
+              "required": false,
+              "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "usage-tracker.snapshots-metadata.reader.ingestion-concurrency-estimated-bytes-per-sample",
+              "fieldType": "int"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "snapshots_storage",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem.",
+              "fieldValue": null,
+              "fieldDefaultValue": "filesystem",
+              "fieldFlag": "usage-tracker.snapshots-storage.backend",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "s3",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "endpoint",
+                  "required": false,
+                  "desc": "The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.endpoint",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "region",
+                  "required": false,
+                  "desc": "S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.region",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "bucket_name",
+                  "required": false,
+                  "desc": "S3 bucket name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.bucket-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "secret_access_key",
+                  "required": false,
+                  "desc": "S3 secret access key",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.secret-access-key",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "access_key_id",
+                  "required": false,
+                  "desc": "S3 access key ID",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.access-key-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "session_token",
+                  "required": false,
+                  "desc": "S3 session token",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.session-token",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure",
+                  "required": false,
+                  "desc": "If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.insecure",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "signature_version",
+                  "required": false,
+                  "desc": "The signature version to use for authenticating against S3. Supported values are: v4, v2.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "v4",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.signature-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "list_objects_version",
+                  "required": false,
+                  "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.list-objects-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "bucket_lookup_type",
+                  "required": false,
+                  "desc": "Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "auto",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.bucket-lookup-type",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dualstack_enabled",
+                  "required": false,
+                  "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.dualstack-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "storage_class",
+                  "required": false,
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.storage-class",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "native_aws_auth_enabled",
+                  "required": false,
+                  "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.native-aws-auth-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "part_size",
+                  "required": false,
+                  "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.part-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "send_content_md5",
+                  "required": false,
+                  "desc": "If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.send-content-md5",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sts_endpoint",
+                  "required": false,
+                  "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.s3.sts-endpoint",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "sse",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "type",
+                      "required": false,
+                      "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.sse.type",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "kms_key_id",
+                      "required": false,
+                      "desc": "KMS Key ID used to encrypt objects in S3",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.sse.kms-key-id",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "kms_encryption_context",
+                      "required": false,
+                      "desc": "KMS Encryption Context used for object encryption. It expects JSON formatted string.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.sse.kms-encryption-context",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "http",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "idle_conn_timeout",
+                      "required": false,
+                      "desc": "The time an idle connection remains idle before closing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 90000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.idle-conn-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "response_header_timeout",
+                      "required": false,
+                      "desc": "The amount of time the client waits for a server's response headers.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 120000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.response-header-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "insecure_skip_verify",
+                      "required": false,
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_handshake_timeout",
+                      "required": false,
+                      "desc": "Maximum time to wait for a TLS handshake. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.tls-handshake-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "expect_continue_timeout",
+                      "required": false,
+                      "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.expect-continue-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.max-idle-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.max-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. This setting also requires you to configure the client certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "trace",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "enabled",
+                      "required": false,
+                      "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.snapshots-storage.s3.trace.enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "gcs",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "bucket_name",
+                  "required": false,
+                  "desc": "GCS bucket name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.gcs.bucket-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "service_account",
+                  "required": false,
+                  "desc": "JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic:\n1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.\n2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.\n3. On Google Compute Engine it fetches credentials from the metadata server.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.gcs.service-account",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "http",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "idle_conn_timeout",
+                      "required": false,
+                      "desc": "The time an idle connection remains idle before closing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 90000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.idle-conn-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "response_header_timeout",
+                      "required": false,
+                      "desc": "The amount of time the client waits for a server's response headers.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 120000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.response-header-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "insecure_skip_verify",
+                      "required": false,
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_handshake_timeout",
+                      "required": false,
+                      "desc": "Maximum time to wait for a TLS handshake. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.tls-handshake-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "expect_continue_timeout",
+                      "required": false,
+                      "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.expect-continue-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.max-idle-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.max-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. This setting also requires you to configure the client certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.gcs.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "azure",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "account_name",
+                  "required": false,
+                  "desc": "Azure storage account name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.account-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "account_key",
+                  "required": false,
+                  "desc": "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.account-key",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_string",
+                  "required": false,
+                  "desc": "If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.connection-string",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "container_name",
+                  "required": false,
+                  "desc": "Azure storage container name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.container-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_suffix",
+                  "required": false,
+                  "desc": "Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.endpoint-suffix",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Number of retries for recoverable errors",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20,
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "user_assigned_id",
+                  "required": false,
+                  "desc": "User assigned managed identity. If empty, then System assigned identity is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.azure.user-assigned-id",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "http",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "idle_conn_timeout",
+                      "required": false,
+                      "desc": "The time an idle connection remains idle before closing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 90000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.idle-conn-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "response_header_timeout",
+                      "required": false,
+                      "desc": "The amount of time the client waits for a server's response headers.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 120000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.response-header-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "insecure_skip_verify",
+                      "required": false,
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_handshake_timeout",
+                      "required": false,
+                      "desc": "Maximum time to wait for a TLS handshake. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.tls-handshake-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "expect_continue_timeout",
+                      "required": false,
+                      "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.expect-continue-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.max-idle-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.max-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. This setting also requires you to configure the client certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "usage-tracker.snapshots-storage.azure.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "swift",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "application_credential_id",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential id",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.application-credential-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_name",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.application-credential-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_secret",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential secret",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.application-credential-secret",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "auth_version",
+                  "required": false,
+                  "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.auth-version",
+                  "fieldType": "int"
+                },
+                {
+                  "kind": "field",
+                  "name": "auth_url",
+                  "required": false,
+                  "desc": "OpenStack Swift authentication URL",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.auth-url",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "username",
+                  "required": false,
+                  "desc": "OpenStack Swift username.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.username",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "user_domain_name",
+                  "required": false,
+                  "desc": "OpenStack Swift user's domain name.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.user-domain-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "user_domain_id",
+                  "required": false,
+                  "desc": "OpenStack Swift user's domain ID.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.user-domain-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "user_id",
+                  "required": false,
+                  "desc": "OpenStack Swift user ID.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.user-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "password",
+                  "required": false,
+                  "desc": "OpenStack Swift API key.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.password",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "domain_id",
+                  "required": false,
+                  "desc": "OpenStack Swift user's domain ID.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.domain-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "domain_name",
+                  "required": false,
+                  "desc": "OpenStack Swift user's domain name.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.domain-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "project_id",
+                  "required": false,
+                  "desc": "OpenStack Swift project ID (v2,v3 auth only).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.project-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "project_name",
+                  "required": false,
+                  "desc": "OpenStack Swift project name (v2,v3 auth only).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.project-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "project_domain_id",
+                  "required": false,
+                  "desc": "ID of the OpenStack Swift project's domain (v3 auth only), only needed if it differs the from user domain.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.project-domain-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "project_domain_name",
+                  "required": false,
+                  "desc": "Name of the OpenStack Swift project's domain (v3 auth only), only needed if it differs from the user domain.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.project-domain-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "region_name",
+                  "required": false,
+                  "desc": "OpenStack Swift Region to use (v2,v3 auth only).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.region-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "container_name",
+                  "required": false,
+                  "desc": "Name of the OpenStack Swift container to put chunks in.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.container-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Max retries on requests error.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3,
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "Time after which a connection attempt is aborted.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "request_timeout",
+                  "required": false,
+                  "desc": "Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "usage-tracker.snapshots-storage.swift.request-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "filesystem",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "dir",
+                  "required": false,
+                  "desc": "Local filesystem storage directory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "usagetrackersnapshots",
+                  "fieldFlag": "usage-tracker.snapshots-storage.filesystem.dir",
+                  "fieldType": "string"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "storage_prefix",
+              "required": false,
+              "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.snapshots-storage.storage-prefix",
+              "fieldType": "string"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "snapshots_load_backoff",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "min_period",
+              "required": false,
+              "desc": "Minimum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "usage-tracker.snapshots-load-backoff.backoff-min-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_period",
+              "required": false,
+              "desc": "Maximum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "usage-tracker.snapshots-load-backoff.backoff-max-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Number of times to backoff and retry before failing.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "usage-tracker.snapshots-load-backoff.backoff-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "idle_timeout",
+          "required": false,
+          "desc": "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1200000000000,
+          "fieldFlag": "usage-tracker.idle-timeout",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "max_pending_created_series_events",
+          "required": false,
+          "desc": "Maximum number of pending created series events waiting to be published.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "usage-tracker.created-series-events-max-pending",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_max_batch_size_bytes",
+          "required": false,
+          "desc": "Maximum size of a batch of created series events to be published.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1048576,
+          "fieldFlag": "usage-tracker.created-series-events-max-batch-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_batch_ttl",
+          "required": false,
+          "desc": "Time after which a batch of created series events is published even if it's not full.",
+          "fieldValue": null,
+          "fieldDefaultValue": 250000000,
+          "fieldFlag": "usage-tracker.created-series-events-batch-ttl",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_publish_concurrency",
+          "required": false,
+          "desc": "Number of concurrent workers publishing created series events.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10,
+          "fieldFlag": "usage-tracker.created-series-events-publish-concurrency",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "skip_snapshot_loading_at_startup",
+          "required": false,
+          "desc": "If true, the usage-tracker will not load snapshots at startup. This means that the full state will not be reloaded during partition handler startup. Useful to skip corrupted snapshots or for testing purposes only.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-tracker.skip-snapshot-loading-at-startup",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "snapshot_interval_jitter",
+          "required": false,
+          "desc": "Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0.1,
+          "fieldFlag": "usage-tracker.snapshot-interval-jitter",
+          "fieldType": "float"
+        },
+        {
+          "kind": "field",
+          "name": "target_snapshot_file_size_bytes",
+          "required": false,
+          "desc": "Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 104857600,
+          "fieldFlag": "usage-tracker.target-snapshot-file-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "snapshot_cleanup_interval",
+          "required": false,
+          "desc": "Interval to clean up old snapshots.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3600000000000,
+          "fieldFlag": "usage-tracker.snapshot-cleanup-interval",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "snapshot_cleanup_interval_jitter",
+          "required": false,
+          "desc": "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0.25,
+          "fieldFlag": "usage-tracker.snapshot-cleanup-interval-jitter",
+          "fieldType": "float"
+        },
+        {
+          "kind": "field",
+          "name": "max_events_fetch_size",
+          "required": false,
+          "desc": "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.",
+          "fieldValue": null,
+          "fieldDefaultValue": 100,
+          "fieldFlag": "usage-tracker.max-events-fetch-size",
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
