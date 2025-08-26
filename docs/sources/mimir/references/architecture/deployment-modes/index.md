@@ -64,8 +64,8 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 
 ## Read-Write mode
 
-{{< admonition type="warning" >}}
-Read-write deployment mode is no longer supported in Grafana Mimir versions 3.0 and later. Use [monolithic mode](#monolithic-mode) or [microservices mode](#microservices-mode) instead.
+{{< admonition type="note" >}}
+Read-write deployment mode is no longer supported in Grafana Mimir versions 3.0 and later. Use [monolithic mode](#about-monolithic-mode) or [microservices mode](#about-microservices-mode) instead.
 {{< /admonition >}}
 
 The read-write mode provides an alternative to monolithic and microservices modes.
