@@ -46,7 +46,7 @@ var (
 	errUnknownPartitionLeader                   = fmt.Errorf("unknown partition leader")
 )
 
-type recordConsumer interface {
+type RecordConsumer interface {
 	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
 	// are also needed to be in order to avoid ingesting samples out of order.
 	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
@@ -54,12 +54,12 @@ type recordConsumer interface {
 }
 
 type consumerFactory interface {
-	consumer() recordConsumer
+	consumer() RecordConsumer
 }
 
-type consumerFactoryFunc func() recordConsumer
+type consumerFactoryFunc func() RecordConsumer
 
-func (c consumerFactoryFunc) consumer() recordConsumer {
+func (c consumerFactoryFunc) consumer() RecordConsumer {
 	return c()
 }
 
@@ -94,9 +94,9 @@ type PartitionReader struct {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	metrics := newPusherConsumerMetrics(reg)
-	factory := consumerFactoryFunc(func() recordConsumer {
-		return newPusherConsumer(pusher, kafkaCfg, metrics, logger)
+	metrics := NewPusherConsumerMetrics(reg)
+	factory := consumerFactoryFunc(func() RecordConsumer {
+		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }

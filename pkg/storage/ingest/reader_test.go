@@ -271,7 +271,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 
 	ctx := t.Context()
 
-	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer RecordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -2774,19 +2774,19 @@ func withMaxBufferedBytes(i int) readerTestCfgOpt {
 
 var testingLogger = mimirtest.NewTestingLogger(nil)
 
-func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
 		logger:      testingLogger.WithT(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer: consumerFactoryFunc(func() recordConsumer {
+		consumer: consumerFactoryFunc(func() RecordConsumer {
 			return consumer
 		}),
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -2813,7 +2813,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	return reader
 }
 
-func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))

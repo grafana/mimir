@@ -241,8 +241,8 @@ func TestPusherConsumer(t *testing.T) {
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := newPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
+			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			c := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), kafkaRecordsAll(t, tc.records))
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -353,14 +353,14 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		content:  reqBytes,
 	}
 
-	setupTest := func(pusherErr error) (*pusherConsumer, *concurrency.SyncBuffer, *prometheus.Registry) {
+	setupTest := func(pusherErr error) (*PusherConsumer, *concurrency.SyncBuffer, *prometheus.Registry) {
 		pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error {
 			return pusherErr
 		})
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
+		consumer := NewPusherConsumer(pusher, KafkaConfig{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -520,8 +520,8 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 			records = append(records, testRecord{content: marshalled, tenantID: tenantID})
 		}
 
-		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		consumer := newPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
+		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		consumer := NewPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
 
 		// We expect consumption to fail.
 		err := consumer.Consume(context.Background(), kafkaRecordsAll(t, records))
@@ -1647,8 +1647,8 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		kcfg := KafkaConfig{}
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 0
-		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
@@ -1661,8 +1661,8 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		kcfg := KafkaConfig{}
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 2
-		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
