@@ -15,9 +15,10 @@ import (
 func TestWriteRequestRW2Conversion(t *testing.T) {
 	t.Run("WriteRequest preserves Mimir meta options", func(t *testing.T) {
 		req := &WriteRequest{
-			SkipLabelValidation:       true,
-			SkipLabelCountValidation:  true,
-			skipUnmarshalingExemplars: true,
+			SkipLabelValidation:             true,
+			SkipLabelCountValidation:        true,
+			skipUnmarshalingExemplars:       true,
+			skipNormalizeMetadataMetricName: true,
 		}
 
 		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
@@ -26,6 +27,7 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.True(t, rw2.SkipLabelValidation)
 		require.True(t, rw2.SkipLabelCountValidation)
 		require.True(t, rw2.skipUnmarshalingExemplars)
+		require.True(t, rw2.skipNormalizeMetadataMetricName)
 	})
 
 	t.Run("nil request turns into nil request", func(t *testing.T) {
@@ -588,6 +590,7 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
 		"skipUnmarshalingExemplars",
+		"skipNormalizeMetadataMetricName",
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",

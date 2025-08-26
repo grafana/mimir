@@ -296,6 +296,8 @@ type WriteRequest struct {
 
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
+	// Skip normalization of metadata metric names when unmarshalling the request.
+	skipNormalizeMetadataMetricName bool
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
@@ -7411,7 +7413,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7547,7 +7549,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = make(map[string]*orderAwareMetricMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -11181,7 +11183,7 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
 func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
+func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, skipNormalizeMetricName bool) error {
 	var metricName string
 	l := len(dAtA)
 	iNdEx := 0
@@ -11430,7 +11432,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if err := MetricMetadataUnmarshalRW2(dAtA[iNdEx:postIndex], symbols, metadata, metricName); err != nil {
+			if err := MetricMetadataUnmarshalRW2(dAtA[iNdEx:postIndex], symbols, metadata, metricName, skipNormalizeMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -11639,12 +11641,12 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string) error {
+func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string, skipNormalizeMetricName bool) error {
 	var (
 		err error
 		help string
 		metricType MetadataRW2_MetricType
-		normalizeMetricName string
+		normalizedMetricName string
 		unit string
 	)
 	l := len(dAtA)
@@ -11759,21 +11761,24 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 	if iNdEx > l {
 		return io.ErrUnexpectedEOF
 	}
-	normalizeMetricName, _ = getMetricName(metricName, metricType)
-	if len(normalizeMetricName) == 0 {
+	if skipNormalizeMetricName {
+		normalizedMetricName = metricName
+	} else {
+		normalizedMetricName, _ = normalizeMetricName(metricName, metricType)
+	}
+	if len(normalizedMetricName) == 0 {
 		return nil
 	}
-	if _, ok := metadata[normalizeMetricName]; ok {
+	if _, ok := metadata[normalizedMetricName]; ok {
 		// Already have metadata for this metric familiy name.
 		// Since we cannot have multiple definitions of the same
 		// metric family name, we ignore this metadata.
 		return nil
 	}
-	
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+		metadata[normalizedMetricName] = &orderAwareMetricMetadata{
 			MetricMetadata: MetricMetadata{
-				MetricFamilyName: normalizeMetricName,
+				MetricFamilyName: normalizedMetricName,
 				Help:             help,
 				Unit:             unit,
 				Type:             MetricMetadata_MetricType(metricType),
