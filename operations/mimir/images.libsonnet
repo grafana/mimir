@@ -23,6 +23,6 @@
     continuous_test: 'grafana/mimir-continuous-test:2.17.0',
 
     // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.28.0',
+    rollout_operator: 'grafana/rollout-operator:v0.29.0',
   },
 }
