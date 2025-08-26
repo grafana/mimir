@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 98742def9a..24ebc65858 100644
+index dd58c2f3fb..24ebc65858 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -14,7 +14,6 @@ import (
@@ -27,8 +27,8 @@ index 98742def9a..24ebc65858 100644
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
--	// Skip normalization of metadata metric names
--	skipNormalizeMetricName bool
+-	// Skip normalization of metadata metric names when unmarshalling the request.
+-	skipNormalizeMetadataMetricName bool
 -	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 -	unmarshalFromRW2 bool
 -	rw2symbols       rw2PagedSymbols
@@ -144,7 +144,7 @@ index 98742def9a..24ebc65858 100644
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetricName); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 +			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
@@ -196,7 +196,7 @@ index 98742def9a..24ebc65858 100644
 -			if metadata == nil {
 -				metadata = make(map[string]*orderAwareMetricMetadata)
 -			}
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetricName); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 +			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
 +			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
@@ -440,7 +440,7 @@ index 98742def9a..24ebc65858 100644
 -		err error
 -		help string
 -		metricType MetadataRW2_MetricType
--		normalizeMetricName string
+-		normalizedMetricName string
 -		unit string
 -	)
  	l := len(dAtA)
@@ -518,23 +518,23 @@ index 98742def9a..24ebc65858 100644
  		return io.ErrUnexpectedEOF
  	}
 -	if skipNormalizeMetricName {
--		normalizeMetricName = metricName
+-		normalizedMetricName = metricName
 -	} else {
--		normalizeMetricName, _ = getMetricName(metricName, metricType)
+-		normalizedMetricName, _ = normalizeMetricName(metricName, metricType)
 -	}
--	if len(normalizeMetricName) == 0 {
+-	if len(normalizedMetricName) == 0 {
 -		return nil
 -	}
--	if _, ok := metadata[normalizeMetricName]; ok {
+-	if _, ok := metadata[normalizedMetricName]; ok {
 -		// Already have metadata for this metric familiy name.
 -		// Since we cannot have multiple definitions of the same
 -		// metric family name, we ignore this metadata.
 -		return nil
 -	}
 -	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
--		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+-		metadata[normalizedMetricName] = &orderAwareMetricMetadata{
 -			MetricMetadata: MetricMetadata{
--				MetricFamilyName: normalizeMetricName,
+-				MetricFamilyName: normalizedMetricName,
 -				Help:             help,
 -				Unit:             unit,
 -				Type:             MetricMetadata_MetricType(metricType),
