@@ -10167,6 +10167,17 @@
             },
             {
               "kind": "field",
+              "name": "parquet_streaming_enabled",
+              "required": false,
+              "desc": "Experimental support for streaming results from the Parquet chunks file directly, instead of loading them all in memory. This is normally desirable to reduce memory usage, but Parquet has some caveats that could make this less performant and bug-prone. The current implementation is a rough PoC to analyze performance improvements.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-streaming-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "parquet_max_row_count",
               "required": false,
               "desc": "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.",
