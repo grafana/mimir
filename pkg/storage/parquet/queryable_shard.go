@@ -4,6 +4,7 @@ package parquet
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/efficientgo/core/errors"
@@ -41,12 +42,76 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	}, nil
 }
 
-// Query queries the Parquet shard for the given time range and matchers.
+func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (prom_storage.ChunkSeriesSet, error) {
+	errGroup, ctx := errgroup.WithContext(ctx)
+	errGroup.SetLimit(b.concurrency)
+
+	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
+	results := make([][]prom_storage.ChunkSeries, rowGroupCount)
+	for i := range results {
+		results[i] = make([]prom_storage.ChunkSeries, 0, 1024/rowGroupCount)
+	}
+
+	for rgi := range rowGroupCount {
+		errGroup.Go(func() error {
+			cs, err := search.MatchersToConstraints(matchers...)
+			if err != nil {
+				return err
+			}
+			err = search.Initialize(b.shard.LabelsFile(), cs...)
+			if err != nil {
+				return err
+			}
+			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
+			if err != nil {
+				return err
+			}
+
+			if len(rr) == 0 {
+				return nil
+			}
+
+			seriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = seriesSetIter.Close() }()
+			for seriesSetIter.Next() {
+				results[rgi] = append(results[rgi], seriesSetIter.At())
+			}
+			if sorted {
+				sort.Sort(byLabels(results[rgi]))
+			}
+			return seriesSetIter.Err()
+		})
+	}
+
+	if err := errGroup.Wait(); err != nil {
+		return nil, err
+	}
+
+	totalResults := 0
+	for _, res := range results {
+		totalResults += len(res)
+	}
+
+	resultsFlattened := make([]prom_storage.ChunkSeries, 0, totalResults)
+	for _, res := range results {
+		resultsFlattened = append(resultsFlattened, res...)
+	}
+	if sorted {
+		sort.Sort(byLabels(resultsFlattened))
+	}
+
+	return convert.NewChunksSeriesSet(resultsFlattened), nil
+}
+
+// QueryIter queries the Parquet shard for the given time range and matchers.
 // seriesWithoutChunks iterates only labels, while seriesWithChunks includes chunk data.
 // Their underlying structures are independent of each other.
 // Although seriesWithoutChunks only has labels, we use ChunkSeriesSet to play nicely
 // with other helpers. Arguably hacky.
-func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
+func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
 	seriesWithoutChunks prom_storage.ChunkSeriesSet,
 	seriesWithChunks prom_storage.ChunkSeriesSet,
 	err error,
@@ -245,6 +310,12 @@ func (b queryableShard) allLabelValues(ctx context.Context, name string, limit i
 
 	return util.MergeUnsortedSlices(int(limit), results...), nil
 }
+
+type byLabels []prom_storage.ChunkSeries
+
+func (b byLabels) Len() int           { return len(b) }
+func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels(), b[j].Labels()) < 0 }
 
 // groupBySortingColumns groups the given labels and rows into groups where
 // each group has the same values for the specified sorting columns. This is useful because

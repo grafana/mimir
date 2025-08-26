@@ -111,7 +111,67 @@ func (p parquetChunkQuerier) Close() error {
 	return nil
 }
 
-func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) (labelsSet prom_storage.ChunkSeriesSet, seriesSet prom_storage.ChunkSeriesSet) {
+func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) prom_storage.ChunkSeriesSet {
+	ctx, span := tracer.Start(ctx, "parquetChunkQuerier.Select")
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Bool("sorted", sortSeries),
+		attribute.Int64("mint", p.mint),
+		attribute.Int64("maxt", p.maxt),
+		attribute.String("matchers", matchersToString(matchers)),
+	)
+
+	if hints != nil {
+		span.SetAttributes(
+			attribute.Int64("select_start", hints.Start),
+			attribute.Int64("select_end", hints.End),
+			attribute.String("select_func", hints.Func),
+		)
+	}
+
+	shards, err := p.queryableShards(ctx, p.mint, p.maxt)
+	if err != nil {
+		return prom_storage.ErrChunkSeriesSet(err)
+	}
+	seriesSet := make([]prom_storage.ChunkSeriesSet, len(shards))
+
+	minT, maxT := p.mint, p.maxt
+	if hints != nil {
+		minT, maxT = hints.Start, hints.End
+	}
+	skipChunks := hints != nil && hints.Func == "series"
+	errGroup, ctx := errgroup.WithContext(ctx)
+	errGroup.SetLimit(p.opts.concurrency)
+
+	for i, shard := range shards {
+		errGroup.Go(func() error {
+			ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
+			seriesSet[i] = ss
+			return err
+		})
+	}
+
+	if err := errGroup.Wait(); err != nil {
+		return prom_storage.ErrChunkSeriesSet(err)
+	}
+
+	span.SetAttributes(
+		attribute.Int("shards_count", len(shards)),
+		attribute.Bool("skip_chunks", skipChunks),
+	)
+
+	return convert.NewMergeChunkSeriesSet(seriesSet, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
+}
+
+func (p parquetChunkQuerier) SelectIter(ctx context.Context, sortSeries bool, hints *prom_storage.SelectHints, matchers ...*labels.Matcher) (labelsSet prom_storage.ChunkSeriesSet, seriesSet prom_storage.ChunkSeriesSet) {
 	ctx, span := tracer.Start(ctx, "parquetChunkQuerier.Select")
 	var err error
 	defer func() {
@@ -162,7 +222,7 @@ func (p parquetChunkQuerier) Select(ctx context.Context, sortSeries bool, hints 
 			// are not canceled early if one of them fails. The latter is not ideal, but at least
 			// it works. Ideally we'd have different contexts for each step: the creation of the
 			// iterator, and the iteration itself.
-			ls, ss, err := shard.Query(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
+			ls, ss, err := shard.QueryIter(ctx, sortSeries, hints, minT, maxT, skipChunks, matchers)
 			labelsSets[i] = ls
 			seriesSets[i] = ss
 			return err
