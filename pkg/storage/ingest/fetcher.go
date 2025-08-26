@@ -196,7 +196,7 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.End()
 }
 
-// Merge merges older with into fr. Merge keeps most of the fields of fr and assumes they
+// Merge merges older into fr. Merge keeps most of the fields of fr and assumes they
 // are more up-to-date than older.
 //
 // This function panics if one of the two fetchResult has Err set (errors MUST not be merged).
