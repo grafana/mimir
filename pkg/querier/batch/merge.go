@@ -43,6 +43,8 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	if cap(c.its) >= len(css) {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
+		// NOTE: changed so queriers are happy with empty results from SGs,
+		// as part of the Parquet PoC
 		if c.batches != nil {
 			c.batches.empty()
 		} else {
