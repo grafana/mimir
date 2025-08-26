@@ -240,14 +240,14 @@ alerting and recording rules.
 For more information, see [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
 {{< admonition type="note" >}}
-The Grafana Mimir Helm chart contains built-in configurations for meta-monitoring that use the Grafana Agent, which is now **deprecated**. We no longer recommend using this approach. Instead we recommend an approach that is based on [Kubernetes Monitoring Helm chart](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring).
+The Grafana Mimir Helm chart contains built-in configurations for meta-monitoring that use the Grafana Agent, which is now deprecated. We no longer recommend using this approach. Instead we recommend an approach that is based on [Kubernetes Monitoring Helm chart](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring).
 {{< /admonition >}}
 
-[Kubernetes Monitoring](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring) comes with the [built-in Mimir integration](https://github.com/grafana/k8s-monitoring-helm/blob/main/charts/k8s-monitoring/charts/feature-integrations/docs/integrations/mimir.md), that can collect metrics, logs and traces from Grafana Mimir. It configures [Grafana Alloy](https://grafana.com/docs/alloy/latest/) to handle all scraping and log collection automatically.
+[Kubernetes Monitoring](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring) comes with the [built-in Mimir integration](https://github.com/grafana/k8s-monitoring-helm/blob/main/charts/k8s-monitoring/charts/feature-integrations/docs/integrations/mimir.md), that collects metrics, logs, and traces from Grafana Mimir. It configures [Grafana Alloy](https://grafana.com/docs/alloy/latest/) to handle all scraping and log collection automatically.
 
-Refer to the [meta-monitoring example](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/examples/meta-monitoring) in the Kubernetes Monitoring Helm chart for guidance. Update the [`destinations`](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/destinations) section to specify where to send the metrics, logs, and traces collected from Grafana Mimir or GEM. Metrics must be sent to Prometheus or a Prometheus-compatible backend (e.g. another Mimir instance, Grafana Cloud Metrics, etc). You can configure multiple metrics, logs, and/or traces destinations to forward data to several backends simultaneously.
+Use the [meta-monitoring example](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/examples/meta-monitoring) in the Kubernetes Monitoring Helm chart for guidance. Update the [`destinations`](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring/docs/destinations) section to specify where to send the collected metrics, logs, and traces. Send metrics to Prometheus or a Prometheus-compatible backend such as another Mimir instance or Grafana Cloud Metrics. You can configure multiple metrics, logs, and/or traces destinations to forward data to several backends simultaneously.
 
-For more meta-monitoring topics see [Monitor Grafana Mimir](https://grafana.com/docs/mimir/latest/operations/monitoring/).
+For more meta-monitoring topics, refer to [Monitor Grafana Mimir](https://grafana.com/docs/mimir/latest/operations/monitoring/).
 
 ### Deprecated meta-monitoring approach
 
