@@ -13,8 +13,8 @@ weight: 20
 
 Grafana Mimir offers two deployment modes to accommodate different operational requirements and scale needs. Choose the deployment mode that best fits your use case:
 
-- Monolithic mode: Run all components in a single process for simple deployments
-- Microservices mode: Deploy components separately for maximum scalability and flexibility
+- Monolithic mode: Run all components in a single process for simple deployments.
+- Microservices mode: Deploy components separately for maximum scalability and flexibility.
 
 Configure the deployment mode using the `-target` parameter, which you can set via CLI flag or YAML configuration.
 
