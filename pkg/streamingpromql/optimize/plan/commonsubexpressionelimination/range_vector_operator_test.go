@@ -119,6 +119,18 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	requireEqualData(t, expectedData[5], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
 
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.False(t, inner.finalized)
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.closed)
@@ -376,6 +388,7 @@ type testRangeVectorOperator struct {
 	histograms                 *types.HPointRingBuffer
 	histogramsView             *types.HPointRingBufferView
 
+	finalized                bool
 	closed                   bool
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -461,16 +474,13 @@ func (t *testRangeVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testRangeVectorOperator) StepCount() int {
-	return 1
-}
-
-func (t *testRangeVectorOperator) Range() time.Duration {
-	return t.stepRange
-}
-
 func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
+	return nil
+}
+
+func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
+	t.finalized = true
 	return nil
 }
 
@@ -560,6 +570,10 @@ func (o *failingRangeVectorOperator) ExpressionPosition() posrange.PositionRange
 
 func (o *failingRangeVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
+	return nil
+}
+
+func (o *failingRangeVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
 

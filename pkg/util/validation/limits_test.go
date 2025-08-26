@@ -226,7 +226,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
-	exp.MetricNameValidationScheme = model.LegacyValidation
+	exp.NameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))
@@ -1953,17 +1953,17 @@ func TestExtensionMarshalling(t *testing.T) {
 
 		val, err := yaml.Marshal(overrides)
 		require.NoError(t, err)
-		fmt.Println(string(val))
 		require.Contains(t, string(val),
 			`test:
     test_extension_struct:
         foo: 0
     test_extension_string: ""
+    max_active_series_per_user: 0
     request_rate: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","request_rate":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","max_active_series_per_user":0,`)
 	})
 
 	t.Run("marshal limits with partial extension values", func(t *testing.T) {
@@ -1982,12 +1982,13 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 421237
     test_extension_string: ""
+    max_active_series_per_user: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","max_active_series_per_user":0,"request_rate":0,`)
 	})
 
 	t.Run("marshal limits with default extension values", func(t *testing.T) {
@@ -2001,12 +2002,13 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 42
     test_extension_string: default string extension value
+    max_active_series_per_user: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","max_active_series_per_user":0,"request_rate":0,`)
 	})
 }
 

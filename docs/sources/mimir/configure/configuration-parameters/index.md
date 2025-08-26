@@ -233,6 +233,12 @@ activity_tracker:
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
+# (experimental) Include tenant ID in pprof labels for profiling. Currently only
+# supported by the ingester. This can help debug performance issues for specific
+# tenants.
+# CLI flag: -include-tenant-id-in-profile-labels
+[include_tenant_id_in_profile_labels: <boolean> | default = false]
+
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
   # CLI flag: -vault.enabled
@@ -347,6 +353,991 @@ usage_stats:
   # Installation mode. Supported values: custom, helm, jsonnet.
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
+
+usage_tracker:
+  # True to enable the usage-tracker.
+  # CLI flag: -usage-tracker.enabled
+  [enabled: <boolean> | default = false]
+
+  # If true, the usage-tracker service tracks all series and does not apply
+  # series limits.
+  # CLI flag: -usage-tracker.do-not-apply-series-limits
+  [do_not_apply_series_limits: <boolean> | default = false]
+
+  # If true, the usage-tracker service uses global in-memory series limits
+  # instead of the active series limits. This is useful for testing purposes
+  # only.
+  # CLI flag: -usage-tracker.use-global-series-limits
+  [use_global_series_limits: <boolean> | default = false]
+
+  # Number of partitions to use for the usage-tracker. This number isn't
+  # expected to change after you're already using the usage-tracker.
+  # CLI flag: -usage-tracker.partitions
+  [partitions: <int> | default = 64]
+
+  # Interval to reconcile partitions.
+  # CLI flag: -usage-tracker.partition-reconcile-interval
+  [partition_reconcile_interval: <duration> | default = 10s]
+
+  # Time to wait before shutting down a partition handler that is no longer
+  # owned by this instance.
+  # CLI flag: -usage-tracker.lost-partitions-shutdown-grace-period
+  [lost_partitions_shutdown_grace_period: <duration> | default = 30s]
+
+  # Maximum number of partitions to create per reconcile interval. This avoids
+  # load avalanches and prevents shuffling when adding new instances.
+  # CLI flag: -usage-tracker.max-partitions-to-create-per-reconcile
+  [max_partitions_to_create_per_reconcile: <int> | default = 1]
+
+  instance_ring:
+    # The key-value store used to share the hash ring across multiple instances.
+    # When usage-tracker is enabled, this option needs be set on usage-trackers
+    # and distributors.
+    kvstore:
+      # Backend storage to use for the ring. Supported values are: consul, etcd,
+      # inmemory, memberlist, multi.
+      # CLI flag: -usage-tracker.instance-ring.store
+      [store: <string> | default = "memberlist"]
+
+      # (advanced) The prefix for the keys in the store. Should end with a /.
+      # CLI flag: -usage-tracker.instance-ring.prefix
+      [prefix: <string> | default = "collectors/"]
+
+      # The consul block configures the consul client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.instance-ring
+      [consul: <consul>]
+
+      # The etcd block configures the etcd client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.instance-ring
+      [etcd: <etcd>]
+
+      multi:
+        # (advanced) Primary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.instance-ring.multi.primary
+        [primary: <string> | default = ""]
+
+        # (advanced) Secondary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.instance-ring.multi.secondary
+        [secondary: <string> | default = ""]
+
+        # (advanced) Mirror writes to secondary store.
+        # CLI flag: -usage-tracker.instance-ring.multi.mirror-enabled
+        [mirror_enabled: <boolean> | default = false]
+
+        # (advanced) Timeout for storing value to secondary store.
+        # CLI flag: -usage-tracker.instance-ring.multi.mirror-timeout
+        [mirror_timeout: <duration> | default = 2s]
+
+    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+    # CLI flag: -usage-tracker.instance-ring.heartbeat-period
+    [heartbeat_period: <duration> | default = 15s]
+
+    # (advanced) The heartbeat timeout after which usage-trackers are considered
+    # unhealthy within the ring.
+    # CLI flag: -usage-tracker.instance-ring.heartbeat-timeout
+    [heartbeat_timeout: <duration> | default = 1m]
+
+    # (advanced) Number of consecutive timeout periods an unhealthy instance in
+    # the ring is automatically removed after. Set to 0 to disable auto-forget.
+    # CLI flag: -usage-tracker.auto-forget-unhealthy-periods
+    [auto_forget_unhealthy_periods: <int> | default = 4]
+
+    # (advanced) Instance ID to register in the ring.
+    # CLI flag: -usage-tracker.instance-ring.instance-id
+    [instance_id: <string> | default = "<hostname>"]
+
+    # List of network interface names to look up when finding the instance IP
+    # address.
+    # CLI flag: -usage-tracker.instance-ring.instance-interface-names
+    [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+    # (advanced) Port to advertise in the ring (defaults to
+    # -server.grpc-listen-port).
+    # CLI flag: -usage-tracker.instance-ring.instance-port
+    [instance_port: <int> | default = 0]
+
+    # (advanced) IP address to advertise in the ring. Default is auto-detected.
+    # CLI flag: -usage-tracker.instance-ring.instance-addr
+    [instance_addr: <string> | default = ""]
+
+    # The availability zone where this instance is running.
+    # CLI flag: -usage-tracker.instance-ring.instance-availability-zone
+    [instance_availability_zone: <string> | default = ""]
+
+    # (advanced) Enable using a IPv6 instance address. (default false)
+    # CLI flag: -usage-tracker.instance-ring.instance-enable-ipv6
+    [instance_enable_ipv6: <boolean> | default = false]
+
+  partition_ring:
+    # The key-value store used to share the hash ring across multiple instances.
+    kvstore:
+      # Backend storage to use for the ring. Supported values are: consul, etcd,
+      # inmemory, memberlist, multi.
+      # CLI flag: -usage-tracker.partition-ring.store
+      [store: <string> | default = "memberlist"]
+
+      # (advanced) The prefix for the keys in the store. Should end with a /.
+      # CLI flag: -usage-tracker.partition-ring.prefix
+      [prefix: <string> | default = "collectors/"]
+
+      # The consul block configures the consul client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.partition-ring
+      [consul: <consul>]
+
+      # The etcd block configures the etcd client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.partition-ring
+      [etcd: <etcd>]
+
+      multi:
+        # (advanced) Primary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.partition-ring.multi.primary
+        [primary: <string> | default = ""]
+
+        # (advanced) Secondary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.partition-ring.multi.secondary
+        [secondary: <string> | default = ""]
+
+        # (advanced) Mirror writes to secondary store.
+        # CLI flag: -usage-tracker.partition-ring.multi.mirror-enabled
+        [mirror_enabled: <boolean> | default = false]
+
+        # (advanced) Timeout for storing value to secondary store.
+        # CLI flag: -usage-tracker.partition-ring.multi.mirror-timeout
+        [mirror_timeout: <duration> | default = 2s]
+
+  events_storage_writer:
+    # The Kafka backend address.
+    # CLI flag: -usage-tracker.events-storage.writer.address
+    [address: <string> | default = ""]
+
+    # The Kafka topic name.
+    # CLI flag: -usage-tracker.events-storage.writer.topic
+    [topic: <string> | default = ""]
+
+    # The Kafka client ID.
+    # CLI flag: -usage-tracker.events-storage.writer.client-id
+    [client_id: <string> | default = ""]
+
+    # The maximum time allowed to open a connection to a Kafka broker.
+    # CLI flag: -usage-tracker.events-storage.writer.dial-timeout
+    [dial_timeout: <duration> | default = 2s]
+
+    # How long to wait for an incoming write request to be successfully
+    # committed to the Kafka backend.
+    # CLI flag: -usage-tracker.events-storage.writer.write-timeout
+    [write_timeout: <duration> | default = 10s]
+
+    # The number of Kafka clients used by producers. When the configured number
+    # of clients is greater than 1, partitions are sharded among Kafka clients.
+    # A higher number of clients may provide higher write throughput at the cost
+    # of additional Metadata requests pressure to Kafka.
+    # CLI flag: -usage-tracker.events-storage.writer.write-clients
+    [write_clients: <int> | default = 1]
+
+    # The username used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.events-storage.writer.sasl-username
+    [sasl_username: <string> | default = ""]
+
+    # The password used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.events-storage.writer.sasl-password
+    [sasl_password: <string> | default = ""]
+
+    # The consumer group used by the consumer to track the last consumed offset.
+    # The consumer group must be different for each ingester. If the configured
+    # consumer group contains the '<partition>' placeholder, it is replaced with
+    # the actual partition ID owned by the ingester. When empty (recommended),
+    # Mimir uses the ingester instance ID to guarantee uniqueness.
+    # CLI flag: -usage-tracker.events-storage.writer.consumer-group
+    [consumer_group: <string> | default = ""]
+
+    # How frequently a consumer should commit the consumed offset to Kafka. The
+    # last committed offset is used at startup to continue the consumption from
+    # where it was left.
+    # CLI flag: -usage-tracker.events-storage.writer.consumer-group-offset-commit-interval
+    [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+    # How frequently to poll the last produced offset, used to enforce strong
+    # read consistency.
+    # CLI flag: -usage-tracker.events-storage.writer.last-produced-offset-poll-interval
+    [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+    # How long to retry a failed request to get the last produced offset.
+    # CLI flag: -usage-tracker.events-storage.writer.last-produced-offset-retry-timeout
+    [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+    # From which position to start consuming the partition at startup. Supported
+    # options: last-offset, start, end, timestamp.
+    # CLI flag: -usage-tracker.events-storage.writer.consume-from-position-at-startup
+    [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+    # Milliseconds timestamp after which the consumption of the partition starts
+    # at startup. Only applies when consume-from-position-at-startup is
+    # timestamp
+    # CLI flag: -usage-tracker.events-storage.writer.consume-from-timestamp-at-startup
+    [consume_from_timestamp_at_startup: <int> | default = 0]
+
+    # The best-effort maximum lag a consumer tries to achieve at startup. Set
+    # both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup
+    # and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0
+    # to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.events-storage.writer.target-consumer-lag-at-startup
+    [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+    # The guaranteed maximum lag before a consumer is considered to have caught
+    # up reading from a partition at startup, becomes ACTIVE in the hash ring
+    # and passes the readiness check. Set both
+    # -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and
+    # -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to
+    # disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.events-storage.writer.max-consumer-lag-at-startup
+    [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+    # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+    # creating the topic fails and the topic doesn't already exist, Mimir fails
+    # to start.
+    # CLI flag: -usage-tracker.events-storage.writer.auto-create-topic-enabled
+    [auto_create_topic_enabled: <boolean> | default = true]
+
+    # When auto-creation of Kafka topic is enabled and this value is positive,
+    # Mimir creates the topic with this number of partitions. When the value is
+    # -1 the Kafka broker uses the default number of partitions (num.partitions
+    # configuration).
+    # CLI flag: -usage-tracker.events-storage.writer.auto-create-topic-default-partitions
+    [auto_create_topic_default_partitions: <int> | default = -1]
+
+    # The maximum size of a Kafka record data that should be generated by the
+    # producer. An incoming write request larger than this size is split into
+    # multiple Kafka records. We strongly recommend to not change this setting
+    # unless for testing purposes.
+    # CLI flag: -usage-tracker.events-storage.writer.producer-max-record-size-bytes
+    [producer_max_record_size_bytes: <int> | default = 15983616]
+
+    # The maximum size of (uncompressed) buffered and unacknowledged produced
+    # records sent to Kafka. The produce request fails once this limit is
+    # reached. This limit is per Kafka client. 0 to disable the limit.
+    # CLI flag: -usage-tracker.events-storage.writer.producer-max-buffered-bytes
+    [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+    # The maximum allowed for a read requests processed by an ingester to wait
+    # until strong read consistency is enforced. 0 to disable the timeout.
+    # CLI flag: -usage-tracker.events-storage.writer.wait-strong-read-consistency-timeout
+    [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+    # (experimental) The record version that this producer sends.
+    # CLI flag: -usage-tracker.events-storage.writer.producer-record-version
+    [producer_record_version: <int> | default = 0]
+
+    # The maximum amount of time a Kafka broker waits for some records before a
+    # Fetch response is returned.
+    # CLI flag: -usage-tracker.events-storage.writer.fetch-max-wait
+    [fetch_max_wait: <duration> | default = 5s]
+
+    # The maximum number of concurrent fetch requests that the ingester makes
+    # when reading data from Kafka during startup. Concurrent fetch requests are
+    # issued only when there is sufficient backlog of records to consume. Set to
+    # 0 to disable.
+    # CLI flag: -usage-tracker.events-storage.writer.fetch-concurrency-max
+    [fetch_concurrency_max: <int> | default = 0]
+
+    # When enabled, the fetch request MaxBytes field is computed using the
+    # compressed size of previous records. When disabled, MaxBytes is computed
+    # using uncompressed bytes. Different Kafka implementations interpret
+    # MaxBytes differently.
+    # CLI flag: -usage-tracker.events-storage.writer.use-compressed-bytes-as-fetch-max-bytes
+    [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+    # The maximum number of buffered records ready to be processed. This limit
+    # applies to the sum of all inflight requests. Set to 0 to disable the
+    # limit.
+    # CLI flag: -usage-tracker.events-storage.writer.max-buffered-bytes
+    [max_buffered_bytes: <int> | default = 100000000]
+
+    # The maximum number of concurrent ingestion streams to the TSDB head. Every
+    # tenant has their own set of streams. 0 to disable.
+    # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-max
+    [ingestion_concurrency_max: <int> | default = 0]
+
+    # The number of timeseries to batch together before ingesting to the TSDB
+    # head. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-batch-size
+    [ingestion_concurrency_batch_size: <int> | default = 150]
+
+    # The number of batches to prepare and queue to ingest to the TSDB head.
+    # Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max
+    # is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-queue-capacity
+    [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+    # The expected number of times to ingest timeseries to the TSDB head after
+    # batching. With fewer flushes, the overhead of splitting up the work is
+    # higher than the benefit of parallelization. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-target-flushes-per-shard
+    [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+    # The estimated number of bytes a sample has at time of ingestion. This
+    # value is used to estimate the timeseries without decompressing them. Only
+    # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+    # greater than 0.
+    # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample
+    [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
+  events_storage_reader:
+    # The Kafka backend address.
+    # CLI flag: -usage-tracker.events-storage.reader.address
+    [address: <string> | default = ""]
+
+    # The Kafka topic name.
+    # CLI flag: -usage-tracker.events-storage.reader.topic
+    [topic: <string> | default = ""]
+
+    # The Kafka client ID.
+    # CLI flag: -usage-tracker.events-storage.reader.client-id
+    [client_id: <string> | default = ""]
+
+    # The maximum time allowed to open a connection to a Kafka broker.
+    # CLI flag: -usage-tracker.events-storage.reader.dial-timeout
+    [dial_timeout: <duration> | default = 2s]
+
+    # How long to wait for an incoming write request to be successfully
+    # committed to the Kafka backend.
+    # CLI flag: -usage-tracker.events-storage.reader.write-timeout
+    [write_timeout: <duration> | default = 10s]
+
+    # The number of Kafka clients used by producers. When the configured number
+    # of clients is greater than 1, partitions are sharded among Kafka clients.
+    # A higher number of clients may provide higher write throughput at the cost
+    # of additional Metadata requests pressure to Kafka.
+    # CLI flag: -usage-tracker.events-storage.reader.write-clients
+    [write_clients: <int> | default = 1]
+
+    # The username used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.events-storage.reader.sasl-username
+    [sasl_username: <string> | default = ""]
+
+    # The password used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.events-storage.reader.sasl-password
+    [sasl_password: <string> | default = ""]
+
+    # The consumer group used by the consumer to track the last consumed offset.
+    # The consumer group must be different for each ingester. If the configured
+    # consumer group contains the '<partition>' placeholder, it is replaced with
+    # the actual partition ID owned by the ingester. When empty (recommended),
+    # Mimir uses the ingester instance ID to guarantee uniqueness.
+    # CLI flag: -usage-tracker.events-storage.reader.consumer-group
+    [consumer_group: <string> | default = ""]
+
+    # How frequently a consumer should commit the consumed offset to Kafka. The
+    # last committed offset is used at startup to continue the consumption from
+    # where it was left.
+    # CLI flag: -usage-tracker.events-storage.reader.consumer-group-offset-commit-interval
+    [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+    # How frequently to poll the last produced offset, used to enforce strong
+    # read consistency.
+    # CLI flag: -usage-tracker.events-storage.reader.last-produced-offset-poll-interval
+    [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+    # How long to retry a failed request to get the last produced offset.
+    # CLI flag: -usage-tracker.events-storage.reader.last-produced-offset-retry-timeout
+    [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+    # From which position to start consuming the partition at startup. Supported
+    # options: last-offset, start, end, timestamp.
+    # CLI flag: -usage-tracker.events-storage.reader.consume-from-position-at-startup
+    [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+    # Milliseconds timestamp after which the consumption of the partition starts
+    # at startup. Only applies when consume-from-position-at-startup is
+    # timestamp
+    # CLI flag: -usage-tracker.events-storage.reader.consume-from-timestamp-at-startup
+    [consume_from_timestamp_at_startup: <int> | default = 0]
+
+    # The best-effort maximum lag a consumer tries to achieve at startup. Set
+    # both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup
+    # and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0
+    # to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.events-storage.reader.target-consumer-lag-at-startup
+    [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+    # The guaranteed maximum lag before a consumer is considered to have caught
+    # up reading from a partition at startup, becomes ACTIVE in the hash ring
+    # and passes the readiness check. Set both
+    # -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and
+    # -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to
+    # disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.events-storage.reader.max-consumer-lag-at-startup
+    [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+    # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+    # creating the topic fails and the topic doesn't already exist, Mimir fails
+    # to start.
+    # CLI flag: -usage-tracker.events-storage.reader.auto-create-topic-enabled
+    [auto_create_topic_enabled: <boolean> | default = true]
+
+    # When auto-creation of Kafka topic is enabled and this value is positive,
+    # Mimir creates the topic with this number of partitions. When the value is
+    # -1 the Kafka broker uses the default number of partitions (num.partitions
+    # configuration).
+    # CLI flag: -usage-tracker.events-storage.reader.auto-create-topic-default-partitions
+    [auto_create_topic_default_partitions: <int> | default = -1]
+
+    # The maximum size of a Kafka record data that should be generated by the
+    # producer. An incoming write request larger than this size is split into
+    # multiple Kafka records. We strongly recommend to not change this setting
+    # unless for testing purposes.
+    # CLI flag: -usage-tracker.events-storage.reader.producer-max-record-size-bytes
+    [producer_max_record_size_bytes: <int> | default = 15983616]
+
+    # The maximum size of (uncompressed) buffered and unacknowledged produced
+    # records sent to Kafka. The produce request fails once this limit is
+    # reached. This limit is per Kafka client. 0 to disable the limit.
+    # CLI flag: -usage-tracker.events-storage.reader.producer-max-buffered-bytes
+    [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+    # The maximum allowed for a read requests processed by an ingester to wait
+    # until strong read consistency is enforced. 0 to disable the timeout.
+    # CLI flag: -usage-tracker.events-storage.reader.wait-strong-read-consistency-timeout
+    [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+    # (experimental) The record version that this producer sends.
+    # CLI flag: -usage-tracker.events-storage.reader.producer-record-version
+    [producer_record_version: <int> | default = 0]
+
+    # The maximum amount of time a Kafka broker waits for some records before a
+    # Fetch response is returned.
+    # CLI flag: -usage-tracker.events-storage.reader.fetch-max-wait
+    [fetch_max_wait: <duration> | default = 5s]
+
+    # The maximum number of concurrent fetch requests that the ingester makes
+    # when reading data from Kafka during startup. Concurrent fetch requests are
+    # issued only when there is sufficient backlog of records to consume. Set to
+    # 0 to disable.
+    # CLI flag: -usage-tracker.events-storage.reader.fetch-concurrency-max
+    [fetch_concurrency_max: <int> | default = 0]
+
+    # When enabled, the fetch request MaxBytes field is computed using the
+    # compressed size of previous records. When disabled, MaxBytes is computed
+    # using uncompressed bytes. Different Kafka implementations interpret
+    # MaxBytes differently.
+    # CLI flag: -usage-tracker.events-storage.reader.use-compressed-bytes-as-fetch-max-bytes
+    [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+    # The maximum number of buffered records ready to be processed. This limit
+    # applies to the sum of all inflight requests. Set to 0 to disable the
+    # limit.
+    # CLI flag: -usage-tracker.events-storage.reader.max-buffered-bytes
+    [max_buffered_bytes: <int> | default = 100000000]
+
+    # The maximum number of concurrent ingestion streams to the TSDB head. Every
+    # tenant has their own set of streams. 0 to disable.
+    # CLI flag: -usage-tracker.events-storage.reader.ingestion-concurrency-max
+    [ingestion_concurrency_max: <int> | default = 0]
+
+    # The number of timeseries to batch together before ingesting to the TSDB
+    # head. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.reader.ingestion-concurrency-batch-size
+    [ingestion_concurrency_batch_size: <int> | default = 150]
+
+    # The number of batches to prepare and queue to ingest to the TSDB head.
+    # Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max
+    # is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.reader.ingestion-concurrency-queue-capacity
+    [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+    # The expected number of times to ingest timeseries to the TSDB head after
+    # batching. With fewer flushes, the overhead of splitting up the work is
+    # higher than the benefit of parallelization. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.events-storage.reader.ingestion-concurrency-target-flushes-per-shard
+    [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+    # The estimated number of bytes a sample has at time of ingestion. This
+    # value is used to estimate the timeseries without decompressing them. Only
+    # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+    # greater than 0.
+    # CLI flag: -usage-tracker.events-storage.reader.ingestion-concurrency-estimated-bytes-per-sample
+    [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
+  snapshots_metadata_writer:
+    # The Kafka backend address.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.address
+    [address: <string> | default = ""]
+
+    # The Kafka topic name.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.topic
+    [topic: <string> | default = ""]
+
+    # The Kafka client ID.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.client-id
+    [client_id: <string> | default = ""]
+
+    # The maximum time allowed to open a connection to a Kafka broker.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.dial-timeout
+    [dial_timeout: <duration> | default = 2s]
+
+    # How long to wait for an incoming write request to be successfully
+    # committed to the Kafka backend.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.write-timeout
+    [write_timeout: <duration> | default = 10s]
+
+    # The number of Kafka clients used by producers. When the configured number
+    # of clients is greater than 1, partitions are sharded among Kafka clients.
+    # A higher number of clients may provide higher write throughput at the cost
+    # of additional Metadata requests pressure to Kafka.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.write-clients
+    [write_clients: <int> | default = 1]
+
+    # The username used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.sasl-username
+    [sasl_username: <string> | default = ""]
+
+    # The password used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.sasl-password
+    [sasl_password: <string> | default = ""]
+
+    # The consumer group used by the consumer to track the last consumed offset.
+    # The consumer group must be different for each ingester. If the configured
+    # consumer group contains the '<partition>' placeholder, it is replaced with
+    # the actual partition ID owned by the ingester. When empty (recommended),
+    # Mimir uses the ingester instance ID to guarantee uniqueness.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.consumer-group
+    [consumer_group: <string> | default = ""]
+
+    # How frequently a consumer should commit the consumed offset to Kafka. The
+    # last committed offset is used at startup to continue the consumption from
+    # where it was left.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.consumer-group-offset-commit-interval
+    [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+    # How frequently to poll the last produced offset, used to enforce strong
+    # read consistency.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.last-produced-offset-poll-interval
+    [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+    # How long to retry a failed request to get the last produced offset.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.last-produced-offset-retry-timeout
+    [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+    # From which position to start consuming the partition at startup. Supported
+    # options: last-offset, start, end, timestamp.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.consume-from-position-at-startup
+    [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+    # Milliseconds timestamp after which the consumption of the partition starts
+    # at startup. Only applies when consume-from-position-at-startup is
+    # timestamp
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.consume-from-timestamp-at-startup
+    [consume_from_timestamp_at_startup: <int> | default = 0]
+
+    # The best-effort maximum lag a consumer tries to achieve at startup. Set
+    # both
+    # -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup
+    # and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup
+    # to 0 to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup
+    [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+    # The guaranteed maximum lag before a consumer is considered to have caught
+    # up reading from a partition at startup, becomes ACTIVE in the hash ring
+    # and passes the readiness check. Set both
+    # -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup
+    # and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup
+    # to 0 to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup
+    [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+    # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+    # creating the topic fails and the topic doesn't already exist, Mimir fails
+    # to start.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.auto-create-topic-enabled
+    [auto_create_topic_enabled: <boolean> | default = true]
+
+    # When auto-creation of Kafka topic is enabled and this value is positive,
+    # Mimir creates the topic with this number of partitions. When the value is
+    # -1 the Kafka broker uses the default number of partitions (num.partitions
+    # configuration).
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.auto-create-topic-default-partitions
+    [auto_create_topic_default_partitions: <int> | default = -1]
+
+    # The maximum size of a Kafka record data that should be generated by the
+    # producer. An incoming write request larger than this size is split into
+    # multiple Kafka records. We strongly recommend to not change this setting
+    # unless for testing purposes.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.producer-max-record-size-bytes
+    [producer_max_record_size_bytes: <int> | default = 15983616]
+
+    # The maximum size of (uncompressed) buffered and unacknowledged produced
+    # records sent to Kafka. The produce request fails once this limit is
+    # reached. This limit is per Kafka client. 0 to disable the limit.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.producer-max-buffered-bytes
+    [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+    # The maximum allowed for a read requests processed by an ingester to wait
+    # until strong read consistency is enforced. 0 to disable the timeout.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.wait-strong-read-consistency-timeout
+    [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+    # (experimental) The record version that this producer sends.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.producer-record-version
+    [producer_record_version: <int> | default = 0]
+
+    # The maximum amount of time a Kafka broker waits for some records before a
+    # Fetch response is returned.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.fetch-max-wait
+    [fetch_max_wait: <duration> | default = 5s]
+
+    # The maximum number of concurrent fetch requests that the ingester makes
+    # when reading data from Kafka during startup. Concurrent fetch requests are
+    # issued only when there is sufficient backlog of records to consume. Set to
+    # 0 to disable.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.fetch-concurrency-max
+    [fetch_concurrency_max: <int> | default = 0]
+
+    # When enabled, the fetch request MaxBytes field is computed using the
+    # compressed size of previous records. When disabled, MaxBytes is computed
+    # using uncompressed bytes. Different Kafka implementations interpret
+    # MaxBytes differently.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.use-compressed-bytes-as-fetch-max-bytes
+    [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+    # The maximum number of buffered records ready to be processed. This limit
+    # applies to the sum of all inflight requests. Set to 0 to disable the
+    # limit.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.max-buffered-bytes
+    [max_buffered_bytes: <int> | default = 100000000]
+
+    # The maximum number of concurrent ingestion streams to the TSDB head. Every
+    # tenant has their own set of streams. 0 to disable.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-max
+    [ingestion_concurrency_max: <int> | default = 0]
+
+    # The number of timeseries to batch together before ingesting to the TSDB
+    # head. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-batch-size
+    [ingestion_concurrency_batch_size: <int> | default = 150]
+
+    # The number of batches to prepare and queue to ingest to the TSDB head.
+    # Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max
+    # is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-queue-capacity
+    [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+    # The expected number of times to ingest timeseries to the TSDB head after
+    # batching. With fewer flushes, the overhead of splitting up the work is
+    # higher than the benefit of parallelization. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-target-flushes-per-shard
+    [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+    # The estimated number of bytes a sample has at time of ingestion. This
+    # value is used to estimate the timeseries without decompressing them. Only
+    # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+    # greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-estimated-bytes-per-sample
+    [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
+  snapshots_metadata_reader:
+    # The Kafka backend address.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.address
+    [address: <string> | default = ""]
+
+    # The Kafka topic name.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.topic
+    [topic: <string> | default = ""]
+
+    # The Kafka client ID.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.client-id
+    [client_id: <string> | default = ""]
+
+    # The maximum time allowed to open a connection to a Kafka broker.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.dial-timeout
+    [dial_timeout: <duration> | default = 2s]
+
+    # How long to wait for an incoming write request to be successfully
+    # committed to the Kafka backend.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.write-timeout
+    [write_timeout: <duration> | default = 10s]
+
+    # The number of Kafka clients used by producers. When the configured number
+    # of clients is greater than 1, partitions are sharded among Kafka clients.
+    # A higher number of clients may provide higher write throughput at the cost
+    # of additional Metadata requests pressure to Kafka.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.write-clients
+    [write_clients: <int> | default = 1]
+
+    # The username used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.sasl-username
+    [sasl_username: <string> | default = ""]
+
+    # The password used to authenticate to Kafka using the SASL plain mechanism.
+    # To enable SASL, configure both the username and password.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.sasl-password
+    [sasl_password: <string> | default = ""]
+
+    # The consumer group used by the consumer to track the last consumed offset.
+    # The consumer group must be different for each ingester. If the configured
+    # consumer group contains the '<partition>' placeholder, it is replaced with
+    # the actual partition ID owned by the ingester. When empty (recommended),
+    # Mimir uses the ingester instance ID to guarantee uniqueness.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.consumer-group
+    [consumer_group: <string> | default = ""]
+
+    # How frequently a consumer should commit the consumed offset to Kafka. The
+    # last committed offset is used at startup to continue the consumption from
+    # where it was left.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.consumer-group-offset-commit-interval
+    [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+    # How frequently to poll the last produced offset, used to enforce strong
+    # read consistency.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.last-produced-offset-poll-interval
+    [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+    # How long to retry a failed request to get the last produced offset.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.last-produced-offset-retry-timeout
+    [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+    # From which position to start consuming the partition at startup. Supported
+    # options: last-offset, start, end, timestamp.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.consume-from-position-at-startup
+    [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+    # Milliseconds timestamp after which the consumption of the partition starts
+    # at startup. Only applies when consume-from-position-at-startup is
+    # timestamp
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.consume-from-timestamp-at-startup
+    [consume_from_timestamp_at_startup: <int> | default = 0]
+
+    # The best-effort maximum lag a consumer tries to achieve at startup. Set
+    # both
+    # -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup
+    # and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup
+    # to 0 to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup
+    [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+    # The guaranteed maximum lag before a consumer is considered to have caught
+    # up reading from a partition at startup, becomes ACTIVE in the hash ring
+    # and passes the readiness check. Set both
+    # -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup
+    # and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup
+    # to 0 to disable waiting for maximum consumer lag being honored at startup.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup
+    [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+    # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+    # creating the topic fails and the topic doesn't already exist, Mimir fails
+    # to start.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.auto-create-topic-enabled
+    [auto_create_topic_enabled: <boolean> | default = true]
+
+    # When auto-creation of Kafka topic is enabled and this value is positive,
+    # Mimir creates the topic with this number of partitions. When the value is
+    # -1 the Kafka broker uses the default number of partitions (num.partitions
+    # configuration).
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.auto-create-topic-default-partitions
+    [auto_create_topic_default_partitions: <int> | default = -1]
+
+    # The maximum size of a Kafka record data that should be generated by the
+    # producer. An incoming write request larger than this size is split into
+    # multiple Kafka records. We strongly recommend to not change this setting
+    # unless for testing purposes.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.producer-max-record-size-bytes
+    [producer_max_record_size_bytes: <int> | default = 15983616]
+
+    # The maximum size of (uncompressed) buffered and unacknowledged produced
+    # records sent to Kafka. The produce request fails once this limit is
+    # reached. This limit is per Kafka client. 0 to disable the limit.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.producer-max-buffered-bytes
+    [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+    # The maximum allowed for a read requests processed by an ingester to wait
+    # until strong read consistency is enforced. 0 to disable the timeout.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.wait-strong-read-consistency-timeout
+    [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+    # (experimental) The record version that this producer sends.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.producer-record-version
+    [producer_record_version: <int> | default = 0]
+
+    # The maximum amount of time a Kafka broker waits for some records before a
+    # Fetch response is returned.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.fetch-max-wait
+    [fetch_max_wait: <duration> | default = 5s]
+
+    # The maximum number of concurrent fetch requests that the ingester makes
+    # when reading data from Kafka during startup. Concurrent fetch requests are
+    # issued only when there is sufficient backlog of records to consume. Set to
+    # 0 to disable.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.fetch-concurrency-max
+    [fetch_concurrency_max: <int> | default = 0]
+
+    # When enabled, the fetch request MaxBytes field is computed using the
+    # compressed size of previous records. When disabled, MaxBytes is computed
+    # using uncompressed bytes. Different Kafka implementations interpret
+    # MaxBytes differently.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.use-compressed-bytes-as-fetch-max-bytes
+    [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+    # The maximum number of buffered records ready to be processed. This limit
+    # applies to the sum of all inflight requests. Set to 0 to disable the
+    # limit.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.max-buffered-bytes
+    [max_buffered_bytes: <int> | default = 100000000]
+
+    # The maximum number of concurrent ingestion streams to the TSDB head. Every
+    # tenant has their own set of streams. 0 to disable.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-max
+    [ingestion_concurrency_max: <int> | default = 0]
+
+    # The number of timeseries to batch together before ingesting to the TSDB
+    # head. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-batch-size
+    [ingestion_concurrency_batch_size: <int> | default = 150]
+
+    # The number of batches to prepare and queue to ingest to the TSDB head.
+    # Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max
+    # is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-queue-capacity
+    [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+    # The expected number of times to ingest timeseries to the TSDB head after
+    # batching. With fewer flushes, the overhead of splitting up the work is
+    # higher than the benefit of parallelization. Only use this setting when
+    # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-target-flushes-per-shard
+    [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+    # The estimated number of bytes a sample has at time of ingestion. This
+    # value is used to estimate the timeseries without decompressing them. Only
+    # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+    # greater than 0.
+    # CLI flag: -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-estimated-bytes-per-sample
+    [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
+  snapshots_storage:
+    # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
+    # filesystem.
+    # CLI flag: -usage-tracker.snapshots-storage.backend
+    [backend: <string> | default = "filesystem"]
+
+    # The s3_backend block configures the connection to Amazon S3 object storage
+    # backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshots-storage
+    [s3: <s3_storage_backend>]
+
+    # The gcs_backend block configures the connection to Google Cloud Storage
+    # object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshots-storage
+    [gcs: <gcs_storage_backend>]
+
+    # The azure_storage_backend block configures the connection to Azure object
+    # storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshots-storage
+    [azure: <azure_storage_backend>]
+
+    # The swift_storage_backend block configures the connection to OpenStack
+    # Object Storage (Swift) object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshots-storage
+    [swift: <swift_storage_backend>]
+
+    # The filesystem_storage_backend block configures the usage of local file
+    # system as object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshots-storage
+    [filesystem: <filesystem_storage_backend>]
+
+    # Prefix for all objects stored in the backend storage. For simplicity, it
+    # may only contain digits and English alphabet letters.
+    # CLI flag: -usage-tracker.snapshots-storage.storage-prefix
+    [storage_prefix: <string> | default = ""]
+
+  snapshots_load_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # The time after which series are considered idle and not active anymore. Must
+  # be greater than 0 and less than 1 hour.
+  # CLI flag: -usage-tracker.idle-timeout
+  [idle_timeout: <duration> | default = 20m]
+
+  # Maximum number of pending created series events waiting to be published.
+  # CLI flag: -usage-tracker.created-series-events-max-pending
+  [max_pending_created_series_events: <int> | default = 10000]
+
+  # Maximum size of a batch of created series events to be published.
+  # CLI flag: -usage-tracker.created-series-events-max-batch-size-bytes
+  [created_series_events_max_batch_size_bytes: <int> | default = 1048576]
+
+  # Time after which a batch of created series events is published even if it's
+  # not full.
+  # CLI flag: -usage-tracker.created-series-events-batch-ttl
+  [created_series_events_batch_ttl: <duration> | default = 250ms]
+
+  # Number of concurrent workers publishing created series events.
+  # CLI flag: -usage-tracker.created-series-events-publish-concurrency
+  [created_series_events_publish_concurrency: <int> | default = 10]
+
+  # (experimental) If true, the usage-tracker will not load snapshots at
+  # startup. This means that the full state will not be reloaded during
+  # partition handler startup. Useful to skip corrupted snapshots or for testing
+  # purposes only.
+  # CLI flag: -usage-tracker.skip-snapshot-loading-at-startup
+  [skip_snapshot_loading_at_startup: <boolean> | default = false]
+
+  # Jitter to apply to the snapshot interval. This is a percentage of the
+  # snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.
+  # CLI flag: -usage-tracker.snapshot-interval-jitter
+  [snapshot_interval_jitter: <float> | default = 0.1]
+
+  # Target size of a snapshot file in bytes. This is used to determine when to
+  # create a new snapshot file. It should be greater than 0.
+  # CLI flag: -usage-tracker.target-snapshot-file-size-bytes
+  [target_snapshot_file_size_bytes: <int> | default = 104857600]
+
+  # Interval to clean up old snapshots.
+  # CLI flag: -usage-tracker.snapshot-cleanup-interval
+  [snapshot_cleanup_interval: <duration> | default = 1h]
+
+  # Jitter to apply to the snapshot cleanup interval. This is a percentage of
+  # the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be
+  # between 0 and 1.
+  # CLI flag: -usage-tracker.snapshot-cleanup-interval-jitter
+  [snapshot_cleanup_interval_jitter: <float> | default = 0.25]
+
+  # Maximum number of events to fetch from Kafka in a single request. This is
+  # used to limit the memory usage when fetching events.
+  # CLI flag: -usage-tracker.max-events-fetch-size
+  [max_events_fetch_size: <int> | default = 100]
 
 overrides_exporter:
   ring:
@@ -1023,6 +2014,89 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
+
+usage_tracker_client:
+  # (experimental) Ignore rejected series when tracking series in usage-tracker.
+  # If enabled, the client will not return the list of rejected series, but it
+  # will still track them in usage-tracker. This is useful to validate the
+  # rollout process of this service.
+  # CLI flag: -distributor.usage-tracker-client.ignore-rejected-series
+  [ignore_rejected_series: <boolean> | default = false]
+
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is:
+  # distributor.usage-tracker-client.grpc-client-config
+  [grpc: <grpc_client>]
+
+  # Preferred availability zone to query usage-trackers.
+  # CLI flag: -distributor.usage-tracker-client.prefer-availability-zone
+  [prefer_availability_zone: <string> | default = ""]
+
+  # (advanced) Delay before initiating requests to further usage-trackers (e.g.
+  # in other zones).
+  # CLI flag: -distributor.usage-tracker-client.requests-hedging-delay
+  [requests_hedging_delay: <duration> | default = 100ms]
+
+  # (advanced) Number of pre-allocated workers used to send requests to
+  # usage-trackers. If 0, no workers pool will be used and a new goroutine will
+  # be spawned for each request.
+  # CLI flag: -distributor.usage-tracker-client.reusable-workers
+  [reusable_workers: <int> | default = 500]
+
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
+
+  # (advanced)
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced)
+  [tls_min_version: <string> | default = ""]
 ```
 
 ### ingester
@@ -1771,6 +2845,11 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) Set to true to enable rewriting queries to propagate label
+# matchers across binary expressions.
+# CLI flag: -query-frontend.rewrite-propagate-matchers
+[rewrite_propagate_matchers: <boolean> | default = false]
+
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1976,6 +3055,11 @@ The `ruler` block configures the ruler.
 # Alertmanager.
 # CLI flag: -ruler.notification-queue-capacity
 [notification_queue_capacity: <int> | default = 10000]
+
+# (advanced) Maximum number of notifications to send to Alertmanager in one
+# request.
+# CLI flag: -ruler.max-notification-batch-size
+[max_notification_batch_size: <int> | default = 256]
 
 # (advanced) HTTP timeout duration when sending notifications to the
 # Alertmanager.
@@ -2323,6 +3407,11 @@ The `alertmanager` block configures the alertmanager.
 # (advanced) Maximum size (bytes) of an accepted HTTP request body.
 # CLI flag: -alertmanager.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
+
+# (experimental) Timeout for reading the state from object storage during the
+# initial sync. Set to `0` for no timeout.
+# CLI flag: -alertmanager.storage.state-read-timeout
+[state_read_timeout: <duration> | default = 15s]
 
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -2702,6 +3791,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `distributor.usage-tracker-client.grpc-client-config`
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`
@@ -2906,6 +3996,8 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
+- `usage-tracker.instance-ring`
+- `usage-tracker.partition-ring`
 
 &nbsp;
 
@@ -3011,6 +4103,8 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
+- `usage-tracker.instance-ring`
+- `usage-tracker.partition-ring`
 
 &nbsp;
 
@@ -3291,6 +4385,11 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
+# Maximum number of active series per user. 0 means no limit. This limit only
+# applies with ingest storage enabled.
+# CLI flag: -distributor.max-active-series-per-user
+[max_active_series_per_user: <int> | default = 0]
+
 # Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
@@ -4334,15 +5433,15 @@ kafka:
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 
   # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
-  # creating the topic fails and the topic doesn't already exist, Mimir will
-  # fail to start.
+  # creating the topic fails and the topic doesn't already exist, Mimir fails to
+  # start.
   # CLI flag: -ingest-storage.kafka.auto-create-topic-enabled
   [auto_create_topic_enabled: <boolean> | default = true]
 
   # When auto-creation of Kafka topic is enabled and this value is positive,
-  # Mimir will create the topic with this number of partitions. When the value
-  # is -1 the Kafka broker will use the default number of partitions
-  # (num.partitions configuration).
+  # Mimir creates the topic with this number of partitions. When the value is -1
+  # the Kafka broker uses the default number of partitions (num.partitions
+  # configuration).
   # CLI flag: -ingest-storage.kafka.auto-create-topic-default-partitions
   [auto_create_topic_default_partitions: <int> | default = -1]
 
@@ -4375,7 +5474,8 @@ kafka:
 
   # The maximum number of concurrent fetch requests that the ingester makes when
   # reading data from Kafka during startup. Concurrent fetch requests are issued
-  # only when there is sufficient backlog of records to consume. 0 to disable.
+  # only when there is sufficient backlog of records to consume. Set to 0 to
+  # disable.
   # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
   [fetch_concurrency_max: <int> | default = 0]
 
@@ -5484,6 +6584,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -5659,6 +6760,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -5749,6 +6851,7 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -5855,6 +6958,7 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -5956,6 +7060,7 @@ The `filesystem_storage_backend` block configures the usage of local file system
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 

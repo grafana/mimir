@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -501,6 +502,32 @@ func TestUploadCleanup(t *testing.T) {
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]), 0)
 		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
+}
+
+func TestUploadError(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create a simple block
+	blockID, err := CreateBlock(ctx, tmpDir, fiveLabels, 100, 0, 1000, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	// Attempt upload to in-mem bucket wrapped with always fail logic
+	anyObjStoreErr := errors.New("failed")
+	target := fmt.Sprintf("%s/%s", blockID, MetaFilename)
+
+	injectedBkt := &bucket.ErrorInjectedBucketClient{
+		Bucket:   objstore.NewInMemBucket(),
+		Injector: bucket.InjectErrorOn(bucket.OpUpload, target, anyObjStoreErr),
+	}
+
+	err = Upload(context.Background(), log.NewNopLogger(), injectedBkt, filepath.Join(tmpDir, blockID.String()), nil)
+	// Verify that Upload returns error
+	require.Error(t, err)
+
+	var uploadErr *UploadError
+	// Verify that the error is wrapped as an UploadError type
+	require.True(t, errors.As(err, &uploadErr))
 }
 
 type errBucket struct {

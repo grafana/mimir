@@ -365,6 +365,53 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.Equal(t, expSymbols, rw2.SymbolsRW2)
 		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
 	})
+
+	t.Run("metadata with UNKNOWN type", func(t *testing.T) {
+		req := &WriteRequest{
+			Timeseries: nil,
+			Metadata: []*MetricMetadata{
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
+				},
+				{
+					Type:             UNKNOWN,
+					MetricFamilyName: "my_cool_series_2",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
+
+		expSymbols := []string{"", "__name__", "my_cool_series", "It's a cool series.", "megawatts", "my_cool_series_2"}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 3,
+					UnitRef: 4,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 5},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_UNSPECIFIED,
+					HelpRef: 3,
+					UnitRef: 4,
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Nil(t, rw2.Metadata)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
 }
 
 func TestExemplarConversion(t *testing.T) {

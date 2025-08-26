@@ -60,7 +60,7 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 
 	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+	require.Equal(t, model.LabelNames{"__name__", "foo"}, labelNames)
 }
 
 func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
@@ -113,7 +113,7 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 
 	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+	require.Equal(t, model.LabelNames{"__name__", "foo"}, labelNames)
 }
 
 func TestReadWriteModeRecordingRule(t *testing.T) {
