@@ -127,9 +127,9 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:                  req.Source,
-			SkipLabelValidation:     req.SkipLabelValidation,
-			skipNormalizeMetricName: req.skipNormalizeMetricName,
+			Source:                          req.Source,
+			SkipLabelValidation:             req.SkipLabelValidation,
+			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 		}
 
 		return r, r.Size()

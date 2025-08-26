@@ -373,7 +373,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		// Unmarshal the data back into Mimir's WriteRequest.
 		received := PreallocWriteRequest{
-			SkipNormalizeMetricName: true,
+			SkipNormalizeMetadataMetricName: true,
 		}
 		received.UnmarshalFromRW2 = true
 		err = received.Unmarshal(data)

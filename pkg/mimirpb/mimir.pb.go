@@ -296,8 +296,8 @@ type WriteRequest struct {
 
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
-	// Skip normalization of metadata metric names
-	skipNormalizeMetricName bool
+	// Skip normalization of metadata metric names when unmarshalling the request.
+	skipNormalizeMetadataMetricName bool
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
@@ -7413,7 +7413,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7549,7 +7549,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = make(map[string]*orderAwareMetricMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex

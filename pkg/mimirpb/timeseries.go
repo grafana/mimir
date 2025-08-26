@@ -73,9 +73,9 @@ type PreallocWriteRequest struct {
 	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
 	// These symbols are never sent in the request to begin with.
 	RW2CommonSymbols []string
-	// Skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
+	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
 	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
-	SkipNormalizeMetricName bool
+	SkipNormalizeMetadataMetricName bool
 }
 
 // Unmarshal implements proto.Message.
@@ -84,7 +84,7 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
-	p.skipNormalizeMetricName = p.SkipNormalizeMetricName
+	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
