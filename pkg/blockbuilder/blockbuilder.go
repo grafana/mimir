@@ -231,17 +231,12 @@ type fetchPoller interface {
 }
 
 type fetchWrapper struct {
-	fetchPoller
-
 	fetchers *ingest.ConcurrentFetchers
 }
 
 func (f *fetchWrapper) PollFetches(ctx context.Context) kgo.Fetches {
-	if f.fetchers != nil {
-		fetch, _ := f.fetchers.PollFetches(ctx)
-		return fetch
-	}
-	return f.fetchPoller.PollFetches(ctx)
+	fetch, _ := f.fetchers.PollFetches(ctx)
+	return fetch
 }
 
 var _ fetchPoller = (*fetchWrapper)(nil)
@@ -330,7 +325,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		f.Start(ctx)
 		defer f.Stop()
 
-		fetchPoller = &fetchWrapper{fetchers: f}
+		fetchPoller = &fetchWrapper{f}
 	}
 
 	//consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprint(partition))
