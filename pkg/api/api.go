@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -39,6 +40,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -300,23 +303,8 @@ func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus
 	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
-// Ingester is defined as an interface to allow for alternative implementations
-// of ingesters to be passed into the API.RegisterIngester() method.
-type Ingester interface {
-	client.IngesterServer
-	FlushHandler(http.ResponseWriter, *http.Request)
-	ShutdownHandler(http.ResponseWriter, *http.Request)
-	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
-	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
-	PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request)
-	UserRegistryHandler(http.ResponseWriter, *http.Request)
-	TenantsHandler(http.ResponseWriter, *http.Request)
-	TenantTSDBHandler(http.ResponseWriter, *http.Request)
-	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
-}
-
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i Ingester) {
+func (a *API) RegisterIngester(i ingester.API) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
@@ -510,6 +498,27 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
 	})
 	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+}
+
+func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Instance ring status", Path: "/usage-tracker/instance-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/instance-ring", instanceRingHandler, false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTrackerPartitionRing(partitionRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "/usage-tracker/partition-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/partition-ring", partitionRingHandler, false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler
