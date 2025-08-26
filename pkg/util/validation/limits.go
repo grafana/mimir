@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -57,6 +57,7 @@ const (
 	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
 	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
+	MaxActiveSeriesPerUserFlag                = "distributor.max-active-series-per-user"
 	RequestRateFlag                           = "distributor.request-rate-limit"
 	RequestBurstSizeFlag                      = "distributor.request-burst-size"
 	IngestionRateFlag                         = "distributor.ingestion-rate-limit"
@@ -111,15 +112,16 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate          float64 `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize     int     `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate        float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize   int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples      bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user"`
+	RequestRate            float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize       int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate          float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize     int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor   float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples        bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel         string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel         string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters          int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
 	// We should only update the timestamp if the difference
 	// between the stored timestamp and the time we received a sample at
 	// is more than this duration.
@@ -308,6 +310,7 @@ type Limits struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&l.MaxActiveSeriesPerUser, MaxActiveSeriesPerUserFlag, 0, "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.")
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
@@ -630,7 +633,7 @@ func (l *Limits) Validate() error {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 
@@ -822,6 +825,18 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // Zero means disabled.
 func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
+}
+
+// MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
+func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
+	overrides := o.getOverridesForUser(userID)
+	limit := overrides.MaxActiveSeriesPerUser
+	// TODO temporary to simplify testing.
+	if limit == 0 {
+		// Fallback to MaxGlobalSeriesPerUser if no per-user active series limit is set.
+		limit = overrides.MaxGlobalSeriesPerUser
+	}
+	return limit
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.

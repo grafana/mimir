@@ -1,7 +1,7 @@
-diff --git b/pkg/mimirpb/mimir.pb.go a/pkg/mimirpb/mimir.pb.go
-index f9351f909d..2013d3ee8c 100644
---- b/pkg/mimirpb/mimir.pb.go
-+++ a/pkg/mimirpb/mimir.pb.go
+diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
+index 50ea1bc359..2013d3ee8c 100644
+--- a/pkg/mimirpb/mimir.pb.go
++++ b/pkg/mimirpb/mimir.pb.go
 @@ -14,7 +14,6 @@ import (
  	math "math"
  	math_bits "math/bits"
@@ -12,7 +12,7 @@ index f9351f909d..2013d3ee8c 100644
  )
 @@ -276,9 +275,6 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
  }
-
+ 
  type WriteRequest struct {
 -	// Keep reference to buffer for unsafe references.
 -	BufferHolder
@@ -31,12 +31,12 @@ index f9351f909d..2013d3ee8c 100644
 -	unmarshalFromRW2 bool
 -	rw2symbols       rw2PagedSymbols
  }
-
+ 
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
 @@ -450,11 +440,6 @@ func (m *ErrorDetails) GetCause() ErrorCause {
  	return ERROR_CAUSE_UNKNOWN
  }
-
+ 
 -// # DO NOT SHALLOW-COPY
 -//
 -// Data referenced from a PreallocTimeseries may change once the timeseries is
@@ -53,7 +53,7 @@ index f9351f909d..2013d3ee8c 100644
 -	// Skip unmarshaling of exemplars.
 -	SkipUnmarshalingExemplars bool
  }
-
+ 
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
 @@ -5922,25 +5904,19 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
  		}
@@ -453,7 +453,7 @@ index f9351f909d..2013d3ee8c 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11685,23 +11588,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11685,7 +11588,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -462,15 +462,7 @@ index f9351f909d..2013d3ee8c 100644
  				if b < 0x80 {
  					break
  				}
- 			}
--			normalizeMetricName, _ = getMetricName(metricName, metricType)
--			if _, ok := metadata[normalizeMetricName]; ok {
--				// Already have metadata for this metric familiy name.
--				// Since we cannot have multiple definitions of the same
--				// metric family name, we ignore this metadata.
--				return nil
--			}
- 		case 3:
+@@ -11694,7 +11597,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  			if wireType != 0 {
  				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
  			}
@@ -479,7 +471,7 @@ index f9351f909d..2013d3ee8c 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11711,20 +11607,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11704,20 +11607,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -502,7 +494,7 @@ index f9351f909d..2013d3ee8c 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11734,15 +11626,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11727,15 +11626,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -519,13 +511,21 @@ index f9351f909d..2013d3ee8c 100644
  		default:
  			iNdEx = preIndex
  			skippy, err := skipMimir(dAtA[iNdEx:])
-@@ -11762,21 +11650,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11755,29 +11650,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
+-	normalizeMetricName, _ = getMetricName(metricName, metricType)
 -	if len(normalizeMetricName) == 0 {
 -		return nil
 -	}
+-	if _, ok := metadata[normalizeMetricName]; ok {
+-		// Already have metadata for this metric familiy name.
+-		// Since we cannot have multiple definitions of the same
+-		// metric family name, we ignore this metadata.
+-		return nil
+-	}
+-	
 -	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 -		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
 -			MetricMetadata: MetricMetadata{
