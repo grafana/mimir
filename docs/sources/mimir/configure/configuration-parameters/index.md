@@ -6067,6 +6067,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.parquet-load-index-to-disk
   [parquet_load_index_to_disk: <boolean> | default = true]
 
+  # (advanced) Experimental support for streaming results from the Parquet
+  # chunks file directly, instead of loading them all in memory. This is
+  # normally desirable to reduce memory usage, but Parquet has some caveats that
+  # could make this less performant and bug-prone. The current implementation is
+  # a rough PoC to analyze performance improvements.
+  # CLI flag: -blocks-storage.bucket-store.parquet-streaming-enabled
+  [parquet_streaming_enabled: <boolean> | default = false]
+
   # (advanced) Maximum number of rows in a parquet file. If the number of rows
   # exceeds this value the query will stop with limit error.
   # CLI flag: -blocks-storage.bucket-store.parquet-max-row-count

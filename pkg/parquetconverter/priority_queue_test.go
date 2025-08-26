@@ -177,7 +177,6 @@ func TestPriorityQueue_MultipleUsers(t *testing.T) {
 	baseTime := time.Now()
 
 	t.Run("prioritizes by block age not user", func(t *testing.T) {
-		var allTasks []*conversionTask
 
 		// Each user has blocks at different times
 		for i, user := range users {
@@ -185,7 +184,6 @@ func TestPriorityQueue_MultipleUsers(t *testing.T) {
 				// Create tasks with interleaved timestamps
 				taskTime := baseTime.Add(-time.Duration(i*30+j*10) * time.Minute)
 				task := createTestTask(t, user, taskTime)
-				allTasks = append(allTasks, task)
 				require.True(t, pq.Push(task))
 			}
 		}
