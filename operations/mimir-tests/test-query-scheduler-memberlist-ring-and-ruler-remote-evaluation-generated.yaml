@@ -2014,36 +2014,3 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingWebhookConfiguration
-metadata:
-  labels:
-    grafana.com/inject-rollout-operator-ca: "true"
-    grafana.com/namespace: default
-  name: pod-eviction-default
-webhooks:
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: rollout-operator
-      namespace: default
-      path: /admission/pod-eviction
-      port: 443
-  failurePolicy: Fail
-  name: pod-eviction-default.grafana.com
-  namespaceSelector:
-    matchLabels:
-      kubernetes.io/metadata.name: default
-  rules:
-  - apiGroups:
-    - ""
-    apiVersions:
-    - v1
-    operations:
-    - CREATE
-    resources:
-    - pods/eviction
-    scope: Namespaced
-  sideEffects: None
