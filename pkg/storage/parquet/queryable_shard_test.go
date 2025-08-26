@@ -20,13 +20,13 @@ func mockSortingColumn(labelName string) parquet.SortingColumn {
 
 func TestGroupBySortingColumns(t *testing.T) {
 	tests := []struct {
-		name            string
-		sortingColumns  []parquet.SortingColumn
-		labels          []labels.Labels
-		rowRanges       []search.RowRange
-		expectedGroups  [][]labels.Labels
-		expectedRanges  [][]search.RowRange
-		expectError     bool
+		name           string
+		sortingColumns []parquet.SortingColumn
+		labels         []labels.Labels
+		rowRanges      []search.RowRange
+		expectedGroups [][]labels.Labels
+		expectedRanges [][]search.RowRange
+		expectError    bool
 	}{
 		{
 			name:           "empty sorting columns",
@@ -324,15 +324,15 @@ func TestGroupBySortingColumns_InvalidColumnName(t *testing.T) {
 func BenchmarkGroupBySortingColumns(b *testing.B) {
 	// Create test data
 	sortingColumns := []parquet.SortingColumn{mockSortingColumn("job"), mockSortingColumn("instance")}
-	
+
 	// Generate labels with different group patterns
 	lbls := make([]labels.Labels, 1000)
 	for i := 0; i < 1000; i++ {
-		jobValue := "app" + string(rune('1'+(i%5))) // 5 different job values
+		jobValue := "app" + string(rune('1'+(i%5)))        // 5 different job values
 		instanceValue := "host" + string(rune('1'+(i%10))) // 10 different instance values
 		lbls[i] = labels.FromStrings("__name__", "metric", "job", jobValue, "instance", instanceValue)
 	}
-	
+
 	rowRanges := []search.RowRange{{From: 0, Count: 1000}}
 
 	b.ResetTimer()
@@ -346,7 +346,7 @@ func BenchmarkGroupBySortingColumns(b *testing.B) {
 
 func BenchmarkGroupBySortingColumns_ManySmallRanges(b *testing.B) {
 	sortingColumns := []parquet.SortingColumn{mockSortingColumn("job")}
-	
+
 	// Create many small ranges
 	lbls := make([]labels.Labels, 100)
 	rowRanges := make([]search.RowRange, 100)

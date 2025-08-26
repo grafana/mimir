@@ -145,8 +145,6 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 				return nil
 			}
 
-			b.shard.TSDBSchema()
-
 			labelsSlices, err := b.m.MaterializeAllLabels(groupCtx, rgi, rr)
 			if err != nil {
 				return errors.Wrapf(err, "error materializing labels")
