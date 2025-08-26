@@ -34,6 +34,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Instead of provisioning the agent's Kubernetes resources with the chart's `metaMonitoring.grafanaAgent.enabled`, collect Mimir's meta-monitoring data with an external collector. It's recommended to use Grafana k8s-monitoring, which manages the creation and lifecycle of Alloy instances and has built-in support for collecting telemetry from Grafana LGTM stacks.
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
+* [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
 * [ENHANCEMENT] Add support for `revisionhistorylimit` for all deployments. #12323
