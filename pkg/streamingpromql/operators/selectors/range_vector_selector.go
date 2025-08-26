@@ -155,6 +155,11 @@ func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.Prepare
 	return m.Selector.Prepare(ctx, params)
 }
 
+func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
+	// Nothing to do.
+	return nil
+}
+
 func (m *RangeVectorSelector) Close() {
 	m.Selector.Close()
 	m.floats.Close()

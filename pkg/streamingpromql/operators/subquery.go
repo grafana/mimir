@@ -171,6 +171,10 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 	return s.Inner.Prepare(ctx, &childParams)
 }
 
+func (s *Subquery) Finalize(ctx context.Context) error {
+	return s.Inner.Finalize(ctx)
+}
+
 func (s *Subquery) Close() {
 	s.Inner.Close()
 	s.histograms.Close()
