@@ -226,6 +226,26 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
+type fetchPoller interface {
+	PollFetches(context.Context) kgo.Fetches
+}
+
+type fetchWrapper struct {
+	fetchPoller
+
+	fetchers *ingest.ConcurrentFetchers
+}
+
+func (f *fetchWrapper) PollFetches(ctx context.Context) kgo.Fetches {
+	if f.fetchers != nil {
+		fetch, _ := f.fetchers.PollFetches(ctx)
+		return fetch
+	}
+	return f.fetchPoller.PollFetches(ctx)
+}
+
+var _ fetchPoller = (*fetchWrapper)(nil)
+
 // consumePartitionSection is for the use of scheduler-based architecture.
 // startOffset is inclusive, endOffset is exclusive, and must be valid offsets and not something in the future (endOffset can be technically 1 offset in the future).
 // All the records and samples between these offsets will be consumed and put into a block.
@@ -280,6 +300,42 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRecOffset  = int64(-1)
 	)
 
+	var fetchPoller fetchPoller
+
+	if b.cfg.Kafka.FetchConcurrencyMax <= 0 {
+		fetchPoller = b.kafkaClient
+	} else {
+		f, ferr := ingest.NewConcurrentFetchers(
+			ctx,
+			b.kafkaClient,
+			logger,
+			b.cfg.Kafka.Topic,
+			partition,
+			startOffset,
+			b.cfg.Kafka.FetchConcurrencyMax,
+			100_000_000,
+			false,
+			5*time.Second,
+			nil,
+			ingest.NewGenericOffsetReader(func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+			backoff.Config{
+				MinBackoff: 100 * time.Millisecond,
+				MaxBackoff: 1 * time.Second,
+			},
+			nil)
+		if ferr != nil {
+			return lastConsumedOffset, fmt.Errorf("creating concurrent fetcher: %w", ferr)
+		}
+
+		f.Start(ctx)
+		defer f.Stop()
+
+		fetchPoller = &fetchWrapper{fetchers: f}
+	}
+
+	//consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprint(partition))
+	//metricUpdatePending := 0
+
 	for lastRecOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
@@ -289,7 +345,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches := fetchPoller.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
