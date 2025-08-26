@@ -20,11 +20,12 @@ Configure the deployment mode using the `-target` parameter, which you can set v
 
 ## About monolithic mode
 
-Monolithic mode runs all required components in a single process and is the default deployment mode. You enable monolithic mode by setting `-target=all`. 
+Monolithic mode runs all required components in a single process and is the default deployment mode. You enable monolithic mode by setting `-target=all`.
 
 This mode is ideal when you want to:
+
 - Get started quickly with Mimir
-- Run Mimir in a development environment  
+- Run Mimir in a development environment
 - Deploy with minimal operational complexity
 - Scale all components together
 
