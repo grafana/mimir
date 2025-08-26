@@ -91,10 +91,10 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
-// getMetricName cuts the mandatory OpenMetrics suffix from the
+// normalizeMetricName cuts the mandatory OpenMetrics suffix from the
 // seriesName and returns the metric name and whether it cut the suffix.
 // Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
-func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+func normalizeMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
 	switch metricType {
 	case METRIC_TYPE_SUMMARY:
 		retval, ok := strings.CutSuffix(seriesName, "_count")

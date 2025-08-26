@@ -11646,7 +11646,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		err error
 		help string
 		metricType MetadataRW2_MetricType
-		normalizeMetricName string
+		normalizedMetricName string
 		unit string
 	)
 	l := len(dAtA)
@@ -11762,23 +11762,23 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		return io.ErrUnexpectedEOF
 	}
 	if skipNormalizeMetricName {
-		normalizeMetricName = metricName
+		normalizedMetricName = metricName
 	} else {
-		normalizeMetricName, _ = getMetricName(metricName, metricType)
+		normalizedMetricName, _ = normalizeMetricName(metricName, metricType)
 	}
-	if len(normalizeMetricName) == 0 {
+	if len(normalizedMetricName) == 0 {
 		return nil
 	}
-	if _, ok := metadata[normalizeMetricName]; ok {
+	if _, ok := metadata[normalizedMetricName]; ok {
 		// Already have metadata for this metric familiy name.
 		// Since we cannot have multiple definitions of the same
 		// metric family name, we ignore this metadata.
 		return nil
 	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+		metadata[normalizedMetricName] = &orderAwareMetricMetadata{
 			MetricMetadata: MetricMetadata{
-				MetricFamilyName: normalizeMetricName,
+				MetricFamilyName: normalizedMetricName,
 				Help:             help,
 				Unit:             unit,
 				Type:             MetricMetadata_MetricType(metricType),
