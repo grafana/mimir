@@ -18,6 +18,7 @@
 * [CHANGE] Store-gateway: Update default value of `-store-gateway.dynamic-replication.multiple` to `5` to increase replication of recent blocks. #12433
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306 #12369
+* [FEATURE] Query-frontend: Add `query-frontend.rewrite-propagate-matchers` flag that enables a new MQE AST optimization pass that copies relevant label matchers across binary operations. #12304
 * [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
