@@ -262,7 +262,6 @@ func (p parquetQuerier) Select(ctx context.Context, sorted bool, sp *prom_storag
 	}()
 
 	span.SetAttributes(
-		attribute.Bool("sorted", sorted),
 		attribute.Int64("mint", p.mint),
 		attribute.Int64("maxt", p.maxt),
 		attribute.String("matchers", matchersToString(matchers)),
@@ -279,6 +278,11 @@ func (p parquetQuerier) Select(ctx context.Context, sorted bool, sp *prom_storag
 	if err != nil {
 		return prom_storage.ErrSeriesSet(err)
 	}
+	// If we are merging multiple shards then each shard series set needs to be sorted.
+	if len(shards) > 1 {
+		sorted = true
+	}
+	span.SetAttributes(attribute.Bool("sorted", sorted))
 	seriesSet := make([]prom_storage.ChunkSeriesSet, len(shards))
 
 	minT, maxT := p.mint, p.maxt
