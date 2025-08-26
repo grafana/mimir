@@ -100,8 +100,8 @@ func TestValidateLabels(t *testing.T) {
 		limits := *limits
 		perTenant[userID] = &limits
 	}
-	perTenant[defaultUserID].NameValidationScheme = validation.ValidationSchemeValue(model.LegacyValidation)
-	perTenant[utf8UserID].NameValidationScheme = validation.ValidationSchemeValue(model.UTF8Validation)
+	perTenant[defaultUserID].NameValidationScheme = model.LegacyValidation
+	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
 		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,

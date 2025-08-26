@@ -303,7 +303,7 @@ type Limits struct {
 	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
 
 	// NameValidationScheme is the validation scheme for metric and label names.
-	NameValidationScheme ValidationSchemeValue `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
+	NameValidationScheme model.ValidationScheme `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
 
 	extensions map[string]interface{}
 }
@@ -568,15 +568,15 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 
 // Validate the Limits.
 func (l *Limits) Validate() error {
-	switch model.ValidationScheme(l.NameValidationScheme) {
+	switch l.NameValidationScheme {
 	case model.UTF8Validation, model.LegacyValidation:
 	case model.UnsetValidation:
-		l.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
+		l.NameValidationScheme = model.LegacyValidation
 	default:
 		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
 	}
 
-	validationScheme := model.ValidationScheme(l.NameValidationScheme)
+	validationScheme := l.NameValidationScheme
 	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
 	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
 		if validationScheme != model.LegacyValidation {
@@ -1518,7 +1518,7 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 
 // NameValidationScheme returns the name validation scheme to use for a particular tenant.
 func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
-	return model.ValidationScheme(o.getOverridesForUser(userID).NameValidationScheme)
+	return o.getOverridesForUser(userID).NameValidationScheme
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
