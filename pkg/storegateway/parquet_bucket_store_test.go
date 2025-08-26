@@ -269,6 +269,7 @@ func createTestParquetBucketStore(
 		gate.NewNoop(),
 		gate.NewNoop(),
 		loadIndexToDisk,
+		true,
 		nil,
 		newStaticChunksLimiterFactory(0),
 		newStaticSeriesLimiterFactory(0),
