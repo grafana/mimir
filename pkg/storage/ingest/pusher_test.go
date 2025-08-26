@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
@@ -60,8 +63,6 @@ func TestPusherConsumer(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	ctx := context.Background()
-
 	type response struct {
 		err error
 	}
@@ -69,7 +70,7 @@ func TestPusherConsumer(t *testing.T) {
 	okResponse := response{nil}
 
 	testCases := map[string]struct {
-		records     []record
+		records     []testRecord
 		responses   []response
 		expectedWRs []*mimirpb.WriteRequest
 		expErr      string
@@ -77,8 +78,8 @@ func TestPusherConsumer(t *testing.T) {
 		expectedLogLines []string
 	}{
 		"single record": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -86,10 +87,10 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:1],
 		},
 		"multiple records": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -99,10 +100,10 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:3],
 		},
 		"unparsable record": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: []byte{0}, tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: []byte{0}, tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -115,10 +116,10 @@ func TestPusherConsumer(t *testing.T) {
 			},
 		},
 		"mixed record versions": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID, version: 0},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 1},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID, version: 0},
+				{content: wrBytes[1], tenantID: tenantID, version: 1},
+				{content: wrBytes[2], tenantID: tenantID, version: 1},
 			},
 			responses: []response{
 				okResponse,
@@ -128,10 +129,10 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:3],
 		},
 		"unsupported record version": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 101},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID, version: 1},
+				{content: wrBytes[2], tenantID: tenantID, version: 101},
 			},
 			responses: []response{
 				okResponse,
@@ -144,10 +145,10 @@ func TestPusherConsumer(t *testing.T) {
 			},
 		},
 		"failed processing of record": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -157,9 +158,9 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      assert.AnError.Error(),
 		},
 		"failed processing of last record": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -169,10 +170,10 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      assert.AnError.Error(),
 		},
 		"failed processing & failed unmarshalling": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
-				{ctx: ctx, content: []byte{0}, tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: []byte{0}, tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -183,10 +184,10 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"no records": {},
 		"ingester client error": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				{err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "ingester test error")},
@@ -201,12 +202,12 @@ func TestPusherConsumer(t *testing.T) {
 			},
 		},
 		"ingester server error": {
-			records: []record{
-				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[3], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[4], tenantID: tenantID},
+			records: []testRecord{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
+				{content: wrBytes[3], tenantID: tenantID},
+				{content: wrBytes[4], tenantID: tenantID},
 			},
 			responses: []response{
 				{err: ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "ingester test error")},
@@ -242,7 +243,7 @@ func TestPusherConsumer(t *testing.T) {
 			logs := &concurrency.SyncBuffer{}
 			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
 			c := newPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
-			err := c.Consume(context.Background(), tc.records)
+			err := c.Consume(context.Background(), kafkaRecordsAll(t, tc.records))
 			if tc.expErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -256,6 +257,26 @@ func TestPusherConsumer(t *testing.T) {
 			}
 			assert.Equal(t, tc.expectedLogLines, logLines)
 		})
+	}
+}
+
+type testRecord struct {
+	version  int
+	tenantID string
+	content  []byte
+}
+
+func kafkaRecordsAll(t testing.TB, records []testRecord) iter.Seq[*kgo.Record] {
+	return func(yield func(*kgo.Record) bool) {
+		for _, r := range records {
+			rec := createRecord("test-topic", 1, r.content, r.version)
+			rec.Context = t.Context()
+			rec.Key = []byte(r.tenantID)
+
+			if !yield(rec) {
+				return
+			}
+		}
 	}
 }
 
@@ -327,8 +348,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 	reqBytes, err := req.Marshal()
 	require.NoError(t, err)
 
-	reqRecord := record{
-		ctx:      context.Background(),
+	reqRecord := testRecord{
 		tenantID: "user-1",
 		content:  reqBytes,
 	}
@@ -350,7 +370,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), kafkaRecordsAll(t, []testRecord{reqRecord})))
 
 		assert.Contains(t, logs.String(), pusherErr.Error())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -372,7 +392,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), kafkaRecordsAll(t, []testRecord{reqRecord})))
 
 		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -393,7 +413,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), kafkaRecordsAll(t, []testRecord{reqRecord})))
 
 		assert.Empty(t, logs.String())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -414,10 +434,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		numWriteRequests = 1000
 	)
 
-	var (
-		ctx       = context.Background()
-		serverErr = errors.New("mocked server error")
-	)
+	serverErr := errors.New("mocked server error")
 
 	scenarios := map[string]struct {
 		cfg KafkaConfig
@@ -492,7 +509,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 	}
 
 	runTest := func(t *testing.T, cfg KafkaConfig, pusher pusherFunc) {
-		records := make([]record, 0, numWriteRequests)
+		records := make([]testRecord, 0, numWriteRequests)
 
 		// Generate the records containing the write requests.
 		for i := 0; i < numWriteRequests; i++ {
@@ -500,14 +517,14 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 			marshalled, err := req.Marshal()
 			require.NoError(t, err)
 
-			records = append(records, record{ctx: ctx, content: marshalled, tenantID: tenantID})
+			records = append(records, testRecord{content: marshalled, tenantID: tenantID})
 		}
 
 		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
 		consumer := newPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
 
 		// We expect consumption to fail.
-		err := consumer.Consume(context.Background(), records)
+		err := consumer.Consume(context.Background(), kafkaRecordsAll(t, records))
 		require.ErrorContains(t, err, "consuming record")
 		require.ErrorContains(t, err, serverErr.Error())
 	}
@@ -1614,7 +1631,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		return nil
 	})
 
-	records := make([]record, 50)
+	records := make([]*kgo.Record, 50)
 	for i := range records {
 		wr := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 100)}
 		for j := range len(wr.Timeseries) {
@@ -1622,10 +1639,8 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		}
 		content, err := wr.Marshal()
 		require.NoError(b, err)
-		records[i].content = content
-		records[i].tenantID = "user-1"
-		records[i].version = 1
-		records[i].ctx = context.Background()
+		records[i] = createRecord("test-topic", 1, content, 1)
+		records[i].Context = context.Background()
 	}
 
 	b.Run("sequential pusher", func(b *testing.B) {
@@ -1637,7 +1652,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		b.ResetTimer()
 
 		for range b.N {
-			err := c.Consume(context.Background(), records)
+			err := c.Consume(context.Background(), slices.Values(records))
 			require.NoError(b, err)
 		}
 	})
@@ -1651,7 +1666,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		b.ResetTimer()
 
 		for range b.N {
-			err := c.Consume(context.Background(), records)
+			err := c.Consume(context.Background(), slices.Values(records))
 			require.NoError(b, err)
 		}
 	})
