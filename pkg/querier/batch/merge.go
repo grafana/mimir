@@ -43,7 +43,13 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	if cap(c.its) >= len(css) {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
-		c.batches.empty()
+		// NOTE: changed so queriers are happy with empty results from SGs,
+		// as part of the Parquet PoC
+		if c.batches != nil {
+			c.batches.empty()
+		} else {
+			c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
+		}
 	} else {
 		c.its = make([]*nonOverlappingIterator, len(css))
 		c.h = make(iteratorHeap, 0, len(c.its))
