@@ -166,16 +166,13 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
 			require.NoError(t, err)
 
-			// Add a small delay to ensure store-gateway has loaded all blocks
-			time.Sleep(2 * time.Second)
-
 			// Log query parameters for debugging
 			t.Logf("Running query with params: query={__name__=~\"series_.+\"}, start=%v, end=%v, expectedErrorKey=%s",
 				timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), testData.expectedErrorKey)
 
-			// Verify store-gateways are ready and have loaded blocks
-			require.NoError(t, storeGateway1.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}))
-			require.NoError(t, storeGateway2.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}))
+			// Wait for store-gateways to have loaded blocks
+			require.NoError(t, storeGateway1.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}, e2e.WaitMissingMetrics))
+			require.NoError(t, storeGateway2.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}, e2e.WaitMissingMetrics))
 
 			// Verify we cannot successfully query timeseries because of the series/chunks limit.
 			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), time.Second)
