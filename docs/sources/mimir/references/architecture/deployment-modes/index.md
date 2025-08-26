@@ -11,17 +11,24 @@ weight: 20
 
 # Grafana Mimir deployment modes
 
-You can deploy Grafana Mimir in three modes:
+Grafana Mimir offers two deployment modes to accommodate different operational requirements and scale needs. Choose the deployment mode that best fits your use case:
 
-- Monolithic mode
-- Microservices mode
-- Read-Write mode (experimental)
+- Monolithic mode: Run all components in a single process for simple deployments
+- Microservices mode: Deploy components separately for maximum scalability and flexibility
 
-The deployment mode is determined by the `-target` parameter, which you can set via CLI flag or YAML configuration.
+Configure the deployment mode using the `-target` parameter, which you can set via CLI flag or YAML configuration.
 
-## Monolithic mode
+## About monolithic mode
 
-The monolithic mode runs all required components in a single process and is the default mode of operation, which you can set by specifying `-target=all`. Monolithic mode is the simplest way to deploy Grafana Mimir and is useful if you want to get started quickly or want to work with Grafana Mimir in a development environment. To see the list of components that run when `-target` is set to `all`, run Grafana Mimir with the `-modules` flag:
+Monolithic mode runs all required components in a single process and is the default deployment mode. You enable monolithic mode by setting `-target=all`. 
+
+This mode is ideal when you want to:
+- Get started quickly with Mimir
+- Run Mimir in a development environment  
+- Deploy with minimal operational complexity
+- Scale all components together
+
+To see the complete list of components that run in monolithic mode, use the `-modules` flag:
 
 ```bash
 ./mimir -modules
@@ -31,7 +38,9 @@ The monolithic mode runs all required components in a single process and is the 
 
 ![Mimir's monolithic mode](monolithic-mode.svg)
 
-Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mimir binaries with `-target=all`. This approach provides high-availability and increased scale without the configuration complexity of the full [microservices deployment](#microservices-mode).
+### Scale monolithic mode
+
+You can horizontally scale monolithic mode by deploying multiple Mimir binaries with `-target=all`. This approach provides high availability and increased scale without the configuration complexity of [microservices mode](#microservices-mode).
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_20"
 
@@ -41,9 +50,9 @@ Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mim
 Because monolithic mode requires scaling all Grafana Mimir components together, this deployment mode isn't recommended for large-scale deployments.
 {{< /admonition >}}
 
-## Microservices mode
+## About microservices mode
 
-In microservices mode, components are deployed in distinct processes. Scaling is per component, which allows for greater flexibility in scaling and more granular failure domains. Microservices mode is the preferred method for a production deployment, but it is also the most complex.
+Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. This deployment mode is recommended for production environments that require high availability and flexible scaling.
 
 In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Architecture](../).
 
@@ -56,7 +65,7 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 ## Read-Write mode
 
 {{< admonition type="warning" >}}
-Read-Write deployment mode is experimental.
+Read-write deployment mode is no longer supported in Grafana Mimir versions 3.0 and later. Use [monolithic mode](#monolithic-mode) or [microservices mode](#microservices-mode) instead.
 {{< /admonition >}}
 
 The read-write mode provides an alternative to monolithic and microservices modes.
