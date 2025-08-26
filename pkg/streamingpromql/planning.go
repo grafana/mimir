@@ -304,7 +304,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.BinaryExpression{
+		binExpr := &core.BinaryExpression{
 			LHS: lhs,
 			RHS: rhs,
 			BinaryExpressionDetails: &core.BinaryExpressionDetails{
@@ -313,7 +313,30 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				ReturnBool:         expr.ReturnBool,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+		// Only 'or' and scalar/vector expressions need deduplication.
+		// All other variations either can't produce duplicate series (e.g., 'and' and 'unless')
+		// or deduplication is handled by the operator (e.g., vector/vector expressions).
+		if expr.Op == parser.LOR {
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		lhsType := expr.LHS.Type()
+		rhsType := expr.RHS.Type()
+		isVectorScalar := (lhsType == parser.ValueTypeVector && rhsType == parser.ValueTypeScalar) ||
+			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
+
+		if isVectorScalar {
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return binExpr, nil
 
 	case *parser.Call:
 		fnc, ok := findFunction(expr.Func.Name)
@@ -349,6 +372,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			if isVectorSelector {
 				vs.ReturnSampleTimestamps = true
 			}
+		}
+
+		if functionNeedsDeduplication(fnc) {
+			return &core.DeduplicateAndMerge{
+				Inner:                      f,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
 		}
 
 		return f, nil
@@ -392,13 +422,23 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.UnaryExpression{
+		unaryExpr := &core.UnaryExpression{
 			Inner: inner,
 			UnaryExpressionDetails: &core.UnaryExpressionDetails{
 				Op:                 op,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
+			return &core.DeduplicateAndMerge{
+				Inner:                      unaryExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return unaryExpr, nil
 
 	case *parser.NumberLiteral:
 		return &core.NumberLiteral{
@@ -439,6 +479,106 @@ func findFunction(name string) (functions.Function, bool) {
 	}
 
 	return functions.FUNCTION_UNKNOWN, false
+}
+
+// functionNeedsDeduplication checks if a function needs deduplication and merge operator.
+// This is determined by whether the function drops the __name__ label or otherwise manipulates it.
+func functionNeedsDeduplication(fnc functions.Function) bool {
+	switch fnc {
+	// Functions that need deduplication (manipulate labels)
+	case
+		// Time transformation functions
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_YEAR,
+		// Range vector functions
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_QUANTILE_OVER_TIME,
+		functions.FUNCTION_RATE,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		// Instant vector transformations
+		functions.FUNCTION_ABS,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		// Histogram functions
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_FRACTION,
+		functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		// Label manipulation functions
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_LABEL_REPLACE:
+		return true
+
+	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)
+	case
+		functions.FUNCTION_ABSENT,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_TIME,
+		functions.FUNCTION_VECTOR:
+		return false
+
+	case functions.FUNCTION_UNKNOWN:
+		return false
+
+	default:
+		panic(fmt.Sprintf("functionNeedsDeduplication: unexpected function %v", fnc))
+	}
 }
 
 type AnalysisResult struct {
