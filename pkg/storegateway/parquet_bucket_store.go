@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -78,9 +79,10 @@ type ParquetBucketStore struct {
 	queryGate gate.Gate
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
-	lazyLoadingGate gate.Gate
-	loadIndexToDisk bool
-	fileOpts        []parquetStorage.FileOption
+	lazyLoadingGate      gate.Gate
+	loadIndexToDisk      bool
+	actuallyStreamChunks bool
+	fileOpts             []parquetStorage.FileOption
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -109,6 +111,8 @@ func NewParquetBucketStore(
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
 	loadIndexToDisk bool,
+	// Whether to stream results from the Parquet chunks file directly, instead of loading them all inmemory
+	actuallyStreamChunks bool,
 	fileOpts []parquetStorage.FileOption,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
@@ -128,9 +132,10 @@ func NewParquetBucketStore(
 		blockSet:             &parquetBlockSet{},
 		blockSyncConcurrency: bucketStoreConfig.BlockSyncConcurrency,
 
-		queryGate:       queryGate,
-		lazyLoadingGate: lazyLoadingGate,
-		loadIndexToDisk: loadIndexToDisk,
+		queryGate:            queryGate,
+		lazyLoadingGate:      lazyLoadingGate,
+		actuallyStreamChunks: actuallyStreamChunks,
+		loadIndexToDisk:      loadIndexToDisk,
 		fileOpts: append(fileOpts,
 			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
 		),
@@ -621,6 +626,24 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		hints.Func = "series"
 	}
 
+	spanLogger.DebugLog(
+		"msg", "createLabelsAndChunksIterators",
+		"blocks", len(parquetBlocks),
+		"num_shards", len(shardReaders),
+		"hints", hints,
+		"matchers", matchers,
+		"skipChunks", req.SkipChunks,
+	)
+
+	if s.actuallyStreamChunks {
+		labelsSet, chunkSeriesSet := q.SelectIter(ctx, true, hints, matchers...)
+		labelsIt := toLabelsIterator(labelsSet)
+		if req.SkipChunks {
+			return labelsIt, nil, nil
+		}
+		return labelsIt, toAggChunksIterator(chunkSeriesSet), nil
+	}
+
 	chunkSeriesSet := q.Select(ctx, true, hints, matchers...)
 	// NOTE: we want to be able to iterate labels and chunks separately, so we
 	// load everything into slices and return iterators over those slices. This
@@ -632,17 +655,6 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
 	}
-
-	spanLogger.DebugLog(
-		"msg", "createLabelsAndChunksIterators",
-		"blocks", len(parquetBlocks),
-		"num_shards", len(shardReaders),
-		"hints", hints,
-		"matchers", matchers,
-		"numLabels", len(lbls),
-		"numAggrChks", len(aggrChunks),
-		"skipChunks", req.SkipChunks,
-	)
 
 	labelsIt := newConcreteIterator(lbls)
 	if req.SkipChunks {
@@ -1262,4 +1274,78 @@ func (s *ParquetBucketStore) recordLabelNamesCallResult(stats *safeQueryStats) {
 
 func (s *ParquetBucketStore) recordLabelValuesCallResult(stats *safeQueryStats) {
 	// TODO implement for proper stats reporting
+}
+
+func toAggChunksIterator(set storage.ChunkSeriesSet) iterator[[]storepb.AggrChunk] {
+	return &chunkSeriesSetToAggChunksIterator{
+		set: set,
+	}
+}
+
+func toLabelsIterator(set storage.ChunkSeriesSet) iterator[labels.Labels] {
+	return &chunkSeriesSetToLabelsIterator{
+		set: set,
+	}
+}
+
+type chunkSeriesSetToAggChunksIterator struct {
+	set storage.ChunkSeriesSet
+
+	it      chunks.Iterator
+	current []storepb.AggrChunk
+	err     error
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) At() []storepb.AggrChunk {
+	return c.current
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) Err() error {
+	if c.err != nil {
+		return c.err
+	}
+	return c.set.Err()
+}
+
+func (c *chunkSeriesSetToAggChunksIterator) Next() bool {
+	if !c.set.Next() {
+		return false
+	}
+	c.current = c.current[:0]
+
+	chunkSeries := c.set.At()
+	if chunkSeries == nil {
+		return true
+	}
+
+	c.it = chunkSeries.Iterator(c.it)
+	for c.it.Next() {
+		meta := c.it.At()
+		c.current = append(c.current, storepb.AggrChunk{
+			MinTime: meta.MinTime,
+			MaxTime: meta.MaxTime,
+			Raw: storepb.Chunk{
+				Type: prometheusChunkEncodingToStorePBChunkType(meta.Chunk.Encoding()),
+				Data: meta.Chunk.Bytes(),
+			},
+		})
+	}
+	c.err = c.it.Err()
+	return c.err == nil
+}
+
+type chunkSeriesSetToLabelsIterator struct {
+	set storage.ChunkSeriesSet
+}
+
+func (c *chunkSeriesSetToLabelsIterator) At() labels.Labels {
+	return c.set.At().Labels()
+}
+
+func (c *chunkSeriesSetToLabelsIterator) Err() error {
+	return c.set.Err()
+}
+
+func (c *chunkSeriesSetToLabelsIterator) Next() bool {
+	return c.set.Next()
 }

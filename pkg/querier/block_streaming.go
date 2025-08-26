@@ -132,10 +132,12 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		bqs.chunkInfo.EndSeries(bqs.lastOne)
 	}
 
-	if len(allChunks) == 0 {
-		// should not happen in practice, but we have a unit test for it
-		return series.NewErrIterator(errors.New("no chunks"))
-	}
+	// NOTE: commenting out so queriers are happy with empty results from SGs,
+	// as part of the Parquet PoC
+	// if len(allChunks) == 0 {
+	// should not happen in practice, but we have a unit test for it
+	// return series.NewErrIterator(errors.New("no chunks"))
+	// }
 
 	slices.SortFunc(allChunks, func(a, b storepb.AggrChunk) int {
 		return cmp.Compare(a.MinTime, b.MinTime)
