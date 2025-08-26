@@ -38,6 +38,16 @@ var testCasesReorderHistogramAggregation = map[string]string{
 	`3 + (((histogram_sum(sum(foo)))))`:         `3 + (((sum(histogram_sum(foo)))))`,
 	`vector(3) + (((histogram_sum(sum(foo)))))`: `vector(3) + (((sum(histogram_sum(foo)))))`,
 
+	// Unsupported aggregations
+	`histogram_sum(max(foo))`:     `histogram_sum(max(foo))`,
+	`max(histogram_sum(foo))`:     `max(histogram_sum(foo))`,
+	`histogram_count(max(foo))`:   `histogram_count(max(foo))`,
+	`max(histogram_count(foo))`:   `max(histogram_count(foo))`,
+	`histogram_sum(count(foo))`:   `histogram_sum(count(foo))`,
+	`count(histogram_sum(foo))`:   `count(histogram_sum(foo))`,
+	`histogram_count(group(foo))`: `histogram_count(group(foo))`,
+	`group(histogram_count(foo))`: `group(histogram_count(foo))`,
+
 	// Do not reorder when __name__ is used in grouping or matcher as the histogram function drops the metric name which will cause incorrect aggregations or vector cannot contain metrics with the same labelset error.
 	`histogram_sum(sum by (__name__) (foo))`:            `histogram_sum(sum by (__name__) (foo))`,
 	`histogram_sum(sum({__name__=~"foo.*"}))`:           `histogram_sum(sum({__name__=~"foo.*"}))`,
