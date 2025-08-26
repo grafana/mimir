@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path"
-	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -281,8 +281,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRecOffset  = int64(-1)
 	)
 
-	var records []ingest.Record
-	for recOffset := int64(-1); recOffset < endOffset-1; {
+	for lastRecOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
 		}
@@ -299,28 +298,32 @@ func (b *BlockBuilder) consumePartitionSection(
 			}
 		})
 
-		// Reset and grown the slice's capacity to fit the NumRecords records.
-		records = slices.Grow(records[:0], fetches.NumRecords())
-
-		fetches.EachRecord(func(rec *kgo.Record) {
-			recOffset = rec.Offset
-
-			// Stop consuming after we touched the endOffset.
-			if recOffset >= endOffset {
-				return
+		recordsAll := func(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
+			return func(yield func(*kgo.Record) bool) {
+				for recIter := fetches.RecordIter(); !recIter.Done(); {
+					rec := recIter.Next()
+					// Stop consuming after we touched the endOffset.
+					if rec.Offset >= endOffset {
+						return
+					}
+					if !yield(rec) {
+						return
+					}
+				}
 			}
+		}
 
+		records := recordsAll(fetches)
+		for rec := range records {
+			lastRecOffset = rec.Offset
 			if firstRecOffset == -1 {
-				firstRecOffset = recOffset
+				firstRecOffset = lastRecOffset
 			}
-			lastRecOffset = max(lastRecOffset, recOffset)
-
-			records = append(records, ingest.RecordFromKafkaRecord(rec))
-		})
+		}
 
 		err := consumer.Consume(ctx, records)
 		if err != nil {
-			return 0, fmt.Errorf("consume records in partition %d between offsets %d and %d: %w", partition, firstRecOffset, lastRecOffset, err)
+			return 0, fmt.Errorf("consume records in partition %d: %w", partition, err)
 		}
 	}
 
