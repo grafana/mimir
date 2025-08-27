@@ -131,7 +131,10 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			if t <= rangeStart {
 				continue
 			}
-			hPoint, _ := histograms.NextPoint()
+			hPoint, err := histograms.NextPoint()
+			if err != nil {
+				return err
+			}
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
