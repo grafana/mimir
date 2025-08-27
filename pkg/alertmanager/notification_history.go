@@ -20,8 +20,6 @@ type NotificationHistoryConfig struct {
 	LokiTenantID          string `yaml:"loki_tenant_id"`
 	LokiBasicAuthUsername string `yaml:"loki_basic_auth_username"`
 	LokiBasicAuthPassword string `yaml:"loki_basic_auth_password"`
-
-	//ExternalLabels        map[string]string `yaml:"external_labels"` // TODO
 }
 
 func (cfg *NotificationHistoryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -49,7 +47,7 @@ func (cfg *NotificationHistoryConfig) Validate() error {
 	return nil
 }
 
-func createNotificationHistorian(cfg NotificationHistoryConfig, reg *prometheus.Registry, logger log.Logger) nfstatus.NotificationHistorian {
+func createNotificationHistorian(userID string, cfg NotificationHistoryConfig, reg *prometheus.Registry, logger log.Logger) nfstatus.NotificationHistorian {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -83,7 +81,10 @@ func createNotificationHistorian(cfg NotificationHistoryConfig, reg *prometheus.
 			BasicAuthUser:     cfg.LokiBasicAuthUsername,
 			BasicAuthPassword: cfg.LokiBasicAuthPassword,
 			TenantID:          cfg.LokiTenantID,
-			// ExternalLabels:    cfg.ExternalLabels, // TODO
+			ExternalLabels: map[string]string{
+				"instance_type": "grafana",
+				"instance_id":   userID,
+			},
 			Encoder: lokiclient.SnappyProtoEncoder{},
 		},
 		lokiclient.NewRequester(),

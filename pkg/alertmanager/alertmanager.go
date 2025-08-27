@@ -345,7 +345,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	am.notificationHistorian = createNotificationHistorian(cfg.NotificationHistory, reg, am.logger)
+	am.notificationHistorian = createNotificationHistorian(cfg.UserID, cfg.NotificationHistory, reg, am.logger)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
