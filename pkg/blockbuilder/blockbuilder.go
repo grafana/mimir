@@ -197,6 +197,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 			if err := b.schedulerClient.FailJob(key); err != nil {
 				level.Error(b.logger).Log("msg", "failed to fail job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+				panic("couldn't fail job")
 			}
 
 			continue
