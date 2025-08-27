@@ -26,7 +26,9 @@
     // block other operations that would block the service creation.
     ignore_rollout_operator_no_downscale_webhook_failures: false,
     ignore_rollout_operator_prepare_downscale_webhook_failures: false,
-    ignore_webhook_failures: false,
+    ignore_rollout_operator_zpdb_eviction_webhook_failures: false,
+    ignore_rollout_operator_zpdb_validation_webhook_failures: false,
+
 
     // Ignore these labels used for controlling webhook behavior when creating services.
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
@@ -65,9 +67,11 @@
 
   // special case to allow for the pod eviction validating webhook to be excluded if there are no zpdb configs
   local disable_eviction_webhook =
-    !$._config.rollout_operator_enabled ||
-    !$._config.enable_rollout_operator_webhook ||
-    $._config.disable_rollout_operator_eviction_webhook,
+    if $._config.disable_rollout_operator_eviction_webhook && zpdb_enabled then
+      error 'disable_rollout_operator_eviction_webhook can not be used when a zpdb configuration is expected'
+    else
+      !$._config.enable_rollout_operator_webhook ||
+      $._config.disable_rollout_operator_eviction_webhook,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
@@ -215,7 +219,7 @@
     validatingWebhookConfiguration.withWebhooksMixin([
       validatingWebhook.withName('zpdb-validation-%s.grafana.com' % $._config.namespace)
       + validatingWebhook.withAdmissionReviewVersions(['v1'])
-      + validatingWebhook.withFailurePolicy(if $._config.ignore_webhook_failures then 'Ignore' else 'Fail')
+      + validatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_zpdb_validation_webhook_failures then 'Ignore' else 'Fail')
       + validatingWebhook.withSideEffects('None')
       + validatingWebhook.withRulesMixin([
         {
@@ -243,7 +247,7 @@
       },
     ]),
 
-  pod_eviction_webhook: if disable_eviction_webhook && !zpdb_enabled then null else
+  pod_eviction_webhook: if disable_eviction_webhook then null else
     validatingWebhookConfiguration.new('pod-eviction-%s' % $._config.namespace) +
     validatingWebhookConfiguration.mixin.metadata.withLabels({
       'grafana.com/namespace': $._config.namespace,
@@ -252,7 +256,7 @@
     validatingWebhookConfiguration.withWebhooksMixin([
       validatingWebhook.withName('pod-eviction-%s.grafana.com' % $._config.namespace)
       + validatingWebhook.withAdmissionReviewVersions(['v1'])
-      + validatingWebhook.withFailurePolicy(if $._config.ignore_webhook_failures then 'Ignore' else 'Fail')
+      + validatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_zpdb_eviction_webhook_failures then 'Ignore' else 'Fail')
       + validatingWebhook.withSideEffects('None')
       + validatingWebhook.withRulesMixin([
         {
@@ -289,7 +293,7 @@
     validatingWebhookConfiguration.withWebhooksMixin([
       validatingWebhook.withName('no-downscale-%s.grafana.com' % $._config.namespace)
       + validatingWebhook.withAdmissionReviewVersions(['v1'])
-      + validatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_no_downscale_webhook_failures || $._config.ignore_webhook_failures then 'Ignore' else 'Fail')
+      + validatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_no_downscale_webhook_failures then 'Ignore' else 'Fail')
       + validatingWebhook.withMatchPolicy('Equivalent')
       + validatingWebhook.withSideEffects('None')
       + validatingWebhook.withTimeoutSeconds(10)
@@ -328,7 +332,7 @@
     mutatingWebhookConfiguration.withWebhooksMixin([
       mutatingWebhook.withName('prepare-downscale-%s.grafana.com' % $._config.namespace)
       + mutatingWebhook.withAdmissionReviewVersions(['v1'])
-      + mutatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_prepare_downscale_webhook_failures || $._config.ignore_webhook_failures then 'Ignore' else 'Fail')
+      + mutatingWebhook.withFailurePolicy(if $._config.ignore_rollout_operator_prepare_downscale_webhook_failures then 'Ignore' else 'Fail')
       + mutatingWebhook.withMatchPolicy('Equivalent')
       + mutatingWebhook.withSideEffects('NoneOnDryRun')
       + mutatingWebhook.withTimeoutSeconds(10)
