@@ -216,7 +216,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				err = t.testBatch(job)
+				err := t.testBatch(job)
 				if err != nil {
 					// Log errors, but don't fail them. We still want to commit the end offsets and continue,
 					// that way a single failed record doesn't make the tool get stuck in time and stay there forever.
