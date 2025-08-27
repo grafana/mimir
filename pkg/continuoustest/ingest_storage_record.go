@@ -493,9 +493,6 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 		return false
 	}
 	for i := range this.Samples {
-		/*if !this.Samples[i].Equal(&that1.Samples[i]) {
-			return false
-		}*/
 		if !SampleEqual(&this.Samples[i], &that1.Samples[i]) {
 			return false
 		}
