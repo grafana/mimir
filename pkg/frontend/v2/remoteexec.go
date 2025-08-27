@@ -46,9 +46,12 @@ func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPl
 }
 
 func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
+	if err != nil {
+		return nil, err
+	}
 
-	//TODO implement me
-	panic("implement me")
+	return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
 func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (*ProtobufResponseStream, error) {
@@ -75,7 +78,7 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 		return nil, err
 	}
 
-	// TODO: start buffering response stream
+	// FIXME: when we support query sharding in MQE, we'll need to start buffering the response stream so we avoid the deadlocking issue
 	return stream, nil
 }
 
@@ -125,35 +128,7 @@ type instantVectorExecutionResponse struct {
 }
 
 func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// TODO: share this with rangeVectorExecutionResponse
-	msg, err := r.stream.Next()
-	if err != nil {
-		return nil, err
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
-	}
-
-	seriesMetadata := resp.GetSeriesMetadata()
-	if seriesMetadata == nil {
-		return nil, fmt.Errorf("expected SeriesMetadata, got %T", resp.Message)
-	}
-
-	mqeSeries, err := types.SeriesMetadataSlicePool.Get(len(seriesMetadata.Series), r.memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, s := range seriesMetadata.Series {
-		mqeSeries, err = types.AppendSeriesMetadata(r.memoryConsumptionTracker, mqeSeries, types.SeriesMetadata{Labels: mimirpb.FromLabelAdaptersToLabels(s.Labels)})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return mqeSeries, nil
+	return readSeriesMetadata(r.stream, r.memoryConsumptionTracker)
 }
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -194,6 +169,125 @@ func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) 
 
 func (r *instantVectorExecutionResponse) Close() {
 	r.stream.Close()
+}
+
+type rangeVectorExecutionResponse struct {
+	stream                   *ProtobufResponseStream
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	currentSeriesIndex       int64
+	floats                   *types.FPointRingBuffer
+	histograms               *types.HPointRingBuffer
+	stepData                 *types.RangeVectorStepData
+}
+
+func newRangeVectorExecutionResponse(stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
+	return &rangeVectorExecutionResponse{
+		stream:                   stream,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		currentSeriesIndex:       -1,
+		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
+		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
+		stepData:                 &types.RangeVectorStepData{},
+	}
+}
+
+func (r *rangeVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	return readSeriesMetadata(r.stream, r.memoryConsumptionTracker)
+}
+
+func (r *rangeVectorExecutionResponse) AdvanceToNextSeries(ctx context.Context) error {
+	r.currentSeriesIndex++
+	return nil
+}
+
+func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+	r.floats.Release()
+	r.histograms.Release()
+
+	msg, err := r.stream.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	data := resp.GetRangeVectorStepData()
+	if data == nil {
+		return nil, fmt.Errorf("expected RangeVectorStepData, got %T", resp.Message)
+	}
+
+	if data.SeriesIndex != r.currentSeriesIndex {
+		return nil, fmt.Errorf("expected data for series index %v, but have series index %v", r.currentSeriesIndex, data.SeriesIndex)
+	}
+
+	fPoints := mimirpb.FromSamplesToFPoints(data.Floats)
+	hPoints := mimirpb.FromHistogramsToHPoints(data.Histograms)
+
+	if err := accountForFPointMemoryConsumption(fPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if err := accountForHPointMemoryConsumption(hPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if err := r.floats.Use(fPoints); err != nil {
+		return nil, err
+	}
+
+	if err := r.histograms.Use(hPoints); err != nil {
+		return nil, err
+	}
+
+	r.stepData.StepT = data.StepT
+	r.stepData.RangeStart = data.RangeStart
+	r.stepData.RangeEnd = data.RangeEnd
+	r.stepData.Floats = r.floats.ViewUntilSearchingBackwards(data.RangeEnd, r.stepData.Floats)
+	r.stepData.Histograms = r.histograms.ViewUntilSearchingBackwards(data.RangeEnd, r.stepData.Histograms)
+
+	return r.stepData, nil
+}
+
+func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+	return readEvaluationCompleted(r.stream)
+}
+
+func (r *rangeVectorExecutionResponse) Close() {
+	r.stream.Close()
+}
+
+func readSeriesMetadata(stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	msg, err := stream.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	seriesMetadata := resp.GetSeriesMetadata()
+	if seriesMetadata == nil {
+		return nil, fmt.Errorf("expected SeriesMetadata, got %T", resp.Message)
+	}
+
+	mqeSeries, err := types.SeriesMetadataSlicePool.Get(len(seriesMetadata.Series), memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range seriesMetadata.Series {
+		mqeSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, mqeSeries, types.SeriesMetadata{Labels: mimirpb.FromLabelAdaptersToLabels(s.Labels)})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return mqeSeries, nil
 }
 
 func readEvaluationCompleted(stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
