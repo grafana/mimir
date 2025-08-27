@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -13,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type RemoteExecutor struct {
@@ -26,29 +27,25 @@ func NewRemoteExecutor(frontend *Frontend) *RemoteExecutor {
 	return &RemoteExecutor{frontend: frontend}
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	logger, ctx := spanlogger.New(ctx, r.frontend.log, tracer, "RemoteExecution.Scalar") // This span will either be closed below or in scalarExecutionResponse.Close().
-
+func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.ScalarRemoteExecutionResponse, error) {
 	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
 	if err != nil {
-		logger.Finish()
 		return nil, err
 	}
 
-	return &scalarExecutionResponse{stream, logger}, nil
+	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	logger, ctx := spanlogger.New(ctx, r.frontend.log, tracer, "RemoteExecution.InstantVector")
-	defer logger.Finish() // TODO: defer this until response is closed or error is returned
+func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
+	if err != nil {
+		return nil, err
+	}
 
-	//TODO implement me
-	panic("implement me")
+	return &instantVectorExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	logger, ctx := spanlogger.New(ctx, r.frontend.log, tracer, "RemoteExecution.RangeVector")
-	defer logger.Finish() // TODO: defer this until response is closed or error is returned
+func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
 
 	//TODO implement me
 	panic("implement me")
@@ -83,8 +80,8 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 }
 
 type scalarExecutionResponse struct {
-	stream     *ProtobufResponseStream
-	spanLogger *spanlogger.SpanLogger
+	stream                   *ProtobufResponseStream
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
@@ -103,9 +100,15 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, fmt.Errorf("expected ScalarValue, got %T", resp.Message)
 	}
 
-	return types.ScalarData{
+	v := types.ScalarData{
 		Samples: mimirpb.FromSamplesToFPoints(scalar.Values),
-	}, nil
+	}
+
+	if err := accountForFPointMemoryConsumption(v.Samples, r.memoryConsumptionTracker); err != nil {
+		return types.ScalarData{}, err
+	}
+
+	return v, nil
 }
 
 func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
@@ -114,7 +117,83 @@ func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (annota
 
 func (r *scalarExecutionResponse) Close() {
 	r.stream.Close()
-	r.spanLogger.Finish()
+}
+
+type instantVectorExecutionResponse struct {
+	stream                   *ProtobufResponseStream
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	// TODO: share this with rangeVectorExecutionResponse
+	msg, err := r.stream.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	seriesMetadata := resp.GetSeriesMetadata()
+	if seriesMetadata == nil {
+		return nil, fmt.Errorf("expected SeriesMetadata, got %T", resp.Message)
+	}
+
+	mqeSeries, err := types.SeriesMetadataSlicePool.Get(len(seriesMetadata.Series), r.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range seriesMetadata.Series {
+		mqeSeries, err = types.AppendSeriesMetadata(r.memoryConsumptionTracker, mqeSeries, types.SeriesMetadata{Labels: mimirpb.FromLabelAdaptersToLabels(s.Labels)})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return mqeSeries, nil
+}
+
+func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	msg, err := r.stream.Next()
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return types.InstantVectorSeriesData{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	seriesData := resp.GetInstantVectorSeriesData()
+	if seriesData == nil {
+		return types.InstantVectorSeriesData{}, fmt.Errorf("expected InstantVectorSeriesData, got %T", resp.Message)
+	}
+
+	mqeData := types.InstantVectorSeriesData{
+		Floats:     mimirpb.FromSamplesToFPoints(seriesData.Floats),
+		Histograms: mimirpb.FromHistogramsToHPoints(seriesData.Histograms),
+	}
+
+	if err := accountForFPointMemoryConsumption(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if err := accountForHPointMemoryConsumption(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	return mqeData, nil
+}
+
+func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+	return readEvaluationCompleted(r.stream)
+}
+
+func (r *instantVectorExecutionResponse) Close() {
+	r.stream.Close()
 }
 
 func readEvaluationCompleted(stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
@@ -127,6 +206,8 @@ func readEvaluationCompleted(stream *ProtobufResponseStream) (annotations.Annota
 	if resp == nil {
 		return nil, 0, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
+
+	// TODO: exhaust stream (add tests for this)
 
 	completion := resp.GetEvaluationCompleted()
 	if completion == nil {
@@ -152,7 +233,7 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 	return annos, msg.Stats.TotalSamples
 }
 
-// Prometheus' annotations.Annotations type stores Golang error types, and checks if they
+// Prometheus' annotations.Annotations type stores Golang error types and checks if they
 // are annotations.PromQLInfo or annotations.PromQLWarning, so this type allows us to
 // create errors with arbitrary strings received from remote executors that satisfies
 // this requirement.
@@ -175,4 +256,20 @@ func (r remoteAnnotation) Error() string {
 
 func (r remoteAnnotation) Unwrap() error {
 	return r.inner
+}
+
+func accountForFPointMemoryConsumption(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices); err != nil {
+		return err
+	}
+
+	return nil
 }

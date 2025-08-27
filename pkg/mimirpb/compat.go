@@ -365,6 +365,11 @@ func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
 	return *(*[]FloatHistogramPair)(unsafe.Pointer(&points))
 }
 
+// FromHistogramsToHPoints converts []FloatHistogramPair to []promql.HPoint. It uses unsafe.
+func FromHistogramsToHPoints(histograms []FloatHistogramPair) []promql.HPoint {
+	return *(*[]promql.HPoint)(unsafe.Pointer(&histograms))
+}
+
 // FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.
 func FromFloatHistogramToPromHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
 	if h == nil {

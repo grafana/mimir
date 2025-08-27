@@ -9,17 +9,18 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type RemoteExecutor interface {
 	// StartScalarExecution submits a request to remotely evaluate an expression that produces a scalar.
-	StartScalarExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (ScalarRemoteExecutionResponse, error)
+	StartScalarExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ScalarRemoteExecutionResponse, error)
 
 	// StartInstantVectorExecution submits a request to remotely evaluate an expression that produces an instant vector.
-	StartInstantVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (InstantVectorRemoteExecutionResponse, error)
+	StartInstantVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (InstantVectorRemoteExecutionResponse, error)
 
 	// StartRangeVectorExecution submits a request to remotely evaluate an expression that produces a range vector.
-	StartRangeVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (RangeVectorRemoteExecutionResponse, error)
+	StartRangeVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (RangeVectorRemoteExecutionResponse, error)
 }
 
 type ScalarRemoteExecutionResponse interface {
