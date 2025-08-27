@@ -66,6 +66,7 @@ type Config struct {
 	MaxRetries                      int                `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout               time.Duration      `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries                  bool               `yaml:"parallelize_shardable_queries"`
+	RewriteQueriesHistogram         bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	RewriteQueriesPropagateMatchers bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard            uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries        bool               `yaml:"shard_active_series_queries" category:"experimental"`
@@ -98,6 +99,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
+	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
@@ -130,6 +132,10 @@ func (cfg *Config) Validate() error {
 
 func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
+}
+
+func (cfg *Config) isPruningQueriesEnabled() bool {
+	return cfg.RewriteQueriesHistogram || cfg.RewriteQueriesPropagateMatchers
 }
 
 // HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.
@@ -466,7 +472,7 @@ func newQueryMiddlewares(
 	)
 
 	// This is here for now as we need to run it before query sharding, but we plan to make it an AST optimization pass later.
-	if cfg.RewriteQueriesPropagateMatchers {
+	if cfg.isPruningQueriesEnabled() {
 		rewriteMiddleware := newRewriteMiddleware(log, cfg, registerer)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,

@@ -25,8 +25,10 @@ type rewriteMiddleware struct {
 }
 
 type rewriteMetrics struct {
-	propagateMatchersAttempts prometheus.Counter
-	propagateMatchersRewrites prometheus.Counter
+	reorderHistogramAggregationAttempts prometheus.Counter
+	reorderHistogramAggregationRewrites prometheus.Counter
+	propagateMatchersAttempts           prometheus.Counter
+	propagateMatchersRewrites           prometheus.Counter
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
@@ -37,6 +39,14 @@ func newRewriteMiddleware(
 	registerer prometheus.Registerer,
 ) MetricsQueryMiddleware {
 	metrics := rewriteMetrics{
+		reorderHistogramAggregationAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_rewrites_reorder_histogram_aggregation_attempted_total",
+			Help: "Total number of queries the query-frontend attempted to rewrite by reordering histogram aggregations.",
+		}),
+		reorderHistogramAggregationRewrites: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_rewrites_reorder_histogram_aggregation_succeeded_total",
+			Help: "Total number of queries where the query-frontend has rewritten the query by reordering histogram aggregations.",
+		}),
 		propagateMatchersAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_rewrites_propagate_matchers_attempted_total",
 			Help: "Total number of queries the query-frontend attempted to rewrite by propagating matchers across binary operations.",
@@ -88,15 +98,30 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	rewrittenQuery := expr
 	changed := false
 
-	mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
-	m.propagateMatchersAttempts.Inc()
-	rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
-	if err != nil {
-		return "", false, err
+	if m.cfg.RewriteQueriesHistogram {
+		mapperHistogram := ast.NewReorderHistogramAggregationMapper()
+		m.reorderHistogramAggregationAttempts.Inc()
+		rewrittenQuery, err = mapperHistogram.Map(ctx, rewrittenQuery)
+		if err != nil {
+			return "", false, err
+		}
+		if mapperHistogram.HasChanged() {
+			changed = true
+			m.reorderHistogramAggregationRewrites.Inc()
+		}
 	}
-	if mapperPropagateMatchers.HasChanged() {
-		changed = true
-		m.propagateMatchersRewrites.Inc()
+
+	if m.cfg.RewriteQueriesPropagateMatchers {
+		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
+		m.propagateMatchersAttempts.Inc()
+		rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
+		if err != nil {
+			return "", false, err
+		}
+		if mapperPropagateMatchers.HasChanged() {
+			changed = true
+			m.propagateMatchersRewrites.Inc()
+		}
 	}
 
 	if changed {
