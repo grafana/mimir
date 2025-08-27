@@ -43,14 +43,14 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	// Read some data from the first consumer and ensure that it was buffered for the second consumer.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err := consumer1.NextStepSamples()
+	d, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer1.NextStepSamples()
+	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
@@ -58,28 +58,28 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[3], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
@@ -87,14 +87,14 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	// Read some of the buffered data in the first consumer.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer1.NextStepSamples()
+	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[4], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
@@ -102,7 +102,7 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	// Read some more of the buffered data in the first consumer.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer1.NextStepSamples()
+	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[3], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
@@ -114,7 +114,7 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	// Check that the second consumer can still read data and that we don't bother buffering it.
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[5], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
@@ -168,21 +168,21 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	// Read some data for the first consumer and ensure that it was buffered for the second consumer.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err := consumer1.NextStepSamples()
+	d, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer1.NextStepSamples()
+	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer1.NextStepSamples()
+	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
 	require.Equal(t, 3, buffer.buffer.Size())
@@ -194,7 +194,7 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	// Read some of the buffered data.
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d, err = consumer2.NextStepSamples()
+	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 3, buffer.buffer.Size(), "buffered data should remain in the buffer until the next NextSeries or Close call")
@@ -249,11 +249,11 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	// Both consumers should get the same ring buffer views.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	d1, err := consumer1.NextStepSamples()
+	d1, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	d2, err := consumer2.NextStepSamples()
+	d2, err := consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, d1, d2, "both consumers should get same data")
@@ -320,7 +320,7 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	data, err := consumer1.NextStepSamples()
+	data, err := consumer1.NextStepSamples(ctx)
 	require.EqualError(t, err, "something went wrong reading data")
 	require.Nil(t, data)
 
@@ -353,14 +353,14 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	// Read the data for the first series for both consumers.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	data, err := consumer1.NextStepSamples()
+	data, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	require.Equal(t, data.Floats.First(), promql.FPoint{T: 0, F: 1234})
 	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 500, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
-	data, err = consumer2.NextStepSamples()
+	data, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	require.Equal(t, data.Floats.First(), promql.FPoint{T: 0, F: 1234})
 	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 500, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
@@ -368,7 +368,7 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	// Try reading the next series, which should fail.
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
-	data, err = consumer1.NextStepSamples()
+	data, err = consumer1.NextStepSamples(ctx)
 	require.EqualError(t, err, "something went wrong reading data")
 	require.Nil(t, data)
 
@@ -426,7 +426,7 @@ func (t *testRangeVectorOperator) NextSeries(_ context.Context) error {
 	return nil
 }
 
-func (t *testRangeVectorOperator) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (t *testRangeVectorOperator) NextStepSamples(_ context.Context) (*types.RangeVectorStepData, error) {
 	if t.haveReadCurrentStepSamples {
 		return nil, types.EOS
 	}
@@ -524,7 +524,7 @@ func (o *failingRangeVectorOperator) NextSeries(_ context.Context) error {
 	return nil
 }
 
-func (o *failingRangeVectorOperator) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (o *failingRangeVectorOperator) NextStepSamples(_ context.Context) (*types.RangeVectorStepData, error) {
 	if o.seriesRead > o.returnErrorAtSeriesIdx {
 		return nil, errors.New("something went wrong reading data")
 	}

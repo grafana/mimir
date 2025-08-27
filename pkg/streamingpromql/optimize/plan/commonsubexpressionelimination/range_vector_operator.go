@@ -163,7 +163,7 @@ func (b *RangeVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consum
 	return true
 }
 
-func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*types.RangeVectorStepData, error) {
+func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, consumerIndex int) (*types.RangeVectorStepData, error) {
 	consumer := b.consumers[consumerIndex]
 
 	if consumer.hasReadCurrentSeriesSamples {
@@ -179,7 +179,7 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*type
 	}
 
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
-	stepData, err := b.Inner.NextStepSamples()
+	stepData, err := b.Inner.NextStepSamples(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -332,8 +332,8 @@ func (d *RangeVectorDuplicationConsumer) NextSeries(ctx context.Context) error {
 	return d.Buffer.NextSeries(ctx, d.consumerIndex)
 }
 
-func (d *RangeVectorDuplicationConsumer) NextStepSamples() (*types.RangeVectorStepData, error) {
-	return d.Buffer.NextStepSamples(d.consumerIndex)
+func (d *RangeVectorDuplicationConsumer) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+	return d.Buffer.NextStepSamples(ctx, d.consumerIndex)
 }
 
 func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionRange {

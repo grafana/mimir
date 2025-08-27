@@ -189,7 +189,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 
 		stepIdx := 0
 		for {
-			step, err := op.NextStepSamples()
+			step, err := op.NextStepSamples(ctx)
 
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 			if err == types.EOS {

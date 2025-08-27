@@ -65,7 +65,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if m.nextStepT > m.Selector.TimeRange.EndT {
 		return nil, types.EOS
 	}
