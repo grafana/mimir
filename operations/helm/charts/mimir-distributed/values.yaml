@@ -317,7 +317,7 @@ mimir:
       kafka:
         {{- if .Values.kafka.enabled }}
         # Address of Kafka broker to bootstrap the connection.
-        address: '{{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:{{ $.Values.kafka.service.port }}'
+        address: {{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:{{ $.Values.kafka.service.port }}
         {{- end }}
         # Topic name.
         topic: mimir-ingest
