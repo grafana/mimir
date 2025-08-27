@@ -129,7 +129,7 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 		t.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "record-continuous-test", t.reg),
 		t.logger,
-		kgo.ConsumeTopics("ingest"),
+		kgo.ConsumeTopics(t.cfg.Kafka.Topic),
 		kgo.ConsumerGroup(t.cfg.ConsumerGroup),
 	)
 	if err != nil {
@@ -157,7 +157,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		level.Info(t.logger).Log("msg", "detected topic", "topic", to.Topic)
 	}
 
-	offResp, err := t.adminClient.FetchOffsetsForTopics(ctx, t.cfg.ConsumerGroup, "ingest")
+	offResp, err := t.adminClient.FetchOffsetsForTopics(ctx, t.cfg.ConsumerGroup, t.cfg.Kafka.Topic)
 	if err != nil {
 		if errors.Is(err, kerr.GroupIDNotFound) {
 			// ignore.
@@ -171,7 +171,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	committedOffsets := offResp.Offsets()
 
 	// Get the absolute latest offsets, so we can look at the total amount to process for the current run.
-	endOffsetsResp, err := t.adminClient.ListEndOffsets(ctx, "ingest")
+	endOffsetsResp, err := t.adminClient.ListEndOffsets(ctx, t.cfg.Kafka.Topic)
 	if err != nil {
 		return fmt.Errorf("fetch end offsets error: %w", err)
 	}
@@ -179,15 +179,15 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		return fmt.Errorf("fetch end offsets response error: %w", err)
 	}
 	allPartitionEndOffsets := endOffsetsResp.Offsets()
-	endOffsets := allPartitionEndOffsets["ingest"]
+	endOffsets := allPartitionEndOffsets[t.cfg.Kafka.Topic]
 
 	// Build a set of offsets to start reading from.
-	startOffsets := map[string]map[int32]kgo.Offset{"ingest": {}}
+	startOffsets := map[string]map[int32]kgo.Offset{t.cfg.Kafka.Topic: {}}
 	totalOffsetDiff := int64(0)
 	for partition, endOffset := range endOffsets {
 		// If we never committed an offset for this partition yet, we just ignore it on the current run.
 		// It likely has a ton of history that hasn't been processed yet. We'll still seek to the end later on and pick up on the next time around.
-		committedOffset, ok := committedOffsets["ingest"][partition]
+		committedOffset, ok := committedOffsets[t.cfg.Kafka.Topic][partition]
 		if !ok {
 			continue
 		}
@@ -204,7 +204,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 			continue
 		}
 		totalOffsetDiff += diff
-		startOffsets["ingest"][partition] = kgo.NewOffset().At(committedOffset.At)
+		startOffsets[t.cfg.Kafka.Topic][partition] = kgo.NewOffset().At(committedOffset.At)
 	}
 
 	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
