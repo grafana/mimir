@@ -32,17 +32,13 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 	s.QueryStats = params.QueryStats
 
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker)
 	return err
 }
 
 func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, error) {
 	v, err := s.resp.GetValues(ctx)
 	if err != nil {
-		return types.ScalarData{}, err
-	}
-
-	if err := accountForFPointMemoryConsumption(v.Samples, s.MemoryConsumptionTracker); err != nil {
 		return types.ScalarData{}, err
 	}
 

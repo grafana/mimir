@@ -333,8 +333,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 // If the returned error is nil, then callers must either exhaust the returned channel
 // or cancel ctx to ensure resources are not leaked.
 func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
+	logger, ctx := spanlogger.New(ctx, f.log, tracer, "DoProtobufRequest")
+	logger.SetTag("request.type", proto.MessageName(req))
+
 	freq, ctx, cancel, err := f.createNewRequest(ctx)
 	if err != nil {
+		logger.Finish()
 		return nil, err
 	}
 
@@ -355,6 +359,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		defer func() {
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)
+			logger.Finish()
 		}()
 
 		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
@@ -667,6 +672,7 @@ func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMe
 	for {
 		msg, err := f.receiveFromStream(stream)
 		if err != nil {
+			req.spanLogger.DebugLog("msg", "received error", "err", err)
 			_ = req.protobufResponseStream.write(nil, err) // If the context has already been cancelled, then we don't care.
 			return err
 		}
