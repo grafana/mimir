@@ -41,19 +41,20 @@ Push requests receive a successful response after the distributor has received a
 that all Kafka records have been successfully replicated and durably persisted.
 
 Because of this we consider that ingest storage architecture's write path ends in Kafka.
-This is unlike the classic architecture whose write path includes ingesters and requires a quorum of ingesters for push requests to succeed.
+This is unlike the classic architecture whose write path includes ingesters and requires a quorum of ingesters to be available for push requests to succeed.
 
 #### Series sharding and replication
 
-By default, each time series from a push request is indepndantly sharded to a single Kafka partition.
+By default, each time series from a push request is indepndantly sharded to a single Kafka partition. As a result the timeseries from the push request can fall into multiple partitions.
 Replication on the write path is delegated to the Kafka cluster.
 Ingesters consume from partitions and each ingester writes its own block to the long-term storage.
-Achieveing high availability on the read path is achieved through multiple ingester zones.
 The [Compactor](../../references/architecture/components/compactor/) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
 For more information, refer to [Compactor](../../references/architecture/components/compactor/) and [Production tips](../../manage/run-production-environment/production-tips/).
 
 ### The read path
+
+<!-- we need a new diagram. Can we reuse Marco's powerpoints? -->
 
 [//]: # "Diagram source of read path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_2_6"
 
@@ -62,13 +63,14 @@ For more information, refer to [Compactor](../../references/architecture/compone
 #### Communicating between the read and the write path
 
 Samples written by distributors to Kafka on the write path are consumed by ingesters on the read path.
-Each partition is assigned to a single ingester and each ingester consumes from exactly one partition.
+Each partition is assigned to a single ingester from each zone and each ingester consumes from exactly one partition.
+High availability on the read path is achieved through multiple ingester zones.
 
 Ingesters choose what partition to consume from based on the suffix of their hostname.
 For example if the hostname of the ingester is `ingester-zone-a-13`, the this ingester will consume from partition 13.
-Ingesters continuously consume samples from Kafka and append them to the specific per-tenant TSDB that is stored on the local disk.
-Each ingester persist the partition offset up to which it has consumed records in a Kafka consumer group dedicated to itself.
+Each ingester persist the partition offset up to which it has consumed records in a Kafka consumer group that it doesn't share with other ingesters.
 
+Ingesters continuously consume samples from Kafka and append them to the specific per-tenant timeseries database (TSDB) that is stored on the local disk.
 The per-tenant TSDB in the ingester is lazily created in each ingester as soon as the first samples are received for that tenant.
 The samples that are received are both kept in-memory and written to a write-ahead log (WAL).
 If the ingester abruptly terminates, the WAL can help to recover the in-memory series.
@@ -88,7 +90,7 @@ The location on the filesystem where the WAL is stored is the same location wher
 
 Optionally, in the ingest storage architecture the block-builder can take the responsibility of building TSDB blocks from
 records in Kafka and uploads them to long-term storage.
-<!-- dimitarvdimitrov: I'm not sure we should mention the block-builder since it's still a component in development and not stable and ready for production use -->
+<!-- dimitarvdimitrov: I'm not sure we should mention the block-builder since it's still a component in development and not stable and ready for production use. After reading this a secondt ime, i'm tempted to not include docs about the block builder now -->
 
 For more information, refer to [timeline of block uploads](../../manage/run-production-environment/production-tips/#how-to-estimate--querierquery-store-after) and [Ingester](../../references/architecture/components/ingester/).
 
@@ -98,7 +100,7 @@ Queries coming into Grafana Mimir arrive at the [query-frontend](../../reference
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
 
-<!-- we should probably mention how kafka plugs in here for queries with strong consistency -->
+For queries requiring strong read consistency (with the `X-Read-Consistency: strong` HTTP header) the query-frontend retrieves the offsets of each partition from the Kafka topic and propagates it through the read path to ignesters. For more information refer to [Data freshness on the read path](#data-freshness-on-the-read-path) mentioned later.
 
 {{< admonition type="note" >}}
 If you run the optional [query-scheduler](../../references/architecture/components/query-scheduler/) component, the query-schedule maintains the queue instead of the query-frontend.
@@ -112,17 +114,19 @@ After the querier executes the query, it returns the results to the query-fronte
 
 #### Data freshness on the read path
 
-Ingesters consume from Kafka asynchronously of serving queries. By default ingesters do not take any explicit action to make sure that any samples written to Kafka before a query is received. This allows ingesters to whitstand Kafka outages without rejeceting queries. The impact of that is that
-queries that ingesters serve may return stale data and not provide a read-after-write guarantee. 
+Ingesters consume from Kafka asynchronously of serving queries. By default ingesters do not take any explicit action to make sure that any samples written to Kafka have been appended to the in-memory TSDB and on-disk WAL before a query is received. This allows ingesters to whitstand Kafka outages without rejeceting queries. The impact of Kafka outages is that
+queries that ingesters serve may return stale data and not provide a read-after-write guarantee.
 
-During normal operations the delay in ingesting data in ingesters should be below 1 second. This is also know as the end-to-end latency of ingestion. 
+During normal operations the delay in ingesting data in ingesters should be below 1 second. This is also know as the end-to-end latency of ingestion.
 
-While this is usually insignificant for interactive queries, it may pose a challenge for applications that need a guarantee.
-One such application is the Mimir ruler (TODO link?) when it evaluates a rule group. The ruler needs samples of earlier rules in the group to be available
+While the end-to-end latency is usually insignificant for interactive queries, it may poses a challenge for applications that need a guarantee that queries observe all previous writes.
+One such application is the Mimir [ruler](../../references/architecture/components/ruler) when it evaluates a rule group. The ruler needs samples of earlier rules in the same rule group to be available
 when evaluating later rules in the rule group.
 
-In order to preserve the read-after-write guanratee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
-<!-- we have decent content about this in pkg/querier/api/DESIGN.md; can we reprupose it? -->
+In order to preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
+When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all in-use partitions and propagates these offsets to ingesters. Each ingester then waits until it has consumed up to the specified offset for its partition before executing the query. This ensures that the query observes all samples that were written to Kafka before the query was received by the query-frontend, providing strong read consistency at the cost of increased query latency.
+
+By default the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query. This is configurable via `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (TODO dimitarvdimitrov: do we want to mention the flag here? it sounds like it's too much details for an architecture overview).
 
 ## The role of Prometheus
 
