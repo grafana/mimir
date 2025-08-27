@@ -393,7 +393,7 @@ func newIngesterMetrics(
 		indexLookupComparisonOutcomes: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
-		}, []string{"outcome"}),
+		}, []string{"outcome", "user"}),
 	}
 
 	// Initialize expected rejected request labels

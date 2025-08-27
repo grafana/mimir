@@ -249,13 +249,14 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			logger := log.NewNopLogger()
 			comparisonOutcomes := promauto.With(prometheus.NewPedanticRegistry()).NewCounterVec(
 				prometheus.CounterOpts{Name: "test_comparison_outcomes_" + tc.name},
-				[]string{"outcome"},
+				[]string{"outcome", "user"},
 			)
 
 			querier := &mirroredChunkQuerier{
 				logger:             logger,
 				comparisonOutcomes: comparisonOutcomes,
 				delegate:           &mockChunkQuerier{},
+				userID:             "test-user",
 				returnedSeries: &retainingChunkSeriesSet{
 					labels: tc.primarySeries,
 				},
@@ -271,7 +272,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			querier.compareResults(secondary)
 
 			// Should record expected metric
-			metric, err := comparisonOutcomes.GetMetricWithLabelValues(tc.expectedMetricLabel)
+			metric, err := comparisonOutcomes.GetMetricWithLabelValues(tc.expectedMetricLabel, "test-user")
 			require.NoError(t, err)
 			assert.Equal(t, 1.0, testutil.ToFloat64(metric))
 		})
@@ -289,7 +290,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 	logger := log.NewNopLogger()
 	comparisonOutcomes := promauto.With(prometheus.NewPedanticRegistry()).NewCounterVec(
 		prometheus.CounterOpts{Name: "test_comparison_outcomes_cancelled_after_select"},
-		[]string{"outcome"},
+		[]string{"outcome", "user"},
 	)
 
 	t.Run("context_cancelled_before_select", func(t *testing.T) {
@@ -298,7 +299,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 			series: []storage.ChunkSeries{series1},
 			err:    fmt.Errorf("test: %w", context.Canceled),
 		}
-		querier := newMirroredChunkQuerierWithMeta(comparisonOutcomes, 1000, 2000, tsdb.BlockMeta{}, logger, delegate)
+		querier := newMirroredChunkQuerierWithMeta("test-user", comparisonOutcomes, 1000, 2000, tsdb.BlockMeta{}, logger, delegate)
 
 		// Call Select to set up the querier
 		ss := querier.Select(ctx, true, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "__name__", Value: "metric1"})
@@ -315,7 +316,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 		assert.NoError(t, querier.Close())
 
 		// Should record context cancelled
-		metric, err := comparisonOutcomes.GetMetricWithLabelValues("context_cancelled")
+		metric, err := comparisonOutcomes.GetMetricWithLabelValues("context_cancelled", "test-user")
 		require.NoError(t, err)
 		assert.Equal(t, 1.0, testutil.ToFloat64(metric))
 	})
@@ -325,7 +326,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 		delegate := &mockChunkQuerier{
 			series: []storage.ChunkSeries{series1},
 		}
-		querier := newMirroredChunkQuerierWithMeta(comparisonOutcomes, 1000, 2000, tsdb.BlockMeta{}, logger, delegate)
+		querier := newMirroredChunkQuerierWithMeta("test-user", comparisonOutcomes, 1000, 2000, tsdb.BlockMeta{}, logger, delegate)
 
 		// Call Select to set up the querier
 		ss := querier.Select(ctx, true, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "__name__", Value: "metric1"})
@@ -345,7 +346,7 @@ func TestMirroredChunkQuerier(t *testing.T) {
 		assert.NoError(t, querier.Close())
 
 		// Should record context cancelled
-		metric, err := comparisonOutcomes.GetMetricWithLabelValues("context_cancelled")
+		metric, err := comparisonOutcomes.GetMetricWithLabelValues("context_cancelled", "test-user")
 		require.NoError(t, err)
 		assert.Equal(t, 1.0, testutil.ToFloat64(metric))
 	})
