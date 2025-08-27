@@ -43,6 +43,8 @@ func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type IngestStorageRecordTestMetrics struct {
+	batchesProcessedTotal    prometheus.Counter
+	batchesFailedTotal       prometheus.Counter
 	recordsProcessedTotal    *prometheus.CounterVec
 	metadataProcessedTotal   *prometheus.CounterVec
 	timeseriesProcessedTotal *prometheus.CounterVec
@@ -55,6 +57,14 @@ type IngestStorageRecordTestMetrics struct {
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
 	return &IngestStorageRecordTestMetrics{
+		batchesProcessedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_batches_total",
+			Help: "Number of batches analyzed by the tool.",
+		}),
+		batchesFailedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_batches_failed_total",
+			Help: "Number of batches that failed the test.",
+		}),
 		recordsProcessedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_records_processed_total",
 			Help: "Number of records analyzed by the tool per tenant.",
@@ -307,6 +317,10 @@ func (b batchReport) Track(v1buf, v2buf []byte) batchReport {
 }
 
 func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
+	metrics.batchesProcessedTotal.Inc()
+	if b.err != nil {
+		metrics.batchesFailedTotal.Inc()
+	}
 	if b.err == nil {
 		metrics.avgCompressionRatio.Set(b.avgCompressionRatio)
 		metrics.throughputBytes.Add(float64(b.throughputBytes))
