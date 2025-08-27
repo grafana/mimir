@@ -77,7 +77,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 			return nil, err
 		}
 		for stepIdx := range a.TimeRange.StepCount {
-			step, err := a.Inner.NextStepSamples()
+			step, err := a.Inner.NextStepSamples(ctx)
 			if err != nil {
 				return nil, err
 			}

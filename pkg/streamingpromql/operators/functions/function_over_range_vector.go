@@ -128,7 +128,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	data := types.InstantVectorSeriesData{}
 
 	for {
-		step, err := m.Inner.NextStepSamples()
+		step, err := m.Inner.NextStepSamples(ctx)
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
