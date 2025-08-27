@@ -184,6 +184,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	endOffsets := allPartitionEndOffsets[t.cfg.Kafka.Topic]
 
 	// Build a set of offsets to start reading from.
+	startPartitions := []int32{}
 	startOffsets := map[string]map[int32]kgo.Offset{t.cfg.Kafka.Topic: {}}
 	totalOffsetDiff := int64(0)
 	for partition, endOffset := range endOffsets {
@@ -207,6 +208,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		}
 		totalOffsetDiff += diff
 		startOffsets[t.cfg.Kafka.Topic][partition] = kgo.NewOffset().At(committedOffset.At)
+		startPartitions = append(startPartitions, partition)
 	}
 
 	recordsRemainingInBatch := (totalOffsetDiff / 100) * int64(t.cfg.RecordsProcessedPercent)
@@ -251,6 +253,11 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 
 		jobs <- fetches
 	}
+	t.client.RemoveConsumePartitions(map[string][]int32{t.cfg.Kafka.Topic: startPartitions})
+	if err != nil {
+		level.Error(t.logger).Log("msg", "failed to discard buffered records", "err", err)
+		return err
+	}
 	level.Info(t.logger).Log("msg", "fetches for run complete, waiting for workers to finish processing", "count", numFetches)
 	close(jobs)
 	wg.Wait()
@@ -263,6 +270,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	_, err = t.adminClient.CommitOffsets(ctx, t.cfg.ConsumerGroup, allPartitionEndOffsets)
 	if err != nil {
 		level.Error(t.logger).Log("msg", "failed to commit offsets", "err", err)
+		return err
 	}
 
 	return nil
