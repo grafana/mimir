@@ -7,6 +7,8 @@ import (
 	boom "github.com/tylertreat/BoomFilters"
 )
 
+const countMinEpsilon = 0.005
+
 type Statistics interface {
 	// TotalSeries returns the number of series in the TSDB component.
 	TotalSeries() uint64
@@ -72,7 +74,7 @@ func (p *MemPostings) labelValuesSketchForLabelName(name string) *LabelValuesSke
 	}
 
 	sketch := LabelValuesSketch{
-		s:              boom.NewCountMinSketch(0.01, 0.01),
+		s:              boom.NewCountMinSketch(countMinEpsilon, 0.01),
 		distinctValues: uint64(len(labelValuesPostings)),
 	}
 	for value, postings := range labelValuesPostings {
