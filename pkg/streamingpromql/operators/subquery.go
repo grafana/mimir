@@ -20,7 +20,6 @@ type Subquery struct {
 
 	SubqueryTimestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	SubqueryOffset    int64  // In milliseconds
-	SubqueryRange     time.Duration
 
 	expressionPosition posrange.PositionRange
 
@@ -60,7 +59,6 @@ func NewSubquery(
 		SubqueryTimeRange:        subqueryTimeRange,
 		SubqueryTimestamp:        subqueryTimestamp,
 		SubqueryOffset:           subqueryOffset.Milliseconds(),
-		SubqueryRange:            subqueryRange,
 		expressionPosition:       expressionPosition,
 		rangeMilliseconds:        subqueryRange.Milliseconds(),
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
@@ -108,7 +106,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (s *Subquery) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if s.nextStepT > s.ParentQueryTimeRange.EndT {
 		return nil, types.EOS
 	}
@@ -161,14 +159,6 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	return sum
 }
 
-func (s *Subquery) StepCount() int {
-	return s.ParentQueryTimeRange.StepCount
-}
-
-func (s *Subquery) Range() time.Duration {
-	return s.SubqueryRange
-}
-
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
@@ -179,6 +169,10 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 		QueryStats: s.subqueryStats,
 	}
 	return s.Inner.Prepare(ctx, &childParams)
+}
+
+func (s *Subquery) Finalize(ctx context.Context) error {
+	return s.Inner.Finalize(ctx)
 }
 
 func (s *Subquery) Close() {

@@ -12,6 +12,9 @@ spec:
   {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
+  {{- with .Values.ruler.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 6 }}
@@ -107,24 +110,7 @@ spec:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.ruler.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.ruler.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler") | nindent 10 }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}

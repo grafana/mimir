@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
@@ -22,7 +23,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type loadBalancingStrategy int
@@ -154,7 +154,7 @@ func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancing
 	}
 
 	for _, instance := range set.Instances {
-		if !util.StringsContain(exclude, instance.Addr) {
+		if !slices.Contains(exclude, instance.Addr) {
 			return &instance
 		}
 	}

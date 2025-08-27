@@ -75,11 +75,11 @@ func (l *labelsQueryOptimizer) RoundTrip(req *http.Request) (*http.Response, err
 		return l.next.RoundTrip(req)
 	}
 
-	switch parsedReq.(type) {
+	switch parsedReq := parsedReq.(type) {
 	case *PrometheusLabelNamesQueryRequest:
-		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelNamesQueryRequest))
+		return l.optimizeRequest(ctx, req, parsedReq)
 	case *PrometheusLabelValuesQueryRequest:
-		return l.optimizeRequest(ctx, req, parsedReq.(*PrometheusLabelValuesQueryRequest))
+		return l.optimizeRequest(ctx, req, parsedReq)
 	default:
 		return l.next.RoundTrip(req)
 	}

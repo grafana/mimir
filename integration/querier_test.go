@@ -159,13 +159,17 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			t.Cleanup(func() { require.NoError(t, s.Stop(storeGateway1, storeGateway2)) })
 			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			t.Cleanup(func() { require.NoError(t, s.Stop(queryScheduler)) })
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start the query-frontend but do not check for readiness yet.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
-
-			// Configure the querier to connect to the query-frontend.
-			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
@@ -603,7 +607,7 @@ func testMetadataQueriesWithBlocksStorage(
 
 		labelValuesTests []labelValuesTest
 
-		labelNames []string
+		labelNames model.LabelNames
 	}{
 		"query metadata entirely inside the head range": {
 			from: firstSeriesInIngesterHeadTs,
@@ -636,7 +640,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
-			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
+			labelNames: model.LabelNames{labels.MetricName, model.LabelName(firstSeriesInIngesterHeadName)},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
 			from: lastSeriesInIngesterBlocksTs,
@@ -669,7 +673,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
+			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInIngesterBlocksName)},
 		},
 		"query metadata partially inside the ingester range": {
 			from: lastSeriesInStorageTs.Add(-blockRangePeriod),
@@ -708,7 +712,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
+			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInStorageName), model.LabelName(lastSeriesInIngesterBlocksName), model.LabelName(firstSeriesInIngesterHeadName)},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
@@ -742,7 +746,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
+			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInStorageName)},
 		},
 	}
 

@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb" //lint:ignore faillint allowed to import other protobuf
 )
 
 func TestProtoConversionShouldBeIdempotent(t *testing.T) {
@@ -118,6 +120,7 @@ func TestToProto(t *testing.T) {
 				Name:     "group",
 				Interval: model.Duration(60 * time.Second),
 				Rules:    []rulefmt.Rule{},
+				Labels:   map[string]string{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -126,14 +129,16 @@ func TestToProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 0,
 				Rules:           []*RuleDesc{},
+				Labels:          make([]mimirpb.LabelAdapter, 0),
 			},
 		},
 		"with evaluation delay": {
 			input: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -142,14 +147,16 @@ func TestToProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 5 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          make([]mimirpb.LabelAdapter, 0),
 			},
 		},
 		"with query offset": {
 			input: rulefmt.RuleGroup{
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
-				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				QueryOffset: pointerOf(model.Duration(2 * time.Second)),
 				Rules:       []rulefmt.Rule{},
+				Labels:      map[string]string{},
 			},
 			expected: &RuleGroupDesc{
 				Name:        "group",
@@ -158,15 +165,17 @@ func TestToProto(t *testing.T) {
 				User:        user,
 				QueryOffset: 2 * time.Second,
 				Rules:       []*RuleDesc{},
+				Labels:      make([]mimirpb.LabelAdapter, 0),
 			},
 		},
 		"with both evaluation delay and query offset": {
 			input: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
-				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				QueryOffset:     pointerOf(model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -176,6 +185,76 @@ func TestToProto(t *testing.T) {
 				EvaluationDelay: 5 * time.Second,
 				QueryOffset:     2 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          make([]mimirpb.LabelAdapter, 0),
+			},
+		},
+		"check grouplabels are properly propagated": {
+			input: rulefmt.RuleGroup{
+				Name: "group",
+				Labels: map[string]string{
+					"groupKey":  "groupValue",
+					"groupKey2": "groupValue2",
+				},
+				Interval: model.Duration(60 * time.Second),
+				Rules: []rulefmt.Rule{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: map[string]string{
+							"recordKey": "recordValue",
+						},
+						Annotations: make(map[string]string),
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: map[string]string{
+							"alertKey": "alertValue",
+						},
+						Annotations: make(map[string]string),
+					},
+				},
+			},
+			expected: &RuleGroupDesc{
+				Name:            "group",
+				Namespace:       namespace,
+				Interval:        60 * time.Second,
+				User:            user,
+				EvaluationDelay: 0,
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "groupKey",
+						Value: "groupValue",
+					},
+					{
+						Name:  "groupKey2",
+						Value: "groupValue2",
+					},
+				},
+				Rules: []*RuleDesc{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "recordKey",
+								Value: "recordValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "alertKey",
+								Value: "alertValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+				},
 			},
 		},
 	}
@@ -209,11 +288,13 @@ func TestFromProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 0,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:     "group",
 				Interval: model.Duration(60 * time.Second),
 				Rules:    []rulefmt.Rule{},
+				Labels:   map[string]string{},
 			},
 		},
 		"with evaluation delay": {
@@ -224,12 +305,14 @@ func TestFromProto(t *testing.T) {
 				User:            user,
 				EvaluationDelay: 5 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
 			},
 		},
 		"with query offset": {
@@ -240,12 +323,14 @@ func TestFromProto(t *testing.T) {
 				User:        user,
 				QueryOffset: 2 * time.Second,
 				Rules:       []*RuleDesc{},
+				Labels:      []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
-				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				QueryOffset: pointerOf(model.Duration(2 * time.Second)),
 				Rules:       []rulefmt.Rule{},
+				Labels:      map[string]string{},
 			},
 		},
 		"with both evaluation delay and query offset": {
@@ -257,13 +342,79 @@ func TestFromProto(t *testing.T) {
 				EvaluationDelay: 5 * time.Second,
 				QueryOffset:     2 * time.Second,
 				Rules:           []*RuleDesc{},
+				Labels:          []mimirpb.LabelAdapter{},
 			},
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
-				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				QueryOffset:     pointerOf(model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
+				Labels:          map[string]string{},
+			},
+		},
+		"check grouplabels are properly propagated": {
+			input: &RuleGroupDesc{
+				Name:            "group",
+				Namespace:       namespace,
+				Interval:        60 * time.Second,
+				User:            user,
+				EvaluationDelay: 0,
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "groupKey",
+						Value: "groupValue",
+					},
+				},
+				Rules: []*RuleDesc{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "recordKey",
+								Value: "recordValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: []mimirpb.LabelAdapter{
+							{
+								Name:  "alertKey",
+								Value: "alertValue",
+							},
+						},
+						Annotations: []mimirpb.LabelAdapter{},
+					},
+				},
+			},
+			expected: rulefmt.RuleGroup{
+				Name: "group",
+				Labels: map[string]string{
+					"groupKey": "groupValue",
+				},
+				Interval: model.Duration(60 * time.Second),
+				Rules: []rulefmt.Rule{
+					{
+						Record: "test_metric:sum:rate1m",
+						Expr:   "sum(rate(test_metric[1m]))",
+						Labels: map[string]string{
+							"recordKey": "recordValue",
+						},
+						Annotations: make(map[string]string),
+					},
+					{
+						Alert: "alert_name",
+						Expr:  "test_metric > 0",
+						Labels: map[string]string{
+							"alertKey": "alertValue",
+						},
+						Annotations: make(map[string]string),
+					},
+				},
 			},
 		},
 	}

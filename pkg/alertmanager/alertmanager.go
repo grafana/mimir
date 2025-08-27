@@ -98,6 +98,7 @@ type Config struct {
 	ExternalURL                       *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
+	StateReadTimeout                  time.Duration
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -228,7 +229,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.registry = reg
-	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, cfg.StateReadTimeout, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
 	var err error
@@ -374,6 +375,13 @@ func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Reque
 		Status: statusSuccess,
 		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
 	})
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error marshalling success result", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error marshalling success result: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(d); err != nil {

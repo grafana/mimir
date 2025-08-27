@@ -59,17 +59,18 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval   time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCache             ResultsCacheConfig `yaml:"results_cache"`
-	CacheResults             bool               `yaml:"cache_results"`
-	CacheErrors              bool               `yaml:"cache_errors"`
-	MaxRetries               int                `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout        time.Duration      `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries           bool               `yaml:"parallelize_shardable_queries"`
-	PrunedQueries            bool               `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard     uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries bool               `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder   bool               `yaml:"use_active_series_decoder" category:"experimental"`
+	SplitQueriesByInterval          time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache                    ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults                    bool               `yaml:"cache_results"`
+	CacheErrors                     bool               `yaml:"cache_errors"`
+	MaxRetries                      int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout               time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                  bool               `yaml:"parallelize_shardable_queries"`
+	RewriteQueriesHistogram         bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
+	RewriteQueriesPropagateMatchers bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
+	TargetSeriesPerShard            uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries        bool               `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder          bool               `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -98,7 +99,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.PrunedQueries, "query-frontend.prune-queries", false, "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.")
+	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
+	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
@@ -130,6 +132,10 @@ func (cfg *Config) Validate() error {
 
 func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
+}
+
+func (cfg *Config) isPruningQueriesEnabled() bool {
+	return cfg.RewriteQueriesHistogram || cfg.RewriteQueriesPropagateMatchers
 }
 
 // HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.
@@ -465,17 +471,18 @@ func newQueryMiddlewares(
 		experimentalFunctionsMiddleware,
 	)
 
-	if cfg.PrunedQueries {
-		pruneMiddleware := newPruneMiddleware(log)
+	// This is here for now as we need to run it before query sharding, but we plan to make it an AST optimization pass later.
+	if cfg.isPruningQueriesEnabled() {
+		rewriteMiddleware := newRewriteMiddleware(log, cfg, registerer)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
+			newInstrumentMiddleware("rewriting", metrics),
+			rewriteMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
+			newInstrumentMiddleware("rewriting", metrics),
+			rewriteMiddleware,
 		)
 	}
 

@@ -58,6 +58,7 @@ enum ErrorCause {
   ERROR_CAUSE_CIRCUIT_BREAKER_OPEN = 10;
   ERROR_CAUSE_METHOD_NOT_ALLOWED = 11;
   ERROR_CAUSE_TENANT_LIMIT = 12;
+  ERROR_CAUSE_ACTIVE_SERIES_LIMITED = 13;
 }
 
 message ErrorDetails {
@@ -67,7 +68,7 @@ message ErrorDetails {
 message TimeSeries {
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
@@ -114,7 +115,7 @@ message MetricMetadata {
 message Metric {
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
 }
 
@@ -122,7 +123,7 @@ message Exemplar {
   // Exemplar labels, different than series labels
   repeated LabelPair labels = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "LabelAdapter"
+    (gogoproto.customtype) = "UnsafeMutableLabel"
   ];
   double value = 2;
   int64 timestamp_ms = 3;

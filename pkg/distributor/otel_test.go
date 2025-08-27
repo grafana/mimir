@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -941,7 +942,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		metadata                         []mimirpb.MetricMetadata
 		compression                      string
 		maxMsgSize                       int
-		verifyFunc                       func(*testing.T, *Request, testCase) error
+		verifyFunc                       func(*testing.T, context.Context, *Request, testCase) error
 		requestContentType               string
 		responseCode                     int
 		responseContentType              string
@@ -954,7 +955,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		resourceAttributePromotionConfig OTelResourceAttributePromotionConfig
 	}
 
-	samplesVerifierFunc := func(t *testing.T, pushReq *Request, tc testCase) error {
+	samplesVerifierFunc := func(t *testing.T, _ context.Context, pushReq *Request, tc testCase) error {
 		t.Helper()
 
 		request, err := pushReq.WriteRequest()
@@ -1056,7 +1057,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 30,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -1072,7 +1073,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -1088,7 +1089,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -1105,7 +1106,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -1121,7 +1122,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -1136,7 +1137,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(*testing.T, *Request, testCase) error {
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
 				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
 			},
 			responseCode:          http.StatusTooManyRequests,
@@ -1165,7 +1166,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -1208,7 +1209,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -1232,11 +1233,41 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseContentType: pbContentType,
 		},
 		{
+			name:       "Attribute value too long",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "foo"},
+						{Name: "too_long", Value: "huge value"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+					},
+				},
+			},
+			metadata: sampleMetadata,
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.MaxLabelValueLength = len("huge value") - 1
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				distributor := distributors[0]
+				return distributor.prePushValidationMiddleware(func(context.Context, *Request) error { return nil })(ctx, pushReq)
+			},
+			responseCode:          http.StatusBadRequest,
+			responseContentType:   pbContentType,
+			responseContentLength: 280,
+			errMessage:            "received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits" insight=true`},
+			expectedRetryHeader:   false,
+		},
+		{
 			name:       "Unexpected gRPC status error",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
 				return grpcstatus.New(codes.Unknown, "unexpected error calling some dependency").Err()
 			},
 			responseCode:          http.StatusServiceUnavailable,
@@ -1259,8 +1290,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
-				NameValidationScheme:          validation.ValidationSchemeValue(model.LegacyValidation),
-				OTelTranslationStrategy:       validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+				NameValidationScheme:          model.LegacyValidation,
 				OTelMetricSuffixesEnabled:     false,
 			}
 			limits := validation.NewOverrides(
@@ -1269,10 +1299,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 					"test": testLimits,
 				}),
 			)
-			pusher := func(_ context.Context, pushReq *Request) error {
+
+			pusher := func(ctx context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
-				return tt.verifyFunc(t, pushReq, tt)
+				return tt.verifyFunc(t, ctx, pushReq, tt)
 			}
 
 			logs := &concurrency.SyncBuffer{}
@@ -1350,7 +1381,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	limits := validation.NewOverrides(
 		validation.Limits{
-			NameValidationScheme:    validation.ValidationSchemeValue(model.LegacyValidation),
+			NameValidationScheme:    model.LegacyValidation,
 			OTelTranslationStrategy: validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
 		},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),

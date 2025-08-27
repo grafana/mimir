@@ -26,6 +26,7 @@ func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc
 		User:                          user,
 		SourceTenants:                 rl.SourceTenants,
 		AlignEvaluationTimeOnInterval: rl.AlignEvaluationTimeOnInterval,
+		Labels:                        mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rl.Labels)),
 	}
 
 	// This function is designed to do a 1:1 mapping between the data models, so we
@@ -68,16 +69,17 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		Rules:                         make([]rulefmt.Rule, len(rg.GetRules())),
 		SourceTenants:                 rg.GetSourceTenants(),
 		AlignEvaluationTimeOnInterval: rg.GetAlignEvaluationTimeOnInterval(),
+		Labels:                        mimirpb.FromLabelAdaptersToLabels(rg.Labels).Map(),
 	}
 
 	// This function is designed to do a 1:1 mapping between the data models, so we
 	// preserve QueryOffset and EvaluationDelay as they've been set in input.
 	if rg.QueryOffset > 0 {
-		formattedRuleGroup.QueryOffset = pointerOf[model.Duration](model.Duration(rg.QueryOffset))
+		formattedRuleGroup.QueryOffset = pointerOf(model.Duration(rg.QueryOffset))
 	}
 	//nolint:staticcheck // We want to intentionally access a deprecated field
 	if rg.EvaluationDelay > 0 {
-		formattedRuleGroup.EvaluationDelay = pointerOf[model.Duration](model.Duration(rg.EvaluationDelay))
+		formattedRuleGroup.EvaluationDelay = pointerOf(model.Duration(rg.EvaluationDelay))
 	}
 
 	for i, rl := range rg.GetRules() {

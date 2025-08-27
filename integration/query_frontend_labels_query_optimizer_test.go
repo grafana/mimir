@@ -99,10 +99,15 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 		require.NoError(t, s.StartAndWaitReady(minio))
 
+		// Start the query-scheduler.
+		queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 		// Start the query-frontend
 		queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 		require.NoError(t, s.Start(queryFrontend))
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 		// Start all other Mimir services
 		distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
@@ -140,7 +145,7 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		fn(queryFrontend, client)
 	}
 
-	expectedLabelNames := map[string][]string{}
+	expectedLabelNames := map[string]model.LabelNames{}
 	expectedLabelValues := map[string]map[string]model.LabelValues{}
 
 	// First run with optimizer disabled to get expected results.

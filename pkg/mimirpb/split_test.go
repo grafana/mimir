@@ -341,6 +341,16 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			assert.Greater(t, partial.Size(), limit)
 		}
 	})
+
+	t.Run("v2 splitting does not mutate the input request", func(t *testing.T) {
+		const limit = 220
+		reqv2 := testReqV2Static(t)
+
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit, 0, nil)
+
+		require.Len(t, partials, 2)
+		require.Equal(t, testReqV2Static(t), reqv2)
+	})
 }
 
 func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
@@ -378,7 +388,7 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 				merged.Metadata = append(merged.Metadata, partial.Metadata...)
 			}
 
-			assert.Equal(t, req, merged)
+			require.Equal(t, req, merged)
 		}
 	})
 
@@ -396,14 +406,14 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 			// Remember the original request, to compare against.
 			req := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
 			reqCpy := generateWriteRequestRW2(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
-			assert.Equal(t, req, reqCpy)
+			require.Equal(t, req, reqCpy)
 
 			maxSize := req.Size() / (1 + rnd.Intn(10))
 			partials := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize, 0, nil)
 
 			// Ensure the merge of all partial requests is equal to the original one.
 			merged := mergeRW2s(partials)
-			assert.Equal(t, reqCpy, merged)
+			require.Equal(t, reqCpy, merged)
 		}
 	})
 }
@@ -433,6 +443,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
 		"skipUnmarshalingExemplars",
+		"skipNormalizeMetadataMetricName",
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",
@@ -710,6 +721,11 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 				newLbls[i] = st.Symbolize(strVal)
 			}
 
+			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
+			helpRef := st.Symbolize(helpTxt)
+			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
+			unitRef := st.Symbolize(unitTxt)
+
 			newExemplars := make([]ExemplarRW2, 0, len(ts.Exemplars))
 			for _, ex := range ts.Exemplars {
 				newLbls := make([]uint32, len(ex.LabelsRefs))
@@ -726,11 +742,6 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 			if ts.Exemplars == nil {
 				newExemplars = nil
 			}
-
-			helpTxt := partial.SymbolsRW2[ts.Metadata.HelpRef]
-			helpRef := st.Symbolize(helpTxt)
-			unitTxt := partial.SymbolsRW2[ts.Metadata.UnitRef]
-			unitRef := st.Symbolize(unitTxt)
 
 			newTS := TimeSeriesRW2{
 				LabelsRefs:       newLbls,
@@ -864,13 +875,10 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				},
 			}
 
-			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
-			require.Equal(t, syms, newTable.Symbols())
-			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
-			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
-			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
-			require.Equal(t, 0, delta)
+			require.Equal(t, ts, resymbolized)
+			require.Equal(t, ts.Size(), resymbolized.Size())
 		})
 
 		t.Run("excludes unrelated strings in original symbols", func(t *testing.T) {
@@ -887,14 +895,14 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				},
 			}
 
-			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
 			expSymbols := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSymbols, newTable.Symbols())
-			require.Equal(t, []uint32{1, 2, 3, 4}, ts.LabelsRefs)
-			require.Equal(t, []uint32{5, 6}, ts.Exemplars[0].LabelsRefs)
-			require.Equal(t, uint32(7), ts.Metadata.HelpRef)
-			require.Equal(t, 0, delta)
+			require.Equal(t, []uint32{1, 2, 3, 4}, resymbolized.LabelsRefs)
+			require.Equal(t, []uint32{5, 6}, resymbolized.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(7), resymbolized.Metadata.HelpRef)
+			require.Equal(t, ts.Size(), resymbolized.Size())
 		})
 
 		t.Run("re-uses symbols already loaded in new symbols table", func(t *testing.T) {
@@ -916,14 +924,14 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				},
 			}
 
-			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
 			expSyms := []string{"", "unrelated1", "unrelated2", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSyms, newTable.Symbols())
-			require.Equal(t, []uint32{3, 4, 5, 6}, ts.LabelsRefs)
-			require.Equal(t, []uint32{7, 8}, ts.Exemplars[0].LabelsRefs)
-			require.Equal(t, uint32(9), ts.Metadata.HelpRef)
-			require.Equal(t, 0, delta)
+			require.Equal(t, []uint32{3, 4, 5, 6}, resymbolized.LabelsRefs)
+			require.Equal(t, []uint32{7, 8}, resymbolized.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(9), resymbolized.Metadata.HelpRef)
+			require.Equal(t, ts.Size(), resymbolized.Size())
 			require.Greater(t, newTable.SymbolsSizeProto(), prevSize)
 		})
 
@@ -948,16 +956,16 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				},
 			}
 
-			delta := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
+			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
 			require.Equal(t, "", newTable.Symbols()[0])
 			require.Equal(t, syms[1:], newTable.Symbols()[10001:])
-			require.Equal(t, []uint32{10001, 10002, 10003, 10004}, ts.LabelsRefs)
-			require.Equal(t, []uint32{10005, 10006}, ts.Exemplars[0].LabelsRefs)
-			require.Equal(t, uint32(10007), ts.Metadata.HelpRef)
-			require.Equal(t, uint32(10008), ts.Metadata.UnitRef)
-			const expGrowth = 6
-			require.Equal(t, expGrowth, delta)
+			require.Equal(t, []uint32{10001, 10002, 10003, 10004}, resymbolized.LabelsRefs)
+			require.Equal(t, []uint32{10005, 10006}, resymbolized.Exemplars[0].LabelsRefs)
+			require.Equal(t, uint32(10007), resymbolized.Metadata.HelpRef)
+			require.Equal(t, uint32(10008), resymbolized.Metadata.UnitRef)
+			const expGrowth = 8
+			require.Equal(t, expGrowth, resymbolized.Size()-ts.Size())
 		})
 	})
 }

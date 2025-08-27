@@ -466,7 +466,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// where N is the total number of ingesters. Each ingester is part of their own consumer group
 		// so that they all replay the owned partition with no gaps.
 		kafkaCfg.FallbackClientErrorSampleRate = cfg.ErrorSampleRate
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, i, log.With(logger, "component", "ingest_reader"), registerer)
+
+		// This is injected already higher up for methods invoked via the network.
+		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
+		profilingIngester := NewIngesterProfilingWrapper(i)
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
@@ -1753,24 +1757,31 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkAvailableForRead(); err != nil {
 		return nil, err
 	}
+
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
-		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+
+	// When this is not the only replica handling a request, limit reads for overloads
+	if !client.IsOnlyReplicaContext(ctx) {
+		// Check that a permit can be later acquired
+		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+			return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		}
+		finish, err := i.circuitBreaker.tryAcquireReadPermit()
+		if err != nil {
+			return nil, err
+		}
+		start := time.Now()
+		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
+			requestFinish: func(err error) {
+				finish(time.Since(start), err)
+			},
+		})
 	}
 
-	finish, err := i.circuitBreaker.tryAcquireReadPermit()
-	if err != nil {
-		return nil, err
-	}
-	start := time.Now()
-	return context.WithValue(ctx, readReqCtxKey, &readRequestState{
-		requestFinish: func(err error) {
-			finish(time.Since(start), err)
-		},
-	}), nil
+	return ctx, nil
 }
 
 // PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
@@ -1781,7 +1792,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter.read != nil {
+	// When this is not the only replica handling a request, limit reads for overloads
+	if !client.IsOnlyReplicaContext(ctx) && i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -2839,43 +2851,47 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
-		RetentionDuration:                     i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:                      blockRanges[0],
-		MaxBlockDuration:                      blockRanges[len(blockRanges)-1],
-		NoLockfile:                            true,
-		StripeSize:                            i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                        i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
-		WALSegmentSize:                        i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		WALReplayConcurrency:                  walReplayConcurrency,
-		SeriesLifecycleCallback:               userDB,
-		BlocksToDelete:                        blocksToDelete,
-		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
-		SeriesHashCache:                       i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		EnableBiggerOOOBlockForOldSamples:     i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
-		IsolationDisabled:                     true,
-		HeadChunksWriteQueueSize:              i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:           false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                        true,                 // Always enable query sharding support.
-		OutOfOrderTimeWindow:                  oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		TimelyCompaction:                      i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
-		HeadPostingsForMatchersCacheTTL:       i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
-		HeadPostingsForMatchersCacheMaxItems:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
-		HeadPostingsForMatchersCacheMaxBytes:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
-		HeadPostingsForMatchersCacheForce:     i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-		HeadPostingsForMatchersCacheMetrics:   i.tsdbMetrics.headPostingsForMatchersCacheMetrics,
-		BlockPostingsForMatchersCacheTTL:      i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
-		BlockPostingsForMatchersCacheMaxItems: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
-		BlockPostingsForMatchersCacheMaxBytes: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
-		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
-		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
-		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                    i.getIndexLookupPlanner(),
+		RetentionDuration:                        i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:                         blockRanges[0],
+		MaxBlockDuration:                         blockRanges[len(blockRanges)-1],
+		NoLockfile:                               true,
+		StripeSize:                               i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:                i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:                i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		WALCompression:                           i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
+		WALSegmentSize:                           i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:                     walReplayConcurrency,
+		SeriesLifecycleCallback:                  userDB,
+		BlocksToDelete:                           blocksToDelete,
+		EnableExemplarStorage:                    true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                             int64(i.limiter.maxExemplarsPerUser(userID)),
+		SeriesHashCache:                          i.seriesHashCache,
+		EnableMemorySnapshotOnShutdown:           i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		EnableBiggerOOOBlockForOldSamples:        i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
+		IsolationDisabled:                        true,
+		HeadChunksWriteQueueSize:                 i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		EnableOverlappingCompaction:              false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                           true,                 // Always enable query sharding support.
+		OutOfOrderTimeWindow:                     oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                         int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		TimelyCompaction:                         i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
+		SharedPostingsForMatchersCache:           i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
+		PostingsForMatchersCacheKeyFunc:          tenant.TenantID,
+		HeadPostingsForMatchersCacheInvalidation: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation,
+		HeadPostingsForMatchersCacheVersions:     i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheVersions,
+		HeadPostingsForMatchersCacheTTL:          i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheMaxItems:     i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
+		HeadPostingsForMatchersCacheMaxBytes:     i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
+		HeadPostingsForMatchersCacheForce:        i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
+		HeadPostingsForMatchersCacheMetrics:      i.tsdbMetrics.headPostingsForMatchersCacheMetrics,
+		BlockPostingsForMatchersCacheTTL:         i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
+		BlockPostingsForMatchersCacheMaxItems:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
+		BlockPostingsForMatchersCacheMaxBytes:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
+		BlockPostingsForMatchersCacheForce:       i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
+		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
+		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
+		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
+		IndexLookupPlanner:                       i.getIndexLookupPlanner(),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -2898,6 +2914,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
+
+	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
+	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
+		userDB.postingsCache = db.Head().PostingsForMatchersCache()
+	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()

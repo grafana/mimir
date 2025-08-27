@@ -51,6 +51,11 @@ var (
 		validation.RequestRateFlag,
 		validation.RequestBurstSizeFlag,
 	)
+
+	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
 )
 
 // Error is a marker interface for the errors returned by distributor.
@@ -120,8 +125,37 @@ func (e validationError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
+func (e validationError) Unwrap() error {
+	return e.error
+}
+
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
+
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		limit:                         limit,
+	}
+}
+
+type activeSeriesLimitedError struct {
+	totalSeriesInThisRequest      int
+	rejectedSeriesFromThisRequest int
+	limit                         int
+}
+
+func (e activeSeriesLimitedError) Error() string {
+	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+}
+
+func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED
+}
+
+// Ensure that activeSeriesLimitedError implements Error.
+var _ Error = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -279,7 +313,7 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 		return codes.InvalidArgument
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return codes.FailedPrecondition
-	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
 		if serviceOverloadErrorEnabled {
 			return codes.Unavailable
 		}
@@ -302,7 +336,7 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return http.StatusBadRequest
-	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
@@ -321,8 +355,10 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
 		return http.StatusNotImplemented
+
+	default:
+		return http.StatusInternalServerError
 	}
-	return http.StatusInternalServerError
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {

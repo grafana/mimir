@@ -303,13 +303,13 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		TimeseriesUnmarshalCachingEnabled = false
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil))
+		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.Nil(t, msg.marshalledData)
 
 		TimeseriesUnmarshalCachingEnabled = true
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil))
+		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
 	}

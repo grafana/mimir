@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -69,6 +70,8 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 		return nil, err
 	}
 
+	client.Transport = otelhttp.NewTransport(client.Transport)
+
 	return &notifyHooksNotifier{
 		upstream: upstream,
 		limits:   limits,
@@ -102,12 +105,15 @@ func newNotifyHooksMetrics(reg prometheus.Registerer) *notifyHooksMetrics {
 }
 
 func (n *notifyHooksNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
-	newAlerts := n.apply(ctx, alerts)
+	result := n.apply(ctx, alerts)
 
-	return n.upstream.Notify(ctx, newAlerts...)
+	// Add additional data from pre-notify hook to the context
+	ctxWithData := withExtraData(ctx, result.ExtraData)
+
+	return n.upstream.Notify(ctxWithData, result.Alerts...)
 }
 
-func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) []*types.Alert {
+func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) *hookData {
 	l := n.logger
 
 	receiver, _ := notify.ReceiverName(ctx)
@@ -119,19 +125,23 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 	url := n.limits.AlertmanagerNotifyHookURL(n.user)
 	if url == "" {
 		level.Debug(l).Log("msg", "Notify hooks not applied, no URL configured")
-		return alerts
+		return &hookData{
+			Alerts: alerts,
+		}
 	}
 
 	receivers := n.limits.AlertmanagerNotifyHookReceivers(n.user)
 	if len(receivers) > 0 && !slices.Contains(receivers, receiver) {
 		level.Debug(l).Log("msg", "Notify hooks not applied, not enabled for receiver")
-		return alerts
+		return &hookData{
+			Alerts: alerts,
+		}
 	}
 
 	timeout := n.limits.AlertmanagerNotifyHookTimeout(n.user)
 
 	start := time.Now()
-	newAlerts, code, err := n.invoke(ctx, l, url, timeout, alerts)
+	result, code, err := n.invoke(ctx, l, url, timeout, alerts)
 
 	duration := time.Since(start)
 	n.metrics.hookDuration.Observe(float64(duration))
@@ -153,12 +163,14 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 			n.metrics.hookFailed.WithLabelValues(status).Inc()
 			level.Error(l).Log("msg", "Notify hooks failed", "err", err)
 		}
-		return alerts
+		return &hookData{
+			Alerts: alerts,
+		}
 	}
 
 	level.Debug(l).Log("msg", "Notify hooks applied successfully")
 
-	return newAlerts
+	return result
 }
 
 // hookData is the payload we send and receive from the notification hook.
@@ -167,6 +179,18 @@ type hookData struct {
 	Status      string         `json:"status"`
 	Alerts      []*types.Alert `json:"alerts"`
 	GroupLabels model.LabelSet `json:"groupLabels"`
+
+	ExtraData json.RawMessage `json:"extraData,omitempty"`
+}
+
+type extraDataKey int
+
+const (
+	ExtraDataKey extraDataKey = iota
+)
+
+func withExtraData(ctx context.Context, extraData json.RawMessage) context.Context {
+	return context.WithValue(ctx, ExtraDataKey, extraData)
 }
 
 func (n *notifyHooksNotifier) getData(ctx context.Context, l log.Logger, alerts []*types.Alert) *hookData {
@@ -187,7 +211,7 @@ func (n *notifyHooksNotifier) getData(ctx context.Context, l log.Logger, alerts 
 	}
 }
 
-func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url string, timeout time.Duration, alerts []*types.Alert) ([]*types.Alert, int, error) {
+func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url string, timeout time.Duration, alerts []*types.Alert) (*hookData, int, error) {
 	logger, ctx := spanlogger.New(ctx, l, tracer, "NotifyHooksNotifier.Invoke")
 	defer logger.Finish()
 
@@ -237,5 +261,5 @@ func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url stri
 		return nil, 0, err
 	}
 
-	return result.Alerts, 0, nil
+	return &result, 0, nil
 }

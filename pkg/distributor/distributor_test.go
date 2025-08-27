@@ -2463,7 +2463,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					}
 
 					// Start the distributor.
-					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 					require.NoError(b, err)
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -5606,11 +5606,14 @@ type prepConfig struct {
 	// If empty, it defaults to the ingestion storage type configured in the test.
 	ingesterIngestionType ingesterIngestionType
 
-	queryDelay       time.Duration
-	pushDelay        time.Duration
-	shuffleShardSize int
-	limits           *validation.Limits
-	numDistributors  int
+	queryDelay         time.Duration
+	pushDelay          time.Duration
+	shuffleShardSize   int
+	limits             *validation.Limits
+	overrides          func(*validation.Limits) *validation.Overrides
+	reg                *prometheus.Registry
+	costAttributionMgr *costattribution.Manager
+	numDistributors    int
 
 	replicationFactor                  int
 	enableTracker                      bool
@@ -5998,9 +6001,17 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			}
 		}
 
-		overrides := validation.NewOverrides(*cfg.limits, nil)
-		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		var overrides *validation.Overrides
+		if cfg.overrides != nil {
+			overrides = cfg.overrides(cfg.limits)
+		} else {
+			overrides = validation.NewOverrides(*cfg.limits, nil)
+		}
+		reg := cfg.reg
+		if reg == nil {
+			reg = prometheus.NewPedanticRegistry()
+		}
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -8715,7 +8726,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	})
 
 	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")

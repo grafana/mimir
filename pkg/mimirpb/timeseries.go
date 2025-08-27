@@ -73,6 +73,9 @@ type PreallocWriteRequest struct {
 	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
 	// These symbols are never sent in the request to begin with.
 	RW2CommonSymbols []string
+	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
+	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
+	SkipNormalizeMetadataMetricName bool
 }
 
 // Unmarshal implements proto.Message.
@@ -81,16 +84,17 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
-// getMetricName cuts the mandatory OpenMetrics suffix from the
+// normalizeMetricName cuts the mandatory OpenMetrics suffix from the
 // seriesName and returns the metric name and whether it cut the suffix.
 // Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
-func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+func normalizeMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
 	switch metricType {
 	case METRIC_TYPE_SUMMARY:
 		retval, ok := strings.CutSuffix(seriesName, "_count")
@@ -134,6 +138,12 @@ func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
+//
+// # DO NOT SHALLOW-COPY
+//
+// Data referenced from a PreallocTimeseries may change once the timeseries is
+// returned to the shared pool. This includes usually immutable references, like
+// strings. If needed, use DeepCopyTimeseries instead.
 type PreallocTimeseries struct {
 	*TimeSeries
 
@@ -265,7 +275,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, skipNormalizeMetricName bool) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
@@ -273,7 +283,7 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	if symbols != nil {
-		return p.UnmarshalRW2(dAtA, symbols, metadata)
+		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
 	}
 	return p.TimeSeries.Unmarshal(dAtA)
 }
@@ -309,7 +319,9 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
-type LabelAdapter labels.Label
+type LabelAdapter struct {
+	Name, Value unsafeMutableString
+}
 
 // Marshal implements proto.Marshaller.
 func (bs *LabelAdapter) Marshal() ([]byte, error) {
@@ -502,6 +514,25 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 	}
 	return strings.Compare(bs.Value, other.Value)
 }
+
+// UnsafeMutableLabel is an alias of LabelAdapter meant to highlight its unsafety.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When an UnsafeMutableLabel is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type UnsafeMutableLabel = LabelAdapter
+
+// A unsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of unsafeMutableString may
+// later refer to different data than it originally did: it's effectively
+// a []byte with a string-like (and thus read-only) API and implicit capacity.
+//
+// # DO NOT SHALLOW-COPY
+//
+// When a LabelAdapter is referenced from a PreallocTimeseries, the data it
+// references may change once the timeseries is returned to the shared pool.
+type unsafeMutableString = string
 
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.

@@ -23,7 +23,9 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -59,6 +61,21 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
+	nodeMaterializers := map[planning.NodeType]planning.NodeMaterializer{
+		planning.NODE_TYPE_VECTOR_SELECTOR:       planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
+		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
+		planning.NODE_TYPE_AGGREGATE_EXPRESSION:  planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
+		planning.NODE_TYPE_BINARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
+		planning.NODE_TYPE_FUNCTION_CALL:         planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
+		planning.NODE_TYPE_NUMBER_LITERAL:        planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
+		planning.NODE_TYPE_STRING_LITERAL:        planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
+		planning.NODE_TYPE_UNARY_EXPRESSION:      planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
+		planning.NODE_TYPE_SUBQUERY:              planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
+
+		planning.NODE_TYPE_DUPLICATE: planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+	}
+
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
@@ -78,6 +95,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		pedantic:           opts.Pedantic,
 		eagerLoadSelectors: opts.EagerLoadSelectors,
 		planner:            planner,
+		nodeMaterializers:  nodeMaterializers,
 	}, nil
 }
 
@@ -112,7 +130,17 @@ type Engine struct {
 
 	eagerLoadSelectors bool
 
-	planner *QueryPlanner
+	planner           *QueryPlanner
+	nodeMaterializers map[planning.NodeType]planning.NodeMaterializer
+}
+
+func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
+	if _, exists := e.nodeMaterializers[nodeType]; exists {
+		return fmt.Errorf("materializer for node type %s already registered", nodeType)
+	}
+
+	e.nodeMaterializers[nodeType] = materializer
+	return nil
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -153,28 +181,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
-	}
-
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
-
-	operatorParams := &planning.OperatorParameters{
-		Queryable:                queryable,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations.New(),
-		LookbackDelta:            lookbackDelta,
-		EagerLoadSelectors:       e.eagerLoadSelectors,
-	}
-
-	materializer := NewMaterializer(operatorParams)
-	root, err := materializer.ConvertNodeToOperator(plan.Root, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	evaluator, err := NewEvaluator(root, operatorParams, plan.TimeRange, e, opts, plan.OriginalExpression)
+	evaluator, err := e.newEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +202,55 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		evaluator:                evaluator,
 		engine:                   e,
 		statement:                statement,
-		memoryConsumptionTracker: memoryConsumptionTracker,
+		memoryConsumptionTracker: evaluator.MemoryConsumptionTracker,
 		originalExpression:       plan.OriginalExpression,
 		topLevelQueryTimeRange:   plan.TimeRange,
 	}, nil
+}
+
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange) (*Evaluator, error) {
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (evaluator creation)")
+	if err != nil {
+		return nil, err
+	}
+
+	defer e.activeQueryTracker.Delete(queryID)
+
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	return e.newEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+}
+
+func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
+	}
+
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
+
+	operatorParams := &planning.OperatorParameters{
+		Queryable:                queryable,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations.New(),
+		LookbackDelta:            lookbackDelta,
+		EagerLoadSelectors:       e.eagerLoadSelectors,
+	}
+
+	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
+	op, err := materializer.ConvertNodeToOperator(node, nodeTimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewEvaluator(op, operatorParams, nodeTimeRange, e, opts, plan.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {

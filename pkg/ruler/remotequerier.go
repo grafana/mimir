@@ -221,6 +221,12 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	return remote.FromQueryResult(sortSeries, res), nil
 }
 
+// ReadMultiple implements Prometheus remote.ReadClient.
+// As of writing this the method is not used by the ruler and the prometheus remote queryable implementation.
+func (q *RemoteQuerier) ReadMultiple(context.Context, []*prompb.Query, bool) (storage.SeriesSet, error) {
+	return nil, errors.New("ReadMultiple is not supported by ruler.RemoteQuerier; open a bug report if you see this error")
+}
+
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.New(ctx, q.logger, tracer, "ruler.RemoteQuerier.Query")
@@ -233,12 +239,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
 	defer cancel()
 
-	req, err := q.createRequest(ctx, query, ts)
-	if err != nil {
-		return promql.Vector{}, err
-	}
-
-	resp, err := q.sendRequest(req, logger)
+	resp, err := q.sendRequest(ctx, query, ts, logger)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
 			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
@@ -302,8 +303,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	return req, nil
 }
 
-func (q *RemoteQuerier) sendRequest(req *http.Request, logger log.Logger) (*http.Response, error) {
-	ctx := req.Context()
+func (q *RemoteQuerier) sendRequest(ctx context.Context, query string, ts time.Time, logger log.Logger) (*http.Response, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
@@ -314,6 +314,11 @@ func (q *RemoteQuerier) sendRequest(req *http.Request, logger log.Logger) (*http
 	retry := backoff.New(ctx, retryConfig)
 
 	for {
+		req, err := q.createRequest(ctx, query, ts)
+		if err != nil {
+			return nil, err
+		}
+
 		resp, err := q.client.RoundTrip(req)
 		if err == nil {
 			// Responses with status codes 4xx should always be considered erroneous.
