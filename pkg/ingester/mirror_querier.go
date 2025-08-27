@@ -27,7 +27,6 @@ type mirroredChunkQuerier struct {
 	comparisonOutcomes *prometheus.CounterVec
 	delegate           storage.ChunkQuerier
 	blockMeta          tsdb.BlockMeta
-	userID             string
 
 	recordedRequest struct {
 		minT, maxT int64
@@ -43,10 +42,9 @@ type mirroredChunkQuerier struct {
 func newMirroredChunkQuerierWithMeta(userID string, comparisonOutcomes *prometheus.CounterVec, minT, maxT int64, blockMeta tsdb.BlockMeta, logger log.Logger, q storage.ChunkQuerier) *mirroredChunkQuerier {
 	mq := &mirroredChunkQuerier{
 		logger:             log.With(logger, "component", "mirroredChunkQuerier"),
-		comparisonOutcomes: comparisonOutcomes,
+		comparisonOutcomes: comparisonOutcomes.MustCurryWith(prometheus.Labels{"user": userID}),
 		delegate:           q,
 		blockMeta:          blockMeta,
-		userID:             userID,
 	}
 	mq.recordedRequest.minT = minT
 	mq.recordedRequest.maxT = maxT
@@ -66,15 +64,15 @@ func (q *mirroredChunkQuerier) LabelNames(ctx context.Context, hints *storage.La
 func (q *mirroredChunkQuerier) Close() error {
 	if retunedErr := q.returnedSeries.Err(); errors.Is(retunedErr, context.Canceled) {
 		level.Warn(q.logger).Log("msg", "Select was canceled, skipping comparison")
-		q.comparisonOutcomes.WithLabelValues("context_cancelled", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
 		return q.delegate.Close()
 	} else if retunedErr != nil {
 		level.Error(q.logger).Log("msg", "error reading returned series", "err", retunedErr)
-		q.comparisonOutcomes.WithLabelValues("returned_series_error", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("returned_series_error").Inc()
 		return q.delegate.Close()
 	} else if q.returnedSeries.isUnset() {
 		level.Warn(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
-		q.comparisonOutcomes.WithLabelValues("no_select", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
 		return q.delegate.Close()
 	}
 
@@ -164,11 +162,11 @@ func (q *mirroredChunkQuerier) compareResults(secondary storage.ChunkSeriesSet) 
 
 	if err := secondary.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
-			q.comparisonOutcomes.WithLabelValues("context_cancelled", q.userID).Inc()
+			q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
 			return
 		}
 		level.Error(q.logger).Log("msg", "error reading secondary series", "err", err)
-		q.comparisonOutcomes.WithLabelValues("secondary_error", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("secondary_error").Inc()
 		return
 	}
 
@@ -179,13 +177,13 @@ func (q *mirroredChunkQuerier) compareResults(secondary storage.ChunkSeriesSet) 
 func (q *mirroredChunkQuerier) recordComparisonOutcome(extraSeries []string, missingSeries []string, primaryLabels []labels.Labels, secondaryLabels int) {
 	switch {
 	case len(extraSeries) > 0 && len(missingSeries) > 0:
-		q.comparisonOutcomes.WithLabelValues("extra_and_missing_series", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("extra_and_missing_series").Inc()
 	case len(extraSeries) > 0:
-		q.comparisonOutcomes.WithLabelValues("extra_series", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("extra_series").Inc()
 	case len(missingSeries) > 0:
-		q.comparisonOutcomes.WithLabelValues("missing_series", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("missing_series").Inc()
 	default:
-		q.comparisonOutcomes.WithLabelValues("success", q.userID).Inc()
+		q.comparisonOutcomes.WithLabelValues("success").Inc()
 	}
 	if len(extraSeries) > 0 || len(missingSeries) > 0 {
 		tenantID, _ := tenant.TenantID(q.recordedRequest.ctx)
