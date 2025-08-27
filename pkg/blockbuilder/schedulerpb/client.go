@@ -25,6 +25,7 @@ type SchedulerClient interface {
 	Close()
 	GetJob(context.Context) (JobKey, JobSpec, error)
 	CompleteJob(JobKey) error
+	FailJob(JobKey) error
 }
 
 type schedulerClient struct {
@@ -212,6 +213,25 @@ func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
 	// Set it as complete and also set a time when it'll become eligible for forgetting.
 	j.complete = true
 	j.forgetTime = time.Now().Add(s.maxUpdateAge)
+	return nil
+}
+
+func (s *schedulerClient) FailJob(jobKey JobKey) error {
+	level.Info(s.logger).Log("msg", "marking job as failed", "job_id", jobKey.Id, "epoch", jobKey.Epoch)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	j, ok := s.jobs[jobKey]
+	if !ok {
+		return fmt.Errorf("job %s (%d) not found", jobKey.GetId(), jobKey.GetEpoch())
+	}
+	if j.complete {
+		return nil
+	}
+
+	// We immediately forget the job, which will cause the scheduler to reassign it.
+	delete(s.jobs, jobKey)
 	return nil
 }
 
