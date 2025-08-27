@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-kafka
+  labels:
+    app: enterprise-metrics-kafka
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-kafka
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1
