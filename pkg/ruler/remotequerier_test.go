@@ -738,7 +738,7 @@ func TestRemoteQuerier_QueryRetryRequestBodyConsumption(t *testing.T) {
 			return nil, httpgrpc.Errorf(http.StatusInternalServerError, "simulated server error")
 		}
 
-		// Succeed on retry - but by now the body should be empty due to the bug
+		// Succeed on retry
 		return &httpgrpc.HTTPResponse{
 			Code: http.StatusOK,
 			Headers: []*httpgrpc.Header{
