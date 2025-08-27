@@ -159,15 +159,26 @@ Grafana Mimir requires any of the following object stores for the block files:
 
 For more information, refer to [configure object storage](../../configure/configure-object-storage-backend/) and [configure metrics storage retention](../../configure/configure-metrics-storage-retention/).
 
-## Kafka 
+## Kafka
 
-<!-- We probably need to add something here too - what the role of kafka is and what mimir requires of kafka; some thoughts:
+Kafka is a central part of the ingest storage architecture. It is responsible for replicating and durably persisting incoming data
+and for making this data available to ingesters.
 
-we don't use transactions and use consumer groups only to persist how far an ingester has consumed from; each ingester maintains its own consumer group
+Mimir's usage of the Kafka protocol is limited, which allows to use many Kafka-compatible solutions.
 
-ingesters do not need kafka to be available to serve queries. During a Kafka outage ingesters end up serving queries with the data they have already consumed from kafka and are now stored in memory or on disk.
+### How Mimir uses Kafka
+<!-- TODO dimitarvdimitrov: here' i'm not sure about the best way to structure this content. Would a table be better? -->
 
-each kafka record is consumed exactly once by each ingester zone and records are not replayed after consumed once. An exception to this is when an ingester is abruptly terminated and has not had the chance to persist its offset in the consumer group
+On the write path the distributor rquires the Kafka cluster to be available for push requests to succeed.
+The distributor issues direct **Produce API** calls to the Kafka brokers and does not produce in **transactions** and does not need support for **idempotent writes**.
 
-kafka retention is only informed by how long of an ingester outage the operator wants to be able to whitstand without data loss. If ingesters are unavailable for longer than the kafka retention, then they will not be able to resume from the offset int heir consumer group. This will lead to a gap in ingested samples. 
---> 
+Both the ingester and the distributor use the **Metadata API** to discover the leaders for a topic-partition.
+
+The Mimir ingester uses Kafka **consumer groups** to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records are not replayed after being consumed. There are two exxceptions to this: 
+
+1. When an ingester is abruptly terminated and has not had the chance to persist its offset in the consumer group. In that case the ingester will pick back up where the consumer group offset points to.
+2. Ingesters can optionally be configured to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In those cases the ingester will use the **ListOffsets API** to discover the target offset.
+
+Ingesters do not need Kafka to be available to serve queries. During a Kafka outage, ingesters can continue serving queries with the data they have already consumed from Kafka and stored in memory or on disk.
+
+Kafka retention should be configured based on how long of an ingester outage the operator wants to be able to withstand without data loss. If ingesters are unavailable for longer than the Kafka retention period, they will not be able to resume from the offset in their consumer group, leading to a gap in ingested samples.
