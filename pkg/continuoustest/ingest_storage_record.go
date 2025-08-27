@@ -149,14 +149,6 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	}
 
 	// Find where the last run stopped at, if any.
-	topics, err := t.adminClient.ListTopics(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to ping kafka: %w", err)
-	}
-	for _, to := range topics {
-		level.Info(t.logger).Log("msg", "detected topic", "topic", to.Topic)
-	}
-
 	offResp, err := t.adminClient.FetchOffsetsForTopics(ctx, t.cfg.ConsumerGroup, t.cfg.Kafka.Topic)
 	if err != nil {
 		if errors.Is(err, kerr.GroupIDNotFound) {
