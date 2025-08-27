@@ -26,12 +26,12 @@ import (
 )
 
 type IngestStorageRecordTestConfig struct {
-	Enabled                  bool               `yaml:"enabled"`
+	Enabled                  bool               `yaml:"-"`
 	Kafka                    ingest.KafkaConfig `yaml:"-"`
-	ConsumerGroup            string             `yaml:"consumer_group"`
-	MaxJumpLimitPerPartition int                `yaml:"max_jump_size"`
-	MaxRecordsPerRun         int                `yaml:"max_records_per_run"`
-	RecordsProcessedPercent  int                `yaml:"records_processed_percent"`
+	ConsumerGroup            string             `yaml:"-"`
+	MaxJumpLimitPerPartition int                `yaml:"-"`
+	MaxRecordsPerRun         int                `yaml:"-"`
+	RecordsProcessedPercent  int                `yaml:"-"`
 }
 
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
