@@ -39,8 +39,12 @@ type InstantVectorRemoteExecutionResponse interface {
 
 type RangeVectorRemoteExecutionResponse interface {
 	RemoteExecutionResponse
-	// TODO: series metadata
-	// TODO: series data
+
+	GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error)
+
+	AdvanceToNextSeries(ctx context.Context) error
+
+	GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error)
 }
 
 type RemoteExecutionResponse interface {
