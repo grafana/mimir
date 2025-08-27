@@ -4183,10 +4183,8 @@ tokengenJob:
 
 # -- kubetclImage is used in the enterprise provisioner and tokengen jobs
 kubectlImage:
-  # -- The Docker registry for the kubectl image
-  registry: docker.io
   # -- The kubectl image repository
-  repository: bitnami/kubectl
+  repository: alpine/kubectl
   # -- The kubectl image tag
   tag: latest
   # -- The kubectl image pull policy

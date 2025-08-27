@@ -27,7 +27,9 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## main / unreleased
+## 5.8.1 / unreleased
+
+* [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
 
 ## 5.8.0
 
