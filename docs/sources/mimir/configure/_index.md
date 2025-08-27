@@ -69,7 +69,6 @@ Manage and optimize query behavior.
 
 - [Configure queries to block](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-blocked-queries/)
 - [Configure experimental PromQL functions](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-experimental-promql-functions/)
-- [Configure the Grafana Mimir query-frontend to work with Prometheus](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-the-query-frontend-work-with-prometheus/)
 
 ## High availability and clustering
 
