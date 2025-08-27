@@ -74,7 +74,7 @@ Ingesters continuously consume samples from Kafka and append them to the specifi
 The per-tenant TSDB in the ingester is lazily created in each ingester as soon as the first samples are received for that tenant.
 The samples that are received are both kept in-memory and written to a write-ahead log (WAL).
 If the ingester abruptly terminates, the WAL can help to recover the in-memory series.
-After the ingester recoveres from the downtime and has replayed the local WAL,
+After the ingester recovers from the downtime and has replayed the local WAL,
 it resumes consuming from Kafka from the offset stored in its consumer group.
 Using this technique the ingester never misses a sample written to Kafka and observes samples in the same order as other ingesters consuming the same partition.
 
