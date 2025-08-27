@@ -221,7 +221,6 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 					// Log errors, but don't fail them. We still want to commit the end offsets and continue,
 					// that way a single failed record doesn't make the tool get stuck in time and stay there forever.
 					level.Error(t.logger).Log("msg", "test failed", "reason", err)
-					err = nil
 				}
 			}
 		}()
