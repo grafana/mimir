@@ -230,7 +230,8 @@ func (s *schedulerClient) FailJob(jobKey JobKey) error {
 		return nil
 	}
 
-	// We immediately forget the job, which will cause the scheduler to reassign it.
+	// We immediately forget the job, which will cause the scheduler to reassign
+	// it when the lease expires.
 	delete(s.jobs, jobKey)
 	return nil
 }
