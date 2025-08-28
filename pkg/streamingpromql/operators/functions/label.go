@@ -19,7 +19,7 @@ import (
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) (types.SeriesMetadataSet, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, _ bool) (types.SeriesMetadataSet, error) {
 		dst := dstLabelOp.GetValue()
 		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return types.NewEmptySeriesMetadataSet(), fmt.Errorf("invalid destination label name in label_join(): %s", dst)
@@ -61,7 +61,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 
 		seriesMetadataSet := types.SeriesMetadataSet{
 			Metadata: seriesMetadata,
-			DropName: false,
+			DropName: dst != labels.MetricName,
 		}
 
 		return seriesMetadataSet, nil
@@ -69,7 +69,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 }
 
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) (types.SeriesMetadataSet, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, _ bool) (types.SeriesMetadataSet, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {
@@ -102,7 +102,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 
 		seriesMetadataSet := types.SeriesMetadataSet{
 			Metadata: seriesMetadata,
-			DropName: false,
+			DropName: dst != labels.MetricName,
 		}
 
 		return seriesMetadataSet, nil
