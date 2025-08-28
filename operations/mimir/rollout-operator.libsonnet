@@ -88,7 +88,7 @@
 
   // Create custom resource template for PodDisruptionZoneBudget
   zpdb_crd:: std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
-  zpdb_custom_resource: if !$._config.zpdb_custom_resource_definition_enabled then null else $.zpdb_crd,
+  zpdb_custom_resource: if !$._config.zpdb_custom_resource_definition_enabled || !$._config.enable_rollout_operator_webhook then null else $.zpdb_crd,
 
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
