@@ -139,7 +139,7 @@ var benchmarkCases = []struct {
 	// },
 }
 
-func BenchmarkBucketStores_Main(b *testing.B) {
+func BenchmarkBucketStores_Series(b *testing.B) {
 	flag.Parse()
 	const user = "benchmark-user"
 	var sortByFields []string
@@ -157,26 +157,6 @@ func BenchmarkBucketStores_Main(b *testing.B) {
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
 		storegateway.GrpcContextMetadataTenantID: []string{user},
 	})
-
-	// for _, reqConfig := range requests.LabelValues {
-	// 	req := &reqConfig.LabelValuesRequest
-	// 	b.Run(fmt.Sprintf("LabelValues-%s", reqConfig.Name), func(tb *testing.B) {
-	// 		runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
-	// 			_, err := store.LabelValues(ctx, req)
-	// 			require.NoError(b, err)
-	// 		})
-	// 	})
-	// }
-
-	// for _, reqConfig := range requests.LabelNames {
-	// 	req := &reqConfig.LabelNamesRequest
-	// 	b.Run(fmt.Sprintf("LabelNames-%s", reqConfig.Name), func(tb *testing.B) {
-	// 		runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
-	// 			_, err := store.LabelNames(ctx, req)
-	// 			require.NoError(b, err)
-	// 		})
-	// 	})
-	// }
 
 	for _, tc := range benchmarkCases {
 		b.Run(tc.name, func(tb *testing.B) {

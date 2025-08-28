@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -106,6 +107,9 @@ func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabel
 		convertOpts...)
 
 	require.NoError(b, err, "error converting TSDB block to Parquet")
+
+	err = parquetconverter.WriteConversionMark(ctx, blockId, userBkt)
+	require.NoError(b, err, "error writing conversion mark")
 
 	createBucketIndex(b, bkt, user)
 	return bkt, head.MinTime(), head.MaxTime()
