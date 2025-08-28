@@ -196,6 +196,25 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	}
 }
 
+func TestQueryFrontendWithRemoteExecution(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+			)
+
+			flags["-query-frontend.enable-remote-execution"] = "true"
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+		withHistograms: true,
+	})
+}
+
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		querySchedulerDiscoveryMode: "dns",
@@ -368,6 +387,29 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Len(t, result, 0)
 		}
 
+		// Test that evaluating a query with a scalar result works as expected.
+		if userID == 0 {
+			result, err := c.Query("scalar(series_1)", now)
+			require.NoError(t, err)
+			require.Equal(t, model.ValScalar, result.Type())
+			scalar := result.(*model.Scalar)
+			require.Equal(t, expectedVectors[0][0].Value, scalar.Value)
+			require.Equal(t, expectedVectors[0][0].Timestamp, scalar.Timestamp)
+		}
+
+		// Same thing, but with a range vector result.
+		if userID == 0 {
+			result, err := c.Query("series_1[5m]", now)
+			require.NoError(t, err)
+			require.Equal(t, model.ValMatrix, result.Type())
+			matrix := result.(model.Matrix)
+			require.Len(t, matrix, 1)
+			series := matrix[0]
+			require.Len(t, series.Values, 1)
+			require.Equal(t, expectedVectors[0][0].Value, series.Values[0].Value)
+			require.Equal(t, expectedVectors[0][0].Timestamp, series.Values[0].Timestamp)
+		}
+
 		// Test subquery spin-off.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
@@ -454,6 +496,18 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 // This spins up a minimal query-frontend setup and compares if errors returned
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {
+	t.Run("default config", func(t *testing.T) {
+		testQueryFrontendErrorMessageParityScenario(t, map[string]string{})
+	})
+
+	t.Run("with remote execution enabled", func(t *testing.T) {
+		testQueryFrontendErrorMessageParityScenario(t, map[string]string{
+			"-query-frontend.enable-remote-execution": "true",
+		})
+	})
+}
+
+func testQueryFrontendErrorMessageParityScenario(t *testing.T, additionalFlags map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -461,7 +515,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	cfg := &queryFrontendTestConfig{
 		querySchedulerDiscoveryMode: "dns",
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
+			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), additionalFlags)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
