@@ -451,6 +451,9 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	promise.callersCtxTracker.Close()
 
 	sizeBytes := int64(len(key) + size.Of(promise))
+	if promise.cloner != nil {
+		sizeBytes += promise.cloner.EstimateSize()
+	}
 
 	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, promise.err)
 	return promise.result
@@ -551,11 +554,8 @@ func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	c.calls.Delete(oldest.key)
 	c.cached.Remove(front)
 	c.cachedBytes -= oldest.sizeBytes
-	if c.shared {
-		// Only set values when caches are shared, so separate per block caches do not interfere
-		c.metrics.entries.Set(float64(c.cached.Len()))
-		c.metrics.bytes.Set(float64(c.cachedBytes))
-	}
+	c.metrics.entries.Dec()
+	c.metrics.bytes.Sub(float64(oldest.sizeBytes))
 
 	return
 }
@@ -597,11 +597,8 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 			sizeBytes: sizeBytes,
 		})
 		c.cachedBytes += sizeBytes
-		if c.shared {
-			// Only set values when caches are shared, so separate per block caches do not interfere
-			c.metrics.entries.Set(float64(c.cached.Len()))
-			c.metrics.bytes.Set(float64(c.cachedBytes))
-		}
+		c.metrics.entries.Inc()
+		c.metrics.bytes.Add(float64(sizeBytes))
 		lastCachedBytes = c.cachedBytes
 
 		c.cachedMtx.Unlock()
