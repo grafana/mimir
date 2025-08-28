@@ -123,7 +123,7 @@ when it evaluates later rules in the rule group.
 To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
 When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all in-use partitions and propagates these offsets to ingesters. Each ingester then waits until it has consumed up to the specified offset for its partition before running the query. This ensures that the query observes all samples that were written to Kafka before the query was received by the query-frontend, providing strong read consistency at the cost of increased query latency.
 
-By default the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query. You can configure this via `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (TODO dimitarvdimitrov: do we want to mention the flag here? it sounds like it's too much details for an architecture overview).
+By default the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query.
 
 ## The role of Prometheus
 
