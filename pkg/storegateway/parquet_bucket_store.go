@@ -892,7 +892,18 @@ func (s *ParquetBucketStore) sendMessage(typ string, srv storegatewaypb.StoreGat
 	pmsg := &grpc.PreparedMsg{}
 	err := pmsg.Encode(srv, msg)
 	*encodeDuration += time.Since(encodeBegin)
+	// If PreparedMsg.Encode fails (e.g., in tests with mock servers that don't have gRPC rpcInfo),
+	// fall back to regular Send method
 	if err != nil {
+		if resp, ok := msg.(*storepb.SeriesResponse); ok {
+			sendBegin := time.Now()
+			err = srv.Send(resp)
+			*sendDuration += time.Since(sendBegin)
+			if err != nil {
+				return status.Error(codes.Unknown, errors.Wrapf(err, "send %s response", typ).Error())
+			}
+			return nil
+		}
 		return status.Error(codes.Internal, errors.Wrapf(err, "encode %s response", typ).Error())
 	}
 
