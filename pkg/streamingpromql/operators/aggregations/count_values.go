@@ -149,7 +149,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) (types.SeriesMetadataS
 		countValuesSeriesPool.Put(s)
 	}
 
-	return types.SeriesMetadataSet{Metadata: outputMetadata, DropName: innerMetadata.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: outputMetadata, DropName: false}, nil
 }
 
 func (c *CountValues) loadLabelName() error {

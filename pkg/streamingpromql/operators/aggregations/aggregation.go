@@ -177,7 +177,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataS
 
 	sort.Sort(groupSorter{seriesMetadata, a.remainingGroups})
 
-	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: innerSeries.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: false}, nil
 }
 
 func (a *Aggregation) groupLabelsBytesFunc() SeriesToGroupLabelsBytesFunc {
