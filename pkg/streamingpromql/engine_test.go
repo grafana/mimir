@@ -4131,3 +4131,55 @@ type dummyMaterializer struct{}
 func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	panic("not implemented")
 }
+
+func TestEnableDelayedNameRemoval(t *testing.T) {
+	numSamples := 100
+	replacer := strings.NewReplacer("<num samples>", fmt.Sprintf("%d", numSamples))
+	data := replacer.Replace(`
+		load 1m
+			up{foo="bar",baz="fob",boo="far",faf="bob"} 0+1x<num samples>
+			down{foo="bar",baz="fob",boo="far",faf="bob"} 0+2x<num samples>
+			left{foo="bar",baz="fob",boo="far",faf="bob"} 0+3x<num samples>
+			right{foo="bar",baz="fob",boo="far",faf="bob"} 0+4x<num samples>
+			up{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+5x<num samples>
+			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
+			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
+			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
+	`)
+
+	const step = 20 * time.Second
+
+	queryable := promqltest.LoadedStorage(t, data)
+
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	startTime := timestamp.Time(0)
+	endTime := startTime.Add(time.Duration(numSamples) * time.Minute)
+
+	testCases := map[string]string{
+		"original":             `count_over_time({__name__!=""}[1m])`,
+		"fixed":                `label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)")`,
+		"function after label": `abs(label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)"))`,
+	}
+
+	for name, q := range testCases {
+		t.Run(name, func(t *testing.T) {
+			query, err := prometheusEngine.NewRangeQuery(ctx, queryable, nil, q, startTime, endTime, step)
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+			prometheus := query.Exec(context.Background())
+			query, err = mimirEngine.NewRangeQuery(ctx, queryable, nil, q, startTime, endTime, step)
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+			mimir := query.Exec(context.Background())
+
+			testutils.RequireEqualResults(t, q, prometheus, mimir, false)
+		})
+	}
+}
