@@ -101,7 +101,7 @@ func generateActivityDescription(ctx context.Context, query string, stage string
 	return buf.String()
 }
 
-func (q queryTracker) Delete(insertIndex int) {
+func (q *queryTracker) Delete(insertIndex int) {
 	q.tracker.Delete(insertIndex)
 }
 
