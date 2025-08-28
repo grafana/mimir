@@ -351,7 +351,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 				`,
 			nodesEliminated: 1,
 		},
-		"nested function calls enclosing label_replace - should keep closest DeduplicateAndMerge enclosing label_replace": {
+		"nested function calls enclosing label_replace - should keep DeduplicateAndMerge closest to function enclosing label_replace": {
 			expr: `abs(ceil(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
 			expectedPlan: `
 					- FunctionCall: abs(...)
@@ -368,7 +368,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 				`,
 			nodesEliminated: 2,
 		},
-		"only nodes which require DeduplicateAndMerge wrapped in DeduplicateAndMerge after label_replace": {
+		"function which does not drop name after label_replace - should not introduce DeduplicateAndMerge to function enclosing label_replace": {
 			expr: `sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)"))`,
 			expectedPlan: `
 							- FunctionCall: sort(...)
@@ -383,12 +383,47 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 				`,
 			nodesEliminated: 1,
 		},
-		"nested - only nodes which require DeduplicateAndMerge wrapped in DeduplicateAndMerge after label_replace": {
+		"nested function calls, function in between doesn't drop __name__- should keep DeduplicateAndMerge closest to node which drops name after label_replace": {
 			expr: `abs(sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- FunctionCall: abs(...)
 						- FunctionCall: sort(...)
+							- DeduplicateAndMerge
+								- FunctionCall: label_replace(...)
+									- param 0: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- param 1: StringLiteral: "dst"
+									- param 2: StringLiteral: "$1"
+									- param 3: StringLiteral: "src"
+									- param 4: StringLiteral: "(.*)"
+				`,
+			nodesEliminated: 1,
+		},
+		"binary operation with label_replace - should keep DeduplicateAndMerge around binary operation enclosing label_replace": {
+			expr: `2*label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: NumberLiteral: 2
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- param 1: StringLiteral: "dst"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "src"
+								- param 4: StringLiteral: "(.*)"
+				`,
+			nodesEliminated: 1,
+		},
+		"binary operation with function which doesn't drop __name__  in between operation and label_replace - should keep DeduplicateAndMerge closest to node which drops name after label_replace": {
+			expr: `2*(sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: NumberLiteral: 2
+						- RHS: FunctionCall: sort(...)
 							- DeduplicateAndMerge
 								- FunctionCall: label_replace(...)
 									- param 0: FunctionCall: rate(...)
