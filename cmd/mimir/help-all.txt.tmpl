@@ -2813,6 +2813,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
   -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
     	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
+  -ruler.max-notification-batch-size int
+    	Maximum number of notifications to send to Alertmanager in one request. (default 256)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rule-groups-per-tenant-by-namespace value
