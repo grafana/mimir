@@ -15,11 +15,16 @@ type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryCo
 // DropSeriesName is a series metadata function that removes the __name__ label from all series.
 var DropSeriesName = SeriesMetadataFunctionDefinition{
 	Func: func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) (types.SeriesMetadataSet, error) {
+		if enableDelayedNameRemoval {
+			return types.SeriesMetadataSet{
+				Metadata: seriesMetadata,
+				DropName: true,
+			}, nil
+		}
+
 		for i := range seriesMetadata {
 			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
-			if !enableDelayedNameRemoval {
-				seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
-			}
+			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
 			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			if err != nil {
 				return types.NewEmptySeriesMetadataSet(), err
@@ -28,7 +33,7 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 
 		seriesMetadataSet := types.SeriesMetadataSet{
 			Metadata: seriesMetadata,
-			DropName: enableDelayedNameRemoval,
+			DropName: false,
 		}
 
 		return seriesMetadataSet, nil
