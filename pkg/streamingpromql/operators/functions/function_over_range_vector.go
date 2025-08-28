@@ -92,7 +92,11 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
+		seriesMetadataSet, err := m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, false)
+		if err != nil {
+			return nil, err
+		}
+		return seriesMetadataSet.Metadata, nil
 	}
 
 	return metadata, nil
