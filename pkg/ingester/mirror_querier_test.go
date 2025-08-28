@@ -349,4 +349,18 @@ func TestMirroredChunkQuerier(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 1.0, testutil.ToFloat64(metric))
 	})
+
+	t.Run("select_not_called", func(t *testing.T) {
+		t.Cleanup(comparisonOutcomes.Reset)
+		delegate := &mockChunkQuerier{
+			series: []storage.ChunkSeries{series1},
+		}
+		querier := newMirroredChunkQuerierWithMeta("test-user", comparisonOutcomes, 1000, 2000, tsdb.BlockMeta{}, logger, delegate)
+		// Directly call Close without calling Select
+		assert.NoError(t, querier.Close())
+		// Should record no_select
+		metric, err := comparisonOutcomes.GetMetricWithLabelValues("no_select", "test-user")
+		require.NoError(t, err)
+		assert.Equal(t, 1.0, testutil.ToFloat64(metric))
+	})
 }
