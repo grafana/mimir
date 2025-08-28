@@ -982,6 +982,19 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
+func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
+	user, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
+	}
+	db := i.getTSDB(user)
+	// getTSDB may return nil if the userID isn't found in the ingester's tsdbs.
+	if db == nil {
+		return nil, fmt.Errorf("no TSDB found for user %s", user)
+	}
+	return db.Head().PostingsStats(), nil
+}
+
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
