@@ -4163,24 +4163,47 @@ func TestEnableDelayedNameRemoval(t *testing.T) {
 	startTime := timestamp.Time(0)
 	endTime := startTime.Add(time.Duration(numSamples) * time.Minute)
 
+	makeRangeQuery := func(engine promql.QueryEngine, query string) (promql.Query, error) {
+		return engine.NewRangeQuery(ctx, queryable, nil, query, startTime, endTime, step)
+	}
+
+	makeInstantQuery := func(engine promql.QueryEngine, query string) (promql.Query, error) {
+		return engine.NewInstantQuery(ctx, queryable, nil, query, endTime)
+	}
+
 	testCases := map[string]string{
 		"original":             `count_over_time({__name__!=""}[1m])`,
 		"fixed":                `label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)")`,
 		"function after label": `abs(label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)"))`,
+		"sum by label 1m":      `sum(rate({foo="bar"}[1m])) by (foo)`,
+		"sum by label 10m":     `sum(rate({foo="bar"}[10m])) by (foo)`,
 	}
 
 	for name, q := range testCases {
 		t.Run(name, func(t *testing.T) {
-			query, err := prometheusEngine.NewRangeQuery(ctx, queryable, nil, q, startTime, endTime, step)
-			require.NoError(t, err)
-			t.Cleanup(query.Close)
-			prometheus := query.Exec(context.Background())
-			query, err = mimirEngine.NewRangeQuery(ctx, queryable, nil, q, startTime, endTime, step)
-			require.NoError(t, err)
-			t.Cleanup(query.Close)
-			mimir := query.Exec(context.Background())
+			t.Run("range query", func(t *testing.T) {
+				runAndCompare(t, prometheusEngine, mimirEngine, q, makeRangeQuery)
+			})
 
-			testutils.RequireEqualResults(t, q, prometheus, mimir, false)
+			t.Run("instant query", func(t *testing.T) {
+				runAndCompare(t, prometheusEngine, mimirEngine, q, makeInstantQuery)
+			})
 		})
 	}
+}
+
+func runAndCompare(t *testing.T, prometheusEngine, mimirEngine promql.QueryEngine, q string, makeQuery func(promql.QueryEngine, string) (promql.Query, error)) {
+	query, err := makeQuery(prometheusEngine, q)
+	require.NoError(t, err)
+	t.Cleanup(query.Close)
+	prometheus := query.Exec(context.Background())
+	// assert.NoError(t, prometheus.Err)
+
+	query, err = makeQuery(mimirEngine, q)
+	require.NoError(t, err)
+	t.Cleanup(query.Close)
+	mimir := query.Exec(context.Background())
+	// assert.NoError(t, mimir.Err)
+
+	testutils.RequireEqualResults(t, q, prometheus, mimir, false)
 }
