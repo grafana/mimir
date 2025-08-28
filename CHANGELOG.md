@@ -46,6 +46,7 @@
 * [BUGFIX] Distributor: Fix metric metadata of type Unknown being silently dropped from RW2 requests. #12461
 * [BUGFIX] Ruler: Fix ruler remotequerier request body consumption on retries. #12514
 * [BUGFIX] Block-builder: Fix a bug where a consumption error can cause a job to stay assigned to a worker for the remainder of its lifetime. #12522
+* [BUGFIX] Querier: Fix possible panic when evaluating a nested subquery where the parent has no steps. #12524
 
 ### Mixin
 
