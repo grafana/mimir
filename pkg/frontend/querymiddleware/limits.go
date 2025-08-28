@@ -213,12 +213,9 @@ type limitedParallelismRoundTripper struct {
 }
 
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, logger log.Logger, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream: httpQueryRequestRoundTripperHandler{
-			next:  next,
-			codec: codec,
-		},
+		downstream: NewHTTPQueryRequestRoundTripperHandler(next, codec, logger),
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),
@@ -268,6 +265,14 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 
 	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
+}
+
+func NewHTTPQueryRequestRoundTripperHandler(next http.RoundTripper, codec Codec, logger log.Logger) MetricsQueryHandler {
+	return httpQueryRequestRoundTripperHandler{
+		next:   next,
+		codec:  codec,
+		logger: logger,
+	}
 }
 
 // httpQueryRequestRoundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
