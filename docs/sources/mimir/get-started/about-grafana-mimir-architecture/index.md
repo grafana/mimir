@@ -84,11 +84,6 @@ For example, when running in the cloud, include an AWS EBS volume or a GCP Persi
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The locations of the WAL and the local TSDB blocks cannot be decoupled.
 
-Optionally, in ingest storage architecture, the block-builder can take responsibility for building TSDB blocks from
-records in Kafka and uploading them to long-term storage.
-
-<!-- dimitarvdimitrov: I'm not sure we should mention the block-builder since it's still a component in development and not stable and ready for production use. After reading this a secondt ime, i'm tempted to not include docs about the block builder now -->
-
 For more information, refer to [timeline of block uploads](../../manage/run-production-environment/production-tips/#how-to-estimate--querierquery-store-after) and [Ingester](../../references/architecture/components/ingester/).
 
 #### The lifecycle of a query
