@@ -256,7 +256,6 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 				logger:             logger,
 				comparisonOutcomes: comparisonOutcomes,
 				delegate:           &mockChunkQuerier{},
-				userID:             "test-user",
 				returnedSeries: &retainingChunkSeriesSet{
 					labels: tc.primarySeries,
 				},
