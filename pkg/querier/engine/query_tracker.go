@@ -11,8 +11,8 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"go.opentelemetry.io/otel"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
+	"github.com/grafana/mimir/pkg/streamingpromql/types" //lint:ignore faillint streamingpromql is fine
+	"github.com/grafana/mimir/pkg/util/activitytracker"  //lint:ignore faillint queryTracker needs activitytracker
 )
 
 var tracer = otel.Tracer("pkg/querier/engine")
