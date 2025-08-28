@@ -47,8 +47,8 @@
     // pod evictions not managed by a zpdb will be allowed and contine to be handled by any other pdb configurations.
     disable_rollout_operator_eviction_webhook: false,
 
-    // this needs to be applied at a cluster level so by default we do not generate this per namespace
-    zpdb_custom_resource_definition_enabled: false,
+    // toggle for the custom resource definition being deployed
+    zpdb_custom_resource_definition_enabled: true,
   },
 
   local ingester_zpdb_enabled =
