@@ -1755,7 +1755,7 @@ type roundTripper struct {
 // using the codec to translate requests and responses.
 func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return roundTripper{
-		handler: MergeMetricsQueryMiddlewares(middlewares...).Wrap(roundTripperHandler{
+		handler: MergeMetricsQueryMiddlewares(middlewares...).Wrap(httpQueryRequestRoundTripperHandler{
 			logger: logger,
 			next:   next,
 			codec:  codec,
