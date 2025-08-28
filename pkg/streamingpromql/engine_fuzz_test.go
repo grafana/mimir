@@ -88,7 +88,9 @@ func buildStorage(f *testing.F, dataFile string) storage.Queryable {
 func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *fuzzTestEnvironment {
 	opts := NewTestEngineOpts()
 
-	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(f, err)
+	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
 	require.NoError(f, err)
 
 	environment := &fuzzTestEnvironment{

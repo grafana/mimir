@@ -56,8 +56,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("no query planner provided")
 	}
 
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
@@ -108,11 +112,18 @@ func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 	return lookbackDelta
 }
 
+// QueryTracker is like promql.QueryTracker, but includes more information about the query.
+type QueryTracker interface {
+	InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error)
+
+	Delete(insertIndex int)
+}
+
 type Engine struct {
 	lookbackDelta      time.Duration
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
-	activeQueryTracker promql.QueryTracker
+	activeQueryTracker QueryTracker
 	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -169,7 +180,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +224,7 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (evaluator creation)")
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "evaluator creation", plan.TimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +292,7 @@ func (n *NoopQueryTracker) GetMaxConcurrent() int {
 	return math.MaxInt
 }
 
-func (n *NoopQueryTracker) Insert(_ context.Context, _ string) (int, error) {
+func (n *NoopQueryTracker) InsertWithDetails(_ context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
 	// Nothing to do.
 	return 0, nil
 }
