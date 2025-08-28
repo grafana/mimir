@@ -243,9 +243,20 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (types.SeriesMet
 		return types.NewEmptySeriesMetadataSet(), err
 	}
 
+	enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
+	if !ok {
+		return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
+	}
+
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		var labelsMetadata types.SeriesMetadata
+		if enableDelayedNameRemoval {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels}
+		} else {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
+		}
+		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
 			return types.NewEmptySeriesMetadataSet(), err
 		}
@@ -257,7 +268,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (types.SeriesMet
 	// as soon as possible when accumulating them.
 	sort.Sort(bucketGroupSorter{seriesMetadata, h.remainingGroups})
 
-	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: innerSeries.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: enableDelayedNameRemoval}, nil
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

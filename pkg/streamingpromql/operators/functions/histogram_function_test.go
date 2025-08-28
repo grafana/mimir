@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -114,6 +115,7 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
+			ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, false)
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			hOp := &HistogramFunction{
 				f: &histogramQuantile{
