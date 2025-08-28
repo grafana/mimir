@@ -30,6 +30,7 @@
 * [BUGFIX] Query-frontend: Evaluate experimental duration expressions before sharding, splitting, and caching. Otherwise, the result is not correct. #12038
 * [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #12128
 * [BUGFIX] Block-builder-scheduler: Fix bugs in handling of partitions with no commit. #12130
+* [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
 
 ### Mixin
 
