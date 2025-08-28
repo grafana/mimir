@@ -36,10 +36,25 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
 	var metadataMap map[string]*MetricMetadata
+	var extraMetadata []*MetricMetadata
 	if len(rw1.Metadata) > 0 && len(rw1.Timeseries) > 0 {
 		metadataMap = make(map[string]*MetricMetadata, len(rw1.Metadata))
+		// Very rarely, a request might send multiple conflicting metadatas for the same metric.
+		// For example, in Prometheus this can happen on the border of a metric churning,
+		// if new and old versions of the same metadata are scraped from different processes and end up in the same batch.
+		//
+		// The Prometheus behavior for RW1.0 is to store *both* metadatas and not take any preference.
+		// extraMetadata is used to carry duplicates of existing metadata entries that don't match, so we can propagate them at the end.
+		// We don't preallocate any size here, because this should be extremely rare, most metadata requests won't have anything here.
+		extraMetadata = make([]*MetricMetadata, 0)
 		for _, meta := range rw1.Metadata {
-			metadataMap[meta.MetricFamilyName] = meta
+			if seen, ok := metadataMap[meta.MetricFamilyName]; !ok {
+				metadataMap[meta.MetricFamilyName] = meta
+			} else {
+				if !meta.Equal(seen) {
+					extraMetadata = append(extraMetadata, meta)
+				}
+			}
 		}
 	}
 
