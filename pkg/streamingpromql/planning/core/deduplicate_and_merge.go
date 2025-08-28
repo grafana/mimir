@@ -78,6 +78,7 @@ func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planni
 		return nil, err
 	}
 
-	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker)
+	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker, d.RunDelayedNameRemoval)
+
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

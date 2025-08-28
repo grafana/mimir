@@ -161,6 +161,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			return nil, err
 		}
 
+		if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+			dedupAndMerge.RunDelayedNameRemoval = true
+		}
+
 		plan := &planning.QueryPlan{
 			TimeRange: timeRange,
 			Root:      root,

@@ -18,6 +18,7 @@ var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain m
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	RunDelayedNameRemoval    bool
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -30,8 +31,8 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
-	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, runDelayedNameRemoval bool) *DeduplicateAndMerge {
+	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, RunDelayedNameRemoval: runDelayedNameRemoval}
 }
 
 func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
@@ -40,20 +41,13 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesM
 		return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
 	}
 
-	deduplicateAndMergeStackCount, ok := ctx.Value(types.ContextDeduplicateAndMergeStackCount).(int)
-	if !ok {
-		deduplicateAndMergeStackCount = 0
-	}
-
-	ctx = context.WithValue(ctx, types.ContextDeduplicateAndMergeStackCount, deduplicateAndMergeStackCount+1)
-
 	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
 
 	if err != nil {
 		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 && innerMetadata.DropName {
+	if enableDelayedNameRemoval && d.RunDelayedNameRemoval && innerMetadata.DropName {
 		for i := range innerMetadata.Metadata {
 			d.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
 			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
