@@ -36,20 +36,20 @@ Most components are stateless and do not require any data persisted between proc
 ![Architecture of Grafana Mimir's write path](write-path.svg)
 
 Distributors receive incoming samples in the form of push requests.
-Each push request belongs to a tenant. Distributors shard incoming push requests to multiple Kafka partitions of the same Kafka topic.
-Push requests receive a successful response after the distributor has received an acknowledgement from the Kafka brokers
+Each push request belongs to a tenant, and distributors shard incoming push requests across multiple Kafka partitions within the same Kafka topic.
+Push requests receive a successful response after the distributor receives an acknowledgement from the Kafka brokers
 that all Kafka records have been successfully replicated and durably persisted.
 
-Because of this we consider that ingest storage architecture's write path ends in Kafka.
-This is unlike the classic architecture whose write path includes ingesters and requires a quorum of ingesters to be available for push requests to succeed.
+As a result, the ingest storage architecture write path ends at Kafka.
+This differs from classic architecture, where the write path includes ingesters and requires a quorum of ingesters to be available for successful push requests.
 
 #### Series sharding and replication
 
-By default, each time series from a push request is indepndantly sharded to a single Kafka partition. As a result the timeseries from the push request can fall into multiple partitions.
+By default, each time series from a push request is independently sharded to a single Kafka partition. As a result, the time series from the push request can fall into multiple partitions.
 Replication on the write path is delegated to the Kafka cluster.
-Ingesters consume from partitions and each ingester writes its own block to the long-term storage.
-The [Compactor](../../references/architecture/components/compactor/) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
-Blocks compaction significantly reduces storage utilization.
+Ingesters consume from partitions, and each ingester writes its own block to long-term storage.
+The [Compactor](../../references/architecture/components/compactor/) merges blocks from multiple ingesters into a single block and removes duplicate samples.
+Block compaction significantly reduces storage utilization.
 For more information, refer to [Compactor](../../references/architecture/components/compactor/) and [Production tips](../../manage/run-production-environment/production-tips/).
 
 ### The read path
@@ -60,23 +60,20 @@ For more information, refer to [Compactor](../../references/architecture/compone
 
 ![Architecture of Grafana Mimir's read path](read-path.svg)
 
-#### Communicating between the read and the write path
 
-Samples written by distributors to Kafka on the write path are consumed by ingesters on the read path.
-Each partition is assigned to a single ingester from each zone and each ingester consumes from exactly one partition.
-High availability on the read path is achieved through multiple ingester zones.
+Distributors write samples to Kafka on the write path, and ingesters consume them on the read path. Each partition is assigned to a single ingester from each zone, and each ingester consumes from exactly one partition. Multiple ingester zones provide high availability on the read path.
 
-Ingesters choose what partition to consume from based on the suffix of their hostname.
-For example if the hostname of the ingester is `ingester-zone-a-13`, the this ingester will consume from partition 13.
-Each ingester persist the partition offset up to which it has consumed records in a Kafka consumer group that it doesn't share with other ingesters.
+Ingesters choose which partition to consume from based on the suffix of their hostname.
+For example, if the hostname of the ingester is `ingester-zone-a-13`, then this ingester consumes from partition 13.
+Each ingester persists the partition offset up to which it has consumed records in a Kafka consumer group that it doesn't share with other ingesters.
 
-Ingesters continuously consume samples from Kafka and append them to the specific per-tenant timeseries database (TSDB) that is stored on the local disk.
-The per-tenant TSDB in the ingester is lazily created in each ingester as soon as the first samples are received for that tenant.
+Ingesters continuously consume samples from Kafka and append them to the tenant-specific time series database (TSDB) stored on the local disk.
+The tenant-specific TSDB in the ingester is lazily created when the first samples are received for that tenant.
 The samples that are received are both kept in-memory and written to a write-ahead log (WAL).
 If the ingester abruptly terminates, the WAL can help to recover the in-memory series.
 After the ingester recovers from the downtime and has replayed the local WAL,
 it resumes consuming from Kafka from the offset stored in its consumer group.
-Using this technique the ingester never misses a sample written to Kafka and observes samples in the same order as other ingesters consuming the same partition.
+Using this technique, the ingester never misses a sample written to Kafka and observes samples in the same order as other ingesters consuming the same partition.
 
 The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
 By default, this occurs every two hours.
@@ -88,8 +85,8 @@ For example, when running in the cloud, include an AWS EBS volume or a GCP Persi
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The locations of the WAL and the local TSDB blocks cannot be decoupled.
 
-Optionally, in the ingest storage architecture the block-builder can take the responsibility of building TSDB blocks from
-records in Kafka and uploads them to long-term storage.
+Optionally, in ingest storage architecture, the block-builder can take responsibility for building TSDB blocks from
+records in Kafka and uploading them to long-term storage.
 <!-- dimitarvdimitrov: I'm not sure we should mention the block-builder since it's still a component in development and not stable and ready for production use. After reading this a secondt ime, i'm tempted to not include docs about the block builder now -->
 
 For more information, refer to [timeline of block uploads](../../manage/run-production-environment/production-tips/#how-to-estimate--querierquery-store-after) and [Ingester](../../references/architecture/components/ingester/).
@@ -100,7 +97,7 @@ Queries coming into Grafana Mimir arrive at the [query-frontend](../../reference
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
 
-For queries requiring strong read consistency (with the `X-Read-Consistency: strong` HTTP header) the query-frontend retrieves the offsets of each partition from the Kafka topic and propagates it through the read path to ignesters. For more information refer to [Data freshness on the read path](#data-freshness-on-the-read-path) mentioned later.
+For queries requiring strong read consistency, with the `X-Read-Consistency: strong` HTTP header, the query-frontend retrieves the offsets of each partition from the Kafka topic and propagates it through the read path to ingesters. For more information, refer to [Data freshness on the read path](#data-freshness-on-the-read-path).
 
 {{< admonition type="note" >}}
 If you run the optional [query-scheduler](../../references/architecture/components/query-scheduler/) component, the query-schedule maintains the queue instead of the query-frontend.
@@ -114,19 +111,19 @@ After the querier executes the query, it returns the results to the query-fronte
 
 #### Data freshness on the read path
 
-Ingesters consume from Kafka asynchronously of serving queries. By default ingesters do not take any explicit action to make sure that any samples written to Kafka have been appended to the in-memory TSDB and on-disk WAL before a query is received. This allows ingesters to whitstand Kafka outages without rejeceting queries. The impact of Kafka outages is that
-queries that ingesters serve may return stale data and not provide a read-after-write guarantee.
+Ingesters consume from Kafka asynchronously from serving queries. By default, ingesters don't take any explicit action to make sure that samples written to Kafka have been appended to the in-memory TSDB and on-disk WAL before a query is received. This allows ingesters to whitstand Kafka outages without rejecting queries. The impact of Kafka outages is that
+queries that ingesters serve may return stale data and don't provide a read-after-write guarantee.
 
-During normal operations the delay in ingesting data in ingesters should be below 1 second. This is also know as the end-to-end latency of ingestion.
+During normal operations, the delay in ingesting data in ingesters should be below 1 second. This is also known as the end-to-end latency of ingestion.
 
-While the end-to-end latency is usually insignificant for interactive queries, it may poses a challenge for applications that need a guarantee that queries observe all previous writes.
+While the end-to-end latency is usually insignificant for interactive queries, it may pose a challenge for applications that need a guarantee that queries observe all previous writes.
 One such application is the Mimir [ruler](../../references/architecture/components/ruler) when it evaluates a rule group. The ruler needs samples of earlier rules in the same rule group to be available
-when evaluating later rules in the rule group.
+when it evaluates later rules in the rule group.
 
-In order to preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
-When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all in-use partitions and propagates these offsets to ingesters. Each ingester then waits until it has consumed up to the specified offset for its partition before executing the query. This ensures that the query observes all samples that were written to Kafka before the query was received by the query-frontend, providing strong read consistency at the cost of increased query latency.
+To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
+When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all in-use partitions and propagates these offsets to ingesters. Each ingester then waits until it has consumed up to the specified offset for its partition before running the query. This ensures that the query observes all samples that were written to Kafka before the query was received by the query-frontend, providing strong read consistency at the cost of increased query latency.
 
-By default the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query. This is configurable via `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (TODO dimitarvdimitrov: do we want to mention the flag here? it sounds like it's too much details for an architecture overview).
+By default the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query. You can configure this via `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (TODO dimitarvdimitrov: do we want to mention the flag here? it sounds like it's too much details for an architecture overview).
 
 ## The role of Prometheus
 
@@ -161,10 +158,10 @@ For more information, refer to [configure object storage](../../configure/config
 
 ## Kafka
 
-Kafka is a central part of the ingest storage architecture. It is responsible for replicating and durably persisting incoming data
+Kafka is a central part of ingest storage architecture. It's  responsible for replicating and durably persisting incoming data
 and for making this data available to ingesters.
 
-Mimir's usage of the Kafka protocol is limited, which allows to use many Kafka-compatible solutions.
+The use of Kafka protocol in Mimir is limited, which allows you to use many Kafka-compatible solutions.
 
 ### How Mimir uses Kafka
 <!-- TODO dimitarvdimitrov: here' i'm not sure about the best way to structure this content. Would a table be better? -->
