@@ -70,33 +70,37 @@ func generateActivityDescription(ctx context.Context, query string, stage string
 		sep = " "
 	}
 
-	buf.WriteString(sep)
-	buf.WriteString("query=")
-	buf.WriteString(query)
-
 	if stage != "" {
-		buf.WriteString(" ")
+		buf.WriteString(sep)
 		buf.WriteString("stage=")
 		buf.WriteString(stage)
+		sep = " "
 	}
 
 	if includeTimeRange {
-		buf.WriteString(" ")
+		buf.WriteString(sep)
 
 		if timeRange.IsInstant {
-			buf.WriteString("instant_ts=")
+			buf.WriteString("instant_ts_ms=")
 			buf.WriteString(strconv.FormatInt(timeRange.StartT, 10))
 		} else {
-			buf.WriteString("start_ts=")
+			buf.WriteString("start_ts_ms=")
 			buf.WriteString(strconv.FormatInt(timeRange.StartT, 10))
 			buf.WriteString(" ")
-			buf.WriteString("end_ts=")
+			buf.WriteString("end_ts_ms=")
 			buf.WriteString(strconv.FormatInt(timeRange.EndT, 10))
 			buf.WriteString(" ")
 			buf.WriteString("interval_ms=")
 			buf.WriteString(strconv.FormatInt(timeRange.IntervalMilliseconds, 10))
 		}
+
+		sep = " "
 	}
+
+	// Put the query last, so that all the other information is still present if the query is long and is truncated during logging.
+	buf.WriteString(sep)
+	buf.WriteString("query=")
+	buf.WriteString(strconv.Quote(query))
 
 	return buf.String()
 }
