@@ -194,6 +194,12 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
 		if _, err := b.consumeJob(context.WithoutCancel(ctx), key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+
+			if err := b.schedulerClient.FailJob(key); err != nil {
+				level.Error(b.logger).Log("msg", "failed to fail job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+				panic("couldn't fail job")
+			}
+
 			continue
 		}
 
