@@ -38,7 +38,7 @@ jobs:
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
