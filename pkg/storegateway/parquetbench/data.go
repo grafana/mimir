@@ -27,7 +27,6 @@ import (
 )
 
 func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string) (bkt objstore.Bucket, mint, maxt int64) {
-
 	ctx := context.Background()
 
 	st := teststorage.New(b)
