@@ -1104,7 +1104,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+			require.NoError(t, err)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
@@ -1219,7 +1220,8 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 	observer := NoopPlanningObserver{}
 
 	opts := NewTestEngineOpts()
-	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	require.NoError(t, err)
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1253,7 +1255,8 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(b, err)
 	ctx := context.Background()
 
 	for _, expr := range testCases {
@@ -1306,16 +1309,17 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
-	opts.CommonOpts.ActiveQueryTracker = tracker
-	planner := NewQueryPlanner(opts)
+	opts.ActiveQueryTracker = tracker
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(t, err)
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err := planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{
-		{expr: "test # (planning)", deleted: true},
+		{expr: "test", stage: "planning", timeRange: timeRange, deleted: true},
 	}
 
 	require.Equal(t, expectedPlanningActivities, tracker.queries)
@@ -1560,7 +1564,8 @@ func TestAnalysisHandler(t *testing.T) {
 		},
 	}
 
-	planner := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
+	require.NoError(t, err)
 	handler := AnalysisHandler(planner)
 
 	for name, testCase := range testCases {

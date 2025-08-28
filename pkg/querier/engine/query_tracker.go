@@ -5,17 +5,19 @@ package engine
 import (
 	"bytes"
 	"context"
+	"strconv"
 
 	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
 	"github.com/grafana/dskit/tracing"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
 )
 
 var tracer = otel.Tracer("pkg/querier/engine")
 
-// queryTracker implements promql.QueryTracker interface and can be used by PromQL engine for tracking queries.
+// queryTracker implements promql.QueryTracker and streamingpromql.QueryTracker interfaces and can be used by PromQL engine for tracking queries.
 type queryTracker struct {
 	tracker *activitytracker.ActivityTracker
 }
@@ -35,13 +37,21 @@ func (q *queryTracker) GetMaxConcurrent() int {
 
 func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {
 	id := q.tracker.Insert(func() string {
-		return generateActivityDescription(ctx, query)
+		return generateActivityDescription(ctx, query, "", types.QueryTimeRange{}, false)
 	})
 
 	return id, nil
 }
 
-func generateActivityDescription(ctx context.Context, query string) string {
+func (q *queryTracker) InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error) {
+	id := q.tracker.Insert(func() string {
+		return generateActivityDescription(ctx, query, stage, timeRange, true)
+	})
+
+	return id, nil
+}
+
+func generateActivityDescription(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange, includeTimeRange bool) string {
 	buf := bytes.Buffer{}
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
 
@@ -63,6 +73,30 @@ func generateActivityDescription(ctx context.Context, query string) string {
 	buf.WriteString(sep)
 	buf.WriteString("query=")
 	buf.WriteString(query)
+
+	if stage != "" {
+		buf.WriteString(" ")
+		buf.WriteString("stage=")
+		buf.WriteString(stage)
+	}
+
+	if includeTimeRange {
+		buf.WriteString(" ")
+
+		if timeRange.IsInstant {
+			buf.WriteString("instant_ts=")
+			buf.WriteString(strconv.FormatInt(timeRange.StartT, 10))
+		} else {
+			buf.WriteString("start_ts=")
+			buf.WriteString(strconv.FormatInt(timeRange.StartT, 10))
+			buf.WriteString(" ")
+			buf.WriteString("end_ts=")
+			buf.WriteString(strconv.FormatInt(timeRange.EndT, 10))
+			buf.WriteString(" ")
+			buf.WriteString("interval_ms=")
+			buf.WriteString(strconv.FormatInt(timeRange.IntervalMilliseconds, 10))
+		}
+	}
 
 	return buf.String()
 }
