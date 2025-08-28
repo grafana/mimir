@@ -35,24 +35,26 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	defer reuseSymbolsTable(symbols)
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
-	var metadataMap map[string]*MetricMetadata
-	var extraMetadata []*MetricMetadata
+	// If our request has both metadata and timeseries, we can try to match.
+	var metadataMap map[string]int // Metric name -> index of the first metadata, in the Metadata slice.
+	var matchedMetadataMask []bool
 	if len(rw1.Metadata) > 0 && len(rw1.Timeseries) > 0 {
-		metadataMap = make(map[string]*MetricMetadata, len(rw1.Metadata))
+		metadataMap = make(map[string]int, len(rw1.Metadata))
+		matchedMetadataMask = make([]bool, len(rw1.Metadata))
 		// Very rarely, a request might send multiple conflicting metadatas for the same metric.
 		// For example, in Prometheus this can happen on the border of a metric churning,
 		// if new and old versions of the same metadata are scraped from different processes and end up in the same batch.
 		//
 		// The Prometheus behavior for RW1.0 is to store *both* metadatas and not take any preference.
-		// extraMetadata is used to carry duplicates of existing metadata entries that don't match, so we can propagate them at the end.
-		// We don't preallocate any size here, because this should be extremely rare, most metadata requests won't have anything here.
-		extraMetadata = make([]*MetricMetadata, 0)
-		for _, meta := range rw1.Metadata {
-			if seen, ok := metadataMap[meta.MetricFamilyName]; !ok {
-				metadataMap[meta.MetricFamilyName] = meta
+		// So, we only pick the first metadata matching a name as a candidate to be matched.
+		// Any other metadata for the same name will be picked up later.
+		for i := range rw1.Metadata {
+			if seenIdx, ok := metadataMap[rw1.Metadata[i].MetricFamilyName]; !ok {
+				metadataMap[rw1.Metadata[i].MetricFamilyName] = i
 			} else {
-				if !meta.Equal(seen) {
-					extraMetadata = append(extraMetadata, meta)
+				// If we see a duplicate metadata, skip sending it to save on some space.
+				if rw1.Metadata[i].Equal(rw1.Metadata[seenIdx]) {
+					matchedMetadataMask[i] = true
 				}
 			}
 		}
@@ -71,9 +73,9 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 
 		var metadata MetadataRW2
 		if len(metadataMap) > 0 {
-			if rw1Metadata, ok := metadataMap[metricName]; ok {
-				metadata = FromMetricMetadataToMetadataRW2(rw1Metadata, symbols)
-				delete(metadataMap, metricName)
+			if rw1MetadataIdx, ok := metadataMap[metricName]; ok {
+				metadata = FromMetricMetadataToMetadataRW2(rw1.Metadata[rw1MetadataIdx], symbols)
+				matchedMetadataMask[rw1MetadataIdx] = true
 			}
 		}
 
@@ -88,16 +90,14 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	// If there are extra metadata not associated with any timeseries, we fabricate an empty timeseries to carry it.
-	for _, meta := range rw1.Metadata {
+	for i := range rw1.Metadata {
 		// If we are matching metadata to series, and we already matched this metadata, we can skip it.
-		if metadataMap != nil {
-			if _, ok := metadataMap[meta.MetricFamilyName]; !ok {
-				continue
-			}
+		if matchedMetadataMask != nil && matchedMetadataMask[i] {
+			continue
 		}
 
-		labelsRefs := []uint32{symbols.Symbolize(labels.MetricName), symbols.Symbolize(meta.MetricFamilyName)}
-		rw2meta := FromMetricMetadataToMetadataRW2(meta, symbols)
+		labelsRefs := []uint32{symbols.Symbolize(labels.MetricName), symbols.Symbolize(rw1.Metadata[i].MetricFamilyName)}
+		rw2meta := FromMetricMetadataToMetadataRW2(rw1.Metadata[i], symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
 			LabelsRefs: labelsRefs,
 			Metadata:   rw2meta,
