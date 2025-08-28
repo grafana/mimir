@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -32,11 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/atomic"
-	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -69,12 +65,9 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
-	errInvalidPlanningMode                        = fmt.Errorf("invalid compactor mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
-	errInvalidSchedulerAddress                    = fmt.Errorf("scheduler address is required when compactor mode is %q", planningModeScheduler)
+	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
+	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address. Required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("scheduler update interval must be positive")
-	errInvalidSchedulerMaxUpdateAge               = fmt.Errorf("scheduler max update age must be at least twice the update interval")
-	errInvalidOpForSchedulingMode                 = fmt.Errorf("invalid operation for scheduling mode")
-	errCannotWriteActiveJob                       = fmt.Errorf("cannot write active job")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -152,11 +145,13 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Scheduler mode options
-	SchedulingMode          string            `yaml:"scheduling_mode" category:"experimental"`
-	SchedulerAddress        string            `yaml:"scheduler_address" category:"advanced"`
-	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"advanced"`
-	SchedulerMaxUpdateAge   time.Duration     `yaml:"scheduler_max_update_age" category:"advanced"`
-	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" category:"advanced"`
+	PlanningMode            string            `yaml:"planning_mode" category:"experimental"`
+	SchedulerAddress        string            `yaml:"scheduler_address" category:"experimental"`
+	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
+	SchedulerMaxJobDuration time.Duration     `yaml:"scheduler_max_job_duration" category:"experimental"`
+	SchedulerMinBackoff     time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
+	SchedulerMaxBackoff     time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
+	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -179,10 +174,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
-	f.StringVar(&cfg.SchedulingMode, "compactor.scheduling-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
+	f.StringVar(&cfg.PlanningMode, "compactor.scheduling-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
 	f.StringVar(&cfg.SchedulerAddress, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
 	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
-	f.DurationVar(&cfg.SchedulerMaxUpdateAge, "compactor.scheduler-max-update-age", 60*time.Minute, "Maximum age of completed jobs to continue sending to the scheduler.")
+	f.DurationVar(&cfg.SchedulerMaxJobDuration, "compactor.scheduler-max-job-duration", 6*time.Hour, "Maximum duration for a compaction job before it is cancelled.")
+	f.DurationVar(&cfg.SchedulerMinBackoff, "compactor.scheduler-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.SchedulerMaxBackoff, "compactor.scheduler-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
@@ -235,19 +232,25 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		return errInvalidCompactionOrder
 	}
 
-	if !util.StringsContain(CompactionPlanningModes, cfg.SchedulingMode) {
+	if !slices.Contains(CompactionPlanningModes, cfg.PlanningMode) {
 		return errInvalidPlanningMode
 	}
 
-	if cfg.SchedulingMode == planningModeScheduler {
+	if cfg.PlanningMode == planningModeScheduler {
 		if strings.TrimSpace(cfg.SchedulerAddress) == "" {
 			return errInvalidSchedulerAddress
 		}
 		if cfg.SchedulerUpdateInterval <= 0 {
 			return errInvalidSchedulerUpdateInterval
 		}
-		if cfg.SchedulerMaxUpdateAge < cfg.SchedulerUpdateInterval*2 {
-			return errInvalidSchedulerMaxUpdateAge
+		if cfg.SchedulerMaxJobDuration <= 0 {
+			return fmt.Errorf("scheduler max job duration must be positive")
+		}
+		if cfg.SchedulerMinBackoff <= 0 {
+			return fmt.Errorf("scheduler min backoff must be positive")
+		}
+		if cfg.SchedulerMaxBackoff <= cfg.SchedulerMinBackoff {
+			return fmt.Errorf("scheduler max backoff must be greater than min backoff")
 		}
 	}
 
@@ -299,14 +302,6 @@ type ConfigProvider interface {
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
 }
 
-// activeJob tracks a job currently being processed by the compactor.
-type activeJob struct {
-	key        *schedulerpb.JobKey
-	tenant     string
-	startTime  time.Time
-	lastUpdate time.Time
-}
-
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
 type MultitenantCompactor struct {
 	services.Service
@@ -334,13 +329,8 @@ type MultitenantCompactor struct {
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
 
-	// Scheduler client for requesting jobs when in scheduler mode.
-	schedulerClient schedulerpb.CompactorSchedulerClient
-	schedulerConn   *grpc.ClientConn
-
-	// Job lease keep-alive management
-	activeJobMu sync.RWMutex
-	activeJob   *activeJob
+	// CompactionExecutor used to set the planning and compaction strategy
+	executor CompactionExecutor
 
 	// Ring used for sharding compactions.
 	ringLifecycler         *ring.BasicLifecycler
@@ -526,28 +516,6 @@ func newMultitenantCompactor(
 	return c, nil
 }
 
-func (c *MultitenantCompactor) makeSchedulerClient() (schedulerpb.CompactorSchedulerClient, *grpc.ClientConn, error) {
-
-	opts, err := c.compactorCfg.GRPCClientConfig.DialOption(
-		nil,
-		nil,
-		util.NewInvalidClusterValidationReporter(c.compactorCfg.GRPCClientConfig.ClusterValidation.Label, c.invalidClusterValidation, c.logger),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
-	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(c.compactorCfg.SchedulerAddress, opts...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	client := schedulerpb.NewCompactorSchedulerClient(conn)
-	return client, conn, nil
-}
-
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -573,11 +541,15 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return err
 	}
 
-	// Initialize scheduler client.
-	if c.compactorCfg.SchedulingMode == planningModeScheduler {
-		if c.schedulerClient, c.schedulerConn, err = c.makeSchedulerClient(); err != nil {
-			return errors.Wrap(err, "failed to create scheduler client")
+	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
+	// will periodically request to lease a job from a central scheduler at cfg.SchedulerAddress.
+	if c.compactorCfg.PlanningMode == planningModeScheduler {
+		c.executor, err = NewSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
+		if err != nil {
+			return errors.Wrap(err, "failed to create scheduler executor")
 		}
+	} else {
+		c.executor = &StandaloneExecutor{}
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -683,8 +655,11 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 func (c *MultitenantCompactor) stopping(_ error) error {
 	ctx := context.Background()
 
-	if c.schedulerConn != nil {
-		c.schedulerConn.Close()
+	// Stop executor first to clean up any resources
+	if c.executor != nil {
+		if err := c.executor.Stop(); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to stop executor", "err", err)
+		}
 	}
 
 	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
@@ -695,225 +670,7 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 }
 
 func (c *MultitenantCompactor) running(ctx context.Context) error {
-	if c.compactorCfg.SchedulingMode == planningModeStandalone {
-		return c.runStandalone(ctx)
-	}
-	c.startJobStatusUpdates(ctx)
-	return c.runAsWorker(ctx)
-}
-
-func (c *MultitenantCompactor) runStandalone(ctx context.Context) error {
-	// Run an initial compaction before starting the interval.
-	c.compactUsers(ctx)
-
-	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			c.compactUsers(ctx)
-		case <-ctx.Done():
-			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return errors.Wrap(err, "compactor subservice failed")
-		}
-	}
-}
-
-func (c *MultitenantCompactor) runAsWorker(ctx context.Context) error {
-
-	// Generate a unique worker ID for this compactor instance
-	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
-
-	level.Info(c.logger).Log("msg", "compactor running in worker mode", "scheduler_endpoint", c.compactorCfg.SchedulerAddress, "worker_id", workerID)
-
-	b := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: c.compactorCfg.CompactionInterval,
-	})
-
-	for {
-
-		work, err := c.leaseAndExecuteJob(ctx, workerID)
-		if err != nil {
-			level.Warn(c.logger).Log("msg", "failed to lease or execute job", "err", err)
-		}
-
-		if work {
-			b.Reset()
-		}
-
-		select {
-		case <-time.After(b.NextDelay()):
-			continue
-		case <-ctx.Done():
-			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return errors.Wrap(err, "compactor subservice failed")
-		}
-	}
-}
-
-func (c *MultitenantCompactor) leaseAndExecuteJob(ctx context.Context, workerID string) (bool, error) {
-	req := &schedulerpb.LeaseJobRequest{
-		WorkerId: workerID,
-	}
-
-	resp, err := c.schedulerClient.LeaseJob(ctx, req)
-	if err != nil {
-		level.Warn(c.logger).Log("msg", "failed to lease job from scheduler", "err", err)
-		return false, err
-	}
-
-	if resp.Key == nil || resp.Spec == nil {
-		return false, nil
-	}
-
-	level.Info(c.logger).Log("msg", "leased job from scheduler", "job_id", resp.Key.Id, "tenant", resp.Spec.Tenant)
-
-	// Track the job and send keep-alive updates
-	if err := c.setActiveJob(resp.Key, resp.Spec.Tenant); err != nil {
-		return true, err
-	}
-
-	defer func() {
-		// TODO: handle failing unset
-		if uerr := c.unsetActiveJob(resp.Key.Id); uerr != nil {
-			err = uerr
-		}
-	}()
-
-	if err := c.updateJobStatus(ctx, resp.Key, resp.Spec.Tenant, schedulerpb.IN_PROGRESS); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to mark job as in progress", "job_id", resp.Key.Id, "err", err)
-	}
-
-	updType, err := c.executeCompactionJob(ctx, resp.Spec)
-	if err != nil {
-		return true, err
-	}
-
-	if err := c.updateJobStatus(ctx, resp.Key, resp.Spec.Tenant, updType); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to update job status", "job_id", resp.Key.Id, "update_type", updType, "err", err)
-		return true, err
-	}
-	return true, nil
-}
-
-func (c *MultitenantCompactor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, tenant string, updType schedulerpb.UpdateType) error {
-	req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: tenant, Update: updType}
-	_, err := c.schedulerClient.UpdateCompactionJob(ctx, req)
-	return err
-}
-
-func (c *MultitenantCompactor) executeCompactionJob(ctx context.Context, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, error) {
-	return schedulerpb.COMPLETE, nil
-}
-
-// startJobUpdates sends periodic keep-alive updates to the scheduler and removes jobs that have exceeded
-// max job
-func (c *MultitenantCompactor) startJobStatusUpdates(ctx context.Context) {
-	if c.compactorCfg.SchedulingMode != planningModeScheduler {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(c.compactorCfg.SchedulerUpdateInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				c.sendInProgressUpdates()
-				c.cleanupExpiredJobs()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-}
-
-// sendInProgressUpdates sends IN_PROGRESS update for the active job if any
-func (c *MultitenantCompactor) sendInProgressUpdates() {
-	c.activeJobMu.RLock()
-	job := c.activeJob
-	c.activeJobMu.RUnlock()
-
-	if job == nil {
-		return // No active job to update
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	if err := c.updateJobStatus(ctx, job.key, job.tenant, schedulerpb.IN_PROGRESS); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to send keep-alive update", "job_id", job.key.Id, "err", err)
-	} else {
-		// Update last update time on success
-		c.activeJobMu.Lock()
-		if c.activeJob != nil && c.activeJob.key.Id == job.key.Id {
-			c.activeJob.lastUpdate = time.Now()
-		}
-		c.activeJobMu.Unlock()
-	}
-}
-
-// cleanupExpiredJobs removes the active job if it has been open for too long
-func (c *MultitenantCompactor) cleanupExpiredJobs() {
-	c.activeJobMu.Lock()
-	defer c.activeJobMu.Unlock()
-
-	if c.activeJob == nil {
-		return
-	}
-
-	// TODO: make these extendable, e.g. set expiration time rather than constant +1h
-	now := time.Now()
-	age := now.Sub(c.activeJob.startTime)
-	if age > c.compactorCfg.SchedulerMaxUpdateAge {
-		level.Info(c.logger).Log("msg", "removing expired job", "job_id", c.activeJob.key.Id, "age", age)
-		c.activeJob = nil
-	}
-}
-
-// setActiveJob sets the active job for keep-alive updates
-func (c *MultitenantCompactor) setActiveJob(key *schedulerpb.JobKey, tenant string) error {
-	if c.compactorCfg.SchedulingMode != planningModeScheduler {
-		return errInvalidOpForSchedulingMode
-	}
-
-	c.activeJobMu.Lock()
-	defer c.activeJobMu.Unlock()
-
-	if c.activeJob != nil {
-		return errCannotWriteActiveJob
-	}
-
-	now := time.Now()
-	c.activeJob = &activeJob{key: key, tenant: tenant, startTime: now, lastUpdate: now}
-	return nil
-}
-
-// unsetActiveJob clears the active job tracking
-func (c *MultitenantCompactor) unsetActiveJob(currentId string) error {
-	if c.compactorCfg.SchedulingMode != planningModeScheduler {
-		return errInvalidOpForSchedulingMode
-	}
-
-	c.activeJobMu.Lock()
-	defer c.activeJobMu.Unlock()
-
-	if c.activeJob == nil {
-		return nil
-	}
-
-	// clear current job only if it matches the expected job
-	if c.activeJob.key.Id != currentId {
-		return errCannotWriteActiveJob
-	}
-
-	c.activeJob = nil
-	return nil
+	return c.executor.Run(ctx, c)
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {

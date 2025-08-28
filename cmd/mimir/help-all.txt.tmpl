@@ -1134,11 +1134,15 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.scheduler-endpoint string
-    	Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.
-  -compactor.scheduler-max-update-age duration
-    	Maximum age of completed jobs to continue sending to the scheduler. (default 1h0m0s)
+    	[experimental] Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.
+  -compactor.scheduler-max-backoff duration
+    	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
+  -compactor.scheduler-max-job-duration duration
+    	[experimental] Maximum duration for a compaction job before it is cancelled. (default 6h0m0s)
+  -compactor.scheduler-min-backoff duration
+    	[experimental] Minimum backoff time between scheduler job lease requests. (default 100ms)
   -compactor.scheduler-update-interval duration
-    	Interval between scheduler job lease updates. (default 15s)
+    	[experimental] Interval between scheduler job lease updates. (default 15s)
   -compactor.scheduler.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -compactor.scheduler.backoff-min-period duration

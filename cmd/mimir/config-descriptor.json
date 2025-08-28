@@ -11232,7 +11232,7 @@
         },
         {
           "kind": "field",
-          "name": "scheduling_mode",
+          "name": "planning_mode",
           "required": false,
           "desc": "Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler).",
           "fieldValue": null,
@@ -11250,7 +11250,7 @@
           "fieldDefaultValue": "",
           "fieldFlag": "compactor.scheduler-endpoint",
           "fieldType": "string",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -11261,18 +11261,40 @@
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "compactor.scheduler-update-interval",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
-          "name": "scheduler_max_update_age",
+          "name": "scheduler_max_job_duration",
           "required": false,
-          "desc": "Maximum age of completed jobs to continue sending to the scheduler.",
+          "desc": "Maximum duration for a compaction job before it is cancelled.",
           "fieldValue": null,
-          "fieldDefaultValue": 3600000000000,
-          "fieldFlag": "compactor.scheduler-max-update-age",
+          "fieldDefaultValue": 21600000000000,
+          "fieldFlag": "compactor.scheduler-max-job-duration",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "scheduler_min_backoff",
+          "required": false,
+          "desc": "Minimum backoff time between scheduler job lease requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 100000000,
+          "fieldFlag": "compactor.scheduler-min-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "scheduler_max_backoff",
+          "required": false,
+          "desc": "Maximum backoff time between scheduler job lease requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 120000000000,
+          "fieldFlag": "compactor.scheduler-max-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",

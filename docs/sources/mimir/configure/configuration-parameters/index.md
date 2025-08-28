@@ -5189,20 +5189,28 @@ sharding_ring:
 # (plan and execute compactions), scheduler (request jobs from a remote
 # scheduler).
 # CLI flag: -compactor.scheduling-mode
-[scheduling_mode: <string> | default = "standalone"]
+[planning_mode: <string> | default = "standalone"]
 
-# (advanced) Compactor scheduler endpoint. Required when compactor mode is
+# (experimental) Compactor scheduler endpoint. Required when compactor mode is
 # 'scheduler'.
 # CLI flag: -compactor.scheduler-endpoint
 [scheduler_address: <string> | default = ""]
 
-# (advanced) Interval between scheduler job lease updates.
+# (experimental) Interval between scheduler job lease updates.
 # CLI flag: -compactor.scheduler-update-interval
 [scheduler_update_interval: <duration> | default = 15s]
 
-# (advanced) Maximum age of completed jobs to continue sending to the scheduler.
-# CLI flag: -compactor.scheduler-max-update-age
-[scheduler_max_update_age: <duration> | default = 1h]
+# (experimental) Maximum duration for a compaction job before it is cancelled.
+# CLI flag: -compactor.scheduler-max-job-duration
+[scheduler_max_job_duration: <duration> | default = 6h]
+
+# (experimental) Minimum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-min-backoff
+[scheduler_min_backoff: <duration> | default = 100ms]
+
+# (experimental) Maximum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-max-backoff
+[scheduler_max_backoff: <duration> | default = 2m]
 
 # The grpc_client block configures the gRPC client used to communicate between
 # two Mimir components.
