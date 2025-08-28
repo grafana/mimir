@@ -988,7 +988,7 @@ func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, er
 		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
 	}
 	db := i.getTSDB(user)
-	// getTSDB may return nil if the userID isn't found in the ingester's tsdbs.
+	// If no user TSDB is found, we should not run lookup planning.
 	if db == nil {
 		return nil, fmt.Errorf("no TSDB found for user %s", user)
 	}
@@ -2754,12 +2754,12 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
-// When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
-// which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
+// When index lookup planning is enabled, it uses the CostBasedPlanner,
+// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+func (i *Ingester) getIndexLookupPlanner(r prometheus.Registerer) index.LookupPlanner {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return &index.ScanEmptyMatchersLookupPlanner{}
+		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
 	}
 	return lookupplan.NoopPlanner{}
 }
@@ -2905,7 +2905,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(),
+		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
