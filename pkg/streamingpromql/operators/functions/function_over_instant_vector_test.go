@@ -21,6 +21,7 @@ import (
 
 func TestFunctionOverInstantVector(t *testing.T) {
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, false)
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
@@ -67,6 +68,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, false)
 	tracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{

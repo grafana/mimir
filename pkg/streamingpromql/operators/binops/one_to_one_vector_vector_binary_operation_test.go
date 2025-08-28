@@ -632,9 +632,9 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
-				require.Empty(t, outputSeries)
+				require.Empty(t, outputSeries.Metadata)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
@@ -727,7 +727,7 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 
 			metadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata.Metadata)
 			types.SeriesMetadataSlicePool.Put(&metadata.Metadata, memoryConsumptionTracker)
 
 			// Read the first series.

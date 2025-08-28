@@ -33,7 +33,7 @@ func TestDropSeriesName(t *testing.T) {
 	}
 	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker, false)
 	require.NoError(t, err)
-	require.Equal(t, expected, modifiedMetadata)
+	require.Equal(t, expected, modifiedMetadata.Metadata)
 }
 
 func TestFloatTransformationFunc(t *testing.T) {

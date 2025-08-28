@@ -74,10 +74,10 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 							if timeRange.IsInstant {
 								// Instant queries will not return series with only histograms.
-								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(expectedOutputSeriesForInstantQuery), series)
+								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(expectedOutputSeriesForInstantQuery), series.Metadata)
 							} else {
 								// Range queries will return all input series, but those with histograms will return no data from NextSeries() below.
-								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(inputSeries), series)
+								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(inputSeries), series.Metadata)
 							}
 							types.SeriesMetadataSlicePool.Put(&series.Metadata, memoryConsumptionTracker)
 

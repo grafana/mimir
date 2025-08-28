@@ -127,7 +127,7 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 			outputSeries, err := hOp.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries.Metadata)
 		})
 	}
 }

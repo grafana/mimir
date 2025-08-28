@@ -96,7 +96,7 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries.Metadata)
 		})
 	}
 }
@@ -379,9 +379,9 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			require.NoError(t, err)
 
 			if testCase.allowExpectedSeriesInAnyOrder {
-				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
+				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series.Metadata)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series.Metadata)
 			}
 			types.SeriesMetadataSlicePool.Put(&series.Metadata, memoryConsumptionTracker)
 

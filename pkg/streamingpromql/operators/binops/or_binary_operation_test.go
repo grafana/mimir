@@ -292,6 +292,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
+			ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, false)
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
@@ -311,7 +312,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedSeriesMetadata := testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
-			require.Equal(t, expectedSeriesMetadata, actualSeriesMetadata)
+			require.Equal(t, expectedSeriesMetadata, actualSeriesMetadata.Metadata)
 		})
 	}
 }
@@ -544,9 +545,9 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
-				require.Empty(t, outputSeries)
+				require.Empty(t, outputSeries.Metadata)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
@@ -696,7 +697,7 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
 			types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
 			// Read the output series to trigger the loading of some intermediate state for at least one of the output groups.
 			for range testCase.closeAfterReadingIndex + 1 {

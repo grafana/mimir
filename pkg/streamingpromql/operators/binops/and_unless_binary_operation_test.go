@@ -321,9 +321,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
-				require.Empty(t, outputSeries)
+				require.Empty(t, outputSeries.Metadata)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
@@ -452,9 +452,9 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					require.NoError(t, err)
 
 					if isUnless {
-						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedUnlessOutputSeries), outputSeries)
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedUnlessOutputSeries), outputSeries.Metadata)
 					} else {
-						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries)
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries.Metadata)
 					}
 					types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
 
