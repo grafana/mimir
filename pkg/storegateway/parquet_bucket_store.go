@@ -111,7 +111,7 @@ func NewParquetBucketStore(
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
 	loadIndexToDisk bool,
-// Whether to stream results from the Parquet chunks file directly, instead of loading them all inmemory
+	// Whether to stream results from the Parquet chunks file directly, instead of loading them all inmemory
 	actuallyStreamChunks bool,
 	fileOpts []parquetStorage.FileOption,
 	chunksLimiterFactory ChunksLimiterFactory,

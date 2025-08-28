@@ -25,14 +25,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket/common"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
-
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
