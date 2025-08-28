@@ -982,6 +982,19 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
+func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
+	user, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
+	}
+	db := i.getTSDB(user)
+	// If no user TSDB is found, we should not run lookup planning.
+	if db == nil {
+		return nil, fmt.Errorf("no TSDB found for user %s", user)
+	}
+	return db.Head().PostingsStats(), nil
+}
+
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
@@ -2741,12 +2754,12 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
-// When index lookup planning is enabled, it uses the upstream ScanEmptyMatchersLookupPlanner
-// which can defer some vector selector matchers to sequential scans. Later we will replace with our own planner.
+// When index lookup planning is enabled, it uses the CostBasedPlanner,
+// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner() index.LookupPlanner {
+func (i *Ingester) getIndexLookupPlanner(r prometheus.Registerer) index.LookupPlanner {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return &index.ScanEmptyMatchersLookupPlanner{}
+		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
 	}
 	return lookupplan.NoopPlanner{}
 }
@@ -2892,7 +2905,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(),
+		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -3295,13 +3308,15 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Count the number of compactions in progress to keep the downscale handler from
 			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
 			i.numCompactionsInProgress.Inc()
-			defer i.numCompactionsInProgress.Dec()
 
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
+
+			// Decrement the counter after compaction is complete
+			i.numCompactionsInProgress.Dec()
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
@@ -3315,7 +3330,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 		case req := <-i.forceCompactTrigger:
 			// Note:
-			// Prepare compaction is not done here but before the force compaction is triggered.
+			// Inc/Dec numCompactionsInProgress is not done here but before the force compaction is triggered.
 			// This is because we want to track the number of compactions accurately before the
 			// downscale handler is called. This ensures that the ingester will never leave the
 			// read-only state. (See [Ingester.FlushHandler])

@@ -74,7 +74,7 @@ func TestPlanCosts(t *testing.T) {
 			allMatchers = append(allMatchers, tc.scanMatchers...)
 
 			// Create a scan-only plan with all matchers
-			p, err := newScanOnlyPlan(ctx, allMatchers, stats)
+			p, err := newScanOnlyPlan(ctx, stats, allMatchers)
 			require.NoError(t, err)
 
 			// Use index for the first N predicates (corresponding to index matchers)

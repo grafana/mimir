@@ -556,7 +556,10 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_HISTOGRAM_SUM,
 		// Label manipulation functions
 		functions.FUNCTION_LABEL_JOIN,
-		functions.FUNCTION_LABEL_REPLACE:
+		functions.FUNCTION_LABEL_REPLACE,
+		// Adaptive metrics reserved functions
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2:
 		return true
 
 	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)

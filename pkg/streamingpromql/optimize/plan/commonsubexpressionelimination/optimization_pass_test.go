@@ -610,7 +610,7 @@ func TestOptimizationPass(t *testing.T) {
 			var timeRange types.QueryTimeRange
 
 			if testCase.rangeQuery {
-				timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(-time.Hour), time.Minute)
+				timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
 			} else {
 				timeRange = types.NewInstantQueryTimeRange(time.Now())
 			}
