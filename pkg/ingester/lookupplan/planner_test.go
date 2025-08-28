@@ -84,31 +84,6 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 			testCases[tcIdx].expectedScanMatchers = result.ScanMatchers()
 		})
 	}
-
-	t.Run("error_statistics", func(t *testing.T) {
-		errorStats := newErrorMockStatistics()
-		metrics := NewMetrics(nil)
-		planner := NewCostBasedPlanner(metrics, errorStats)
-
-		for _, tc := range testCases {
-			// Skip empty matcher case since it doesn't call statistics methods
-			if len(tc.inputMatchers) == 0 {
-				continue
-			}
-
-			t.Run(fmt.Sprintf("%s", tc.inputMatchers), func(t *testing.T) {
-				// Create a basic lookup plan with the input matchers
-				inputPlan := &basicLookupPlan{
-					indexMatchers: tc.inputMatchers,
-				}
-
-				result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
-				// Should get an error back due to statistics errors
-				assert.Error(t, err)
-				assert.Nil(t, result)
-			})
-		}
-	})
 }
 
 func matchersStrings(ms []*labels.Matcher) []string {

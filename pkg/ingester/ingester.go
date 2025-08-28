@@ -2858,6 +2858,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		StripeSize:                               i.cfg.BlocksStorageConfig.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:                i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:                i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		HeadStatisticsCollectionFrequency:        i.cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency,
 		WALCompression:                           i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
 		WALSegmentSize:                           i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                     walReplayConcurrency,

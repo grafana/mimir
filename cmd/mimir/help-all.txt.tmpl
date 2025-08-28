@@ -807,6 +807,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.head-statistics-collection-frequency duration
+    	[experimental] How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.
   -blocks-storage.tsdb.index-lookup-planning-enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
