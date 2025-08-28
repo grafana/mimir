@@ -55,7 +55,12 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesM
 
 	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 && innerMetadata.DropName {
 		for i := range innerMetadata.Metadata {
+			d.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
 			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
+			err := d.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
+			if err != nil {
+				return types.NewEmptySeriesMetadataSet(), err
+			}
 		}
 	}
 
