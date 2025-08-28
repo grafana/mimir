@@ -46,12 +46,12 @@ func NewAbsentOverTime(
 	}
 }
 
-func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
@@ -71,7 +71,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 		return nil, err
 	}
 
-	for range innerMetadata {
+	for range innerMetadata.Metadata {
 		err := a.Inner.NextSeries(ctx)
 		if err != nil {
 			return nil, err
@@ -86,7 +86,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 			}
 		}
 	}
-	return metadata, nil
+	return &types.SeriesMetadataSet{Metadata: metadata, DropName: innerMetadata.DropName}, nil
 }
 
 func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

@@ -36,8 +36,8 @@ func TestInstantVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
 
 	// Read some data from the first consumer and ensure that it was buffered for the second consumer.
 	d, err := consumer1.NextSeries(ctx)
@@ -139,8 +139,8 @@ func TestInstantVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
 
 	// Read some data for the first consumer and ensure that it was buffered for the second consumer.
 	d, err := consumer1.NextSeries(ctx)
@@ -214,9 +214,9 @@ func TestInstantVectorOperator_Cloning(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
-	require.NotSame(t, &metadata1[0], &metadata2[0], "consumers should not share series metadata slices")
-	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	require.NotSame(t, &metadata1.Metadata[0], &metadata2.Metadata[0], "consumers should not share series metadata slices")
+	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
 
 	// Both consumers should get the same data, but not the same slice, and not the same histogram instances.
 	d1, err := consumer1.NextSeries(ctx)
@@ -282,7 +282,7 @@ func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
 
 	data, err := consumer1.NextSeries(ctx)
 	require.EqualError(t, err, "something went wrong reading data")
@@ -311,7 +311,7 @@ func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
 
 	data, err := consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -337,8 +337,8 @@ type failingInstantVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	return o.series, nil
+func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context) (*types.SeriesMetadataSet, error) {
+	return &types.SeriesMetadataSet{Metadata: o.series}, nil
 }
 
 func (o *failingInstantVectorOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

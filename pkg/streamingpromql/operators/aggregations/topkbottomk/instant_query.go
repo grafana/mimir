@@ -47,7 +47,7 @@ type InstantQuery struct {
 
 var _ types.InstantVectorOperator = &InstantQuery{}
 
-func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
@@ -62,17 +62,17 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&innerSeries, t.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries.Metadata, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
-	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries))
+	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries.Metadata))
 
 	// Go through each series and find / create its group, and keep track of how many series contribute to each group.
 	// We do this separately to the loop below so that we know the number of series in each group when we allocate
 	// each group's `series` slice inside accumulateValue - this allows us to avoid allocating a huge slice if the
 	// group only has a few series and `k` is large.
-	for _, series := range innerSeries {
+	for _, series := range innerSeries.Metadata {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -87,7 +87,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 
 	outputSeriesCount := 0
 
-	for idx, series := range innerSeries {
+	for idx, series := range innerSeries.Metadata {
 		g := seriesToGroups[idx]
 
 		data, err := t.Inner.NextSeries(ctx)
@@ -161,7 +161,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
-	return outputSeries, nil
+	return &types.SeriesMetadataSet{Metadata: outputSeries, DropName: innerSeries.DropName}, nil
 }
 
 func (t *InstantQuery) getK(ctx context.Context) error {

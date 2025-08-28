@@ -27,7 +27,7 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (t *TestOperator) SeriesMetadata(_ context.Context) (*types.SeriesMetadataSet, error) {
 	if len(t.Series) == 0 {
 		return nil, nil
 	}
@@ -45,7 +45,7 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 			return nil, err
 		}
 	}
-	return metadata, nil
+	return &types.SeriesMetadataSet{Metadata: metadata}, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

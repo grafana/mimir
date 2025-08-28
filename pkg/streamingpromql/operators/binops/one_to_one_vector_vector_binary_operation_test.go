@@ -653,7 +653,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
-			for outputSeriesIdx := range outputSeries {
+			for outputSeriesIdx := range outputSeries.Metadata {
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
@@ -674,7 +674,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 				}
 			}
 
-			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -728,7 +728,7 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			metadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
-			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&metadata.Metadata, memoryConsumptionTracker)
 
 			// Read the first series.
 			d, err := o.NextSeries(ctx)

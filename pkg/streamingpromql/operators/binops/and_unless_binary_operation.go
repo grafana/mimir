@@ -55,7 +55,7 @@ func NewAndUnlessBinaryOperation(
 	}
 }
 
-func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	series, err := a.computeSeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		a.Right.Close()
 	}
 
-	return series, nil
+	return &types.SeriesMetadataSet{Metadata: series}, nil
 }
 
 func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
@@ -88,9 +88,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 		return nil, err
 	}
 
-	if len(leftMetadata) == 0 {
+	if len(leftMetadata.Metadata) == 0 {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -99,11 +99,11 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, a.MemoryConsumptionTracker)
 
-	if len(rightMetadata) == 0 && !a.IsUnless {
+	if len(rightMetadata.Metadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -111,9 +111,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 	groupKeyFunc := vectorMatchingGroupKeyFunc(a.VectorMatching)
 
 	// Iterate through the left-hand series, and create groups for each based on the matching labels.
-	a.leftSeriesGroups = make([]*andGroup, 0, len(leftMetadata))
+	a.leftSeriesGroups = make([]*andGroup, 0, len(leftMetadata.Metadata))
 
-	for _, s := range leftMetadata {
+	for _, s := range leftMetadata.Metadata {
 		groupKey := groupKeyFunc(s.Labels)
 		group, exists := groupMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -127,9 +127,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 	}
 
 	// Iterate through the right-hand series, and find groups for each based on the matching labels.
-	a.rightSeriesGroups = make([]*andGroup, 0, len(rightMetadata))
+	a.rightSeriesGroups = make([]*andGroup, 0, len(rightMetadata.Metadata))
 
-	for idx, s := range rightMetadata {
+	for idx, s := range rightMetadata.Metadata {
 		groupKey := groupKeyFunc(s.Labels)
 		group, exists := groupMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -143,9 +143,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 	}
 
 	if a.IsUnless {
-		return a.computeUnlessSeriesMetadata(leftMetadata), nil
+		return a.computeUnlessSeriesMetadata(leftMetadata.Metadata), nil
 	}
-	return a.computeAndSeriesMetadata(leftMetadata), nil
+	return a.computeAndSeriesMetadata(leftMetadata.Metadata), nil
 }
 
 func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types.SeriesMetadata) []types.SeriesMetadata {

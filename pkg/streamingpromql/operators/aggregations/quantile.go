@@ -65,7 +65,7 @@ func NewQuantileAggregation(
 	return q, nil
 }
 
-func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	var err error
 	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
 	if err != nil {

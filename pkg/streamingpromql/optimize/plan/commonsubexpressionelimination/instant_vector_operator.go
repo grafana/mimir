@@ -52,14 +52,17 @@ func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplication
 	}
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+	var dropName bool
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
+		seriesMetadata, err := b.Inner.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, err
 		}
+		b.seriesMetadata = seriesMetadata.Metadata
+		dropName = seriesMetadata.DropName
 	}
 
 	b.seriesMetadataCount++
@@ -69,7 +72,7 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]
 		metadata := b.seriesMetadata
 		b.seriesMetadata = nil
 
-		return metadata, nil
+		return &types.SeriesMetadataSet{Metadata: metadata, DropName: dropName}, nil
 	}
 
 	// Return a copy of the original series metadata.
@@ -79,7 +82,11 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]
 		return nil, err
 	}
 
-	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
+	result, err := types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
+	if err != nil {
+		return nil, err
+	}
+	return &types.SeriesMetadataSet{Metadata: result, DropName: dropName}, nil
 }
 
 func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
@@ -234,7 +241,7 @@ type InstantVectorDuplicationConsumer struct {
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	return d.Buffer.SeriesMetadata(ctx)
 }
 

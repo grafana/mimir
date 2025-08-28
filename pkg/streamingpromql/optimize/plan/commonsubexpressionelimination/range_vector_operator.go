@@ -59,14 +59,17 @@ func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationCons
 	}
 }
 
-func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+	var dropName bool
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
+		seriesMetadata, err := b.Inner.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, err
 		}
+		b.seriesMetadata = seriesMetadata.Metadata
+		dropName = seriesMetadata.DropName
 	}
 
 	b.seriesMetadataCount++
@@ -76,7 +79,7 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]ty
 		metadata := b.seriesMetadata
 		b.seriesMetadata = nil
 
-		return metadata, nil
+		return &types.SeriesMetadataSet{Metadata: metadata, DropName: dropName}, nil
 	}
 
 	// Return a copy of the original series metadata.
@@ -86,7 +89,11 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]ty
 		return nil, err
 	}
 
-	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
+	result, err := types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
+	if err != nil {
+		return nil, err
+	}
+	return &types.SeriesMetadataSet{Metadata: result, DropName: dropName}, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) error {
@@ -324,7 +331,7 @@ type RangeVectorDuplicationConsumer struct {
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
 
-func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	return d.Buffer.SeriesMetadata(ctx)
 }
 

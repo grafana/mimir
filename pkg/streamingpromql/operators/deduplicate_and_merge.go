@@ -34,7 +34,7 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
 	if !ok {
 		return nil, types.ErrEnableDelayedNameRemovalNotFound
@@ -53,13 +53,17 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 		return nil, err
 	}
 
-	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 {
-		for i := range innerMetadata {
-			innerMetadata[i].Labels = innerMetadata[i].Labels.DropMetricName()
+	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 && innerMetadata.DropName {
+		for i := range innerMetadata.Metadata {
+			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
 		}
 	}
 
-	if !types.HasDuplicateSeries(innerMetadata) {
+	if innerMetadata == nil {
+		innerMetadata = &types.SeriesMetadataSet{}
+	}
+
+	if !types.HasDuplicateSeries(innerMetadata.Metadata) {
 		// Common case: there are definitely no duplicate series, so we don't need to do anything special in this operator.
 		// We can just return series as-is from the inner operator.
 		d.passthrough = true
@@ -68,16 +72,16 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	}
 
 	// We might have duplicates (or HasDuplicateSeries hit a hash collision). Determine the merged output series.
-	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata)
+	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata.Metadata)
 	if err != nil {
 		return nil, err
 	}
 
 	d.groups = groups
-	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&innerMetadata, d.MemoryConsumptionTracker)
+	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata.Metadata), d.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, d.MemoryConsumptionTracker)
 
-	return outputMetadata, nil
+	return &types.SeriesMetadataSet{Metadata: outputMetadata}, nil
 }
 
 func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata, error) {

@@ -199,7 +199,7 @@ func NewGroupedVectorVectorBinaryOperation(
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
@@ -235,7 +235,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, g.MemoryConsumptionTracker)
 	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, lastManySideSeriesUsedIndex, g.MemoryConsumptionTracker)
 
-	return allMetadata, nil
+	return &types.SeriesMetadataSet{Metadata: allMetadata}, nil
 }
 
 // loadSeriesMetadata loads series metadata from both sides of this operation.
@@ -246,20 +246,22 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// We'll return them to the pool in Close().
 
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx)
+	oneSideMetadata, err := g.oneSide.SeriesMetadata(ctx)
 	if err != nil {
 		return false, err
 	}
+	g.oneSideMetadata = oneSideMetadata.Metadata
 
 	if len(g.oneSideMetadata) == 0 {
 		// No series on left-hand side, we'll never have any output series.
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx)
+	manySideMetadata, err := g.manySide.SeriesMetadata(ctx)
 	if err != nil {
 		return false, err
 	}
+	g.manySideMetadata = manySideMetadata.Metadata
 
 	if len(g.manySideMetadata) == 0 {
 		// No series on right-hand side, we'll never have any output series.

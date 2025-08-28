@@ -94,7 +94,7 @@ func NewVectorScalarBinaryOperation(
 	return b, nil
 }
 
-func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	// Get the scalar values once, now, rather than having to do this later in NextSeries.
 	var err error
 	v.scalarData, err = v.Scalar.GetValues(ctx)
@@ -110,11 +110,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 	if !v.Op.IsComparisonOperator() || v.ReturnBool {
 		// We don't need to do deduplication and merging of series in this operator: we expect that this operator
 		// is wrapped in a DeduplicateAndMerge.
-		seriesMetadataSet, err := functions.DropSeriesName.Func(metadata, v.MemoryConsumptionTracker, false)
-		if err != nil {
-			return nil, err
-		}
-		metadata = seriesMetadataSet.Metadata
+		return functions.DropSeriesName.Func(metadata.Metadata, v.MemoryConsumptionTracker, false)
 	}
 
 	return metadata, nil

@@ -77,7 +77,7 @@ func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error
 	return nil
 }
 
-func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
 	// Pre-process any Scalar arguments
 	err := m.processScalarArgs(ctx)
 	if err != nil {
@@ -95,11 +95,7 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 			return nil, types.ErrEnableDelayedNameRemovalNotFound
 		}
 
-		seriesMetadataSet, err := m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)
-		if err != nil {
-			return nil, err
-		}
-		return seriesMetadataSet.Metadata, nil
+		return m.Func.SeriesMetadataFunction.Func(metadata.Metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)
 	}
 
 	return metadata, nil
