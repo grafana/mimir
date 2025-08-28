@@ -62,20 +62,19 @@ func (q *mirroredChunkQuerier) LabelNames(ctx context.Context, hints *storage.La
 }
 
 func (q *mirroredChunkQuerier) Close() error {
-	if retunedErr := q.returnedSeries.Err(); errors.Is(retunedErr, context.Canceled) {
-		level.Warn(q.logger).Log("msg", "Select was canceled, skipping comparison")
+	if q.returnedSeries.isUnset() {
+		level.Debug(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
+		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
+		return q.delegate.Close()
+	} else if retunedErr := q.returnedSeries.Err(); errors.Is(retunedErr, context.Canceled) {
+		level.Debug(q.logger).Log("msg", "Select was canceled, skipping comparison")
 		q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
 		return q.delegate.Close()
 	} else if retunedErr != nil {
 		level.Error(q.logger).Log("msg", "error reading returned series", "err", retunedErr)
 		q.comparisonOutcomes.WithLabelValues("returned_series_error").Inc()
 		return q.delegate.Close()
-	} else if q.returnedSeries.isUnset() {
-		level.Warn(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
-		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
-		return q.delegate.Close()
 	}
-
 	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(q.recordedRequest.ctx)
 	ssWithoutPlanning := q.delegate.Select(ctxWithoutPlanning, q.recordedRequest.sortSeries, q.recordedRequest.hints, q.recordedRequest.matchers...)
 	q.compareResults(ssWithoutPlanning)
@@ -263,5 +262,5 @@ func (r *retainingChunkSeriesSet) Warnings() annotations.Annotations {
 }
 
 func (r *retainingChunkSeriesSet) isUnset() bool {
-	return r.labels == nil
+	return r == nil
 }
