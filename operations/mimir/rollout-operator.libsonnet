@@ -46,6 +46,9 @@
     // the eviction webhook is safe to be deployed even if there are no zone pdb configurations.
     // pod evictions not managed by a zpdb will be allowed and contine to be handled by any other pdb configurations.
     disable_rollout_operator_eviction_webhook: false,
+
+    // this needs to be applied at a cluster level so by default we do not generate this per namespace
+    zpdb_custom_resource_definition_enabled: false,
   },
 
   local ingester_zpdb_enabled =
@@ -85,7 +88,7 @@
 
   // Create custom resource template for PodDisruptionZoneBudget
   zpdb_crd:: std.parseYaml(importstr 'zone-aware-pod-disruption-budget-crd.yaml'),
-  zpdb_custom_resource: if !zpdb_resources_enabled then null else $.zpdb_crd,
+  zpdb_custom_resource: if !$._config.zpdb_custom_resource_definition_enabled then null else $.zpdb_crd,
 
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
