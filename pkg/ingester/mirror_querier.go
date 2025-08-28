@@ -66,12 +66,12 @@ func (q *mirroredChunkQuerier) Close() error {
 		level.Debug(q.logger).Log("msg", "Select wasn't invoked, skipping comparison")
 		q.comparisonOutcomes.WithLabelValues("no_select").Inc()
 		return q.delegate.Close()
-	} else if retunedErr := q.returnedSeries.Err(); errors.Is(retunedErr, context.Canceled) {
+	} else if returnedErr := q.returnedSeries.Err(); errors.Is(returnedErr, context.Canceled) {
 		level.Debug(q.logger).Log("msg", "Select was canceled, skipping comparison")
 		q.comparisonOutcomes.WithLabelValues("context_cancelled").Inc()
 		return q.delegate.Close()
-	} else if retunedErr != nil {
-		level.Error(q.logger).Log("msg", "error reading returned series", "err", retunedErr)
+	} else if returnedErr != nil {
+		level.Error(q.logger).Log("msg", "error reading returned series", "err", returnedErr)
 		q.comparisonOutcomes.WithLabelValues("returned_series_error").Inc()
 		return q.delegate.Close()
 	}
