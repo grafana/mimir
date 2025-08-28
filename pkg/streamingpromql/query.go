@@ -81,6 +81,8 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	_, isInstantVectorOperator := q.evaluator.root.(types.InstantVectorOperator)
 	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && isInstantVectorOperator
 
+	ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, q.engine.enableDelayedNameRemoval)
+
 	if err := q.evaluator.Evaluate(ctx, q); err != nil {
 		q.returnResultToPool()
 		return &promql.Result{Err: err}

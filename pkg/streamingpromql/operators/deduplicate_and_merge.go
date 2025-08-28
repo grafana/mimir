@@ -35,10 +35,28 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 }
 
 func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
+	if !ok {
+		return nil, types.ErrEnableDelayedNameRemovalNotFound
+	}
+
+	deduplicateAndMergeStackCount, ok := ctx.Value(types.ContextDeduplicateAndMergeStackCount).(int)
+	if !ok {
+		deduplicateAndMergeStackCount = 0
+	}
+
+	ctx = context.WithValue(ctx, types.ContextDeduplicateAndMergeStackCount, deduplicateAndMergeStackCount+1)
+
 	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
 
 	if err != nil {
 		return nil, err
+	}
+
+	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 {
+		for i := range innerMetadata {
+			innerMetadata[i].Labels = innerMetadata[i].Labels.DropMetricName()
+		}
 	}
 
 	if !types.HasDuplicateSeries(innerMetadata) {

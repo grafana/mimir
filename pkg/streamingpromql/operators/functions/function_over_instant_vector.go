@@ -90,7 +90,12 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		seriesMetadataSet, err := m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, false)
+		enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
+		if !ok {
+			return nil, types.ErrEnableDelayedNameRemovalNotFound
+		}
+
+		seriesMetadataSet, err := m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)
 		if err != nil {
 			return nil, err
 		}
