@@ -213,9 +213,9 @@ type limitedParallelismRoundTripper struct {
 }
 
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, logger log.Logger, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream: NewHTTPQueryRequestRoundTripperHandler(next, codec, logger),
+		downstream: next,
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),
