@@ -37,6 +37,7 @@ var timeSince = time.Since
 type QueryPlanner struct {
 	activeQueryTracker       promql.QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
@@ -80,6 +81,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
 			Help:                        "Latency of each stage of the query planning process.",
@@ -161,8 +163,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			return nil, err
 		}
 
-		if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-			dedupAndMerge.RunDelayedNameRemoval = true
+		if p.enableDelayedNameRemoval {
+			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+				dedupAndMerge.RunDelayedNameRemoval = true
+			}
 		}
 
 		plan := &planning.QueryPlan{
