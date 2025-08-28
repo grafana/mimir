@@ -97,7 +97,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (types.Ser
 			return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
 		}
 
-		return m.Func.SeriesMetadataFunction.Func(metadata.Metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)
 	}
 
 	return metadata, nil
