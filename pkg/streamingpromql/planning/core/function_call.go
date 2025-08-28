@@ -106,7 +106,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition(), timeRange)
+	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition(), timeRange, params.EnableDelayedNameRemoval)
 	if err != nil {
 		return nil, err
 	}

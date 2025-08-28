@@ -47,6 +47,7 @@ type HistogramFunction struct {
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	annotations            *annotations.Annotations
 	expressionPosition     posrange.PositionRange
@@ -124,6 +125,7 @@ func NewHistogramQuantileFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -141,6 +143,7 @@ func NewHistogramQuantileFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -152,6 +155,7 @@ func NewHistogramFractionFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -169,6 +173,7 @@ func NewHistogramFractionFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -243,15 +248,10 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (types.SeriesMet
 		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
-	if !ok {
-		return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
-	}
-
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
 		var labelsMetadata types.SeriesMetadata
-		if enableDelayedNameRemoval {
+		if h.enableDelayedNameRemoval {
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels}
 		} else {
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
@@ -268,7 +268,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (types.SeriesMet
 	// as soon as possible when accumulating them.
 	sort.Sort(bucketGroupSorter{seriesMetadata, h.remainingGroups})
 
-	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: enableDelayedNameRemoval}, nil
+	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: h.enableDelayedNameRemoval}, nil
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

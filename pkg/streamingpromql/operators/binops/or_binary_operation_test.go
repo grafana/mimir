@@ -292,7 +292,6 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			ctx = context.WithValue(ctx, types.ContextEnableDelayedNameRemoval, false)
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
@@ -307,7 +306,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			)
 
 			// Wrap OrBinaryOperation in a DeduplicateAndMerge as would happen at the planning level
-			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker, true)
+			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker, false, true)
 			actualSeriesMetadata, err := op.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
