@@ -106,7 +106,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (s *Subquery) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if s.nextStepT > s.ParentQueryTimeRange.EndT {
 		return nil, types.EOS
 	}

@@ -65,7 +65,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if m.nextStepT > m.Selector.TimeRange.EndT {
 		return nil, types.EOS
 	}
@@ -131,7 +131,10 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			if t <= rangeStart {
 				continue
 			}
-			hPoint, _ := histograms.NextPoint()
+			hPoint, err := histograms.NextPoint()
+			if err != nil {
+				return err
+			}
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers

@@ -9,7 +9,7 @@
 * [CHANGE] Querier: Add support for UTF-8 label and metric names in `label_join`, `label_replace` and `count_values` PromQL functions. #11848.
 * [CHANGE] Remove support for Redis as a cache backend. #12163
 * [CHANGE] Memcached: Remove experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends. The more reliable backend introduced in 2.16.0 (#10895) is now the default. As a result of this change, DNS-based cache service discovery no longer supports search domains. #12175 #12385
-* [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191
+* [CHANGE] Query-frontend: Remove the CLI flag `-query-frontend.downstream-url` and corresponding YAML configuration and the ability to use the query-frontend to proxy arbitrary Prometheus backends. #12191 #12517
 * [CHANGE] Query-frontend: Remove experimental instant query splitting feature. #12267
 * [CHANGE] Query-frontend, querier: Replace `query-frontend.prune-queries` flag with `querier.mimir-query-engine.enable-prune-toggles` as pruning middleware has been moved into MQE. #12303 #12375
 * [CHANGE] Distributor: Remove deprecated global HA tracker timeout configuration flags. #12321
@@ -19,6 +19,7 @@
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Distributor: Add experimental `-distributor.otel-translation-strategy` flag to support configuring the metric and label name translation strategy in the OTLP endpoint. #12284 #12306 #12369
 * [FEATURE] Query-frontend: Add `query-frontend.rewrite-propagate-matchers` flag that enables a new MQE AST optimization pass that copies relevant label matchers across binary operations. #12304
+* [FEATURE] Query-frontend: Add `query-frontend.rewrite-histogram-queries` flag that enables a new MQE AST optimization pass that rewrites histogram queries for a more efficient order of execution. #12305
 * [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
@@ -42,6 +43,8 @@
 * [BUGFIX] Block-builder-scheduler: Fix a caching bug in initial job probing causing excessive memory usage at startup. #12389
 * [BUGFIX] Ruler: Support labels at the rule group level. These were previously ignored even when set via the API. #12397
 * [BUGFIX] Distributor: Fix metric metadata of type Unknown being silently dropped from RW2 requests. #12461
+* [BUGFIX] Ruler: Fix ruler remotequerier request body consumption on retries. #12514
+* [BUGFIX] Block-builder: Fix a bug where a consumption error can cause a job to stay assigned to a worker for the remainder of its lifetime. #12522
 
 ### Mixin
 

@@ -260,6 +260,10 @@ func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	return nil
 }
 
+func (m *mockSchedulerClient) FailJob(key schedulerpb.JobKey) error {
+	return nil
+}
+
 // addJob adds a job to the fake back-end for this mock scheduler client.
 func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.JobSpec) {
 	m.mu.Lock()

@@ -24,10 +24,11 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 	}
 
 	rw2 := &WriteRequest{
-		Source:                    rw1.Source,
-		SkipLabelValidation:       rw1.SkipLabelValidation,
-		SkipLabelCountValidation:  rw1.SkipLabelCountValidation,
-		skipUnmarshalingExemplars: rw1.skipUnmarshalingExemplars,
+		Source:                          rw1.Source,
+		SkipLabelValidation:             rw1.SkipLabelValidation,
+		SkipLabelCountValidation:        rw1.SkipLabelCountValidation,
+		skipUnmarshalingExemplars:       rw1.skipUnmarshalingExemplars,
+		skipNormalizeMetadataMetricName: rw1.skipNormalizeMetadataMetricName,
 	}
 
 	symbols := symbolsTableFromPool()
