@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Grafana Agent: Deprecate `metaMonitoring.grafanaAgent` values. #12307
   * Grafana Agent was deprecated in early 2024 and reaches End-of-Support at the end of 2025.
   * Instead of provisioning the agent's Kubernetes resources with the chart's `metaMonitoring.grafanaAgent.enabled`, collect Mimir's meta-monitoring data with an external collector. It's recommended to use Grafana k8s-monitoring, which manages the creation and lifecycle of Alloy instances and has built-in support for collecting telemetry from Grafana LGTM stacks.
