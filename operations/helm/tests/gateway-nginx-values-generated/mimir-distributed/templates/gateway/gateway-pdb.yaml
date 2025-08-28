@@ -1,6 +1,6 @@
 ---
 # Source: mimir-distributed/templates/gateway/gateway-pdb.yaml
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: gateway-nginx-values-mimir-gateway
