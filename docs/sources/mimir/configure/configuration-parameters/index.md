@@ -1977,6 +1977,11 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-queue-capacity
 [notification_queue_capacity: <int> | default = 10000]
 
+# (advanced) Maximum number of notifications to send to Alertmanager in one
+# request.
+# CLI flag: -ruler.max-notification-batch-size
+[max_notification_batch_size: <int> | default = 256]
+
 # (advanced) HTTP timeout duration when sending notifications to the
 # Alertmanager.
 # CLI flag: -ruler.notification-timeout
