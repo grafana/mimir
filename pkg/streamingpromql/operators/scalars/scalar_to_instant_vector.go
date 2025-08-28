@@ -31,18 +31,18 @@ func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition po
 	}
 }
 
-func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) (*types.SeriesMetadataSet, error) {
+func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
 	metadata, err := types.SeriesMetadataSlicePool.Get(1, s.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	metadata, err = types.AppendSeriesMetadata(s.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: labels.EmptyLabels()})
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	return &types.SeriesMetadataSet{Metadata: metadata}, nil
+	return types.SeriesMetadataSet{Metadata: metadata}, nil
 }
 
 func (s *ScalarToInstantVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

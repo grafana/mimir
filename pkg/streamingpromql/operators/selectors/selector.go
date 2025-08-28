@@ -53,19 +53,19 @@ func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
 	}()
 
 	if s.series != nil {
-		return nil, errors.New("should not call Selector.SeriesMetadata() multiple times")
+		return types.NewEmptySeriesMetadataSet(), errors.New("should not call Selector.SeriesMetadata() multiple times")
 	}
 
 	if !s.EagerLoad {
 		if err := s.loadSeriesSet(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 	}
 
@@ -83,10 +83,10 @@ func (s *Selector) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet
 
 	metadata, err := s.series.ToSeriesMetadata()
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	return &types.SeriesMetadataSet{Metadata: metadata}, s.seriesSet.Err()
+	return types.SeriesMetadataSet{Metadata: metadata}, s.seriesSet.Err()
 }
 
 func (s *Selector) loadSeriesSet(ctx context.Context) error {

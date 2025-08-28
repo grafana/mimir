@@ -77,14 +77,14 @@ func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := m.processScalarArgs(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if m.metricNames != nil {
@@ -94,7 +94,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (*types.Se
 	if m.Func.SeriesMetadataFunction.Func != nil {
 		enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
 		if !ok {
-			return nil, types.ErrEnableDelayedNameRemovalNotFound
+			return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
 		}
 
 		return m.Func.SeriesMetadataFunction.Func(metadata.Metadata, m.MemoryConsumptionTracker, enableDelayedNameRemoval)

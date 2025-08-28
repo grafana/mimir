@@ -176,20 +176,20 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := h.f.LoadArguments(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	innerSeries, err := h.inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries.Metadata, h.memoryConsumptionTracker)
 
 	if len(innerSeries.Metadata) == 0 {
 		// No input series == no output series.
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries.Metadata)
@@ -240,14 +240,14 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), h.memoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
 		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		h.remainingGroups = append(h.remainingGroups, g.group)
@@ -257,7 +257,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 	// as soon as possible when accumulating them.
 	sort.Sort(bucketGroupSorter{seriesMetadata, h.remainingGroups})
 
-	return &types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: innerSeries.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: innerSeries.DropName}, nil
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

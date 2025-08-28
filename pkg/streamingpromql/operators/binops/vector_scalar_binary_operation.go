@@ -94,17 +94,17 @@ func NewVectorScalarBinaryOperation(
 	return b, nil
 }
 
-func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	// Get the scalar values once, now, rather than having to do this later in NextSeries.
 	var err error
 	v.scalarData, err = v.Scalar.GetValues(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	metadata, err := v.Vector.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if !v.Op.IsComparisonOperator() || v.ReturnBool {

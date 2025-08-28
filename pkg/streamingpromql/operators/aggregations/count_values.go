@@ -81,14 +81,14 @@ var countValuesSeriesPool = sync.Pool{
 	},
 }
 
-func (c *CountValues) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (c *CountValues) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := c.loadLabelName(); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	innerMetadata, err := c.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, c.MemoryConsumptionTracker)
@@ -107,18 +107,18 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) (*types.SeriesMetadata
 	for _, s := range innerMetadata.Metadata {
 		data, err := c.Inner.NextSeries(ctx)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		for _, p := range data.Floats {
 			if err := c.incrementCount(s.Labels, p.T, c.formatFloatValue(p.F), accumulator); err != nil {
-				return nil, err
+				return types.NewEmptySeriesMetadataSet(), err
 			}
 		}
 
 		for _, p := range data.Histograms {
 			if err := c.incrementCount(s.Labels, p.T, p.H.String(), accumulator); err != nil {
-				return nil, err
+				return types.NewEmptySeriesMetadataSet(), err
 			}
 		}
 
@@ -127,7 +127,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) (*types.SeriesMetadata
 
 	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(accumulator), c.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
@@ -135,12 +135,12 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) (*types.SeriesMetadata
 	for _, s := range accumulator {
 		outputMetadata, err = types.AppendSeriesMetadata(c.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: s.labels})
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		c.series = append(c.series, points)
@@ -149,7 +149,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) (*types.SeriesMetadata
 		countValuesSeriesPool.Put(s)
 	}
 
-	return &types.SeriesMetadataSet{Metadata: outputMetadata, DropName: innerMetadata.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: outputMetadata, DropName: innerMetadata.DropName}, nil
 }
 
 func (c *CountValues) loadLabelName() error {

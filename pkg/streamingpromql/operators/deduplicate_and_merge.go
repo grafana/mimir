@@ -34,10 +34,10 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	enableDelayedNameRemoval, ok := ctx.Value(types.ContextEnableDelayedNameRemoval).(bool)
 	if !ok {
-		return nil, types.ErrEnableDelayedNameRemovalNotFound
+		return types.NewEmptySeriesMetadataSet(), types.ErrEnableDelayedNameRemovalNotFound
 	}
 
 	deduplicateAndMergeStackCount, ok := ctx.Value(types.ContextDeduplicateAndMergeStackCount).(int)
@@ -50,17 +50,13 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (*types.Series
 	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
 
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if enableDelayedNameRemoval && deduplicateAndMergeStackCount == 0 && innerMetadata.DropName {
 		for i := range innerMetadata.Metadata {
 			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
 		}
-	}
-
-	if innerMetadata == nil {
-		innerMetadata = &types.SeriesMetadataSet{}
 	}
 
 	if !types.HasDuplicateSeries(innerMetadata.Metadata) {
@@ -74,14 +70,14 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (*types.Series
 	// We might have duplicates (or HasDuplicateSeries hit a hash collision). Determine the merged output series.
 	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata.Metadata)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	d.groups = groups
 	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata.Metadata), d.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, d.MemoryConsumptionTracker)
 
-	return &types.SeriesMetadataSet{Metadata: outputMetadata}, nil
+	return types.SeriesMetadataSet{Metadata: outputMetadata}, nil
 }
 
 func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata, error) {

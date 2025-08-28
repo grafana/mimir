@@ -21,6 +21,10 @@ type SeriesMetadataSet struct {
 	DropName bool
 }
 
+func NewEmptySeriesMetadataSet() SeriesMetadataSet {
+	return SeriesMetadataSet{}
+}
+
 type SeriesMetadata struct {
 	Labels labels.Labels
 }

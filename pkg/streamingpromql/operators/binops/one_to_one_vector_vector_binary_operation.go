@@ -170,21 +170,21 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	} else if !canProduceAnySeries {
 		if err := b.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		b.Close()
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, err := b.computeOutputSeries()
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if len(allMetadata) == 0 {
@@ -193,11 +193,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
 
 		if err := b.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		b.Close()
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	b.sortSeries(allMetadata, allSeries)
@@ -206,7 +206,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
-	return &types.SeriesMetadataSet{Metadata: allMetadata}, nil
+	return types.SeriesMetadataSet{Metadata: allMetadata}, nil
 }
 
 // loadSeriesMetadata loads series metadata from both sides of this operation.

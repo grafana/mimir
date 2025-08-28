@@ -65,11 +65,11 @@ func NewQuantileAggregation(
 	return q, nil
 }
 
-func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	var err error
 	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 	// Validate the parameter now so we only have to do it once for each group
 	for _, p := range q.Aggregation.ParamData.Samples {

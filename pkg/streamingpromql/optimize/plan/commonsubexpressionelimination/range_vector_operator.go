@@ -59,14 +59,14 @@ func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationCons
 	}
 }
 
-func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	var dropName bool
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
 		seriesMetadata, err := b.Inner.SeriesMetadata(ctx)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 		b.seriesMetadata = seriesMetadata.Metadata
 		dropName = seriesMetadata.DropName
@@ -79,21 +79,21 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (*typ
 		metadata := b.seriesMetadata
 		b.seriesMetadata = nil
 
-		return &types.SeriesMetadataSet{Metadata: metadata, DropName: dropName}, nil
+		return types.SeriesMetadataSet{Metadata: metadata, DropName: dropName}, nil
 	}
 
 	// Return a copy of the original series metadata.
 	// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
 	metadata, err := types.SeriesMetadataSlicePool.Get(len(b.seriesMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	result, err := types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
-	return &types.SeriesMetadataSet{Metadata: result, DropName: dropName}, nil
+	return types.SeriesMetadataSet{Metadata: result, DropName: dropName}, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) error {
@@ -331,7 +331,7 @@ type RangeVectorDuplicationConsumer struct {
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
 
-func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	return d.Buffer.SeriesMetadata(ctx)
 }
 

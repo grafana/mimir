@@ -46,10 +46,10 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (s *SortByLabel) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	innerMetadata, err := s.inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	// Store the original indexes of each piece of metadata and then sort them alongside
@@ -57,7 +57,7 @@ func (s *SortByLabel) SeriesMetadata(ctx context.Context) (*types.SeriesMetadata
 	// from the inner operator by their original index.
 	indexes, err := types.IntSlicePool.Get(len(innerMetadata.Metadata), s.memoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	for i := 0; i < len(innerMetadata.Metadata); i++ {

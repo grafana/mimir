@@ -47,19 +47,19 @@ type InstantQuery struct {
 
 var _ types.InstantVectorOperator = &InstantQuery{}
 
-func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (t *InstantQuery) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := t.getK(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if t.k == 0 {
 		// We can't return any series, so stop now.
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	innerSeries, err := t.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries.Metadata, t.MemoryConsumptionTracker)
@@ -92,7 +92,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadat
 
 		data, err := t.Inner.NextSeries(ctx)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		if len(data.Histograms) > 0 {
@@ -107,7 +107,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadat
 		}
 
 		if addedAdditionalSeriesToOutput, err := t.accumulateValue(series, data.Floats[0].F, g); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		} else if addedAdditionalSeriesToOutput {
 			outputSeriesCount++
 		}
@@ -117,12 +117,12 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadat
 
 	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	t.values, err = types.Float64SlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	outputSeries = outputSeries[:outputSeriesCount]
@@ -143,7 +143,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadat
 			next := heap.Pop(t.heap).(instantQuerySeries)
 			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
 			if err != nil {
-				return nil, err
+				return types.NewEmptySeriesMetadataSet(), err
 			}
 
 			if math.IsNaN(next.value) {
@@ -161,7 +161,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (*types.SeriesMetadat
 		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
-	return &types.SeriesMetadataSet{Metadata: outputSeries, DropName: innerSeries.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: outputSeries, DropName: innerSeries.DropName}, nil
 }
 
 func (t *InstantQuery) getK(ctx context.Context) error {

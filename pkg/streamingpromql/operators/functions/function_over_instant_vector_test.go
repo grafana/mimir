@@ -34,10 +34,10 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker, _ bool) (*types.SeriesMetadataSet, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker, _ bool) (types.SeriesMetadataSet, error) {
 		require.Equal(t, len(inner.Series), len(seriesMetadata))
 		metadataFuncCalled = true
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	seriesDataFuncCalledTimes := 0

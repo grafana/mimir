@@ -393,14 +393,14 @@ type testRangeVectorOperator struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) (*types.SeriesMetadataSet, error) {
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
 	if len(t.series) == 0 {
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.series), t.memoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	metadata = metadata[:len(t.series)]
@@ -409,11 +409,11 @@ func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) (*types.Seri
 		metadata[i].Labels = l
 		err := t.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 	}
 
-	return &types.SeriesMetadataSet{Metadata: metadata}, nil
+	return types.SeriesMetadataSet{Metadata: metadata}, nil
 }
 
 func (t *testRangeVectorOperator) NextSeries(_ context.Context) error {
@@ -515,8 +515,8 @@ type failingRangeVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context) (*types.SeriesMetadataSet, error) {
-	return &types.SeriesMetadataSet{Metadata: o.series}, nil
+func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
+	return types.SeriesMetadataSet{Metadata: o.series}, nil
 }
 
 func (o *failingRangeVectorOperator) NextSeries(_ context.Context) error {

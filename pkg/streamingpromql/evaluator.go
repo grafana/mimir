@@ -141,10 +141,6 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 		return err
 	}
 
-	if series == nil {
-		series = &types.SeriesMetadataSet{}
-	}
-
 	seriesCount := len(series.Metadata) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
 	if err := observer.SeriesMetadataEvaluated(ctx, e, series.Metadata); err != nil {
@@ -173,10 +169,6 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 	series, err := op.SeriesMetadata(ctx)
 	if err != nil {
 		return err
-	}
-
-	if series == nil {
-		series = &types.SeriesMetadataSet{}
 	}
 
 	seriesCount := len(series.Metadata) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.

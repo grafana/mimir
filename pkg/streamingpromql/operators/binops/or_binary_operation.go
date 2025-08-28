@@ -57,15 +57,15 @@ func NewOrBinaryOperation(
 	}
 }
 
-func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	leftMetadata, err := o.Left.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	rightMetadata, err := o.Right.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if len(leftMetadata.Metadata) == 0 && len(rightMetadata.Metadata) == 0 {
@@ -74,18 +74,18 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 		types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, o.MemoryConsumptionTracker)
 
 		if err := o.Left.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		o.Left.Close()
 
 		if err := o.Right.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		o.Right.Close()
 
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	if len(leftMetadata.Metadata) == 0 {
@@ -95,7 +95,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, o.MemoryConsumptionTracker)
 
 		if err := o.Left.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		o.Left.Close()
@@ -110,7 +110,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 		types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, o.MemoryConsumptionTracker)
 
 		if err := o.Right.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		o.Right.Close()
@@ -125,9 +125,9 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMe
 
 	result, err := o.computeSeriesOutputOrder(leftMetadata.Metadata, rightMetadata.Metadata)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
-	return &types.SeriesMetadataSet{Metadata: result}, nil
+	return types.SeriesMetadataSet{Metadata: result}, nil
 }
 
 func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) {

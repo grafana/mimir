@@ -50,7 +50,7 @@ type SeriesOperator interface {
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
-	SeriesMetadata(ctx context.Context) (*SeriesMetadataSet, error)
+	SeriesMetadata(ctx context.Context) (SeriesMetadataSet, error)
 }
 
 // InstantVectorOperator represents all operators that produce instant vectors.

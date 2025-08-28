@@ -55,16 +55,16 @@ func NewAndUnlessBinaryOperation(
 	}
 }
 
-func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (*types.SeriesMetadataSet, error) {
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	series, err := a.computeSeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if a.lastLeftSeriesIndexToRead == -1 {
 		// We're not going to read anything from the left side, close it now.
 		if err := a.Left.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		a.Left.Close()
@@ -73,13 +73,13 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (*types.S
 	if a.lastRightSeriesIndexToRead == -1 {
 		// We're not going to read anything from the right side, close it now.
 		if err := a.Right.Finalize(ctx); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		a.Right.Close()
 	}
 
-	return &types.SeriesMetadataSet{Metadata: series}, nil
+	return types.SeriesMetadataSet{Metadata: series}, nil
 }
 
 func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
