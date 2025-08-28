@@ -32,6 +32,7 @@
 * [BUGFIX] Querier: Fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #12261
 * [BUGFIX] Block-builder-scheduler: Fix a caching bug in initial job probing causing excessive memory usage at startup. #12389
 * [BUGFIX] Ruler: Fix ruler remotequerier request body consumption on retries. #12514
+* [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
 
 ### Mixin
 
