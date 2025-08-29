@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -56,6 +57,9 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 // Evaluate will always call observer.EvaluationCompleted before returning nil.
 // It may return a non-nil error after calling observer.EvaluationCompleted if observer.EvaluationCompleted returned a non-nil error.
 func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) error {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.Evaluate")
+	defer span.Finish()
+
 	defer e.root.Close()
 
 	if e.engine.pedantic {
