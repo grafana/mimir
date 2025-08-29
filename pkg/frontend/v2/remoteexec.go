@@ -88,7 +88,7 @@ type scalarExecutionResponse struct {
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	msg, err := r.stream.Next()
+	msg, err := r.stream.Next(ctx)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
@@ -115,7 +115,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 }
 
 func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
-	return readEvaluationCompleted(r.stream)
+	return readEvaluationCompleted(ctx, r.stream)
 }
 
 func (r *scalarExecutionResponse) Close() {
@@ -128,11 +128,11 @@ type instantVectorExecutionResponse struct {
 }
 
 func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return readSeriesMetadata(r.stream, r.memoryConsumptionTracker)
+	return readSeriesMetadata(ctx, r.stream, r.memoryConsumptionTracker)
 }
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	msg, err := r.stream.Next()
+	msg, err := r.stream.Next(ctx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -164,7 +164,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 }
 
 func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
-	return readEvaluationCompleted(r.stream)
+	return readEvaluationCompleted(ctx, r.stream)
 }
 
 func (r *instantVectorExecutionResponse) Close() {
@@ -192,7 +192,7 @@ func newRangeVectorExecutionResponse(stream *ProtobufResponseStream, memoryConsu
 }
 
 func (r *rangeVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return readSeriesMetadata(r.stream, r.memoryConsumptionTracker)
+	return readSeriesMetadata(ctx, r.stream, r.memoryConsumptionTracker)
 }
 
 func (r *rangeVectorExecutionResponse) AdvanceToNextSeries(ctx context.Context) error {
@@ -204,7 +204,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	msg, err := r.stream.Next()
+	msg, err := r.stream.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -252,15 +252,15 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 }
 
 func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
-	return readEvaluationCompleted(r.stream)
+	return readEvaluationCompleted(ctx, r.stream)
 }
 
 func (r *rangeVectorExecutionResponse) Close() {
 	r.stream.Close()
 }
 
-func readSeriesMetadata(stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	msg, err := stream.Next()
+func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	msg, err := stream.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -290,8 +290,8 @@ func readSeriesMetadata(stream *ProtobufResponseStream, memoryConsumptionTracker
 	return mqeSeries, nil
 }
 
-func readEvaluationCompleted(stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
-	msg, err := stream.Next()
+func readEvaluationCompleted(ctx context.Context, stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
+	msg, err := stream.Next(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

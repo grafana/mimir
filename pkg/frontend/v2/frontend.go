@@ -432,7 +432,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 //
 // If no message is available and the context has not been cancelled, then Next blocks
 // until either a message is received or the context is cancelled.
-func (s *ProtobufResponseStream) Next() (*frontendv2pb.QueryResultStreamRequest, error) {
+func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	select {
 	case resp := <-s.c:
 		if resp.err != nil {
@@ -440,7 +440,10 @@ func (s *ProtobufResponseStream) Next() (*frontendv2pb.QueryResultStreamRequest,
 		}
 
 		return resp.msg, nil
-	case <-s.ctx.Done():
+	case <-ctx.Done():
+		// Note that we deliberately wait on the passed context, rather than s.ctx, as s.ctx is cancelled as soon
+		// as the response has been completely received, but we want to continue reading any outstanding messages
+		// from the stream unless the provided context (presumably for the query as a whole) is cancelled.
 		return nil, context.Cause(s.ctx)
 	}
 }
