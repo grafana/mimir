@@ -49,6 +49,9 @@ func (d *DeduplicateAndMerge) EquivalentTo(other planning.Node) bool {
 }
 
 func (d *DeduplicateAndMerge) Describe() string {
+	if d.RunDelayedNameRemoval {
+		return "with delayed name removal"
+	}
 	return ""
 }
 
