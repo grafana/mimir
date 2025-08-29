@@ -816,7 +816,7 @@ overrides:
 				}
 				resp, body, err := tc.query(c)
 				require.NoError(t, err)
-				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode for "+name)
+				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected status code for "+name)
 				if tc.expJSON != "" {
 					assert.JSONEq(t, tc.expJSON, string(body), "querier returns unexpected body for "+name)
 				} else {
