@@ -196,11 +196,20 @@ func TestUpstreamTestCases(t *testing.T) {
 }
 
 func TestOurTestCases(t *testing.T) {
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-	require.NoError(t, err)
+	makeEngines := func(t *testing.T, opts EngineOpts) (promql.QueryEngine, promql.QueryEngine) {
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+		require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+		return mimirEngine, prometheusEngine
+	}
+
+	opts := NewTestEngineOpts()
+	mimirEngine, prometheusEngine := makeEngines(t, opts)
+
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, opts)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
@@ -218,6 +227,11 @@ func TestOurTestCases(t *testing.T) {
 			testScript := string(b)
 
 			t.Run("Mimir's engine", func(t *testing.T) {
+				if strings.Contains(testFile, "name_label_dropping") {
+					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
+					return
+				}
+
 				promqltest.RunTest(t, testScript, mimirEngine)
 			})
 
@@ -225,6 +239,11 @@ func TestOurTestCases(t *testing.T) {
 			t.Run("Prometheus' engine", func(t *testing.T) {
 				if strings.HasPrefix(testFile, "ours-only") {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
+				}
+
+				if strings.Contains(testFile, "name_label_dropping") {
+					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
+					return
 				}
 
 				promqltest.RunTest(t, testScript, prometheusEngine)
