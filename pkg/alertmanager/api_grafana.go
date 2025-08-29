@@ -573,7 +573,7 @@ func (am *MultitenantAlertmanager) validateUserGrafanaConfig(logger log.Logger, 
 
 	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
 	for _, rcv := range userAmConfig.Receivers {
-		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper)
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper, nil)
 		if err != nil {
 			return err
 		}
