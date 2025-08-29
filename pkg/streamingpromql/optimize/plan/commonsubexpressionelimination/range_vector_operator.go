@@ -5,9 +5,9 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"fmt"
-	"math"
-
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"math"
+	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -198,6 +198,10 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 	b.buffer.Append(clonedData, consumer.currentSeriesIndex)
 
 	return clonedData.stepData, nil
+}
+
+func (d *RangeVectorDuplicationConsumer) Range() time.Duration {
+	return d.Buffer.Inner.Range()
 }
 
 func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {

@@ -5,6 +5,7 @@ package types
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
@@ -76,6 +77,11 @@ type RangeVectorOperator interface {
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
+
+	// Range returns the time range selected by this operator at each time step.
+	//
+	// For example, if this operator represents the selector "some_metric[5m]", Range returns 5 minutes.
+	Range() time.Duration
 }
 
 // ScalarOperator represents all operators that produce scalars.

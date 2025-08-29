@@ -8,6 +8,7 @@ package selectors
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -50,6 +51,10 @@ func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.Serie
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 
 	return m.Selector.SeriesMetadata(ctx)
+}
+
+func (m *RangeVectorSelector) Range() time.Duration {
+	return m.Selector.Range
 }
 
 func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
