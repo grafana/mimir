@@ -336,16 +336,19 @@ func (rth engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metri
 	}
 
 	if err != nil {
+		spanLogger.Error(err)
 		return nil, err
 	}
 
 	res := q.Exec(ctx)
 	if res.Err != nil {
+		spanLogger.Error(res.Err)
 		return nil, res.Err
 	}
 
 	data, err := promqlResultToSamples(res)
 	if err != nil {
+		spanLogger.Error(err)
 		return nil, err
 	}
 
