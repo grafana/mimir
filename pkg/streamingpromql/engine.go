@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -180,19 +181,12 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", timeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	defer e.activeQueryTracker.Delete(queryID)
-
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
 	}
 
-	evaluator, err := e.newEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -224,22 +218,25 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "evaluator creation", plan.TimeRange)
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+}
+
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
+	defer span.Finish()
+
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", plan.TimeRange)
 	if err != nil {
 		return nil, err
 	}
 
 	defer e.activeQueryTracker.Delete(queryID)
 
-	lookbackDelta := opts.LookbackDelta()
-	if lookbackDelta == 0 {
-		lookbackDelta = e.lookbackDelta
-	}
-
-	return e.newEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
-}
-
-func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)

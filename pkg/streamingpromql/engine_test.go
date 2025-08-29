@@ -38,7 +38,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
@@ -1532,7 +1531,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		},
 	}
 
-	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, trace.Span, context.Context) {
+	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 		opts := NewTestEngineOpts()
 		opts.CommonOpts.Reg = reg
@@ -1543,13 +1542,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		require.NoError(t, err)
 
 		spanExporter.Reset()
-		ctx, span := tracer.Start(context.Background(), "query")
-		return engine, reg, span, ctx
+		return engine, reg
 	}
 
 	start := timestamp.Time(0)
 	end := start.Add(4 * time.Minute)
 	step := time.Minute
+	ctx := context.Background()
 
 	for name, testCase := range testCases {
 		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, expectedMemoryConsumptionEstimate uint64, queryType string) {
@@ -1590,28 +1589,27 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		}
 
 		t.Run(name, func(t *testing.T) {
-			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64){
-				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64) {
-					engine, reg, span, ctx := createEngine(t, testCase.rangeQueryLimit)
+			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, uint64){
+				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64) {
+					engine, reg := createEngine(t, testCase.rangeQueryLimit)
 					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, end, step)
 					require.NoError(t, err)
-					return q, reg, span, ctx, testCase.rangeQueryExpectedPeak
+					return q, reg, testCase.rangeQueryExpectedPeak
 				},
-				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64) {
-					engine, reg, span, ctx := createEngine(t, testCase.instantQueryLimit)
+				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64) {
+					engine, reg := createEngine(t, testCase.instantQueryLimit)
 					q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
 					require.NoError(t, err)
-					return q, reg, span, ctx, testCase.instantQueryExpectedPeak
+					return q, reg, testCase.instantQueryExpectedPeak
 				},
 			}
 
 			for queryType, createQuery := range queryTypes {
 				t.Run(queryType, func(t *testing.T) {
-					q, reg, span, ctx, expectedPeakMemoryConsumption := createQuery(t)
+					q, reg, expectedPeakMemoryConsumption := createQuery(t)
 					t.Cleanup(q.Close)
 
 					res := q.Exec(ctx)
-					span.End()
 
 					if testCase.shouldSucceed {
 						assert.NoError(t, res.Err)
@@ -1621,11 +1619,11 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
 					}
 
-					var spanStub tracetest.SpanStub
-					if spanStubs := spanExporter.GetSpans(); assert.Len(t, spanStubs, 1) {
-						spanStub = spanStubs[0]
-					}
-					assertEstimatedPeakMemoryConsumption(t, reg, spanStub, expectedPeakMemoryConsumption, queryType)
+					spanStubs := filter(spanExporter.GetSpans(), func(stub tracetest.SpanStub) bool {
+						return stub.Name == "Query.Exec"
+					})
+					require.Len(t, spanStubs, 1)
+					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], expectedPeakMemoryConsumption, queryType)
 				})
 			}
 		})
