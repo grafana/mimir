@@ -166,6 +166,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		if p.enableDelayedNameRemoval {
 			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
 				dedupAndMerge.RunDelayedNameRemoval = true
+			} else {
+				root = &core.DeduplicateAndMerge{
+					Inner:                      root,
+					DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+				}
 			}
 		}
 
