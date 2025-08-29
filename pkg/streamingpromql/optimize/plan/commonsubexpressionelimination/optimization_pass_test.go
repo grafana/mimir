@@ -599,18 +599,20 @@ func TestOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
-			plannerWithoutOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			require.NoError(t, err)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 			reg := prometheus.NewPedanticRegistry()
-			plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg))
 
 			var timeRange types.QueryTimeRange
 
 			if testCase.rangeQuery {
-				timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(-time.Hour), time.Minute)
+				timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
 			} else {
 				timeRange = types.NewInstantQueryTimeRange(time.Now())
 			}

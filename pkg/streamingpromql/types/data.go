@@ -229,13 +229,21 @@ func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
 func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Duration) QueryTimeRange {
 	startT := timestamp.FromTime(start)
 	endT := timestamp.FromTime(end)
-	IntervalMilliseconds := interval.Milliseconds()
+	intervalMilliseconds := interval.Milliseconds()
+	stepCount := int((endT-startT)/intervalMilliseconds) + 1
+
+	if startT > endT {
+		// It is valid for the timestamps to be around the wrong way: this can happen in the case where a subquery selects no points in the range.
+		// However, if this has happened, we need to make sure the step count is not a negative number to prevent trying to allocate a per-step slice
+		// with a negative number of elements.
+		stepCount = 0
+	}
 
 	return QueryTimeRange{
 		StartT:               startT,
 		EndT:                 endT,
-		IntervalMilliseconds: IntervalMilliseconds,
-		StepCount:            int((endT-startT)/IntervalMilliseconds) + 1,
+		IntervalMilliseconds: intervalMilliseconds,
+		StepCount:            stepCount,
 		IsInstant:            false,
 	}
 }

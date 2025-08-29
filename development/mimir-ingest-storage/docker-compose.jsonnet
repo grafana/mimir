@@ -148,9 +148,15 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      depends_on: [
+        'mimir-write-zone-a-0',
+        'mimir-backend-1',
+        'mimir-read-1',
+        'grafana',
+      ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=mimir-write-1:8080',
+        'DISTRIBUTOR_HOST=mimir-write-zone-a-0:8080',
         'ALERT_MANAGER_HOST=mimir-backend-1:8080',
         'RULER_HOST=mimir-backend-1:8080',
         'QUERY_FRONTEND_HOST=mimir-read-1:8080',

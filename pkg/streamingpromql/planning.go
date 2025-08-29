@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/tracing"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -35,7 +36,7 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
-	activeQueryTracker       promql.QueryTracker
+	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
@@ -43,8 +44,11 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
@@ -66,15 +70,19 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
-	return planner
+	return planner, nil
 }
 
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, error) {
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
@@ -87,7 +95,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
-	}
+	}, nil
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
@@ -112,7 +120,11 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
+	span, ctx := tracing.StartSpanFromContext(ctx, "QueryPlanner.NewQueryPlan")
+	defer span.Finish()
+	span.SetTag("query", qs)
+
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
 	if err != nil {
 		return nil, err
 	}

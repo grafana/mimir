@@ -1098,6 +1098,7 @@ ingester:
     #
     # storageClass: "-"
 
+  livenessProbe: null
   readinessProbe:
     httpGet:
       path: /ready

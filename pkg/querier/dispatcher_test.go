@@ -83,7 +83,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	ctx := context.Background()
 	logger := log.NewNopLogger()
-	planner := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, logger)
 	require.NoError(t, err)
 
