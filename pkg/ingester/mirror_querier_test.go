@@ -249,7 +249,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			logger := log.NewNopLogger()
 			comparisonOutcomes := promauto.With(prometheus.NewPedanticRegistry()).NewCounterVec(
 				prometheus.CounterOpts{Name: "test_comparison_outcomes_" + tc.name},
-				[]string{"outcome", "user"},
+				[]string{"outcome"},
 			)
 
 			querier := &mirroredChunkQuerier{
@@ -271,7 +271,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			querier.compareResults(secondary)
 
 			// Should record expected metric
-			metric, err := comparisonOutcomes.GetMetricWithLabelValues(tc.expectedMetricLabel, "test-user")
+			metric, err := comparisonOutcomes.GetMetricWithLabelValues(tc.expectedMetricLabel)
 			require.NoError(t, err)
 			assert.Equal(t, 1.0, testutil.ToFloat64(metric))
 		})
