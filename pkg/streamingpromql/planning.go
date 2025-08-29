@@ -167,9 +167,26 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
 				dedupAndMerge.RunDelayedNameRemoval = true
 			} else {
-				root = &core.DeduplicateAndMerge{
-					Inner:                      root,
-					DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+				// Don't run delayed name removal or deduplicate and merge where there are no
+				// vector selectors.
+				shouldWrapInDedupAndMerge := true
+				switch node := root.(type) {
+				case *core.NumberLiteral, *core.StringLiteral:
+					shouldWrapInDedupAndMerge = false
+				case *core.BinaryExpression:
+					if node.VectorMatching == nil {
+						shouldWrapInDedupAndMerge = false
+					}
+				case *core.FunctionCall:
+					if !functionHasVectorSelectors(node.Function) {
+						shouldWrapInDedupAndMerge = false
+					}
+				}
+				if shouldWrapInDedupAndMerge {
+					root = &core.DeduplicateAndMerge{
+						Inner:                      root,
+						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+					}
 				}
 			}
 		}
@@ -201,6 +218,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	return plan, err
+}
+
+func functionHasVectorSelectors(fn functions.Function) bool {
+	switch fn {
+	case functions.FUNCTION_SCALAR, functions.FUNCTION_PI, functions.FUNCTION_TIME:
+		return false
+	}
+	return true
 }
 
 func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {

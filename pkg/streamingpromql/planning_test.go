@@ -1791,3 +1791,16 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionHasVectorSelectors(t *testing.T) {
+	for name, fn := range parser.Functions {
+		t.Run(name, func(t *testing.T) {
+			f, ok := functions.FromPromQLName(name)
+			// TODO: include experimental functions
+			if !ok {
+				return
+			}
+			require.Equal(t, fn.ReturnType == parser.ValueTypeVector || fn.ReturnType == parser.ValueTypeMatrix, functionHasVectorSelectors(f))
+		})
+	}
+}
