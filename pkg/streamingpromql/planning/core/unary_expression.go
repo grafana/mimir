@@ -76,7 +76,7 @@ func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Mater
 
 	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
-		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params.MemoryConsumptionTracker, u.ExpressionPosition(), timeRange, params.EnableDelayedNameRemoval)
+		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, *params, u.ExpressionPosition(), timeRange)
 		return planning.NewSingleUseOperatorFactory(o), nil
 	case types.ScalarOperator:
 		o := scalars.NewUnaryNegationOfScalar(inner, u.ExpressionPosition())
