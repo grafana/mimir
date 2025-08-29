@@ -160,7 +160,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, MemoryConsumptionTracker: memoryConsumptionTracker}
-			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, false, true)
+			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, false)
 
 			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)

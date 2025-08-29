@@ -18,7 +18,6 @@ var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain m
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	EnableDelayedNameRemoval bool
 	RunDelayedNameRemoval    bool
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
@@ -32,8 +31,8 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval, runDelayedNameRemoval bool) *DeduplicateAndMerge {
-	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, EnableDelayedNameRemoval: enableDelayedNameRemoval, RunDelayedNameRemoval: runDelayedNameRemoval}
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, runDelayedNameRemoval bool) *DeduplicateAndMerge {
+	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, RunDelayedNameRemoval: runDelayedNameRemoval}
 }
 
 func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
@@ -43,7 +42,7 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesM
 		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	if d.EnableDelayedNameRemoval && d.RunDelayedNameRemoval && innerMetadata.DropName {
+	if d.RunDelayedNameRemoval && innerMetadata.DropName {
 		for i := range innerMetadata.Metadata {
 			d.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
 			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
