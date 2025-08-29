@@ -266,23 +266,23 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 }
 
 // PushOTLP the input timeseries to the remote endpoint in OTLP format
-func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, string, error) {
 	// Create write request
 	otlpRequest := distributor.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	return c.PushOTLPPayload(data, "application/x-protobuf")
 }
 
-func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, error) {
+func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, string, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Scope-OrgID", c.orgID)
@@ -293,11 +293,14 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
+	// Read all the body.
 	defer res.Body.Close()
-	return res, nil
+	body, err := io.ReadAll(res.Body)
+
+	return res, string(body), nil
 }
 
 // Query runs an instant query.
