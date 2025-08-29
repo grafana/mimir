@@ -216,6 +216,13 @@ func TestFromFPointsToSamples(t *testing.T) {
 	assert.Equal(t, expected, FromFPointsToSamples(input))
 }
 
+func TestFromSamplesToFPoints(t *testing.T) {
+	input := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+	expected := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
+
+	assert.Equal(t, expected, FromSamplesToFPoints(input))
+}
+
 // Check that Prometheus FPoint and Mimir Sample types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
@@ -242,6 +249,16 @@ func TestFromHPointsToHistograms(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, FromHPointsToHistograms(input))
+}
+
+func TestFromHistogramsToHPoints(t *testing.T) {
+	input := []FloatHistogramPair{
+		{TimestampMs: 3, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
+		{TimestampMs: 5, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
+	}
+	expected := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
+
+	assert.Equal(t, expected, FromHistogramsToHPoints(input))
 }
 
 // Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
