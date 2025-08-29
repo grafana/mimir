@@ -161,7 +161,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) (types.SeriesMetadata
 		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
-	return types.SeriesMetadataSet{Metadata: outputSeries, DropName: false}, nil
+	return types.SeriesMetadataSet{Metadata: outputSeries, DropName: innerSeries.DropName}, nil
 }
 
 func (t *InstantQuery) getK(ctx context.Context) error {
