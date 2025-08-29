@@ -86,7 +86,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) (types.SeriesMetada
 			}
 		}
 	}
-	return types.SeriesMetadataSet{Metadata: metadata, DropName: innerMetadata.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: metadata, DropName: false}, nil
 }
 
 func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

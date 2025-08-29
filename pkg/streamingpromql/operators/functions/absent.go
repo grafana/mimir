@@ -81,7 +81,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, e
 		}
 		types.PutInstantVectorSeriesData(series, a.MemoryConsumptionTracker)
 	}
-	return types.SeriesMetadataSet{Metadata: metadata, DropName: innerMetadata.DropName}, nil
+	return types.SeriesMetadataSet{Metadata: metadata, DropName: false}, nil
 }
 
 func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
