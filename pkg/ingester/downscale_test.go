@@ -155,7 +155,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		require.Equal(t, http.StatusMethodNotAllowed, res.Code)
 	})
 
-	t.Run("should return Conflict when any compaction is in progress", func(t *testing.T) {
+	t.Run("should return Conflict when read-only and any compaction is in progress", func(t *testing.T) {
 		t.Parallel()
 
 		ingester, r := setup(true)
@@ -170,7 +170,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 			return inst.ReadOnly
 		})
 
-		// Simulate a compation in progress.
+		// Simulate a compaction in progress.
 		ingester.numCompactionsInProgress.Inc()
 		defer ingester.numCompactionsInProgress.Dec()
 
@@ -181,6 +181,39 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Post-condition: entry should still be read-only
 		test.Poll(t, 10*time.Second, true, func() interface{} {
+			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			require.NoError(t, err)
+			return inst.ReadOnly
+		})
+	})
+
+	t.Run("should return OK when not read-only and any compaction is in progress", func(t *testing.T) {
+		t.Parallel()
+
+		ingester, r := setup(true)
+
+		// Pre-condition: entry is not read-only.
+		test.Poll(t, 10*time.Second, false, func() interface{} {
+			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			require.NoError(t, err)
+			return inst.ReadOnly
+		})
+
+		// Simulate a compaction in progress.
+		ingester.numCompactionsInProgress.Inc()
+		defer ingester.numCompactionsInProgress.Dec()
+
+		// Call DELETE while compaction is in progress
+		res := httptest.NewRecorder()
+		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, target, nil))
+		require.Equal(t, http.StatusOK, res.Code)
+
+		resp := response{}
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &resp))
+		require.Equal(t, int64(0), resp.Timestamp)
+
+		// Post-condition: entry is still not read only.
+		test.Poll(t, 10*time.Second, false, func() interface{} {
 			inst, err := r.GetInstance(ingester.lifecycler.ID)
 			require.NoError(t, err)
 			return inst.ReadOnly
