@@ -27,6 +27,12 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	testutil "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -40,13 +46,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	testutil "github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestConfig_ShouldSupportYamlConfig(t *testing.T) {
@@ -125,6 +124,40 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail on invalid value of symbols-flushers-concurrency": {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
+		},
+		"should pass with standalone planning mode": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeStandalone
+			},
+			expected: "",
+		},
+		"should pass with scheduler mode and valid address": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+			expected: "",
+		},
+		"should fail with scheduler mode but no address": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = ""
+			},
+			expected: errInvalidSchedulerAddress.Error(),
+		},
+		"should fail with invalid planning mode": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = "invalid-mode"
+			},
+			expected: errInvalidPlanningMode.Error(),
+		},
+		"should fail with scheduler mode and zero update interval": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = "localhost:9095"
+				cfg.SchedulerUpdateInterval = 0
+			},
+			expected: errInvalidSchedulerUpdateInterval.Error(),
 		},
 	}
 
@@ -2372,4 +2405,25 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
+	return Config{
+		PlanningMode:                        PlanningMode,
+		SchedulerAddress:                    schedulerAddress,
+		SchedulerUpdateInterval:             20 * time.Second,
+		SchedulerMaxJobDuration:             6 * time.Hour,
+		CompactionJobsOrder:                 CompactionOrderOldestFirst,
+		SchedulerMinBackoff:                 100 * time.Millisecond,
+		SchedulerMaxBackoff:                 1 * time.Second,
+		MaxOpeningBlocksConcurrency:         1,
+		MaxClosingBlocksConcurrency:         1,
+		SymbolsFlushersConcurrency:          1,
+		MaxBlockUploadValidationConcurrency: 1,
+		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+	}
+}
+
+func mockBucketFactory(ctx context.Context) (objstore.Bucket, error) {
+	return &bucket.ClientMock{}, nil
 }

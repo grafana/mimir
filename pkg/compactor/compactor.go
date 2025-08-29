@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -50,6 +51,13 @@ const (
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
 )
 
+const (
+	planningModeStandalone = "standalone"
+	planningModeScheduler  = "scheduler"
+)
+
+var CompactionPlanningModes = []string{planningModeScheduler, planningModeStandalone}
+
 var (
 	errInvalidBlockRanges                         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
 	errInvalidCompactionOrder                     = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
@@ -57,6 +65,9 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
+	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
+	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address, required when compactor mode is %q", planningModeScheduler)
+	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -132,6 +143,15 @@ type Config struct {
 	UploadSparseIndexHeaders       bool               `yaml:"upload_sparse_index_headers" category:"experimental"`
 	SparseIndexHeadersSamplingRate int                `yaml:"-"`
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
+
+	// Scheduler mode options
+	PlanningMode            string            `yaml:"planning_mode" category:"experimental"`
+	SchedulerAddress        string            `yaml:"scheduler_address" category:"experimental"`
+	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
+	SchedulerMaxJobDuration time.Duration     `yaml:"scheduler_max_job_duration" category:"experimental"`
+	SchedulerMinBackoff     time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
+	SchedulerMaxBackoff     time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
+	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -154,6 +174,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
+	f.StringVar(&cfg.PlanningMode, "compactor.planning-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
+	f.StringVar(&cfg.SchedulerAddress, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
+	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
+	f.DurationVar(&cfg.SchedulerMaxJobDuration, "compactor.scheduler-max-job-duration", 6*time.Hour, "Maximum duration for a compaction job before it is cancelled.")
+	f.DurationVar(&cfg.SchedulerMinBackoff, "compactor.scheduler-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.SchedulerMaxBackoff, "compactor.scheduler-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -203,6 +230,28 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
+	}
+
+	if !slices.Contains(CompactionPlanningModes, cfg.PlanningMode) {
+		return errInvalidPlanningMode
+	}
+
+	if cfg.PlanningMode == planningModeScheduler {
+		if strings.TrimSpace(cfg.SchedulerAddress) == "" {
+			return errInvalidSchedulerAddress
+		}
+		if cfg.SchedulerUpdateInterval <= 0 {
+			return errInvalidSchedulerUpdateInterval
+		}
+		if cfg.SchedulerMaxJobDuration <= 0 {
+			return fmt.Errorf("scheduler max job duration must be positive")
+		}
+		if cfg.SchedulerMinBackoff <= 0 {
+			return fmt.Errorf("scheduler min backoff must be positive")
+		}
+		if cfg.SchedulerMaxBackoff <= cfg.SchedulerMinBackoff {
+			return fmt.Errorf("scheduler max backoff must be greater than min backoff")
+		}
 	}
 
 	return nil
@@ -280,6 +329,9 @@ type MultitenantCompactor struct {
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
 
+	// CompactionExecutor used to set the planning and compaction strategy
+	executor CompactionExecutor
+
 	// Ring used for sharding compactions.
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -301,6 +353,8 @@ type MultitenantCompactor struct {
 	compactionRunFailedTenants     prometheus.Gauge
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
+
+	invalidClusterValidation *prometheus.CounterVec
 
 	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
@@ -457,6 +511,7 @@ func newMultitenantCompactor(
 
 	// The last successful compaction run metric is exposed as seconds since epoch, so we need to use seconds for this metric.
 	c.compactionRunInterval.Set(c.compactorCfg.CompactionInterval.Seconds())
+	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "compactor", util.GRPCProtocol)
 
 	return c, nil
 }
@@ -484,6 +539,17 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
 	if err != nil {
 		return err
+	}
+
+	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
+	// will periodically request to lease a job from a central scheduler at cfg.SchedulerAddress.
+	if c.compactorCfg.PlanningMode == planningModeScheduler {
+		c.executor, err = NewSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
+		if err != nil {
+			return errors.Wrap(err, "failed to create scheduler executor")
+		}
+	} else {
+		c.executor = &StandaloneExecutor{}
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -589,6 +655,13 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 func (c *MultitenantCompactor) stopping(_ error) error {
 	ctx := context.Background()
 
+	// Stop executor first to clean up any resources
+	if c.executor != nil {
+		if err := c.executor.Stop(); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to stop executor", "err", err)
+		}
+	}
+
 	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
@@ -597,22 +670,7 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 }
 
 func (c *MultitenantCompactor) running(ctx context.Context) error {
-	// Run an initial compaction before starting the interval.
-	c.compactUsers(ctx)
-
-	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			c.compactUsers(ctx)
-		case <-ctx.Done():
-			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return errors.Wrap(err, "compactor subservice failed")
-		}
-	}
+	return c.executor.Run(ctx, c)
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
