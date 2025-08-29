@@ -6063,6 +6063,12 @@ tsdb:
   # performance.
   # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
   [index_lookup_planning_enabled: <boolean> | default = false]
+
+  # (experimental) Portion of queries where a mirrored chunk querier compares
+  # results with and without index lookup planning. Value between 0 (disabled)
+  # and 1 (all queries).
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-comparison-portion
+  [index_lookup_planning_comparison_portion: <float> | default = 0]
 ```
 
 ### compactor

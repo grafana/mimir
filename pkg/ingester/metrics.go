@@ -87,6 +87,9 @@ type ingesterMetrics struct {
 
 	// Count number of requests rejected due to utilization based limiting.
 	utilizationLimitedRequests *prometheus.CounterVec
+
+	// Index lookup planning comparison outcomes.
+	indexLookupComparisonOutcomes *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -386,6 +389,11 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_prepare_shutdown_requested",
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
 		}),
+
+		indexLookupComparisonOutcomes: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
+			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
+		}, []string{"outcome", "user"}),
 	}
 
 	// Initialize expected rejected request labels
