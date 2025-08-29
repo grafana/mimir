@@ -249,8 +249,20 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
 			if parentSpanContext, valid := contextWithSpanFromRequest(ctx, request); valid {
+				var spanDescription string
+
+				if request.GetProtobufRequest() != nil {
+					if messageName, err := types.AnyMessageName(request.GetProtobufRequest().Payload); err == nil {
+						spanDescription = messageName
+					} else {
+						spanDescription = request.GetProtobufRequest().Payload.TypeUrl
+					}
+				} else {
+					spanDescription = "HTTP-over-gRPC"
+				}
+
 				var queueSpan trace.Span
-				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
+				ctx, queueSpan = tracer.Start(parentSpanContext, fmt.Sprintf("runRequest: %v", spanDescription))
 				defer queueSpan.End()
 			}
 			logger := util_log.WithContext(ctx, sp.log)
