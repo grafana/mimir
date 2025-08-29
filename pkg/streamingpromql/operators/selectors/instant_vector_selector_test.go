@@ -256,7 +256,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
 			}
 
-			require.Equal(t, expectedSeries, series)
+			require.Equal(t, expectedSeries, series.Metadata)
 
 			// First series should contain floats.
 			floatSeries, err := selector.NextSeries(ctx)

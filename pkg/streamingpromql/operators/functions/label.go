@@ -19,17 +19,17 @@ import (
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata types.SeriesMetadataSet, tracker *limiter.MemoryConsumptionTracker, _ bool) (types.SeriesMetadataSet, error) {
 		dst := dstLabelOp.GetValue()
 		if !model.UTF8Validation.IsValidLabelName(dst) {
-			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
+			return types.NewEmptySeriesMetadataSet(), fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
 			if !model.UTF8Validation.IsValidLabelName(src) {
-				return nil, fmt.Errorf("invalid source label name in label_join(): %s", src)
+				return types.NewEmptySeriesMetadataSet(), fmt.Errorf("invalid source label name in label_join(): %s", src)
 			}
 			srcLabels[i] = src
 		}
@@ -37,7 +37,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 		lb := labels.NewBuilder(labels.EmptyLabels())
 
 		var sb strings.Builder
-		for i := range seriesMetadata {
+		for i := range seriesMetadata.Metadata {
 			sb.Reset()
 
 			for j, srcLabel := range srcLabels {
@@ -46,17 +46,21 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 				}
 				// Get returns an empty string for missing labels, so this is safe and gives the desired output
 				// where a series may be missing a source label.
-				sb.WriteString(seriesMetadata[i].Labels.Get(srcLabel))
+				sb.WriteString(seriesMetadata.Metadata[i].Labels.Get(srcLabel))
 			}
 
-			lb.Reset(seriesMetadata[i].Labels)
+			lb.Reset(seriesMetadata.Metadata[i].Labels)
 			lb.Set(dst, sb.String())
-			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
-			seriesMetadata[i].Labels = lb.Labels()
-			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
+			seriesMetadata.Metadata[i].Labels = lb.Labels()
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
 			if err != nil {
-				return nil, err
+				return types.NewEmptySeriesMetadataSet(), err
 			}
+		}
+
+		if dst == labels.MetricName {
+			seriesMetadata.DropName = false
 		}
 
 		return seriesMetadata, nil
@@ -64,35 +68,39 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 }
 
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata types.SeriesMetadataSet, tracker *limiter.MemoryConsumptionTracker, _ bool) (types.SeriesMetadataSet, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {
-			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
+			return types.NewEmptySeriesMetadataSet(), fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
 		if !model.UTF8Validation.IsValidLabelName(dst) {
-			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
+			return types.NewEmptySeriesMetadataSet(), fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()
 		src := srcLabelOp.GetValue()
 
 		lb := labels.NewBuilder(labels.EmptyLabels())
 
-		for i := range seriesMetadata {
-			srcVal := seriesMetadata[i].Labels.Get(src)
+		for i := range seriesMetadata.Metadata {
+			srcVal := seriesMetadata.Metadata[i].Labels.Get(src)
 			indexes := regex.FindStringSubmatchIndex(srcVal)
 			if indexes != nil { // Only replace when regexp matches.
 				res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
-				lb.Reset(seriesMetadata[i].Labels)
+				lb.Reset(seriesMetadata.Metadata[i].Labels)
 				lb.Set(dst, string(res))
-				tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
-				seriesMetadata[i].Labels = lb.Labels()
-				err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+				tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
+				seriesMetadata.Metadata[i].Labels = lb.Labels()
+				err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
 				if err != nil {
-					return nil, err
+					return types.NewEmptySeriesMetadataSet(), err
 				}
 			}
+		}
+
+		if dst == labels.MetricName {
+			seriesMetadata.DropName = false
 		}
 
 		return seriesMetadata, nil

@@ -32,7 +32,8 @@ type FunctionOverRangeVector struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	timeRange types.QueryTimeRange
+	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -49,6 +50,7 @@ func NewFunctionOverRangeVector(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *FunctionOverRangeVector {
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
@@ -58,6 +60,7 @@ func NewFunctionOverRangeVector(
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 
 	if f.SeriesValidationFuncFactory != nil {
@@ -77,22 +80,22 @@ func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := m.processScalarArgs(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if m.metricNames != nil {
-		m.metricNames.CaptureMetricNames(metadata)
+		m.metricNames.CaptureMetricNames(metadata.Metadata)
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
 
 	return metadata, nil

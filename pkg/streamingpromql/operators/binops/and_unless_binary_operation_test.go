@@ -321,9 +321,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
-				require.Empty(t, outputSeries)
+				require.Empty(t, outputSeries.Metadata)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
@@ -342,7 +342,7 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
-			for outputSeriesIdx := range outputSeries {
+			for outputSeriesIdx := range outputSeries.Metadata {
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
@@ -363,7 +363,7 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				}
 			}
 
-			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -452,11 +452,11 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					require.NoError(t, err)
 
 					if isUnless {
-						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedUnlessOutputSeries), outputSeries)
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedUnlessOutputSeries), outputSeries.Metadata)
 					} else {
-						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries)
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries.Metadata)
 					}
-					types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+					types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
 
 					// Read the first output series to trigger the loading of some intermediate state for at least one of the output groups.
 					_, err = o.NextSeries(ctx)

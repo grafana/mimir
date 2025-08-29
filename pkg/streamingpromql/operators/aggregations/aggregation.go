@@ -117,21 +117,21 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *Aggregation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries.Metadata, a.MemoryConsumptionTracker)
 
-	if len(innerSeries) == 0 {
+	if len(innerSeries.Metadata) == 0 {
 		// No input series == no output series.
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
-	a.metricNames.CaptureMetricNames(innerSeries)
+	a.metricNames.CaptureMetricNames(innerSeries.Metadata)
 
 	// Determine the groups we'll return.
 	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
@@ -139,9 +139,9 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	groups := map[string]groupWithLabels{}
 	groupLabelsBytesFunc := a.groupLabelsBytesFunc()
 	groupLabelsFunc := a.groupLabelsFunc()
-	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
+	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries.Metadata))
 
-	for seriesIdx, series := range innerSeries {
+	for seriesIdx, series := range innerSeries.Metadata {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -162,7 +162,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), a.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	a.remainingGroups = make([]*group, 0, len(groups))
@@ -170,14 +170,14 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	for _, g := range groups {
 		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels})
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 		a.remainingGroups = append(a.remainingGroups, g.group)
 	}
 
 	sort.Sort(groupSorter{seriesMetadata, a.remainingGroups})
 
-	return seriesMetadata, nil
+	return types.SeriesMetadataSet{Metadata: seriesMetadata, DropName: innerSeries.DropName}, nil
 }
 
 func (a *Aggregation) groupLabelsBytesFunc() SeriesToGroupLabelsBytesFunc {

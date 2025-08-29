@@ -47,32 +47,32 @@ type InstantQuery struct {
 
 var _ types.InstantVectorOperator = &InstantQuery{}
 
-func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *InstantQuery) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	if err := t.getK(ctx); err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	if t.k == 0 {
 		// We can't return any series, so stop now.
-		return nil, nil
+		return types.NewEmptySeriesMetadataSet(), nil
 	}
 
 	innerSeries, err := t.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&innerSeries, t.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries.Metadata, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
-	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries))
+	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries.Metadata))
 
 	// Go through each series and find / create its group, and keep track of how many series contribute to each group.
 	// We do this separately to the loop below so that we know the number of series in each group when we allocate
 	// each group's `series` slice inside accumulateValue - this allows us to avoid allocating a huge slice if the
 	// group only has a few series and `k` is large.
-	for _, series := range innerSeries {
+	for _, series := range innerSeries.Metadata {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -87,12 +87,12 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 
 	outputSeriesCount := 0
 
-	for idx, series := range innerSeries {
+	for idx, series := range innerSeries.Metadata {
 		g := seriesToGroups[idx]
 
 		data, err := t.Inner.NextSeries(ctx)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		if len(data.Histograms) > 0 {
@@ -107,7 +107,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		}
 
 		if addedAdditionalSeriesToOutput, err := t.accumulateValue(series, data.Floats[0].F, g); err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		} else if addedAdditionalSeriesToOutput {
 			outputSeriesCount++
 		}
@@ -117,12 +117,12 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 
 	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	t.values, err = types.Float64SlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	outputSeries = outputSeries[:outputSeriesCount]
@@ -143,7 +143,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			next := heap.Pop(t.heap).(instantQuerySeries)
 			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
 			if err != nil {
-				return nil, err
+				return types.NewEmptySeriesMetadataSet(), err
 			}
 
 			if math.IsNaN(next.value) {
@@ -161,7 +161,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
-	return outputSeries, nil
+	return types.SeriesMetadataSet{Metadata: outputSeries, DropName: innerSeries.DropName}, nil
 }
 
 func (t *InstantQuery) getK(ctx context.Context) error {

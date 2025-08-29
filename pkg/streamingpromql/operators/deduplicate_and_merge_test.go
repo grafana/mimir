@@ -160,13 +160,13 @@ func TestDeduplicateAndMerge(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, MemoryConsumptionTracker: memoryConsumptionTracker}
-			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker)
+			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, false)
 
 			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata.Metadata)
 			}
 
 			outputData := []types.InstantVectorSeriesData{}

@@ -40,18 +40,18 @@ func NewSort(
 	}
 }
 
-func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Sort) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	allSeries, err := s.inner.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	s.allData = make([]types.InstantVectorSeriesData, len(allSeries))
+	s.allData = make([]types.InstantVectorSeriesData, len(allSeries.Metadata))
 
-	for idx := range allSeries {
+	for idx := range allSeries.Metadata {
 		d, err := s.inner.NextSeries(ctx)
 		if err != nil {
-			return nil, err
+			return types.NewEmptySeriesMetadataSet(), err
 		}
 
 		// sort() and sort_desc() ignore histograms.
@@ -59,7 +59,7 @@ func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, erro
 		pointCount := len(d.Floats)
 
 		if pointCount > 1 {
-			return nil, fmt.Errorf("expected series %v to have at most one point, but it had %v", allSeries[idx], pointCount)
+			return types.NewEmptySeriesMetadataSet(), fmt.Errorf("expected series %v to have at most one point, but it had %v", allSeries.Metadata[idx], pointCount)
 		}
 
 		s.allData[idx] = d
@@ -74,7 +74,7 @@ func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, erro
 
 	sort.Sort(&sortSeriesAndData{
 		data:   s.allData,
-		series: allSeries,
+		series: allSeries.Metadata,
 		less:   lessFn,
 	})
 

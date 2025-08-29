@@ -18,6 +18,7 @@ var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain m
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	RunDelayedNameRemoval    bool
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -30,18 +31,29 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
-	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, runDelayedNameRemoval bool) *DeduplicateAndMerge {
+	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, RunDelayedNameRemoval: runDelayedNameRemoval}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
 	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
 
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
-	if !types.HasDuplicateSeries(innerMetadata) {
+	if d.RunDelayedNameRemoval && innerMetadata.DropName {
+		for i := range innerMetadata.Metadata {
+			d.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
+			innerMetadata.Metadata[i].Labels = innerMetadata.Metadata[i].Labels.DropMetricName()
+			err := d.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerMetadata.Metadata[i].Labels)
+			if err != nil {
+				return types.NewEmptySeriesMetadataSet(), err
+			}
+		}
+	}
+
+	if !types.HasDuplicateSeries(innerMetadata.Metadata) {
 		// Common case: there are definitely no duplicate series, so we don't need to do anything special in this operator.
 		// We can just return series as-is from the inner operator.
 		d.passthrough = true
@@ -50,16 +62,16 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	}
 
 	// We might have duplicates (or HasDuplicateSeries hit a hash collision). Determine the merged output series.
-	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata)
+	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata.Metadata)
 	if err != nil {
-		return nil, err
+		return types.NewEmptySeriesMetadataSet(), err
 	}
 
 	d.groups = groups
-	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&innerMetadata, d.MemoryConsumptionTracker)
+	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata.Metadata), d.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, d.MemoryConsumptionTracker)
 
-	return outputMetadata, nil
+	return types.SeriesMetadataSet{Metadata: outputMetadata}, nil
 }
 
 func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata, error) {
