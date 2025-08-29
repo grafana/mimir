@@ -296,6 +296,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	var err error
 	if n, err = newRulerNotifier(&notifier.Options{
 		QueueCapacity:   r.cfg.NotificationQueueCapacity,
+		MaxBatchSize:    r.cfg.MaxNotificationBatchSize,
 		DrainOnShutdown: true,
 		Registerer:      reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
