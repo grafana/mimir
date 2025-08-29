@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -39,7 +40,9 @@ type FunctionOverRangeVector struct {
 
 	buildingIntermediate bool
 	usingIntermediate    bool
-	intermediateResults  []IntermediateResultBlock
+	intermediateResults  []cache.IntermediateResultBlock
+
+	irCache *cache.IntermediateResultsCache
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -126,9 +129,9 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	return metadata, nil
 }
 
-func fakeCache(user, function, selector string, start int64, duration time.Duration) []IntermediateResultBlock {
+func fakeCache(user, function, selector string, start int64, duration time.Duration) []cache.IntermediateResultBlock {
 	// Quantize and split the time range.
-	return []IntermediateResultBlock{
+	return []cache.IntermediateResultBlock{
 		{
 			StartTimestampMs: 0,
 		},
@@ -164,12 +167,12 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}()
 
 	data := types.InstantVectorSeriesData{}
-	var pieces []IntermediateResult
+	var pieces []cache.IntermediateResult
 
 	if m.usingIntermediate || m.buildingIntermediate {
 		if x, ok := m.Inner.(cacheHelper); ok {
 			rng := x.Range()
-			pieces = make([]IntermediateResult, rng/intermediateCacheBlockLength)
+			pieces = make([]cache.IntermediateResult, rng/intermediateCacheBlockLength)
 		}
 	}
 
@@ -246,18 +249,6 @@ const (
 	intermediateCacheBlockLength = time.Minute * 5
 	minDurationToCache           = intermediateCacheBlockLength * 6
 )
-
-type IntermediateResultBlock struct {
-	Version          int
-	StartTimestampMs int
-	DurationMs       int
-	Series           []types.SeriesMetadata
-	Results          []IntermediateResult // Per-series, matching indexes of Series.
-}
-
-type IntermediateResult struct {
-	sumOverTime sumOverTimeIntermediate
-}
 
 /*
 1. Break the range down into intervals

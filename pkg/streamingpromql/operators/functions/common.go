@@ -5,6 +5,7 @@ package functions
 import (
 	"github.com/prometheus/prometheus/model/histogram"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -92,10 +93,10 @@ type RangeVectorPiecewiseGenerateFunction func(
 	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (intermediateResult IntermediateResult, err error)
+) (intermediateResult cache.IntermediateResult, err error)
 
 type RangeVectorPiecewiseCombineFunction func(
-	pieces []IntermediateResult,
+	pieces []cache.IntermediateResult,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)

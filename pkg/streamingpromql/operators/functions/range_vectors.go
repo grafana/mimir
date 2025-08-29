@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -171,39 +172,30 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	return 0, false, h, err
 }
 
-type sumOverTimeIntermediate struct {
-	sumF       float64
-	sumC       float64 // FIXME figure out how to use this in summation.
-	sumH       *histogram.FloatHistogram
-	hasFloat   bool
-	RangeStart int64
-	RangeEnd   int64
-}
-
-func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (IntermediateResult, error) {
+func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
 	f, hasFloat, h, err := sumOverTime(step, nil, queryRange, emitAnnotation, nil)
 	if err != nil {
-		return IntermediateResult{}, err
+		return cache.IntermediateResult{}, err
 	}
-	return IntermediateResult{sumOverTimeIntermediate{sumF: f, hasFloat: hasFloat, sumH: h, RangeStart: queryRange.StartT, RangeEnd: queryRange.EndT}}, nil
+	return cache.IntermediateResult{SumOverTime: cache.SumOverTimeIntermediate{SumF: f, HasFloat: hasFloat, SumH: h}}, nil
 }
 
-func sumOverTimeCombine(pieces []IntermediateResult, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func sumOverTimeCombine(pieces []cache.IntermediateResult, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	haveFloats := false
 	sumF, c := 0.0, 0.0
 	var sumH *histogram.FloatHistogram
 
 	for _, ir := range pieces {
-		p := ir.sumOverTime
-		if p.hasFloat {
+		p := ir.SumOverTime
+		if p.HasFloat {
 			haveFloats = true
-			sumF, c = floats.KahanSumInc(p.sumF, sumF, c)
+			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
 		}
-		if p.sumH != nil {
+		if p.SumH != nil {
 			if sumH == nil {
-				sumH = p.sumH.Copy()
+				sumH = p.SumH.Copy()
 			} else {
-				if _, _, err := sumH.Add(p.sumH); err != nil {
+				if _, _, err := sumH.Add(p.SumH); err != nil {
 					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				}
