@@ -762,7 +762,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.max-rules-per-rule-group-by-namespace value
     	Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group. (default {})
   -ruler.query-frontend.address string
-    	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+    	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
   -ruler.query-frontend.max-retries-rate float
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string
