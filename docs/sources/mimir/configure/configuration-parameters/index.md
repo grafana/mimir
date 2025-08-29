@@ -5188,7 +5188,7 @@ sharding_ring:
 # (experimental) Compactor operation mode. Supported values are: standalone
 # (plan and execute compactions), scheduler (request jobs from a remote
 # scheduler).
-# CLI flag: -compactor.scheduling-mode
+# CLI flag: -compactor.planning-mode
 [planning_mode: <string> | default = "standalone"]
 
 # (experimental) Compactor scheduler endpoint. Required when compactor mode is

@@ -11237,7 +11237,7 @@
           "desc": "Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler).",
           "fieldValue": null,
           "fieldDefaultValue": "standalone",
-          "fieldFlag": "compactor.scheduling-mode",
+          "fieldFlag": "compactor.planning-mode",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },

@@ -1059,6 +1059,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
+  -compactor.planning-mode string
+    	[experimental] Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
   -compactor.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
@@ -1189,8 +1191,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -compactor.scheduler.tls-server-name string
     	Override the expected name on the server certificate.
-  -compactor.scheduling-mode string
-    	[experimental] Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting.
   -compactor.split-groups int
