@@ -4146,6 +4146,7 @@ func TestEnableDelayedNameRemoval(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
+			const_histogram{foo="bar"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x<num samples>
 	`)
 
 	const step = 20 * time.Second
@@ -4172,11 +4173,13 @@ func TestEnableDelayedNameRemoval(t *testing.T) {
 	}
 
 	testCases := map[string]string{
-		"original":             `count_over_time({__name__!=""}[1m])`,
-		"fixed":                `label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)")`,
-		"function after label": `abs(label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)"))`,
-		"sum by label 1m":      `sum(rate({foo="bar"}[1m])) by (foo)`,
-		"sum by label 10m":     `sum(rate({foo="bar"}[10m])) by (foo)`,
+		"original":               `count_over_time({__name__!=""}[1m])`,
+		"fixed":                  `label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)")`,
+		"function after label":   `abs(label_replace(count_over_time({__name__!=""}[1m]), "__name__", "count_$1", "__name__", "(.+)"))`,
+		"sum by label 1m":        `sum(rate({foo="bar"}[1m])) by (foo)`,
+		"sum by label 10m":       `sum(rate({foo="bar"}[10m])) by (foo)`,
+		"complicated histograms": `histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))`,
+		"or":                     `rate(up[5m]) or rate(down[5m])`,
 	}
 
 	for name, q := range testCases {
