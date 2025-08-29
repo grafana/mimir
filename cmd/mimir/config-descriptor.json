@@ -10861,7 +10861,7 @@
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
               "fieldType": "int",
-              "fieldCategory": "deprecated"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -10905,7 +10905,7 @@
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-size",
               "fieldType": "int",
-              "fieldCategory": "deprecated"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
