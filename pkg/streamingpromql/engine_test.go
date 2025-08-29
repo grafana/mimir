@@ -247,7 +247,9 @@ func TestOurTestCases(t *testing.T) {
 
 func TestBryan(t *testing.T) {
 	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	qp, err := NewQueryPlanner(opts)
+	require.NoError(t, err)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), qp, log.NewNopLogger())
 	require.NoError(t, err)
 
 	baseT := timestamp.Time(0)

@@ -181,7 +181,7 @@ type sumOverTimeIntermediate struct {
 }
 
 func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (IntermediateResult, error) {
-	f, hasFloat, h, err := sumOverTime(step, 0, nil, queryRange, emitAnnotation, nil)
+	f, hasFloat, h, err := sumOverTime(step, nil, queryRange, emitAnnotation, nil)
 	if err != nil {
 		return IntermediateResult{}, err
 	}
@@ -203,7 +203,8 @@ func sumOverTimeCombine(pieces []IntermediateResult, emitAnnotation types.EmitAn
 			if sumH == nil {
 				sumH = p.sumH.Copy()
 			} else {
-				if _, err := sumH.Add(p.sumH); err != nil {
+				// FIXME: what to do with counter reset value?
+				if _, _, err := sumH.Add(p.sumH); err != nil {
 					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				}
