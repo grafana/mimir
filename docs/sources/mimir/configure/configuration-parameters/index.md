@@ -2705,6 +2705,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
