@@ -859,6 +859,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
+		t.Cfg.Frontend.EnableRemoteExecution,
+		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
 	if err != nil {
