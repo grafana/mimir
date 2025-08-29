@@ -56,7 +56,7 @@ func NewAndUnlessBinaryOperation(
 }
 
 func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
-	series, err := a.computeSeriesMetadata(ctx)
+	series, dropName, err := a.computeSeriesMetadata(ctx)
 	if err != nil {
 		return types.NewEmptySeriesMetadataSet(), err
 	}
@@ -79,24 +79,24 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) (types.Se
 		a.Right.Close()
 	}
 
-	return types.SeriesMetadataSet{Metadata: series}, nil
+	return types.SeriesMetadataSet{Metadata: series, DropName: dropName}, nil
 }
 
-func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, bool, error) {
 	leftMetadata, err := a.Left.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if len(leftMetadata.Metadata) == 0 {
 		// We can't produce any series, we are done.
 		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, a.MemoryConsumptionTracker)
-		return nil, nil
+		return nil, false, nil
 	}
 
 	rightMetadata, err := a.Right.SeriesMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	defer types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, a.MemoryConsumptionTracker)
@@ -104,7 +104,7 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 	if len(rightMetadata.Metadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
 		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, a.MemoryConsumptionTracker)
-		return nil, nil
+		return nil, false, nil
 	}
 
 	groupMap := map[string]*andGroup{}
@@ -143,9 +143,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([
 	}
 
 	if a.IsUnless {
-		return a.computeUnlessSeriesMetadata(leftMetadata.Metadata), nil
+		return a.computeUnlessSeriesMetadata(leftMetadata.Metadata), leftMetadata.DropName || rightMetadata.DropName, nil
 	}
-	return a.computeAndSeriesMetadata(leftMetadata.Metadata), nil
+	return a.computeAndSeriesMetadata(leftMetadata.Metadata), leftMetadata.DropName || rightMetadata.DropName, nil
 }
 
 func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types.SeriesMetadata) []types.SeriesMetadata {

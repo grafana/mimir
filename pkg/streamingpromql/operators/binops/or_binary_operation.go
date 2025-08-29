@@ -127,7 +127,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMet
 	if err != nil {
 		return types.NewEmptySeriesMetadataSet(), err
 	}
-	return types.SeriesMetadataSet{Metadata: result}, nil
+	return types.SeriesMetadataSet{Metadata: result, DropName: leftMetadata.DropName || rightMetadata.DropName}, nil
 }
 
 func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) {

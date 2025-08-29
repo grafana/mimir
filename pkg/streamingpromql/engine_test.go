@@ -4146,6 +4146,7 @@ func TestEnableDelayedNameRemoval(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
+			up{foo="bar3",baz="fob3",boo="far3",faf="bob3"} 0+9x<num samples>
 			const_histogram{foo="bar"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x<num samples>
 	`)
 
@@ -4180,6 +4181,8 @@ func TestEnableDelayedNameRemoval(t *testing.T) {
 		"sum by label 10m":       `sum(rate({foo="bar"}[10m])) by (foo)`,
 		"complicated histograms": `histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))`,
 		"or":                     `rate(up[5m]) or rate(down[5m])`,
+		"and":                    `rate(up[5m]) and rate(down[5m])`,
+		"unless":                 `rate(up[5m]) unless rate(down[5m])`,
 	}
 
 	for name, q := range testCases {
