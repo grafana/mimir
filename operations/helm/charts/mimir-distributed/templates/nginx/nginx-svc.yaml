@@ -23,6 +23,9 @@ spec:
   {{- if and (eq "LoadBalancer" .Values.nginx.service.type) .Values.nginx.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.nginx.service.loadBalancerIP }}
   {{- end }}
+  {{- if .Values.nginx.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.nginx.service.trafficDistribution }}
+  {{- end }}
   ports:
     - name: http-metric
       port: {{ .Values.nginx.service.port }}
