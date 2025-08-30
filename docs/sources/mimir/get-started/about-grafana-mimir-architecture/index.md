@@ -13,9 +13,7 @@ weight: 5
 
 Grafana Mimir has a microservices-based architecture. The system has multiple horizontally scalable microservices that can run separately and in parallel. Grafana Mimir microservices are called components.
 
-Grafana Mimir's design compiles the code for all components into a single binary.
-
-The `-target` parameter controls which components that single binary behaves as.
+Grafana Mimir's design compiles the code for all components into a single binary. The `-target` parameter controls which components that single binary behaves as.
 
 To get started, you can run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process. For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
 
