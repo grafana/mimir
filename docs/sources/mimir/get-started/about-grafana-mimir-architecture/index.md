@@ -19,7 +19,9 @@ The `-target` parameter controls which components that single binary behaves as.
 
 To get started, you can run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process. For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
 
-## About ingest storage architecture
+Starting with version 3.0, you can deploy Grafana Mimir using the following architectures:
+- Ingest storage(default): This architecture uses Kafka as a central pipeline to decouple read and write operations. Refer to [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/ingest-storage/).
+- Classic: This architecture uses stateful ingesters with local write-ahead logs to manage both the ingestion of new data and serving recent data for queries.
 
 {{< admonition type="note" >}}
 Classic architecture is still supported in Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new Mimir deployment.{{< /admonition >}}
