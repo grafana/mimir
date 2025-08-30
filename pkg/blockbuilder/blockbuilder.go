@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path"
 	"time"
@@ -51,8 +52,9 @@ type BlockBuilder struct {
 	// the current job iteration number. For tests.
 	jobIteration atomic.Int64
 
-	blockBuilderMetrics blockBuilderMetrics
-	tsdbBuilderMetrics  tsdbBuilderMetrics
+	blockBuilderMetrics   blockBuilderMetrics
+	tsdbBuilderMetrics    tsdbBuilderMetrics
+	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
 func New(
@@ -73,12 +75,13 @@ func newWithSchedulerClient(
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
 	b := &BlockBuilder{
-		cfg:                 cfg,
-		logger:              logger,
-		register:            reg,
-		limits:              limits,
-		blockBuilderMetrics: newBlockBuilderMetrics(reg),
-		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
+		cfg:                   cfg,
+		logger:                logger,
+		register:              reg,
+		limits:                limits,
+		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
+		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
+		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -191,6 +194,12 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
 		if _, err := b.consumeJob(context.WithoutCancel(ctx), key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+
+			if err := b.schedulerClient.FailJob(key); err != nil {
+				level.Error(b.logger).Log("msg", "failed to fail job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+				panic("couldn't fail job")
+			}
+
 			continue
 		}
 
@@ -217,10 +226,13 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
-	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	builder := NewTSDBBuilder(logger, b.cfg.DataDir, spec.Partition, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
-	return b.consumePartitionSection(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
+	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
+	consumer := ingest.NewPusherConsumer(builder, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
+
+	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
 // consumePartitionSection is for the use of scheduler-based architecture.
@@ -230,6 +242,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 func (b *BlockBuilder) consumePartitionSection(
 	ctx context.Context,
 	logger log.Logger,
+	consumer ingest.RecordConsumer,
 	builder *TSDBBuilder,
 	partition int32,
 	startOffset, endOffset int64,
@@ -270,12 +283,11 @@ func (b *BlockBuilder) consumePartitionSection(
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
 	var (
-		firstRec *kgo.Record
-		lastRec  *kgo.Record
+		firstRecOffset = int64(-1)
+		lastRecOffset  = int64(-1)
 	)
 
-consumerLoop:
-	for recOffset := int64(-1); recOffset < endOffset-1; {
+	for lastRecOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
 		}
@@ -292,50 +304,49 @@ consumerLoop:
 			}
 		})
 
-		for recIter := fetches.RecordIter(); !recIter.Done(); {
-			rec := recIter.Next()
-			recOffset = rec.Offset
-
-			if firstRec == nil {
-				firstRec = rec
+		recordsAll := func(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
+			return func(yield func(*kgo.Record) bool) {
+				for recIter := fetches.RecordIter(); !recIter.Done(); {
+					rec := recIter.Next()
+					// Stop consuming after we touched the endOffset.
+					if rec.Offset >= endOffset {
+						return
+					}
+					if !yield(rec) {
+						return
+					}
+				}
 			}
+		}
 
-			// Stop consuming after we touched the endOffset.
-			if recOffset >= endOffset {
-				break consumerLoop
+		records := recordsAll(fetches)
+		for rec := range records {
+			lastRecOffset = rec.Offset
+			if firstRecOffset == -1 {
+				firstRecOffset = lastRecOffset
 			}
+		}
 
-			err := builder.Process(ctx, rec)
-			if err != nil {
-				// All "non-terminal" errors are handled by the TSDBBuilder.
-				return 0, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
-			}
-			lastRec = rec
+		err := consumer.Consume(ctx, records)
+		if err != nil {
+			return 0, fmt.Errorf("consume records in partition %d: %w", partition, err)
 		}
 	}
 
 	// Nothing was consumed from Kafka at all.
-	if firstRec == nil {
+	if firstRecOffset == -1 {
 		level.Info(logger).Log("msg", "no records were consumed")
 		return
 	}
-
-	// No records were processed for this cycle.
-	if lastRec == nil {
-		level.Info(logger).Log("msg", "nothing to commit due to first record has a timestamp greater than this section end", "first_rec_offset", firstRec.Offset, "first_rec_ts", firstRec.Timestamp)
-		// TODO: scheduler should be able to understand this state and catch up quickly.
-		return startOffset, nil
-	}
-
 	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return 0, err
 	}
 
-	// TODO: figure out a way to track the blockCounts metrics if possible.
+	// TODO: figure out a way to track the blockCounts metrics.
 
-	return lastRec.Offset, nil
+	return lastRecOffset, nil
 }
 
 func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {

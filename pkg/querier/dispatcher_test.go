@@ -83,7 +83,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	ctx := context.Background()
 	logger := log.NewNopLogger()
-	planner := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, logger)
 	require.NoError(t, err)
 
@@ -164,7 +165,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
@@ -179,7 +180,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 0, Value: 0.123},
 										{TimestampMs: 10_000, Value: 1.123},
@@ -195,7 +196,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 0, Value: 1.123},
 										{TimestampMs: 10_000, Value: 3.123},
@@ -438,7 +439,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 6,
+									NodeIndex: 7,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 									},
@@ -452,7 +453,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 6,
+									NodeIndex: 7,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 30_000, Value: math.Inf(1)},
 									},
@@ -489,7 +490,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
+									NodeIndex: 2,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
@@ -536,4 +537,26 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 
 	m.messages = append(m.messages, decoded)
 	return nil
+}
+
+func TestDispatcher_MQEDisabled(t *testing.T) {
+	dispatcher := NewDispatcher(log.NewNopLogger(), nil, nil)
+
+	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
+	require.NoError(t, err)
+
+	stream := &mockQueryResultStream{t: t}
+	dispatcher.HandleProtobuf(context.Background(), req, stream)
+
+	expected := []*frontendv2pb.QueryResultStreamRequest{
+		{
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_NOT_FOUND,
+					Message: `MQE is not enabled on this querier`,
+				},
+			},
+		},
+	}
+	require.Equal(t, expected, stream.messages)
 }

@@ -13,6 +13,8 @@ import (
 type EngineOpts struct {
 	CommonOpts promql.EngineOpts `yaml:"-"`
 
+	ActiveQueryTracker QueryTracker `yaml:"-"`
+
 	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
 	// (indicating something was not returned to a pool).
 	// Should only be used in tests.

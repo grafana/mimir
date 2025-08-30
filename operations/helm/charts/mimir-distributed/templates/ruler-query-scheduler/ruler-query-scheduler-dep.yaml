@@ -10,6 +10,9 @@ metadata:
     {{- toYaml .Values.ruler_query_scheduler.annotations | nindent 4 }}
 spec:
   replicas: {{ .Values.ruler_query_scheduler.replicas }}
+  {{- with .Values.ruler_query_scheduler.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-query-scheduler") | nindent 6 }}

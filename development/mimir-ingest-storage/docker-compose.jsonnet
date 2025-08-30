@@ -4,6 +4,7 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.usage_tracker +
     self.nginx +
     self.minio +
     self.grafana +
@@ -107,13 +108,55 @@ std.manifestYamlDoc({
     }),
   },
 
+  usage_tracker:: {
+    'usage-tracker-zone-a-0': mimirService({
+      name: 'usage-tracker-zone-a-0',
+      target: 'usage-tracker',
+      publishedHttpPort: 8010,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+    'usage-tracker-zone-a-1': mimirService({
+      name: 'usage-tracker-zone-a-1',
+      target: 'usage-tracker',
+      publishedHttpPort: 8011,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+    'usage-tracker-zone-b-0': mimirService({
+      name: 'usage-tracker-zone-b-0',
+      target: 'usage-tracker',
+      publishedHttpPort: 8012,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+  },
+
   nginx:: {
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      depends_on: [
+        'mimir-write-zone-a-0',
+        'mimir-backend-1',
+        'mimir-read-1',
+        'grafana',
+      ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=mimir-write-1:8080',
+        'DISTRIBUTOR_HOST=mimir-write-zone-a-0:8080',
         'ALERT_MANAGER_HOST=mimir-backend-1:8080',
         'RULER_HOST=mimir-backend-1:8080',
         'QUERY_FRONTEND_HOST=mimir-read-1:8080',

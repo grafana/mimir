@@ -134,4 +134,8 @@ func (t *testScalarOperator) Prepare(_ context.Context, _ *types.PrepareParams) 
 	return nil
 }
 
+func (t *testScalarOperator) Finalize(_ context.Context) error {
+	return nil
+}
+
 func (t *testScalarOperator) Close() {}

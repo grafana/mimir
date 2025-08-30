@@ -54,10 +54,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
 func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts) {
+	tracker := newQueryTracker(activityTracker)
+
 	commonOpts := promql.EngineOpts{
 		Logger:               util_log.SlogFromGoKit(logger),
 		Reg:                  reg,
-		ActiveQueryTracker:   newQueryTracker(activityTracker),
+		ActiveQueryTracker:   tracker,
 		MaxSamples:           cfg.MaxSamples,
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,
@@ -70,6 +72,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
+	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
 
 	return commonOpts, cfg.MimirQueryEngine
 }

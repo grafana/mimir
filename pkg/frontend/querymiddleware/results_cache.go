@@ -32,7 +32,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -66,7 +65,7 @@ func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {
-	if cfg.Backend != "" && !util.StringsContain(supportedResultsCacheBackends, cfg.Backend) {
+	if cfg.Backend != "" && !slices.Contains(supportedResultsCacheBackends, cfg.Backend) {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 

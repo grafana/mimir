@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	grpcstatus "google.golang.org/grpc/status"
@@ -99,8 +100,8 @@ func TestValidateLabels(t *testing.T) {
 		limits := *limits
 		perTenant[userID] = &limits
 	}
-	perTenant[defaultUserID].NameValidationScheme = validation.ValidationSchemeValue(model.LegacyValidation)
-	perTenant[utf8UserID].NameValidationScheme = validation.ValidationSchemeValue(model.UTF8Validation)
+	perTenant[defaultUserID].NameValidationScheme = model.LegacyValidation
+	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
 		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
@@ -228,19 +229,16 @@ func TestValidateLabels(t *testing.T) {
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			wantErr: alwaysErr(fmt.Errorf(
-				labelValueTooLongMsgFormat,
-				"much_shorter_name",
-				"test_value_please_ignore_no_really_nothing_to_see_here",
-				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
-						{Name: model.MetricNameLabel, Value: "badLabelValue"},
-						{Name: "group", Value: "custom label"},
-						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
-						{Name: "team", Value: "biz"},
-					},
-				),
-			)),
+			wantErr: alwaysErr(labelValueTooLongError{
+				Label: labels.Label{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+				Limit: 25,
+				Series: mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "badLabelValue"},
+					{Name: "group", Value: "custom label"},
+					{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+					{Name: "team", Value: "biz"},
+				}),
+			}),
 		},
 		{
 			name:                     "too many labels",
@@ -730,6 +728,54 @@ func TestValidateLabelDuplication(t *testing.T) {
 		),
 	)
 	assert.Equal(t, expected, actual)
+}
+
+func TestValidateLabel_UseAfterRelease(t *testing.T) {
+	buf, err := (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "value_longer_than_maxLabelValueLength"},
+			},
+		},
+	}).Marshal()
+	require.NoError(t, err)
+
+	// Unmarshal into a reusable PreallocTimeseries.
+	var ts mimirpb.PreallocTimeseries
+	err = ts.Unmarshal(buf, nil, nil, false)
+	require.NoError(t, err)
+
+	// Call validateLabels to get a LabelValueTooLongError.
+	cfg := validateLabelsCfg{
+		maxLabelNameLength:  25,
+		maxLabelValueLength: 5,
+		validationScheme:    model.UTF8Validation,
+	}
+	const userID = "testUser"
+	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	reg := prometheus.NewPedanticRegistry()
+	s := newSampleValidationMetrics(reg)
+	careg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
+	require.NoError(t, err)
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
+	var lengthErr labelValueTooLongError
+	require.ErrorAs(t, err, &lengthErr)
+
+	// Reuse PreallocTimeseries by unmarshaling a different TimeSeries into
+	// the same buffer. This replaces the previous value in-place, and thus at
+	// this point no references to the buffer should be lingering.
+	_, err = (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "forbidden_name", Value: "forbidden_value"},
+			},
+		},
+	}).MarshalTo(buf)
+	require.NoError(t, err)
+
+	// Ensure the labelValueTooLongError isn't corrupted.
+	require.EqualError(t, lengthErr, "received a series whose label value length exceeds the limit, label: '__name__', value: 'value_longer_than_maxLabelValueLength' (truncated) series: 'value_longer_than_maxLabelValueLength' (err-mimir-label-value-too-long). To adjust the related per-tenant limit, configure -validation.max-length-label-value, or contact your service administrator.")
 }
 
 type sampleValidationCfg struct {

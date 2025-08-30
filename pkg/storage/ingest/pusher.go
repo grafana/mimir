@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -34,10 +36,10 @@ type PusherCloser interface {
 	Close() []error
 }
 
-// pusherConsumer receives records from Kafka and pushes them to the storage.
-// Each time a batch of records is received from Kafka, we instantiate a new pusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
-type pusherConsumer struct {
-	metrics *pusherConsumerMetrics
+// PusherConsumer receives records from Kafka and pushes them to the storage.
+// Each time a batch of records is received from Kafka, we instantiate a new PusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
+type PusherConsumer struct {
+	metrics *PusherConsumerMetrics
 	logger  log.Logger
 
 	kafkaConfig KafkaConfig
@@ -45,12 +47,12 @@ type pusherConsumer struct {
 	pusher Pusher
 }
 
-// newPusherConsumer creates a new pusherConsumer instance.
-func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
+// NewPusherConsumer creates a new PusherConsumer instance.
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
-	return &pusherConsumer{
+	return &PusherConsumer{
 		pusher:      pusher,
 		kafkaConfig: kafkaCfg,
 		metrics:     metrics,
@@ -58,9 +60,9 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	}
 }
 
-// Consume implements the recordConsumer interface.
+// Consume implements the RecordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
-func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnErr error) {
+func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) (returnErr error) {
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
@@ -71,7 +73,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		ctx      context.Context
 		tenantID string
 		err      error
-		index    int
+		offset   int64
 	}
 
 	recordsChannel := make(chan parsedRecord)
@@ -80,10 +82,10 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	ctx, cancel := context.WithCancelCause(ctx)
 
 	// Now, unmarshal the records into the channel.
-	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
+	go func(unmarshalCtx context.Context, records iter.Seq[*kgo.Record], ch chan<- parsedRecord) {
 		defer close(ch)
 
-		for index, r := range records {
+		for rec := range records {
 			// Before we being unmarshalling the write request check if the context was cancelled.
 			select {
 			case <-unmarshalCtx.Done():
@@ -93,18 +95,18 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:                  r.ctx,
-				tenantID:             r.tenantID,
 				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
-				index:                index,
+				// This context carries the tracing data for this individual record;
+				// kotel populates this data when it fetches the messages.
+				ctx:      rec.Context,
+				tenantID: string(rec.Key),
+				offset:   rec.Offset,
 			}
 
-			if r.version > LatestRecordVersion {
-				parsed.err = fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", r.version, LatestRecordVersion)
-			}
+			recVersion := ParseRecordVersion(rec)
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
+			err := DeserializeRecordContent(rec.Value, parsed.PreallocWriteRequest, recVersion)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
@@ -121,8 +123,8 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	// We accumulate the total bytes across all records per tenant to determine the number of timeseries we expected to receive.
 	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
 	var bytesPerTenant = make(map[string]int)
-	for _, r := range records {
-		bytesPerTenant[r.tenantID] += len(r.content)
+	for rec := range records {
+		bytesPerTenant[string(rec.Key)] += len(rec.Value)
 	}
 
 	// Create and start the storage writer.
@@ -149,7 +151,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
-			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
+			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", r.offset, r.tenantID, err)
 		}
 	}
 
@@ -157,7 +159,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	return nil
 }
 
-func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
+func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
 	if c.kafkaConfig.IngestionConcurrencyMax == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
@@ -176,8 +178,8 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 	)
 }
 
-func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
-	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "pusherConsumer.pushToStorage")
+func (c PusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "PusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.

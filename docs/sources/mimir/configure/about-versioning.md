@@ -212,6 +212,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
+  - Index lookup planning comparison to validate planning correctness
+    - `-blocks-storage.tsdb.index-lookup-planning-enabled`
+    - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
