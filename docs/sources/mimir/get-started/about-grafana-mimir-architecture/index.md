@@ -18,7 +18,7 @@ Grafana Mimir's design compiles the code for all components into a single binary
 To get started, you can run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process. For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
 
 Starting with version 3.0, you can deploy Grafana Mimir using the following architectures:
-- Ingest storage(default): This architecture uses Kafka as a central pipeline to decouple read and write operations. Refer to [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/ingest-storage/).
+- Ingest storage (default): This architecture uses Kafka as a central pipeline to decouple read and write operations. Refer to [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/ingest-storage/).
 - Classic: This architecture uses stateful ingesters with local write-ahead logs to manage both the ingestion of new data and serving recent data for queries.
 
 {{< admonition type="note" >}}
