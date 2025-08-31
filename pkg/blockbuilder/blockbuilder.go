@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -247,7 +248,6 @@ func (b *BlockBuilder) consumePartitionSection(
 	partition int32,
 	startOffset, endOffset int64,
 ) (lastConsumedOffset int64, retErr error) {
-	lastConsumedOffset = startOffset
 	if startOffset >= endOffset {
 		level.Info(logger).Log("msg", "nothing to consume")
 		return
@@ -282,27 +282,49 @@ func (b *BlockBuilder) consumePartitionSection(
 
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
-	var (
-		firstRecOffset = int64(-1)
-		lastRecOffset  = int64(-1)
-	)
+	pollingCtx, cancelPollingCtx := context.WithCancelCause(ctx)
 
-	for lastRecOffset < endOffset-1 {
+	fetchesCh := make(chan kgo.Fetches)
+
+	defer func() {
+		cancelPollingCtx(cancellation.NewErrorf("done consuming partition %d", partition))
+		// Use fetches channel as a signal that the polling goroutine, that pre-fetches the records from Kafka, has been finished.
+		<-fetchesCh
+	}()
+
+	// The polling for Kafka records takes tens to several hundreds of milliseconds, depending on the Kafka-compatible backend.
+	// To mitigate the added latency during polling, we pre-fetch every next batch of records in a separate goroutine. This makes sure there is always
+	// a batch of records available for the consumer to process.
+	go func(ctx context.Context) {
+		defer close(fetchesCh)
+
+		for {
+			fetches := b.kafkaClient.PollFetches(ctx)
+			fetches.EachError(func(_ string, _ int32, err error) {
+				if !errors.Is(err, context.Canceled) {
+					level.Error(logger).Log("msg", "failed to fetch records", "err", err)
+					b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
+				}
+			})
+			select {
+			case fetchesCh <- fetches:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}(pollingCtx)
+
+	lastConsumedOffset = startOffset
+	for lastConsumedOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
 		}
 
-		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
-		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
-		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
-		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
-		fetches.EachError(func(_ string, _ int32, err error) {
-			if !errors.Is(err, context.Canceled) {
-				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
-				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
-			}
-		})
+		fetches := <-fetchesCh
+
+		if fetches.Empty() {
+			continue
+		}
 
 		recordsAll := func(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
 			return func(yield func(*kgo.Record) bool) {
@@ -321,10 +343,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		records := recordsAll(fetches)
 		for rec := range records {
-			lastRecOffset = rec.Offset
-			if firstRecOffset == -1 {
-				firstRecOffset = lastRecOffset
-			}
+			lastConsumedOffset = rec.Offset
 		}
 
 		err := consumer.Consume(ctx, records)
@@ -333,12 +352,12 @@ func (b *BlockBuilder) consumePartitionSection(
 		}
 	}
 
-	// Nothing was consumed from Kafka at all.
-	if firstRecOffset == -1 {
-		level.Info(logger).Log("msg", "no records were consumed")
-		return
-	}
+	// Cancel the polling goroutine's context because the processing loop has reached its upper bound (ie. the end offset defined by the job's spec).
+	// This will signal to the polling goroutine to stop.
+	cancelPollingCtx(cancellation.NewErrorf("processing loop reached end offset %d", lastConsumedOffset))
+
 	var err error
+	// Note, blockMetas is logged as part of consumption stats above.
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return 0, err
@@ -346,7 +365,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 	// TODO: figure out a way to track the blockCounts metrics.
 
-	return lastRecOffset, nil
+	return lastConsumedOffset, nil
 }
 
 func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {
