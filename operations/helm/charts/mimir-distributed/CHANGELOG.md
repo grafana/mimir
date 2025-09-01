@@ -30,6 +30,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
+* [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
+  * Ingest storage is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled with Apache Kafka or Kafka-compatible backend.
+  * The Helm chart deploys a single-node Kafka cluster for demo purposes. The new `kafka.enabled` value can be set to `false` to disable the deployment of the Kafka cluster. Users must configure the Mimir components with the credentials of an external Kafka-compatible cluster in this case.
 * [CHANGE] Grafana Agent: Deprecate `metaMonitoring.grafanaAgent` values. #12307
   * Grafana Agent was deprecated in early 2024 and reaches End-of-Support at the end of 2025.
   * Instead of provisioning the agent's Kubernetes resources with the chart's `metaMonitoring.grafanaAgent.enabled`, collect Mimir's meta-monitoring data with an external collector. It's recommended to use Grafana k8s-monitoring, which manages the creation and lifecycle of Alloy instances and has built-in support for collecting telemetry from Grafana LGTM stacks.
