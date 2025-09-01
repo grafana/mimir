@@ -8,7 +8,6 @@ load 1m
   down{foo="bar2"} 0+4x10
   up{foo="bar3"} 0+5x10
 
-# Handles logical binary operations properly.
 eval instant at 10m rate(up[5m]) or rate(down[5m])
   {foo="bar"} 0.016666666666666666
   {foo="bar2"} 0.05
@@ -38,3 +37,16 @@ eval instant at 10m absent_over_time(up{foo="bar4"}[10m]) / absent_over_time(dow
 
 eval instant at 10m label_replace(absent_over_time(up{foo="bar4"}[10m]), "__name__", "ab_$1", "__name__", "(.+)")
   {foo="bar4"} 1
+
+eval instant at 10m count_values("value_count", up)
+  {value_count="10"} 1
+  {value_count="30"} 1
+  {value_count="50"} 1
+
+eval instant at 10m count_values("value_count", {foo="bar"})
+  {value_count="10"} 1
+  {value_count="20"} 1
+
+eval instant at 10m up / on(foo) group_right() down
+  {foo="bar"} 0.5
+  {foo="bar2"} 0.75
