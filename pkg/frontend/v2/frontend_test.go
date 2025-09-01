@@ -39,6 +39,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -124,7 +125,28 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	})
 }
 
-func TestFrontendBasicWorkflow(t *testing.T) {
+func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, signal <-chan struct{}, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+	select {
+	case <-signal:
+		// DoProtobufRequest has returned (and therefore we know the frontend is ready for the response), we can proceed.
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for test to signal for response to proceed")
+	}
+
+	for _, m := range resp {
+		m.QueryID = queryID
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	stream := &mockQueryResultStreamServer{
+		ctx:  ctx,
+		msgs: resp,
+	}
+	err := f.QueryResultStream(stream)
+	require.NoError(t, err)
+}
+
+func TestFrontendBasicHTTPGRPCWorkflow(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
@@ -148,6 +170,42 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
+}
+
+func TestFrontendBasicProtobufWorkflow(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+	}
+
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+	close(signal)
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
 }
 
 func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
@@ -437,7 +495,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				body := "result stream body"
 				headers := []*httpgrpc.Header{{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}}}
 				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, int(resp.Code), resp.Headers),
 					bodyChunkRequest(msg, resp.Body[:len(resp.Body)/2]),
@@ -451,7 +509,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "received metadata only, no body data sent",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
 				)
@@ -462,7 +520,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "metadata and empty body chunks",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
 					bodyChunkRequest(msg, nil),
@@ -475,7 +533,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "errors on wrong message sequence",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"16"}}}),
 					bodyChunkRequest(msg, []byte("part 1/2")),
@@ -494,7 +552,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
 				recvCalled := make(chan chan struct{})
 				cancelAfterCalls := 2
-				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
+				s := &mockQueryResultStreamServer{ctx: ctx, recvCalled: recvCalled}
 				go func() {
 					recvCount := 0
 					for called := range recvCalled {
@@ -579,7 +637,6 @@ func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *fro
 
 type mockQueryResultStreamServer struct {
 	ctx        context.Context
-	queryID    uint64
 	msgs       []*frontendv2pb.QueryResultStreamRequest
 	next       int
 	recvCalled chan chan struct{}
@@ -782,4 +839,18 @@ type limits struct {
 
 func (l limits) QueryIngestersWithin(string) time.Duration {
 	return l.queryIngestersWithin
+}
+
+func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_StringValue{
+					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+						Value: s,
+					},
+				},
+			},
+		},
+	}
 }
