@@ -364,9 +364,9 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		enqueueError: make(chan error, 1),
 	}
 
-	go func() {
-		f.requests.put(freq)
+	f.requests.put(freq)
 
+	go func() {
 		defer func() {
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)

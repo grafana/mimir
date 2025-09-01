@@ -128,14 +128,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	})
 }
 
-func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, signal <-chan struct{}, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
-	select {
-	case <-signal:
-		// DoProtobufRequest has returned (and therefore we know the frontend is ready for the response), we can proceed.
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for test to signal for response to proceed")
-	}
-
+func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -188,10 +181,8 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 		newStringMessage("second message"),
 	}
 
-	signal := make(chan struct{})
-
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -201,7 +192,6 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
 	defer resp.Close()
-	close(signal)
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
@@ -224,12 +214,11 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 		newStringMessage("second message"),
 	}
 
-	signal := make(chan struct{})
 	responseRead := make(chan struct{})
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// Send the entire response, and wait until it has been received by the test below.
-		sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+		sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
 
 		select {
 		case <-responseRead:
@@ -246,7 +235,6 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
 	defer resp.Close()
-	close(signal)
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
@@ -272,10 +260,8 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 		newStringMessage("third message"),
 	}
 
-	signal := make(chan struct{})
-
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -284,7 +270,6 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
-	close(signal)
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
@@ -295,11 +280,9 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	const userID = "test"
 
-	signal := make(chan struct{})
-
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
-		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, errorMessage)
+		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, errorMessage)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -309,7 +292,6 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
 	defer resp.Close()
-	close(signal)
 
 	msg, err := resp.Next(ctx)
 	require.Equal(t, apierror.New(apierror.TypeBadData, "something went wrong"), err)
@@ -323,11 +305,11 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	)
 
 	testCases := map[string]struct {
-		sendQuerierResponse func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{})
-		makeRequest         func(t *testing.T, f *Frontend, signal chan struct{})
+		sendQuerierResponse func(t *testing.T, f *Frontend, queryID uint64)
+		makeRequest         func(t *testing.T, f *Frontend)
 	}{
 		"HTTP-over-gRPC": {
-			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{}) {
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
 				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 				// It first needs to be told that enqueuing has succeeded.
 				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
@@ -335,7 +317,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 					Body: []byte(body),
 				})
 			},
-			makeRequest: func(t *testing.T, f *Frontend, signal chan struct{}) {
+			makeRequest: func(t *testing.T, f *Frontend) {
 				req := &httpgrpc.HTTPRequest{
 					Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 				}
@@ -346,16 +328,15 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			},
 		},
 		"Protobuf": {
-			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{}) {
-				go sendStreamingResponseOnSignal(t, f, signal, userID, queryID, newStringMessage("the message"))
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
+				go sendStreamingResponseOnSignal(t, f, userID, queryID, newStringMessage("the message"))
 			},
-			makeRequest: func(t *testing.T, f *Frontend, signal chan struct{}) {
+			makeRequest: func(t *testing.T, f *Frontend) {
 				ctx := user.InjectOrgID(context.Background(), userID)
 				req := &querierpb.EvaluateQueryRequest{}
 				resp, err := f.DoProtobufRequest(ctx, req)
 				require.NoError(t, err)
 				t.Cleanup(resp.Close)
-				close(signal)
 			},
 		},
 	}
@@ -363,10 +344,9 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
-			signal := make(chan struct{})
 
 			f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-				testCase.sendQuerierResponse(t, f, msg.QueryID, signal)
+				testCase.sendQuerierResponse(t, f, msg.QueryID)
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
 
@@ -378,7 +358,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
 			assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
-			testCase.makeRequest(t, f, signal)
+			testCase.makeRequest(t, f)
 
 			// Wait for the request to be sent to the scheduler.
 			// For HTTP-over-gRPC, this should be true before RoundTripGRPC returns, but for Protobuf requests,
@@ -439,15 +419,13 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 		newStringMessage("first message"),
 	}
 
-	signal := make(chan struct{})
-
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		fail := failures.Dec()
 		if fail >= 0 {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -457,7 +435,6 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
 	defer resp.Close()
-	close(signal)
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
@@ -819,12 +796,10 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 }
 
 func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
-	signal := make(chan struct{})
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
 	cancellationError := cancellation.NewErrorf("the request has been canceled")
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		<-signal
 		cancel(cancellationError)
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -833,7 +808,6 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req)
 	require.NoError(t, err)
 	defer resp.Close()
-	close(signal)
 
 	uncancelledContext := context.Background()
 	msg, err := resp.Next(uncancelledContext)
