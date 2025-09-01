@@ -163,7 +163,7 @@ The following flag is set appropriately by default to enable shuffle sharding fo
 
 - `-querier.shuffle-sharding-ingesters-enabled=true`<br />
   Shuffle sharding for ingesters on the read path can be explicitly enabled or disabled.
-    - If shuffle sharding is enabled, queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since now - `-blocks-storage.tsdb.retention-period`. Otherwise, the request is sent to all ingesters.
+  - If shuffle sharding is enabled, queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since now - `-blocks-storage.tsdb.retention-period`. Otherwise, the request is sent to all ingesters.
 
 If you enable ingesters shuffle sharding only for the write path, queriers and rulers on the read path always query all ingesters instead of querying the subset of ingesters that belong to the tenant's shard.
 Keeping ingesters shuffle sharding enabled only on the write path does not lead to incorrect query results, but might increase query latency.
