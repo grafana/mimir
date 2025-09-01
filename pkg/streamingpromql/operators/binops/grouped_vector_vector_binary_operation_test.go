@@ -318,7 +318,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 		})
 	}
 }
@@ -479,9 +479,9 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
-				require.Empty(t, outputSeries.Metadata)
+				require.Empty(t, outputSeries)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
@@ -500,7 +500,7 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
-			for outputSeriesIdx := range outputSeries.Metadata {
+			for outputSeriesIdx := range outputSeries {
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
@@ -521,7 +521,7 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 				}
 			}
 
-			types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -659,8 +659,8 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries.Metadata)
-			types.SeriesMetadataSlicePool.Put(&outputSeries.Metadata, memoryConsumptionTracker)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			for range testCase.seriesToRead {
 				d, err := o.NextSeries(ctx)

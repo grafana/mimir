@@ -317,7 +317,7 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries.Metadata)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
 }

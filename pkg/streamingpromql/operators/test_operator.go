@@ -27,14 +27,14 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *TestOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
+func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	if len(t.Series) == 0 {
-		return types.NewEmptySeriesMetadataSet(), nil
+		return nil, nil
 	}
 
 	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	metadata = metadata[:len(t.Series)]
@@ -42,10 +42,10 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSe
 		metadata[i].Labels = l
 		err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
 		if err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 	}
-	return types.SeriesMetadataSet{Metadata: metadata}, nil
+	return metadata, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

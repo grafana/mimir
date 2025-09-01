@@ -397,24 +397,24 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 			outputSeries, err := o.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
-			require.ElementsMatch(t, outputSeries.Metadata, testutils.LabelsToSeriesMetadata(testCase.inputSeries), "output does not contain same series as input")
-			alreadyUsed := make([]bool, len(outputSeries.Metadata))
+			require.ElementsMatch(t, outputSeries, testutils.LabelsToSeriesMetadata(testCase.inputSeries), "output does not contain same series as input")
+			alreadyUsed := make([]bool, len(outputSeries))
 
 			// topk and bottomk only guarantee that series within a group appear together and in value order, but do not guarantee
 			// any particular order for the groups. So we have to accommodate that in this test.
 			for _, group := range testCase.expectedOutputSeriesGroups {
 				// Find the first output series that matches the first expected series for this group.
-				firstSeriesIndex := slices.IndexFunc(outputSeries.Metadata, func(m types.SeriesMetadata) bool {
+				firstSeriesIndex := slices.IndexFunc(outputSeries, func(m types.SeriesMetadata) bool {
 					return labels.Equal(m.Labels, group[0])
 				})
 
-				require.NotEqualf(t, -1, firstSeriesIndex, "could not find first series for group %v in output %v", group, outputSeries.Metadata)
+				require.NotEqualf(t, -1, firstSeriesIndex, "could not find first series for group %v in output %v", group, outputSeries)
 				require.Falsef(t, alreadyUsed[firstSeriesIndex], "output series at index %v matches multiple groups", firstSeriesIndex)
 				alreadyUsed[firstSeriesIndex] = true
 
 				for i, s := range group[1:] {
 					expectedSeriesIndex := firstSeriesIndex + i + 1
-					require.Equalf(t, s, outputSeries.Metadata[expectedSeriesIndex].Labels, "series at index %v in group %v was not at index %v expected in output %v", i+1, group, expectedSeriesIndex, outputSeries.Metadata)
+					require.Equalf(t, s, outputSeries[expectedSeriesIndex].Labels, "series at index %v in group %v was not at index %v expected in output %v", i+1, group, expectedSeriesIndex, outputSeries)
 
 					require.Falsef(t, alreadyUsed[expectedSeriesIndex], "output series at index %v matches multiple groups", expectedSeriesIndex)
 					alreadyUsed[expectedSeriesIndex] = true

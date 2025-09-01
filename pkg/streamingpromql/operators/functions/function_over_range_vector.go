@@ -80,18 +80,18 @@ func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if err := m.processScalarArgs(ctx); err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	if m.metricNames != nil {
-		m.metricNames.CaptureMetricNames(metadata.Metadata)
+		m.metricNames.CaptureMetricNames(metadata)
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {

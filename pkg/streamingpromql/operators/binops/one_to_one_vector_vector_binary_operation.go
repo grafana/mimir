@@ -170,21 +170,21 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	} else if !canProduceAnySeries {
 		if err := b.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		b.Close()
-		return types.NewEmptySeriesMetadataSet(), nil
+		return nil, nil
 	}
 
 	allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, err := b.computeOutputSeries()
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	if len(allMetadata) == 0 {
@@ -193,11 +193,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
 
 		if err := b.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		b.Close()
-		return types.NewEmptySeriesMetadataSet(), nil
+		return nil, nil
 	}
 
 	b.sortSeries(allMetadata, allSeries)
@@ -206,7 +206,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
-	return types.SeriesMetadataSet{Metadata: allMetadata}, nil
+	return allMetadata, nil
 }
 
 // loadSeriesMetadata loads series metadata from both sides of this operation.
@@ -217,22 +217,20 @@ func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Con
 	// We'll return them to the pool in Close().
 
 	var err error
-	leftMetadata, err := b.Left.SeriesMetadata(ctx)
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
 	if err != nil {
 		return false, err
 	}
-	b.leftMetadata = leftMetadata.Metadata
 
 	if len(b.leftMetadata) == 0 {
 		// No series on left-hand side, we'll never have any output series.
 		return false, nil
 	}
 
-	rightMetadata, err := b.Right.SeriesMetadata(ctx)
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
 	if err != nil {
 		return false, err
 	}
-	b.rightMetadata = rightMetadata.Metadata
 
 	if len(b.rightMetadata) == 0 {
 		// No series on right-hand side, we'll never have any output series.

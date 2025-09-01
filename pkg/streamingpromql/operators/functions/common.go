@@ -10,22 +10,24 @@ import (
 )
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
-type SeriesMetadataFunction func(seriesMetadata types.SeriesMetadataSet, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) (types.SeriesMetadataSet, error)
+type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error)
 
 // DropSeriesName is a series metadata function that removes the __name__ label from all series.
 var DropSeriesName = SeriesMetadataFunctionDefinition{
-	Func: func(seriesMetadata types.SeriesMetadataSet, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) (types.SeriesMetadataSet, error) {
+	Func: func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
 		if enableDelayedNameRemoval {
-			seriesMetadata.DropName = true
+			for i := range seriesMetadata {
+				seriesMetadata[i].DropName = true
+			}
 			return seriesMetadata, nil
 		}
 
-		for i := range seriesMetadata.Metadata {
-			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
-			seriesMetadata.Metadata[i].Labels = seriesMetadata.Metadata[i].Labels.DropMetricName()
-			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata.Metadata[i].Labels)
+		for i := range seriesMetadata {
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			if err != nil {
-				return types.NewEmptySeriesMetadataSet(), err
+				return nil, err
 			}
 		}
 

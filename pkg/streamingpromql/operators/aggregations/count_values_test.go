@@ -227,7 +227,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 			metadata, err := aggregator.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
-			require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{testCase.expectedOutputSeries}), metadata.Metadata)
+			require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{testCase.expectedOutputSeries}), metadata)
 		})
 	}
 }

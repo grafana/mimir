@@ -20,7 +20,7 @@ type InstantVectorDuplicationBuffer struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	seriesMetadataCount int
-	seriesMetadata      types.SeriesMetadataSet
+	seriesMetadata      []types.SeriesMetadata
 
 	consumers []*instantVectorConsumerState
 	buffer    *SeriesDataRingBuffer[types.InstantVectorSeriesData]
@@ -52,13 +52,13 @@ func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplication
 	}
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
 		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
 		if err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 	}
 
@@ -67,23 +67,19 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) (ty
 	if b.seriesMetadataCount == len(b.consumers) {
 		// We can safely return the original series metadata, as we're not going to return this to another consumer.
 		metadata := b.seriesMetadata
-		b.seriesMetadata = types.NewEmptySeriesMetadataSet()
+		b.seriesMetadata = nil
 
 		return metadata, nil
 	}
 
 	// Return a copy of the original series metadata.
 	// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
-	metadata, err := types.SeriesMetadataSlicePool.Get(len(b.seriesMetadata.Metadata), b.MemoryConsumptionTracker)
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(b.seriesMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
-	result, err := types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata.Metadata...)
-	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
-	}
-	return types.SeriesMetadataSet{Metadata: result, DropName: b.seriesMetadata.DropName}, nil
+	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
 }
 
 func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
@@ -219,7 +215,7 @@ func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
 }
 
 func (b *InstantVectorDuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata.Metadata, b.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
 
 	for b.buffer.Size() > 0 {
 		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
@@ -238,7 +234,7 @@ type InstantVectorDuplicationConsumer struct {
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	return d.Buffer.SeriesMetadata(ctx)
 }
 

@@ -35,10 +35,10 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1.Metadata, "first consumer should get expected series metadata")
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2.Metadata, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
 	// Read some data from the first consumer and ensure that it was buffered for the second consumer.
 	err = consumer1.NextSeries(ctx)
@@ -160,10 +160,10 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1.Metadata, "first consumer should get expected series metadata")
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2.Metadata, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	// Read some data for the first consumer and ensure that it was buffered for the second consumer.
 	err = consumer1.NextSeries(ctx)
@@ -240,11 +240,11 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1.Metadata, "first consumer should get expected series metadata")
-	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2.Metadata, "second consumer should get expected series metadata")
-	require.NotSame(t, &metadata1.Metadata[0], &metadata2.Metadata[0], "consumers should not share series metadata slices")
-	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&metadata2.Metadata, memoryConsumptionTracker)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
+	require.NotSame(t, &metadata1[0], &metadata2[0], "consumers should not share series metadata slices")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
 	// Both consumers should get the same ring buffer views.
 	err = consumer1.NextSeries(ctx)
@@ -315,8 +315,8 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	require.Equal(t, series, metadata1.Metadata, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
+	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -347,8 +347,8 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	require.Equal(t, series, metadata1.Metadata, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(&metadata1.Metadata, memoryConsumptionTracker)
+	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	// Read the data for the first series for both consumers.
 	err = consumer1.NextSeries(ctx)
@@ -393,14 +393,14 @@ type testRangeVectorOperator struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	if len(t.series) == 0 {
-		return types.NewEmptySeriesMetadataSet(), nil
+		return nil, nil
 	}
 
 	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.series), t.memoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	metadata = metadata[:len(t.series)]
@@ -409,11 +409,11 @@ func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) (types.Serie
 		metadata[i].Labels = l
 		err := t.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
 		if err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 	}
 
-	return types.SeriesMetadataSet{Metadata: metadata}, nil
+	return metadata, nil
 }
 
 func (t *testRangeVectorOperator) NextSeries(_ context.Context) error {
@@ -515,8 +515,8 @@ type failingRangeVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context) (types.SeriesMetadataSet, error) {
-	return types.SeriesMetadataSet{Metadata: o.series}, nil
+func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+	return o.series, nil
 }
 
 func (o *failingRangeVectorOperator) NextSeries(_ context.Context) error {

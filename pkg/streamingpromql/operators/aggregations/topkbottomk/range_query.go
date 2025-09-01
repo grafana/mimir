@@ -52,21 +52,21 @@ type RangeQuery struct {
 
 var _ types.InstantVectorOperator = &RangeQuery{}
 
-func (t *RangeQuery) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if err := t.getK(ctx); err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	innerSeries, err := t.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	groups := map[string]*rangeQueryGroup{}
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
-	t.remainingInnerSeriesToGroup = make([]*rangeQueryGroup, 0, len(innerSeries.Metadata))
+	t.remainingInnerSeriesToGroup = make([]*rangeQueryGroup, 0, len(innerSeries))
 
-	for seriesIdx, series := range innerSeries.Metadata {
+	for seriesIdx, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -95,7 +95,7 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSe
 	// It's important that we use a stable sort here, so that the order we receive series (and therefore accumulate series into their groups)
 	// matches the order we'll return those series in.
 	sort.Stable(topKBottomKOutputSorter{
-		metadata: innerSeries.Metadata,
+		metadata: innerSeries,
 
 		// Why do we clone this?
 		// We need to know which series belongs to which group, so that we can sort the series in the order groups will be completed.

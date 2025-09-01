@@ -20,7 +20,6 @@ func TestDropSeriesName(t *testing.T) {
 		{Labels: labels.FromStrings("__name__", "metric_name", "label1", "value1")},
 		{Labels: labels.FromStrings("__name__", "another_metric", "label2", "value2")},
 	}
-	seriesMetadataSet := types.SeriesMetadataSet{Metadata: seriesMetadata}
 
 	expected := []types.SeriesMetadata{
 		{Labels: labels.FromStrings("label1", "value1")},
@@ -32,9 +31,9 @@ func TestDropSeriesName(t *testing.T) {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		require.NoError(t, err)
 	}
-	modifiedMetadata, err := DropSeriesName.Func(seriesMetadataSet, tracker, false)
+	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker, false)
 	require.NoError(t, err)
-	require.Equal(t, expected, modifiedMetadata.Metadata)
+	require.Equal(t, expected, modifiedMetadata)
 }
 
 func TestFloatTransformationFunc(t *testing.T) {

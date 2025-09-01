@@ -42,16 +42,16 @@ func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRang
 	}
 }
 
-func (a *Absent) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(&innerMetadata.Metadata, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	// Initialize presence slice
@@ -59,18 +59,18 @@ func (a *Absent) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, e
 
 	metadata, err := types.SeriesMetadataSlicePool.Get(1, a.MemoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	metadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: a.Labels})
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
-	for range innerMetadata.Metadata {
+	for range innerMetadata {
 		series, err := a.Inner.NextSeries(ctx)
 		if err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		for _, s := range series.Floats {
@@ -81,7 +81,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, e
 		}
 		types.PutInstantVectorSeriesData(series, a.MemoryConsumptionTracker)
 	}
-	return types.SeriesMetadataSet{Metadata: metadata, DropName: false}, nil
+	return metadata, nil
 }
 
 func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

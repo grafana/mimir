@@ -46,33 +46,33 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := s.inner.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	// Store the original indexes of each piece of metadata and then sort them alongside
 	// the metadata. This allows us to return series in sorted order when requesting them
 	// from the inner operator by their original index.
-	indexes, err := types.IntSlicePool.Get(len(innerMetadata.Metadata), s.memoryConsumptionTracker)
+	indexes, err := types.IntSlicePool.Get(len(innerMetadata), s.memoryConsumptionTracker)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
-	for i := 0; i < len(innerMetadata.Metadata); i++ {
+	for i := 0; i < len(innerMetadata); i++ {
 		indexes = append(indexes, i)
 	}
 
 	sort.Sort(&sortableMetadata{
-		metadata:   innerMetadata.Metadata,
+		metadata:   innerMetadata,
 		indexes:    indexes,
 		labels:     s.labels,
 		descending: s.descending,
 	})
 
 	s.originalIndexes = indexes
-	s.buffer = operators.NewInstantVectorOperatorBuffer(s.inner, nil, len(innerMetadata.Metadata), s.memoryConsumptionTracker)
+	s.buffer = operators.NewInstantVectorOperatorBuffer(s.inner, nil, len(innerMetadata), s.memoryConsumptionTracker)
 
 	return innerMetadata, nil
 }

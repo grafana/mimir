@@ -16,17 +16,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type SeriesMetadataSet struct {
-	Metadata []SeriesMetadata
-	DropName bool
-}
-
-func NewEmptySeriesMetadataSet() SeriesMetadataSet {
-	return SeriesMetadataSet{}
-}
-
 type SeriesMetadata struct {
-	Labels labels.Labels
+	Labels   labels.Labels
+	DropName bool
 }
 
 // AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.

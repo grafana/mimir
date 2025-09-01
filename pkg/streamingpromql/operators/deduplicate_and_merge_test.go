@@ -166,7 +166,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata.Metadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
 			}
 
 			outputData := []types.InstantVectorSeriesData{}

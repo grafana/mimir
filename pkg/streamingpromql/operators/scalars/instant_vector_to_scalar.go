@@ -96,9 +96,9 @@ func (i *InstantVectorToScalar) getInnerSeriesCount(ctx context.Context) (int, e
 		return 0, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&metadata.Metadata, i.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&metadata, i.MemoryConsumptionTracker)
 
-	seriesCount := len(metadata.Metadata)
+	seriesCount := len(metadata)
 
 	return seriesCount, nil
 }

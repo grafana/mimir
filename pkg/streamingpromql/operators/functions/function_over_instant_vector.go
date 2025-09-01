@@ -80,16 +80,16 @@ func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error
 	return nil
 }
 
-func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Pre-process any Scalar arguments
 	err := m.processScalarArgs(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {

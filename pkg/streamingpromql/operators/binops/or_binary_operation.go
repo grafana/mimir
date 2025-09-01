@@ -57,45 +57,45 @@ func NewOrBinaryOperation(
 	}
 }
 
-func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMetadataSet, error) {
+func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	leftMetadata, err := o.Left.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
 	rightMetadata, err := o.Right.SeriesMetadata(ctx)
 	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
+		return nil, err
 	}
 
-	if len(leftMetadata.Metadata) == 0 && len(rightMetadata.Metadata) == 0 {
+	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
 		// Nothing to return.
-		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, o.MemoryConsumptionTracker)
-		types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		if err := o.Left.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		o.Left.Close()
 
 		if err := o.Right.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		o.Right.Close()
 
-		return types.NewEmptySeriesMetadataSet(), nil
+		return nil, nil
 	}
 
-	if len(leftMetadata.Metadata) == 0 {
+	if len(leftMetadata) == 0 {
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
-		o.rightSeriesCount = []int{len(rightMetadata.Metadata)}
-		types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, o.MemoryConsumptionTracker)
+		o.rightSeriesCount = []int{len(rightMetadata)}
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
 		if err := o.Left.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		o.Left.Close()
@@ -103,14 +103,14 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMet
 		return rightMetadata, nil
 	}
 
-	if len(rightMetadata.Metadata) == 0 {
+	if len(rightMetadata) == 0 {
 		// We can just return everything from the left side.
 		o.nextSeriesIsFromLeft = true
-		o.leftSeriesCount = []int{len(leftMetadata.Metadata)}
-		types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, o.MemoryConsumptionTracker)
+		o.leftSeriesCount = []int{len(leftMetadata)}
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		if err := o.Right.Finalize(ctx); err != nil {
-			return types.NewEmptySeriesMetadataSet(), err
+			return nil, err
 		}
 
 		o.Right.Close()
@@ -118,16 +118,12 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) (types.SeriesMet
 		return leftMetadata, nil
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&leftMetadata.Metadata, o.MemoryConsumptionTracker)
-	defer types.SeriesMetadataSlicePool.Put(&rightMetadata.Metadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
-	o.computeGroups(leftMetadata.Metadata, rightMetadata.Metadata)
+	o.computeGroups(leftMetadata, rightMetadata)
 
-	result, err := o.computeSeriesOutputOrder(leftMetadata.Metadata, rightMetadata.Metadata)
-	if err != nil {
-		return types.NewEmptySeriesMetadataSet(), err
-	}
-	return types.SeriesMetadataSet{Metadata: result, DropName: leftMetadata.DropName || rightMetadata.DropName}, nil
+	return o.computeSeriesOutputOrder(leftMetadata, rightMetadata)
 }
 
 func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) {

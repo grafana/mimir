@@ -96,7 +96,7 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries.Metadata)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
 }
@@ -379,11 +379,11 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			require.NoError(t, err)
 
 			if testCase.allowExpectedSeriesInAnyOrder {
-				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series.Metadata)
+				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
 			} else {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series.Metadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
 			}
-			types.SeriesMetadataSlicePool.Put(&series.Metadata, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
 			// Read the first output series to force the creation of incomplete groups.
 			seriesData, err := o.NextSeries(ctx)
