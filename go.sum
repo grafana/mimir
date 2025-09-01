@@ -914,8 +914,8 @@ github.com/prometheus/common v0.9.1/go.mod h1:yhUN8i9wzaXS3w1O07YhxHEBxD+W35wd8b
 github.com/prometheus/common v0.10.0/go.mod h1:Tlit/dnDKsSWFlCLTWaA1cyBgKHSMdTB80sz/V91rCo=
 github.com/prometheus/common v0.26.0/go.mod h1:M7rCNAaPfAosfx8veZJCuw84e35h3Cfd9VFqTh1DIvc=
 github.com/prometheus/common v0.29.0/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
-github.com/prometheus/common v0.65.1-0.20250825082953-9deefbac4820 h1:B78c+GuucJKi6g63ox+0L/SHB+Z6xMa+R9+70INFFjg=
-github.com/prometheus/common v0.65.1-0.20250825082953-9deefbac4820/go.mod h1:RGbSjGvjaWnQygUPajGOk7hD3bm75rored4huOYhktI=
+github.com/prometheus/common v0.65.1-0.20250827132106-3d3db3963ec8 h1:ZHv3BGNiI/EcKaom+aSmUlOyYznb27V+gx4lD97ELfg=
+github.com/prometheus/common v0.65.1-0.20250827132106-3d3db3963ec8/go.mod h1:dYVWTRlriaPTIYQc4ZwJVAqp/98eqYQWWmtyDth6rEA=
 github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdDeppTwGX4=
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=
