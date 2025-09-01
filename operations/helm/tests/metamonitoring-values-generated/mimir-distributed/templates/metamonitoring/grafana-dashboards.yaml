@@ -12486,6 +12486,101 @@ data:
                       "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
+                            "unit": "bytes"
+                         }
+                      },
+                      "id": 13,
+                      "options": {
+                         "calculate": true
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "cortex_query_frontend_queries_expression_bytes",
+                            "format": "time_series",
+                            "legendFormat": "Bytes",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length",
+                      "type": "heatmap"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 14,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Percentiles",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-frontend - Query Lengths",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
                             "custom": {
                                "drawStyle": "line",
                                "fillOpacity": 1,
@@ -12507,7 +12602,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12568,7 +12663,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 16,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12629,7 +12724,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 17,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12702,7 +12797,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12781,7 +12876,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12878,7 +12973,7 @@ data:
                             }
                          ]
                       },
-                      "id": 18,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12940,7 +13035,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12966,7 +13061,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 20,
+                      "id": 22,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13032,7 +13127,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13092,7 +13187,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13183,7 +13278,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13237,7 +13332,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13329,7 +13424,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13383,7 +13478,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13431,7 +13526,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13491,7 +13586,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13539,7 +13634,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13589,7 +13684,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13650,7 +13745,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13729,7 +13824,7 @@ data:
                             }
                          ]
                       },
-                      "id": 32,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13814,7 +13909,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13880,7 +13975,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13928,7 +14023,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 37,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14008,7 +14103,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14100,7 +14195,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14149,7 +14244,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14198,7 +14293,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39452,7 +39547,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
@@ -39501,7 +39596,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
@@ -39511,6 +39606,67 @@ data:
                          }
                       ],
                       "title": "Number of Queries Queued - query-scheduler",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "noValue": "0",
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 37,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length - query-frontend",
                       "type": "timeseries"
                    }
                 ],
@@ -39550,7 +39706,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39561,7 +39717,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -39599,7 +39755,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39610,7 +39766,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\", user=\"$user\"})",
@@ -39620,6 +39776,67 @@ data:
                          }
                       ],
                       "title": "Number of Queries Queued - ruler-query-scheduler",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "noValue": "0",
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 40,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length - ruler-query-frontend",
                       "type": "timeseries"
                    }
                 ],
@@ -39660,7 +39877,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39709,7 +39926,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40595,6 +40812,154 @@ data:
                                "properties": [
                                   {
                                      "id": "displayName",
+                                     "value": "Bytes (99th Percentile)"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "User"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 7,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 12,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "topk($limit, \n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Top $limit users by query expression length",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "By query expression length",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
                                      "value": "samples/s"
                                   },
                                   {
@@ -40630,7 +40995,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 7,
+                      "id": 8,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -40740,7 +41105,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40842,7 +41207,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 9,
+                      "id": 10,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -40994,7 +41359,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 10,
+                      "id": 11,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41146,7 +41511,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 11,
+                      "id": 12,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41298,7 +41663,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 12,
+                      "id": 13,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41450,7 +41815,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 13,
+                      "id": 14,
                       "legend": {
                          "avg": false,
                          "current": false,
