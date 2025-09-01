@@ -1,5 +1,5 @@
 apiVersion: v2
-version: 5.8.0-weekly.358
+version: 5.9.0-weekly.358
 appVersion: r358
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
