@@ -91,8 +91,9 @@ func NewAggregation(
 }
 
 type groupWithLabels struct {
-	labels labels.Labels
-	group  *group
+	labels   labels.Labels
+	group    *group
+	dropName bool
 }
 
 type group struct {
@@ -150,6 +151,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 			g.group = groupPool.Get()
 			g.group.aggregation = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
+			g.dropName = series.DropName
 
 			groups[string(groupLabelsString)] = g
 		}
@@ -168,7 +170,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels, DropName: g.dropName})
 		if err != nil {
 			return nil, err
 		}
