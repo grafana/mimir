@@ -610,125 +610,185 @@ func TestFrontend_HTTPGRPC_EnqueueFailures(t *testing.T) {
 }
 
 func TestFrontendCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, resp)
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, msg)
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-	require.EqualError(t, err, context.DeadlineExceeded.Error())
-	require.Nil(t, resp)
 
-	// We wait a bit to make sure scheduler receives the cancellation request.
-	test.Poll(t, time.Second, 2, func() interface{} {
-		ms.mu.Lock()
-		defer ms.mu.Unlock()
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
 
-		return len(ms.msgs)
-	})
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
+			defer cancel()
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 2, len(ms.msgs))
-		require.True(t, ms.msgs[0].Type == schedulerpb.ENQUEUE)
-		require.True(t, ms.msgs[1].Type == schedulerpb.CANCEL)
-		require.True(t, ms.msgs[0].QueryID == ms.msgs[1].QueryID)
-	})
+			makeRequest(ctx, t, f)
+
+			// We wait a bit to make sure scheduler receives the cancellation request.
+			test.Poll(t, time.Second, 2, func() interface{} {
+				ms.mu.Lock()
+				defer ms.mu.Unlock()
+
+				return len(ms.msgs)
+			})
+
+			ms.checkWithLock(func() {
+				require.Len(t, ms.msgs, 2)
+				require.Equal(t, schedulerpb.ENQUEUE, ms.msgs[0].Type)
+				require.Equal(t, schedulerpb.CANCEL, ms.msgs[1].Type)
+				require.Equal(t, ms.msgs[0].QueryID, ms.msgs[1].QueryID)
+			})
+		})
+	}
+
 }
 
 // When frontendWorker that processed the request is busy (processing a new request or cancelling a previous one)
 // we still need to make sure that the cancellation reach the scheduler at some point.
 // Issue: https://github.com/grafana/mimir/issues/740
 func TestFrontendWorkerCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
-	}
-	reqCount := testFrontendWorkerConcurrency + 5
-	var wg sync.WaitGroup
-	for i := 0; i < reqCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-			require.EqualError(t, err, context.DeadlineExceeded.Error())
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
 			require.Nil(t, resp)
-		}()
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
+
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, msg)
+		},
 	}
 
-	wg.Wait()
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
 
-	// We wait a bit to make sure scheduler receives the cancellation request.
-	// 2 * reqCount because for every request, should also be corresponding cancel request
-	test.Poll(t, 5*time.Second, 2*reqCount, func() interface{} {
-		ms.mu.Lock()
-		defer ms.mu.Unlock()
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
+			defer cancel()
 
-		return len(ms.msgs)
-	})
+			// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
+			reqCount := testFrontendWorkerConcurrency + 5
+			var wg sync.WaitGroup
+			for i := 0; i < reqCount; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					makeRequest(ctx, t, f)
+				}()
+			}
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 2*reqCount, len(ms.msgs))
-		msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
-		for _, msg := range ms.msgs {
-			msgTypeCounts[msg.Type]++
-		}
-		expectedMsgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{
-			schedulerpb.ENQUEUE: reqCount,
-			schedulerpb.CANCEL:  reqCount,
-		}
-		require.Equalf(t, expectedMsgTypeCounts, msgTypeCounts,
-			"Should receive %d enqueue (%d) requests, and %d cancel (%d) requests.", reqCount, schedulerpb.ENQUEUE, reqCount, schedulerpb.CANCEL,
-		)
-	})
+			wg.Wait()
+
+			// We wait a bit to make sure scheduler receives the cancellation request.
+			// 2 * reqCount because for every request, should also be corresponding cancel request
+			test.Poll(t, 5*time.Second, 2*reqCount, func() interface{} {
+				ms.mu.Lock()
+				defer ms.mu.Unlock()
+
+				return len(ms.msgs)
+			})
+
+			ms.checkWithLock(func() {
+				require.Len(t, ms.msgs, 2*reqCount)
+				msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
+				for _, msg := range ms.msgs {
+					msgTypeCounts[msg.Type]++
+				}
+				expectedMsgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{
+					schedulerpb.ENQUEUE: reqCount,
+					schedulerpb.CANCEL:  reqCount,
+				}
+				require.Equalf(t, expectedMsgTypeCounts, msgTypeCounts,
+					"Should receive %d enqueue (%d) requests, and %d cancel (%d) requests.", reqCount, schedulerpb.ENQUEUE, reqCount, schedulerpb.CANCEL,
+				)
+			})
+		})
+	}
 }
 
 func TestFrontendFailedCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, resp)
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-
-		// stop scheduler workers
-		addr := ""
-		f.schedulerWorkers.mu.Lock()
-		for k := range f.schedulerWorkers.workers {
-			addr = k
-			break
-		}
-		f.schedulerWorkers.mu.Unlock()
-
-		f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
-
-		// Wait for worker goroutines to stop.
-		time.Sleep(100 * time.Millisecond)
-
-		// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
-		// Everything else should still work fine.
-		cancel()
-	}()
-
-	// send request
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, msg)
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-	require.EqualError(t, err, context.Canceled.Error())
-	require.Nil(t, resp)
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 1, len(ms.msgs))
-	})
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
+
+			ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "test"))
+			defer cancel()
+
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+
+				// stop scheduler workers
+				addr := ""
+				f.schedulerWorkers.mu.Lock()
+				for k := range f.schedulerWorkers.workers {
+					addr = k
+					break
+				}
+				f.schedulerWorkers.mu.Unlock()
+
+				f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
+
+				// Wait for worker goroutines to stop.
+				time.Sleep(100 * time.Millisecond)
+
+				// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
+				// Everything else should still work fine.
+				cancel()
+			}()
+
+			makeRequest(ctx, t, f)
+
+			ms.checkWithLock(func() {
+				require.Equal(t, 1, len(ms.msgs))
+			})
+		})
+	}
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {
