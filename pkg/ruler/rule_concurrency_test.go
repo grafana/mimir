@@ -225,8 +225,14 @@ var splitToBatchesTestCases = map[string]struct {
 		},
 	},
 	"self_and_same_name_reference": {
-		inputFile:      "fixtures/rules_self_and_same_name_reference.yaml",
-		expectedGroups: nil,
+		inputFile: "fixtures/rules_self_and_same_name_reference.yaml",
+		expectedGroups: []rules.ConcurrentRules{
+			{0},
+			{1},
+			{2},
+			{3, 4},
+			{5, 6},
+		},
 	},
 }
 

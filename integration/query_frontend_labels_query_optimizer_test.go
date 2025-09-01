@@ -145,7 +145,7 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		fn(queryFrontend, client)
 	}
 
-	expectedLabelNames := map[string][]string{}
+	expectedLabelNames := map[string]model.LabelNames{}
 	expectedLabelValues := map[string]map[string]model.LabelValues{}
 
 	// First run with optimizer disabled to get expected results.

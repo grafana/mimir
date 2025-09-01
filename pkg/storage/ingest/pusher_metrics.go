@@ -9,16 +9,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// pusherConsumerMetrics holds the metrics for the pusherConsumer.
-type pusherConsumerMetrics struct {
+// PusherConsumerMetrics holds the metrics for the PusherConsumer.
+type PusherConsumerMetrics struct {
 	processingTimeSeconds prometheus.Observer
 
 	storagePusherMetrics *storagePusherMetrics
 }
 
-// newPusherConsumerMetrics creates a new pusherConsumerMetrics instance.
-func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics {
-	return &pusherConsumerMetrics{
+// NewPusherConsumerMetrics creates a new PusherConsumerMetrics instance.
+func NewPusherConsumerMetrics(reg prometheus.Registerer) *PusherConsumerMetrics {
+	return &PusherConsumerMetrics{
 		storagePusherMetrics: newStoragePusherMetrics(reg),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_records_processing_time_seconds",

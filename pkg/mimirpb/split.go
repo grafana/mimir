@@ -64,9 +64,11 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:              req.Source,
-			SkipLabelValidation: req.SkipLabelValidation,
-			TimeseriesRW2:       make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
+			Source:                          req.Source,
+			SkipLabelValidation:             req.SkipLabelValidation,
+			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
+			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
+			TimeseriesRW2:                   make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
 		}
 
 		return r, r.Size()
@@ -127,8 +129,9 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:              req.Source,
-			SkipLabelValidation: req.SkipLabelValidation,
+			Source:                          req.Source,
+			SkipLabelValidation:             req.SkipLabelValidation,
+			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 		}
 
 		return r, r.Size()
@@ -191,8 +194,10 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:              req.Source,
-			SkipLabelValidation: req.SkipLabelValidation,
+			Source:                          req.Source,
+			SkipLabelValidation:             req.SkipLabelValidation,
+			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
+			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 		}
 		return r, r.Size()
 	}

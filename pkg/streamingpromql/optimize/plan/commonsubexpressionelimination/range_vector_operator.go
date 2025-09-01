@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -35,6 +34,7 @@ type RangeVectorDuplicationBuffer struct {
 type rangeVectorConsumerState struct {
 	currentSeriesIndex          int // -1 means the consumer hasn't advanced to the first series yet.
 	hasReadCurrentSeriesSamples bool
+	finalized                   bool
 	closed                      bool
 }
 
@@ -163,7 +163,7 @@ func (b *RangeVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consum
 	return true
 }
 
-func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*types.RangeVectorStepData, error) {
+func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, consumerIndex int) (*types.RangeVectorStepData, error) {
 	consumer := b.consumers[consumerIndex]
 
 	if consumer.hasReadCurrentSeriesSamples {
@@ -179,7 +179,7 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(consumerIndex int) (*type
 	}
 
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
-	stepData, err := b.Inner.NextStepSamples()
+	stepData, err := b.Inner.NextStepSamples(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +250,32 @@ func (b *RangeVectorDuplicationBuffer) Prepare(ctx context.Context, params *type
 	return nil
 }
 
+func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
+	consumer := b.consumers[consumerIndex]
+
+	if consumer.finalized {
+		return nil
+	}
+
+	consumer.finalized = true
+
+	if !b.allConsumersFinalized() {
+		return nil
+	}
+
+	return b.Inner.Finalize(ctx)
+}
+
+func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.finalized {
+			return false
+		}
+	}
+
+	return true
+}
+
 type bufferedRangeVectorStepData struct {
 	stepData        *types.RangeVectorStepData
 	floatBuffer     *types.FPointRingBuffer
@@ -306,16 +332,8 @@ func (d *RangeVectorDuplicationConsumer) NextSeries(ctx context.Context) error {
 	return d.Buffer.NextSeries(ctx, d.consumerIndex)
 }
 
-func (d *RangeVectorDuplicationConsumer) NextStepSamples() (*types.RangeVectorStepData, error) {
-	return d.Buffer.NextStepSamples(d.consumerIndex)
-}
-
-func (d *RangeVectorDuplicationConsumer) StepCount() int {
-	return d.Buffer.Inner.StepCount()
-}
-
-func (d *RangeVectorDuplicationConsumer) Range() time.Duration {
-	return d.Buffer.Inner.Range()
+func (d *RangeVectorDuplicationConsumer) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+	return d.Buffer.NextStepSamples(ctx, d.consumerIndex)
 }
 
 func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionRange {
@@ -324,6 +342,10 @@ func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionR
 
 func (d *RangeVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
+}
+
+func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
+	return d.Buffer.Finalize(ctx, d.consumerIndex)
 }
 
 func (d *RangeVectorDuplicationConsumer) Close() {

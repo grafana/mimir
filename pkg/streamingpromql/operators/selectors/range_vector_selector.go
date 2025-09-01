@@ -8,7 +8,6 @@ package selectors
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -53,14 +52,6 @@ func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.Serie
 	return m.Selector.SeriesMetadata(ctx)
 }
 
-func (m *RangeVectorSelector) StepCount() int {
-	return m.Selector.TimeRange.StepCount
-}
-
-func (m *RangeVectorSelector) Range() time.Duration {
-	return m.Selector.Range
-}
-
 func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	var err error
 	m.chunkIterator, err = m.Selector.Next(ctx, m.chunkIterator)
@@ -74,7 +65,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if m.nextStepT > m.Selector.TimeRange.EndT {
 		return nil, types.EOS
 	}
@@ -140,7 +131,10 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			if t <= rangeStart {
 				continue
 			}
-			hPoint, _ := histograms.NextPoint()
+			hPoint, err := histograms.NextPoint()
+			if err != nil {
+				return err
+			}
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
@@ -162,6 +156,11 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	m.Stats = params.QueryStats
 	return m.Selector.Prepare(ctx, params)
+}
+
+func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
+	// Nothing to do.
+	return nil
 }
 
 func (m *RangeVectorSelector) Close() {

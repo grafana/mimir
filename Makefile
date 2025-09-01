@@ -68,8 +68,7 @@ DOC_SOURCES_PATH := docs/sources/mimir
 DOC_TEMPLATES := $(DOC_SOURCES_PATH)/configure/configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
-	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
+DOC_EMBED := $(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
 	$(DOC_SOURCES_PATH)/references/architecture/components/overrides-exporter.md \
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md

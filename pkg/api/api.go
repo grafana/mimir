@@ -40,6 +40,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -496,6 +498,27 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
 	})
 	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+}
+
+func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Instance ring status", Path: "/usage-tracker/instance-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/instance-ring", instanceRingHandler, false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTrackerPartitionRing(partitionRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "/usage-tracker/partition-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/partition-ring", partitionRingHandler, false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler

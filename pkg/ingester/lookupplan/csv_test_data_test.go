@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/alertmanager/matchers/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -154,4 +155,10 @@ func parseUint(t *testing.T, str string) uint64 {
 	u, err := strconv.ParseUint(str, 10, 64)
 	require.NoErrorf(t, err, "Failed to parse uint: %s", str)
 	return u
+}
+
+func parseVectorSelector(t *testing.T, str string) []*labels.Matcher {
+	matchers, err := parser.ParseMetricSelector(str)
+	require.NoError(t, err)
+	return matchers
 }

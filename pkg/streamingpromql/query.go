@@ -50,8 +50,10 @@ type Query struct {
 }
 
 func (q *Query) Exec(ctx context.Context) *promql.Result {
+	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
+	defer logger.Finish()
+
 	defer func() {
-		logger := spanlogger.FromContext(ctx, q.engine.logger)
 		msg := make([]interface{}, 0, 2*(3+4)) // 3 fields for all query types, plus worst case of 4 fields for range queries
 
 		msg = append(msg,

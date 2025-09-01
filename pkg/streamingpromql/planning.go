@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/tracing"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -35,15 +36,18 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
-	activeQueryTracker       promql.QueryTracker
+	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
@@ -54,6 +58,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
@@ -64,15 +69,19 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
-	return planner
+	return planner, nil
 }
 
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, error) {
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
@@ -84,7 +93,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
-	}
+	}, nil
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
@@ -109,7 +118,11 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
+	span, ctx := tracing.StartSpanFromContext(ctx, "QueryPlanner.NewQueryPlan")
+	defer span.Finish()
+	span.SetTag("query", qs)
+
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +316,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.BinaryExpression{
+		binExpr := &core.BinaryExpression{
 			LHS: lhs,
 			RHS: rhs,
 			BinaryExpressionDetails: &core.BinaryExpressionDetails{
@@ -312,7 +325,30 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				ReturnBool:         expr.ReturnBool,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+		// Only 'or' and scalar/vector expressions need deduplication.
+		// All other variations either can't produce duplicate series (e.g., 'and' and 'unless')
+		// or deduplication is handled by the operator (e.g., vector/vector expressions).
+		if expr.Op == parser.LOR {
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		lhsType := expr.LHS.Type()
+		rhsType := expr.RHS.Type()
+		isVectorScalar := (lhsType == parser.ValueTypeVector && rhsType == parser.ValueTypeScalar) ||
+			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
+
+		if isVectorScalar {
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return binExpr, nil
 
 	case *parser.Call:
 		fnc, ok := findFunction(expr.Func.Name)
@@ -348,6 +384,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			if isVectorSelector {
 				vs.ReturnSampleTimestamps = true
 			}
+		}
+
+		if functionNeedsDeduplication(fnc) {
+			return &core.DeduplicateAndMerge{
+				Inner:                      f,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
 		}
 
 		return f, nil
@@ -391,13 +434,23 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.UnaryExpression{
+		unaryExpr := &core.UnaryExpression{
 			Inner: inner,
 			UnaryExpressionDetails: &core.UnaryExpressionDetails{
 				Op:                 op,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
+			return &core.DeduplicateAndMerge{
+				Inner:                      unaryExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return unaryExpr, nil
 
 	case *parser.NumberLiteral:
 		return &core.NumberLiteral{
@@ -438,6 +491,109 @@ func findFunction(name string) (functions.Function, bool) {
 	}
 
 	return functions.FUNCTION_UNKNOWN, false
+}
+
+// functionNeedsDeduplication checks if a function needs deduplication and merge operator.
+// This is determined by whether the function drops the __name__ label or otherwise manipulates it.
+func functionNeedsDeduplication(fnc functions.Function) bool {
+	switch fnc {
+	// Functions that need deduplication (manipulate labels)
+	case
+		// Time transformation functions
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_YEAR,
+		// Range vector functions
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_QUANTILE_OVER_TIME,
+		functions.FUNCTION_RATE,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		// Instant vector transformations
+		functions.FUNCTION_ABS,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		// Histogram functions
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_FRACTION,
+		functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		// Label manipulation functions
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_LABEL_REPLACE,
+		// Adaptive metrics reserved functions
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2:
+		return true
+
+	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)
+	case
+		functions.FUNCTION_ABSENT,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_TIME,
+		functions.FUNCTION_VECTOR:
+		return false
+
+	case functions.FUNCTION_UNKNOWN:
+		return false
+
+	default:
+		panic(fmt.Sprintf("functionNeedsDeduplication: unexpected function %v", fnc))
+	}
 }
 
 type AnalysisResult struct {

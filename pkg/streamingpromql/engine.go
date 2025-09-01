@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -56,21 +57,26 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("no query planner provided")
 	}
 
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
 	nodeMaterializers := map[planning.NodeType]planning.NodeMaterializer{
-		planning.NODE_TYPE_VECTOR_SELECTOR:      planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-		planning.NODE_TYPE_MATRIX_SELECTOR:      planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
-		planning.NODE_TYPE_AGGREGATE_EXPRESSION: planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
-		planning.NODE_TYPE_BINARY_EXPRESSION:    planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
-		planning.NODE_TYPE_FUNCTION_CALL:        planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
-		planning.NODE_TYPE_NUMBER_LITERAL:       planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
-		planning.NODE_TYPE_STRING_LITERAL:       planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
-		planning.NODE_TYPE_UNARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
-		planning.NODE_TYPE_SUBQUERY:             planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_VECTOR_SELECTOR:       planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
+		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
+		planning.NODE_TYPE_AGGREGATE_EXPRESSION:  planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
+		planning.NODE_TYPE_BINARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
+		planning.NODE_TYPE_FUNCTION_CALL:         planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
+		planning.NODE_TYPE_NUMBER_LITERAL:        planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
+		planning.NODE_TYPE_STRING_LITERAL:        planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
+		planning.NODE_TYPE_UNARY_EXPRESSION:      planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
+		planning.NODE_TYPE_SUBQUERY:              planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 
 		planning.NODE_TYPE_DUPLICATE: planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 	}
@@ -107,11 +113,18 @@ func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 	return lookbackDelta
 }
 
+// QueryTracker is like promql.QueryTracker, but includes more information about the query.
+type QueryTracker interface {
+	InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error)
+
+	Delete(insertIndex int)
+}
+
 type Engine struct {
 	lookbackDelta      time.Duration
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
-	activeQueryTracker promql.QueryTracker
+	activeQueryTracker QueryTracker
 	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -168,19 +181,12 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
-	if err != nil {
-		return nil, err
-	}
-
-	defer e.activeQueryTracker.Delete(queryID)
-
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
 	}
 
-	evaluator, err := e.newEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -212,22 +218,25 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (evaluator creation)")
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+}
+
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
+	defer span.Finish()
+
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", plan.TimeRange)
 	if err != nil {
 		return nil, err
 	}
 
 	defer e.activeQueryTracker.Delete(queryID)
 
-	lookbackDelta := opts.LookbackDelta()
-	if lookbackDelta == 0 {
-		lookbackDelta = e.lookbackDelta
-	}
-
-	return e.newEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
-}
-
-func (e *Engine) newEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
@@ -280,7 +289,7 @@ func (n *NoopQueryTracker) GetMaxConcurrent() int {
 	return math.MaxInt
 }
 
-func (n *NoopQueryTracker) Insert(_ context.Context, _ string) (int, error) {
+func (n *NoopQueryTracker) InsertWithDetails(_ context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
 	// Nothing to do.
 	return 0, nil
 }
