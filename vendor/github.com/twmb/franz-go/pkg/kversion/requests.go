@@ -1056,7 +1056,7 @@ func c28() *release {
 	return &release{
 		major: 2,
 		minor: 8,
-		kind:  kindBroker,
+		kind:  kindController,
 		reqs: map[int16]req{
 			1:  {key: 1, vmax: 12}, // fetch
 			3:  {key: 3, vmax: 11}, // metadata
