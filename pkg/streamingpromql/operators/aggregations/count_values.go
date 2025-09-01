@@ -81,12 +81,12 @@ var countValuesSeriesPool = sync.Pool{
 	},
 }
 
-func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (c *CountValues) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	if err := c.loadLabelName(); err != nil {
 		return nil, err
 	}
 
-	innerMetadata, err := c.Inner.SeriesMetadata(ctx)
+	innerMetadata, err := c.Inner.SeriesMetadata(ctx, selectors)
 	if err != nil {
 		return nil, err
 	}

@@ -91,7 +91,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 }
 
 func (i *InstantVectorToScalar) getInnerSeriesCount(ctx context.Context) (int, error) {
-	metadata, err := i.Inner.SeriesMetadata(ctx)
+	metadata, err := i.Inner.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return 0, err
 	}

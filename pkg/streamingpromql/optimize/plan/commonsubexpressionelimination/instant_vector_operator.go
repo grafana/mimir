@@ -52,11 +52,11 @@ func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplication
 	}
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, selectors)
 		if err != nil {
 			return nil, err
 		}
@@ -234,8 +234,8 @@ type InstantVectorDuplicationConsumer struct {
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx)
+func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+	return d.Buffer.SeriesMetadata(ctx, selectors)
 }
 
 func (d *InstantVectorDuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
