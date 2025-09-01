@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/metrics"
@@ -789,6 +790,55 @@ func TestFrontendFailedCancellation(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		<-signal // Don't respond until the test has attempted to read from the stream.
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	cancelledContext, cancel := context.WithCancel(ctx)
+	cancel()
+
+	start := time.Now()
+	msg, err := resp.Next(cancelledContext)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, msg)
+	require.Less(t, time.Since(start), time.Second, "calling Next() with a cancelled context should not block")
+
+	close(signal)
+}
+
+func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
+	signal := make(chan struct{})
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+	cancellationError := cancellation.NewErrorf("the request has been canceled")
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		<-signal
+		cancel(cancellationError)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+	close(signal)
+
+	uncancelledContext := context.Background()
+	msg, err := resp.Next(uncancelledContext)
+	require.ErrorIs(t, err, cancellationError)
+	require.Nil(t, msg)
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {

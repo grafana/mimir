@@ -395,7 +395,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 				level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 			}
 
-			// There's no need to write an error to the response stream: subsequent calls to Next() will eventually return the context's cancellation cause.
+			freq.protobufResponseStream.writeEnqueueError(context.Cause(ctx))
 
 		case <-freq.protobufResponseDone:
 			freq.spanLogger.DebugLog("msg", "finished receiving response")
@@ -443,22 +443,24 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 	}
 }
 
+// writeEnqueueError writes an error message to the stream.
+// This method must only be called once per ProtobufResponseStream instance to ensure it does not block.
 func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 	_ = s.spanLogger.Error(err)
 
-	select {
-	case s.enqueueError <- err:
-		// Nothing to do: error has been queued for receiver.
-	case <-s.ctx.Done():
-		// Nothing to do: the request has been cancelled.
-	}
+	// This is guaranteed not to block provided this method is only called once per request,
+	// as enqueueError is buffered with a size of 1.
+	s.enqueueError <- err
 }
 
 // Next returns the next available message from this stream, or an error if the stream
-// has failed or its context has been cancelled.
+// has failed or the context provided to DoProtobufRequest or Next was cancelled.
 //
-// If no message is available and the context has not been cancelled, then Next blocks
-// until either a message is received or the context is cancelled.
+// If no message is available and neither context has been cancelled, then Next blocks
+// until either a message is received or either context is cancelled.
+//
+// Calling Next after an error has been returned by a previous Next call may lead to
+// undefined behaviour.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	select {
 	case resp := <-s.c:
@@ -468,12 +470,14 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 
 		return resp.msg, nil
 	case err := <-s.enqueueError:
+		// If the context provided to DoProtobufRequest is cancelled, it will call writeEnqueueError and so
+		// s.enqueueError will contain the cancellation error.
 		return nil, err
 	case <-ctx.Done():
 		// Note that we deliberately wait on the passed context, rather than s.ctx, as s.ctx is cancelled as soon
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless the provided context (presumably for the query as a whole) is cancelled.
-		return nil, context.Cause(s.ctx)
+		return nil, context.Cause(ctx)
 	}
 }
 
