@@ -142,8 +142,13 @@ func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, signal <-chan stru
 		ctx:  ctx,
 		msgs: resp,
 	}
+
 	err := f.QueryResultStream(stream)
-	require.NoError(t, err)
+	if err != nil {
+		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
+		// So just log it but don't fail the test.
+		t.Logf("sendStreamingResponseOnSignal: QueryResultStream returned %v", err)
+	}
 }
 
 func TestFrontendBasicHTTPGRPCWorkflow(t *testing.T) {
@@ -172,7 +177,7 @@ func TestFrontendBasicHTTPGRPCWorkflow(t *testing.T) {
 	require.Equal(t, []byte(body), resp.Body)
 }
 
-func TestFrontendBasicProtobufWorkflow(t *testing.T) {
+func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	const userID = "test"
 
 	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
@@ -206,6 +211,82 @@ func TestFrontendBasicProtobufWorkflow(t *testing.T) {
 	msg, err = resp.Next(ctx)
 	require.NoError(t, err)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+	}
+
+	signal := make(chan struct{})
+	responseRead := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// Send the entire response, and wait until it has been received by the test below.
+		sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+
+		select {
+		case <-responseRead:
+			// Test has read the entire response, continue.
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for response to be read by test")
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+	close(signal)
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+
+	close(responseRead)
+}
+
+func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+		newStringMessage("third message"),
+	}
+
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	close(signal)
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	resp.Close() // We expect all goroutines to be cleaned up after this (verified by the VerifyNoLeakTestMain call in TestMain above)
 }
 
 func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {

@@ -330,7 +330,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 }
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
-// If the returned error is nil, then callers must either exhaust the returned channel
+// If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
 func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
 	logger, ctx := spanlogger.New(ctx, f.log, tracer, "DoProtobufRequest")
@@ -350,7 +350,8 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		spanLogger: freq.spanLogger,
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
-		c: make(chan protobufResponseMessage, 1),
+		c:            make(chan protobufResponseMessage, 1),
+		enqueueError: make(chan error, 1),
 	}
 
 	go func() {
@@ -360,11 +361,12 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)
 			logger.Finish()
+			close(freq.protobufResponseStream.enqueueError)
 		}()
 
 		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
 		if err != nil {
-			_ = freq.protobufResponseStream.write(nil, err) // If the context has already been cancelled, then we don't care.
+			freq.protobufResponseStream.writeEnqueueError(err)
 			return
 		}
 
@@ -394,8 +396,12 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 }
 
 type ProtobufResponseStream struct {
-	c      chan protobufResponseMessage
-	cancel context.CancelCauseFunc
+	// Why do we have two channels here?
+	// Different goroutines write to each, and each needs to close its corresponding channel when finished.
+	// There's no guarantee which order the goroutines finish in, and one may never be called at all.
+	c            chan protobufResponseMessage
+	enqueueError chan error
+	cancel       context.CancelCauseFunc
 
 	ctx        context.Context
 	spanLogger *spanlogger.SpanLogger
@@ -427,6 +433,17 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 	}
 }
 
+func (s *ProtobufResponseStream) writeEnqueueError(err error) {
+	_ = s.spanLogger.Error(err)
+
+	select {
+	case s.enqueueError <- err:
+		// Nothing to do: error has been queued for receiver.
+	case <-s.ctx.Done():
+		// Nothing to do: the request has been cancelled.
+	}
+}
+
 // Next returns the next available message from this stream, or an error if the stream
 // has failed or its context has been cancelled.
 //
@@ -440,6 +457,8 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		}
 
 		return resp.msg, nil
+	case err := <-s.enqueueError:
+		return nil, err
 	case <-ctx.Done():
 		// Note that we deliberately wait on the passed context, rather than s.ctx, as s.ctx is cancelled as soon
 		// as the response has been completely received, but we want to continue reading any outstanding messages
