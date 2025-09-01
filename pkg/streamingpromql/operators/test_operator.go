@@ -27,7 +27,7 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (t *TestOperator) SeriesMetadata(_ context.Context, _ *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
 	if len(t.Series) == 0 {
 		return nil, nil
 	}

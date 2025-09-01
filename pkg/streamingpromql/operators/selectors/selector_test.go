@@ -124,7 +124,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 		}
 
-		_, err := s.SeriesMetadata(ctx)
+		_, err := s.SeriesMetadata(ctx, nil)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-lookbackDelta).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
@@ -145,7 +145,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 		}
 
-		_, err := s.SeriesMetadata(ctx)
+		_, err := s.SeriesMetadata(ctx, nil)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-selectorRange).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
