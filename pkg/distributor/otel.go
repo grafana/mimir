@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -141,10 +142,12 @@ func OTLPHandler(
 			// Translate from Mimir to OTel domain terminology
 			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
 		}
+		isOOOExemplar := errors.Is(pushErr, storage.ErrOutOfOrderExemplar)
 		var (
-			httpCode int
-			grpcCode codes.Code
-			errorMsg string
+			httpCode    int
+			grpcCode    codes.Code
+			errorMsg    string
+			errorSource string
 		)
 		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
 			grpcCode = st.Code()
@@ -154,19 +157,31 @@ func OTLPHandler(
 			// These errors are usually created by using the httpgrpc package.
 			// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
 			if util.IsHTTPStatusCode(grpcCode) {
+				errorSource = "HTTPStatusCode"
 				httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
 			} else {
+				errorSource = "!HTTPStatusCode"
 				httpCode = http.StatusServiceUnavailable
 			}
 		} else {
+			errorSource = "pushErr"
 			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
 			errorMsg = pushErr.Error()
 		}
 		if httpCode != 202 {
 			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
+			msgs := []interface{}{
+				"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)",
+				"httpCode", httpCode,
+				"err", pushErr,
+				"errSource", errorSource,
+				"grpcCode", grpcCode,
+			}
+			// TODO: We should detect if it was a partial error due to OOO exemplar.
 			logLevel := level.Error
-			if httpCode/100 == 4 {
+			if isOOOExemplar {
+				httpCode = 200
+			} else if httpCode/100 == 4 {
 				msgs = append(msgs, "insight", true)
 				logLevel = level.Warn
 			}

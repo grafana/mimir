@@ -394,8 +394,8 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
 }
 
-// This test validates that the response status code from Mimir's OTLP ingestion endpoint adheres to spec:
-// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response
+// This test validates that the response status codes from Mimir's OTLP ingestion endpoint adhere to spec:
+// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
 func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -445,7 +445,7 @@ func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 		require.Empty(t, body)
 		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
 
-		// Send a second request with an out of exemplar. The response should be 200 but the exemplar should not be ingested.
+		// Send a second request with an out of order exemplar. The response should be 200 but the exemplar should not be ingested.
 		req2, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now.Add(time.Second))
 		req2[0].Exemplars = []prompb.Exemplar{
 			{
@@ -457,8 +457,8 @@ func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 
 		res, body, err = c.PushOTLP(req2, nil)
 		require.NoError(t, err)
+		assert.Empty(t, body)
 		require.Equal(t, 200, res.StatusCode)
-		require.Empty(t, body)
 		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
 	})
 }

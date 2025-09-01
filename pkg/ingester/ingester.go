@@ -1442,7 +1442,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
-		return wrapOrAnnotateWithUser(firstPartialErr, userID)
+		mapped := mapPushErrorToErrorWithStatus(firstPartialErr)
+		underlying := mapped.(globalerror.ErrorWithStatus).Err()
+		fmt.Printf("Panicking!\n")
+		panic(fmt.Errorf("mapped pushpush error: %q - %q", underlying, firstPartialErr))
+		return wrapOrAnnotateWithUser(mapped, userID)
 	}
 
 	return nil

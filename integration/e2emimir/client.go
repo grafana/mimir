@@ -265,7 +265,7 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 	return res, nil
 }
 
-// PushOTLP the input timeseries to the remote endpoint in OTLP format
+// PushOTLP writes the input timeseries to the remote OTLP endpoint.
 func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, string, error) {
 	// Create write request
 	otlpRequest := distributor.TimeseriesToOTLPRequest(timeseries, metadata)
@@ -296,9 +296,12 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 		return nil, "", err
 	}
 
-	// Read all the body.
+	// Read the whole body.
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read response body: %w", err)
+	}
 
 	return res, string(body), nil
 }
