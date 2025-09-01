@@ -361,7 +361,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
 		c:            make(chan protobufResponseMessage, 1),
-		enqueueError: make(chan error, 1),
+		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
 	}
 
 	f.requests.put(freq)
@@ -371,7 +371,6 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)
 			logger.Finish()
-			close(freq.protobufResponseStream.enqueueError)
 		}()
 
 		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)

@@ -457,6 +457,52 @@ func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
 	require.Nil(t, msg)
 }
 
+func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+		newStringMessage("third message"),
+	}
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Wait until the last message has been buffered into the stream channel and the stream's context has been cancelled by DoProtobufRequest.
+	select {
+	case <-resp.ctx.Done():
+		// Context cancelled, continue.
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for stream context to be cancelled")
+	}
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[2], msg, "should still be able to read last message after stream has been completely read")
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+}
+
 func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
 	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
