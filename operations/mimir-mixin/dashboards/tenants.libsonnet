@@ -767,6 +767,22 @@ local filename = 'mimir-tenants.json';
           ],
         )
       )
+      .addPanel(
+        $.timeseriesPanel('Query Expression Length - query-frontend') +
+        $.queryPanel([
+          'histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          'histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          'histogram_avg(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.query_frontend) },
+        ], [
+          '99th Percentile',
+          '90th Percentile',
+          'Average',
+        ])
+        { fieldConfig+: { defaults+: { unit: 'bytes', noValue: '0' } } }
+      )
     )
     .addRow(
       $.row('Read Path - Queries (Ruler)')
@@ -792,6 +808,22 @@ local filename = 'mimir-tenants.json';
             'Queue Length',
           ],
         )
+      )
+      .addPanel(
+        $.timeseriesPanel('Query Expression Length - ruler-query-frontend') +
+        $.queryPanel([
+          'histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          'histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          'histogram_avg(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+        ], [
+          '99th Percentile',
+          '90th Percentile',
+          'Average',
+        ])
+        { fieldConfig+: { defaults+: { unit: 'bytes', noValue: '0' } } }
       )
     )
 

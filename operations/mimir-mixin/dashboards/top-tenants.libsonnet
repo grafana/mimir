@@ -144,6 +144,29 @@ local filename = 'mimir-top-tenants.json';
       ),
     )
 
+    .addRow(
+      ($.row('By query expression length') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by query expression length') +
+        $.tablePanel(
+          |||
+            topk($limit, 
+              histogram_quantile(
+                0.99,
+                sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{%(job)s}[$__rate_interval]))
+              )
+            )
+          ||| % {
+            job: $.jobMatcher($._config.job_names.query_frontend),
+          },
+          {
+            user: { alias: 'User', unit: 'string' },
+            Value: { alias: 'Bytes (99th Percentile)', unit: 'bytes', noValue: '0' },
+          },
+        )
+      ),
+    )
+
     .addRowIf(
       $._config.gateway_per_tenant_metrics_enabled,
       ($.row('By gateway read requests rate') + { collapse: true })
