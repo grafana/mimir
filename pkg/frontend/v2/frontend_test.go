@@ -37,8 +37,10 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -151,7 +153,7 @@ func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, signal <-chan stru
 	}
 }
 
-func TestFrontendBasicHTTPGRPCWorkflow(t *testing.T) {
+func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
@@ -289,55 +291,114 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	resp.Close() // We expect all goroutines to be cleaned up after this (verified by the VerifyNoLeakTestMain call in TestMain above)
 }
 
+func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
+	const userID = "test"
+
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
+		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, errorMessage)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+	close(signal)
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeBadData, "something went wrong"), err)
+	require.Nil(t, msg)
+}
+
 func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
 	)
 
-	reg := prometheus.NewRegistry()
-
-	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
-		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
-
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	})
-
-	// Assert on cortex_query_frontend_enqueue_duration_seconds.
-	metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
-	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
-	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
-	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
-
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	testCases := map[string]struct {
+		sendQuerierResponse func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{})
+		makeRequest         func(t *testing.T, f *Frontend, signal chan struct{})
+	}{
+		"HTTP-over-gRPC": {
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{}) {
+				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+				// It first needs to be told that enqueuing has succeeded.
+				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
+					Code: 200,
+					Body: []byte(body),
+				})
+			},
+			makeRequest: func(t *testing.T, f *Frontend, signal chan struct{}) {
+				req := &httpgrpc.HTTPRequest{
+					Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+				}
+				resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+				require.NoError(t, err)
+				require.Equal(t, int32(200), resp.Code)
+				require.Equal(t, []byte(body), resp.Body)
+			},
+		},
+		"Protobuf": {
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64, signal chan struct{}) {
+				go sendStreamingResponseOnSignal(t, f, signal, userID, queryID, newStringMessage("the message"))
+			},
+			makeRequest: func(t *testing.T, f *Frontend, signal chan struct{}) {
+				ctx := user.InjectOrgID(context.Background(), userID)
+				req := &querierpb.EvaluateQueryRequest{}
+				resp, err := f.DoProtobufRequest(ctx, req)
+				require.NoError(t, err)
+				t.Cleanup(resp.Close)
+				close(signal)
+			},
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
-	require.NoError(t, err)
-	require.Equal(t, int32(200), resp.Code)
-	require.Equal(t, []byte(body), resp.Body)
 
-	// Assert on cortex_query_frontend_enqueue_duration_seconds.
-	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
-	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
-	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
-	assert.Equal(t, uint64(1), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			signal := make(chan struct{})
 
-	// Manually remove the address, check that label is removed.
-	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+			f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				testCase.sendQuerierResponse(t, f, msg.QueryID, signal)
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
 
-	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+			// Assert on cortex_query_frontend_enqueue_duration_seconds.
+			metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+			require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+			assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+			assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
+
+			testCase.makeRequest(t, f, signal)
+
+			// Wait for the request to be sent to the scheduler.
+			// For HTTP-over-gRPC, this should be true before RoundTripGRPC returns, but for Protobuf requests,
+			// this is done asynchronously after DoProtobufRequest returns.
+			require.Eventually(t, func() bool {
+				metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+				require.NoError(t, err)
+				require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+				require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+				assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+				return metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount() == 1
+			}, time.Second, time.Millisecond*100)
+
+			// Manually remove the address, check that label is removed.
+			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+			metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+		})
+	}
 }
 
 func TestFrontendRetryEnqueue(t *testing.T) {
@@ -931,6 +992,17 @@ func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
 						Value: s,
 					},
 				},
+			},
+		},
+	}
+}
+
+func newErrorMessage(typ mimirpb.QueryErrorType, msg string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: msg,
 			},
 		},
 	}
