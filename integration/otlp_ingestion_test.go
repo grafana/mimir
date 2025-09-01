@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
@@ -20,6 +22,8 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -394,8 +398,8 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
 }
 
-// This test validates that the response status code from Mimir's OTLP ingestion endpoint adheres to spec:
-// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response
+// This test validates that the responses from Mimir's OTLP ingestion endpoint adhere to spec:
+// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
 func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -441,11 +445,11 @@ func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 
 		res, body, err := c.PushOTLP(req1, nil)
 		require.NoError(t, err)
-		require.Equal(t, 200, res.StatusCode)
+		require.Equal(t, http.StatusOK, res.StatusCode)
 		require.Empty(t, body)
 		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
 
-		// Send a second request with an out of exemplar. The response should be 200 but the exemplar should not be ingested.
+		// Send a second request with an out of order exemplar. The response should be 200 but the exemplar should not be ingested.
 		req2, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now.Add(time.Second))
 		req2[0].Exemplars = []prompb.Exemplar{
 			{
@@ -457,8 +461,13 @@ func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
 
 		res, body, err = c.PushOTLP(req2, nil)
 		require.NoError(t, err)
-		require.Equal(t, 200, res.StatusCode)
-		require.Empty(t, body)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		assert.Equal(t, "application/x-protobuf", res.Header.Get("Content-Type"))
+		assert.Equal(t, strconv.Itoa(len(body)), res.Header.Get("Content-Length"))
+		var expResp colmetricpb.ExportMetricsServiceResponse
+		require.NoError(t, proto.Unmarshal(body, &expResp))
+		assert.Equal(t, int64(0), expResp.PartialSuccess.RejectedDataPoints)
+		assert.Regexp(t, regexp.MustCompile(`failed pushing to ingester mimir-1: user=user-1: err: out of order exemplar. timestamp=[^,]+, series=series_with_out_of_order_exemplars, exemplar=\{trace_id="xxx"\}`), expResp.PartialSuccess.ErrorMessage)
 		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
 	})
 }

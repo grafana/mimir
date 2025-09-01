@@ -203,7 +203,7 @@ func (e tsdbIngestExemplarErr) Error() string {
 }
 
 func (e tsdbIngestExemplarErr) errorCause() mimirpb.ErrorCause {
-	return mimirpb.ERROR_CAUSE_BAD_DATA
+	return mimirpb.ERROR_CAUSE_SOFT_BAD_DATA
 }
 
 func (e tsdbIngestExemplarErr) soft() {}
@@ -549,7 +549,7 @@ func mapPushErrorToErrorWithStatus(err error) error {
 	)
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
-		case mimirpb.ERROR_CAUSE_BAD_DATA:
+		case mimirpb.ERROR_CAUSE_BAD_DATA, mimirpb.ERROR_CAUSE_SOFT_BAD_DATA:
 			errCode = codes.InvalidArgument
 		case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 			errCode = codes.FailedPrecondition

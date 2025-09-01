@@ -309,7 +309,7 @@ func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) erro
 
 func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
 	switch errCause {
-	case mimirpb.ERROR_CAUSE_BAD_DATA:
+	case mimirpb.ERROR_CAUSE_BAD_DATA, mimirpb.ERROR_CAUSE_SOFT_BAD_DATA:
 		return codes.InvalidArgument
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return codes.FailedPrecondition
@@ -332,7 +332,7 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 
 func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
 	switch errCause {
-	case mimirpb.ERROR_CAUSE_BAD_DATA:
+	case mimirpb.ERROR_CAUSE_BAD_DATA, mimirpb.ERROR_CAUSE_SOFT_BAD_DATA:
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return http.StatusBadRequest
@@ -408,13 +408,16 @@ func wrapDeadlineExceededPushError(err error) error {
 
 func isIngestionClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
+	var partitionPushErr partitionPushError
+	cause := mimirpb.ERROR_CAUSE_UNKNOWN
 	if errors.As(err, &ingesterPushErr) {
-		return ingesterPushErr.Cause() == mimirpb.ERROR_CAUSE_BAD_DATA
+		cause = ingesterPushErr.Cause()
+	} else if errors.As(err, &partitionPushErr) {
+		cause = partitionPushErr.Cause()
 	}
 
-	var partitionPushErr partitionPushError
-	if errors.As(err, &partitionPushErr) {
-		return partitionPushErr.Cause() == mimirpb.ERROR_CAUSE_BAD_DATA
+	if cause == mimirpb.ERROR_CAUSE_BAD_DATA || cause == mimirpb.ERROR_CAUSE_SOFT_BAD_DATA {
+		return true
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status

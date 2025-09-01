@@ -159,7 +159,13 @@ func OTLPHandler(
 				httpCode = http.StatusServiceUnavailable
 			}
 		} else {
-			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+			var errCause mimirpb.ErrorCause
+			grpcCode, httpCode, errCause = toOtlpGRPCHTTPStatus(pushErr)
+			if errCause == mimirpb.ERROR_CAUSE_SOFT_BAD_DATA {
+				handlePartialOTLPPush(pushErr, w, r, req, logger)
+				return
+			}
+
 			errorMsg = pushErr.Error()
 		}
 		if httpCode != 202 {
@@ -175,6 +181,19 @@ func OTLPHandler(
 		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
 		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
+}
+
+func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
+	// Respond as per spec:
+	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+	expResp := colmetricpb.ExportMetricsServiceResponse{
+		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+			RejectedDataPoints: 0,
+			ErrorMessage:       pushErr.Error(),
+		},
+	}
+	addSuccessHeaders(w, req.artificialDelay)
+	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
 func newOTLPParser(
@@ -385,16 +404,24 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
+func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, mimirpb.ErrorCause) {
 	var distributorErr Error
 	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
-		return codes.Internal, http.StatusServiceUnavailable
+		return codes.Internal, http.StatusServiceUnavailable, mimirpb.ERROR_CAUSE_UNKNOWN
 	}
 
-	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
-	otlpHTTPStatusCode := httpRetryableToOTLPRetryable(httpStatusCode)
-	return grpcStatusCode, otlpHTTPStatusCode
+	errCause := distributorErr.Cause()
+	grpcStatusCode := errorCauseToGRPCStatusCode(errCause, false)
+
+	var httpStatusCode int
+	switch errCause {
+	case mimirpb.ERROR_CAUSE_SOFT_BAD_DATA:
+		httpStatusCode = http.StatusOK
+	default:
+		httpStatusCode = errorCauseToHTTPStatusCode(errCause, false)
+	}
+
+	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), errCause
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
