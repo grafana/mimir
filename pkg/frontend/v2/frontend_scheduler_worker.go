@@ -7,7 +7,6 @@ package v2
 
 import (
 	"context"
-	"net/http"
 	"sync"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -23,7 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -325,7 +322,7 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 		}
 
 		if loopErr != nil {
-			level.Error(w.log).Log("msg", "error sending requests to scheduler", "err", loopErr, "addr", w.schedulerAddr)
+			level.Error(w.log).Log("msg", "error sending request to scheduler", "err", loopErr, "addr", w.schedulerAddr)
 			return false
 		}
 		return true
@@ -445,15 +442,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	case schedulerpb.ERROR:
 		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
-		req.enqueue <- enqueueResult{status: waitForResponse}
-		// TODO: handle this when sending Protobuf response
-		req.httpResponse <- queryResultWithBody{
-			queryResult: &frontendv2pb.QueryResultRequest{
-				HttpResponse: &httpgrpc.HTTPResponse{
-					Code: http.StatusInternalServerError,
-					Body: []byte(resp.Error),
-				},
-			}}
+		req.enqueue <- enqueueResult{status: schedulerReturnedError, schedulerErr: resp.Error}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")

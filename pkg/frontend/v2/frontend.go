@@ -158,13 +158,20 @@ const (
 
 	// User has too many outstanding requests. Frontend should not try again.
 	tooManyRequests
+
+	// The scheduler returned an error. Frontend should not try again.
+	schedulerReturnedError
 )
 
 type enqueueResult struct {
 	status enqueueStatus
-	// If the status is failed and if it was because of a client error on the frontend,
+
+	// If status is failed and if it was because of a client error on the frontend,
 	// the clientErr should be updated with the appropriate error.
 	clientErr error
+
+	// If status is schedulerReturnedError, schedulerErr contains the error returned by the scheduler.
+	schedulerErr string
 
 	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
 }
@@ -513,6 +520,21 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
 
+			case schedulerReturnedError:
+				if freq.httpRequest != nil {
+					freq.httpResponse <- queryResultWithBody{
+						queryResult: &frontendv2pb.QueryResultRequest{
+							HttpResponse: &httpgrpc.HTTPResponse{
+								Code: http.StatusInternalServerError,
+								Body: []byte(enqRes.schedulerErr),
+							},
+						}}
+
+					return nil, nil
+				}
+
+				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
+
 			case tooManyRequests:
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
@@ -534,7 +556,11 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 
 	freq.spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
 
-	return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	if freq.httpRequest != nil {
+		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	}
+
+	return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 }
 
 type cleanupReadCloser struct {

@@ -463,8 +463,26 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 	require.Equal(t, expectedMessages[0], msg)
 }
 
+func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), err)
+	require.Nil(t, msg)
+}
+
 func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
@@ -474,6 +492,8 @@ func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
 }
 
 func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
@@ -496,7 +516,45 @@ func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
 }
 
-func TestFrontendEnqueueFailures(t *testing.T) {
+func TestFrontend_HTTPGRPC_SchedulerError(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+	require.Equal(t, "something went wrong inside the scheduler", string(resp.Body))
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on scheduler errors")
+}
+
+func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "something went wrong inside the scheduler"), err)
+	require.Nil(t, msg)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on scheduler errors")
+}
+
+func TestFrontend_HTTPGRPC_EnqueueFailures(t *testing.T) {
 	t.Run("scheduler is shutting down with valid query", func(t *testing.T) {
 		f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
