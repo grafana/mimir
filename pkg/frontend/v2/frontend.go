@@ -155,6 +155,9 @@ const (
 
 	// Failed to forward request to scheduler, frontend will try again.
 	failed
+
+	// User has too many outstanding requests. Frontend should not try again.
+	tooManyRequests
 )
 
 type enqueueResult struct {
@@ -503,11 +506,26 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
 				return enqRes.cancelCh, nil
+
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
+
+			case tooManyRequests:
+				if freq.httpRequest != nil {
+					freq.httpResponse <- queryResultWithBody{
+						queryResult: &frontendv2pb.QueryResultRequest{
+							HttpResponse: &httpgrpc.HTTPResponse{
+								Code: http.StatusTooManyRequests,
+								Body: []byte("too many outstanding requests"),
+							},
+						}}
+					return nil, nil
+				}
+
+				return nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
 			}
 
 			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.

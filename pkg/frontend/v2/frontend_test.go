@@ -401,7 +401,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	}
 }
 
-func TestFrontendRetryEnqueue(t *testing.T) {
+func TestFrontend_HTTPGRPC_RetryEnqueue(t *testing.T) {
 	// Frontend uses worker concurrency to compute number of retries. We use one less failure.
 	failures := atomic.NewInt64(testFrontendWorkerConcurrency - 1)
 	const (
@@ -429,7 +429,41 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestFrontendTooManyRequests(t *testing.T) {
+func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
+	// Frontend uses worker concurrency to compute number of retries. We use one less failure.
+	failures := atomic.NewInt64(testFrontendWorkerConcurrency - 1)
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+	}
+
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		fail := failures.Dec()
+		if fail >= 0 {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+		}
+
+		go sendStreamingResponseOnSignal(t, f, signal, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+	close(signal)
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+}
+
+func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
@@ -440,6 +474,26 @@ func TestFrontendTooManyRequests(t *testing.T) {
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
+}
+
+func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), err)
+	require.Nil(t, msg)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
 }
 
 func TestFrontendEnqueueFailures(t *testing.T) {

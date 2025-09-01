@@ -457,15 +457,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
-		req.enqueue <- enqueueResult{status: waitForResponse}
-		// TODO: handle this when sending Protobuf response
-		req.httpResponse <- queryResultWithBody{
-			queryResult: &frontendv2pb.QueryResultRequest{
-				HttpResponse: &httpgrpc.HTTPResponse{
-					Code: http.StatusTooManyRequests,
-					Body: []byte("too many outstanding requests"),
-				},
-			}}
+		req.enqueue <- enqueueResult{status: tooManyRequests}
 
 	default:
 		level.Error(spanLogger).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)
