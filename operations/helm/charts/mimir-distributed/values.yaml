@@ -4967,7 +4967,7 @@ continuous_test:
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
 
-# # -- TLS configuration for all internal components
+# # -- TLS configuration for internal components (currently only for mimir, memcached)
 tls:
   mimir:
     # -- Enable TLS for all Mimir components
