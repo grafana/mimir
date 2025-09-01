@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -745,4 +747,31 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, true, nil
 	},
+}
+
+func BuildMatchers(metadata []types.SeriesMetadata, hints *types.QueryHints) []*labels.Matcher {
+	var matchers []*labels.Matcher
+
+	for _, field := range hints.Include {
+		var values []string
+
+		for _, series := range metadata {
+			// TODO: Abort if there are more than N values already? Matcher for every single
+			//  value probably isn't fast or useful.
+			val := series.Labels.Get(field)
+			if val != "" {
+				values = append(values, regexp.QuoteMeta(val))
+			}
+		}
+
+		if len(values) != 0 {
+			matchers = append(matchers, &labels.Matcher{
+				Type:  labels.MatchRegexp,
+				Name:  field,
+				Value: strings.Join(values, "|"),
+			})
+		}
+	}
+
+	return matchers
 }

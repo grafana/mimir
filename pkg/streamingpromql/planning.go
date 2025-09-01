@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tracing"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -72,6 +73,11 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 	if opts.EnableSkippingHistogramDecoding {
 		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	}
+
+	if opts.EnableNarrowBinarySelectors {
+		// TODO: Real logger
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(log.NewNopLogger()))
 	}
 
 	return planner, nil

@@ -69,7 +69,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 							param := scalars.NewScalarConstant(6, timeRange, memoryConsumptionTracker, posrange.PositionRange{})
 							o := New(inner, param, timeRange, nil, false, isTopK, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
 
-							series, err := o.SeriesMetadata(ctx)
+							series, err := o.SeriesMetadata(ctx, nil)
 							require.NoError(t, err)
 
 							if timeRange.IsInstant {

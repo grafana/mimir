@@ -27,8 +27,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	Op                       parser.ItemType
 	ReturnBool               bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-
-	VectorMatching parser.VectorMatching
+	VectorMatching           parser.VectorMatching
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -45,6 +44,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *types.QueryHints
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -128,6 +128,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *types.QueryHints,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -146,6 +147,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
 	}
 
 	return b, nil
@@ -170,14 +172,40 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+	var err error
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, selectors)
+	if err != nil {
 		return nil, err
-	} else if !canProduceAnySeries {
+	} else if len(b.leftMetadata) == 0 {
 		if err := b.Finalize(ctx); err != nil {
 			return nil, err
 		}
 
+		// No series on left-hand side, we'll never have any output series.
+		b.Close()
+		return nil, nil
+	}
+
+	// TODO: Explain this
+	if b.hints != nil {
+		matchers := BuildMatchers(b.leftMetadata, b.hints)
+
+		// TODO: Do we need to order selectors?
+		selectors = selectors.Merge(&types.SeriesSelectors{
+			Matchers: matchers,
+		})
+	}
+
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, selectors)
+	if err != nil {
+		return nil, err
+	} else if len(b.rightMetadata) == 0 {
+		if err := b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		// No series on right-hand side, we'll never have any output series.
 		b.Close()
 		return nil, nil
 	}
@@ -207,37 +235,6 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
-}
-
-// loadSeriesMetadata loads series metadata from both sides of this operation.
-// It returns false if one side returned no series and that means there is no way for this operation to return any series.
-// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
-	// We retain the series labels for later so we can use them to generate error messages.
-	// We'll return them to the pool in Close().
-
-	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.leftMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.rightMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	return true, nil
 }
 
 // computeOutputSeries determines the possible output series from this operator.
@@ -294,9 +291,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			groupKey := groupKeyFunc(s.Labels)
 
 			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-			rightSide, exists := rightSideGroupsMap[string(groupKey)]
-
-			if !exists {
+			rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
+			if !rightExists {
 				// No matching series on the right side.
 				continue
 			}
