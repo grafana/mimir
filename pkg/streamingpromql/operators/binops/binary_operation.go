@@ -749,7 +749,11 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
-func BuildMatchers(metadata []types.SeriesMetadata, hints *types.QueryHints) []*labels.Matcher {
+type QueryHints struct {
+	Include []string
+}
+
+func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) []*labels.Matcher {
 	var matchers []*labels.Matcher
 
 	for _, field := range hints.Include {

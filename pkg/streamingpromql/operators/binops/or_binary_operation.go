@@ -57,13 +57,13 @@ func NewOrBinaryOperation(
 	}
 }
 
-func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
-	leftMetadata, err := o.Left.SeriesMetadata(ctx, selectors)
+func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+	leftMetadata, err := o.Left.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	}
 
-	rightMetadata, err := o.Right.SeriesMetadata(ctx, selectors)
+	rightMetadata, err := o.Right.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	}

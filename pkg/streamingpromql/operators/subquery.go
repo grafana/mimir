@@ -69,14 +69,14 @@ func NewSubquery(
 	}, nil
 }
 
-func (s *Subquery) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+func (s *Subquery) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
 	if s.SubqueryTimeRange.StepCount == 0 {
 		// There are no steps in the subquery time range.
 		// This can happen with queries like "metric[7m:1h]" if the 7m range doesn't overlap with the beginning of an hour.
 		return nil, nil
 	}
 
-	return s.Inner.SeriesMetadata(ctx, selectors)
+	return s.Inner.SeriesMetadata(ctx, selector)
 }
 
 func (s *Subquery) NextSeries(ctx context.Context) error {
