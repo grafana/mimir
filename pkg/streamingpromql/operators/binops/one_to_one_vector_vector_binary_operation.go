@@ -44,7 +44,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
-	hints              *types.QueryHints
+	hints              *QueryHints
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -128,7 +128,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
-	hints *types.QueryHints,
+	hints *QueryHints,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -172,9 +172,9 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
 	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, selectors)
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	} else if len(b.leftMetadata) == 0 {
@@ -191,13 +191,13 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	if b.hints != nil {
 		matchers := BuildMatchers(b.leftMetadata, b.hints)
 
-		// TODO: Do we need to order selectors?
-		selectors = selectors.Merge(&types.SeriesSelectors{
+		// TODO: Do we need to order the matchers?
+		selector = selector.Merge(&types.Selector{
 			Matchers: matchers,
 		})
 	}
 
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, selectors)
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	} else if len(b.rightMetadata) == 0 {
