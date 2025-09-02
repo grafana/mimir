@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.1 / unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.24.6 to address [CVE-2025-4674](https://www.cve.org/CVERecord?id=CVE-2025-4674), [CVE-2025-47907](https://www.cve.org/CVERecord?id=CVE-2025-47907). #12580
+
 ## 2.17.0
 
 ### Grafana Mimir
