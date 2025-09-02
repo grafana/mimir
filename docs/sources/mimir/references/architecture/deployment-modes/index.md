@@ -37,11 +37,13 @@ To see the complete list of components that run in monolithic mode, use the `-mo
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11694eaa76e_0_0"
 
+This diagram shows how Mimir works in monolithic mode:
+
 ![Mimir's monolithic mode](monolithic-mode.svg)
 
 ### Scale monolithic mode
 
-You can horizontally scale monolithic mode by deploying multiple Mimir binaries with `-target=all`. This approach provides high availability and increased scale without the configuration complexity of [microservices mode](#about-microservices-mode).
+You can horizontally scale monolithic mode by deploying multiple Mimir binaries with `-target=all`. This approach, shown in the following diagram, provides high availability and increased scale without the configuration complexity of [microservices mode](#about-microservices-mode).
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_20"
 
@@ -55,10 +57,18 @@ Because monolithic mode requires scaling all Grafana Mimir components together, 
 
 Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. This deployment mode is recommended for production environments that require high availability and flexible scaling.
 
-In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Grafana Mimir advanced architecture](https://grafana.com/docs/mimir/<GRAFANA_VERSION>/references/architecture/).
+The following diagrams show how Mimir works in microservices mode using ingest storage and classic architecture. For more information about the two supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
-To deploy Grafana Mimir in microservices mode, we recommend that you use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
+Ingest storage architecture:
+
+![Ingest storage architecture diagram](/media/docs/mimir/kafka_architecture.png)
+
+Classic architecture:
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_53"
 
 ![Mimir's microservices mode](microservices-mode.svg)
+
+In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Grafana Mimir advanced architecture](https://grafana.com/docs/mimir/<GRAFANA_VERSION>/references/architecture/).
+
+To deploy Grafana Mimir in microservices mode, we recommend that you use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
