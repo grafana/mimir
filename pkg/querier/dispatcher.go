@@ -196,6 +196,10 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 	var apiError *apierror.APIError
 	if errors.As(err, &apiError) {
 		t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiError.Type)
+
+		// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
+		// in sync (and this is enforced with a test).
+		// If this does fail, it's a bug and should be fixed.
 		if conversionErr == nil {
 			return t
 		}
