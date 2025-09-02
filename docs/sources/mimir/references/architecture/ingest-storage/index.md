@@ -21,7 +21,7 @@ Ingest storage architecture mitigates this issue by decoupling the read and writ
 
 The following diagram shows how ingest storage architecture works:
 
-<img src="/media/docs/mimir/kafka_architecture.png" alt="Ingest storage architecture diagram" width="80%">
+{{< figure src="/media/docs/mimir/kafka_architecture.png" alt="Ingest storage architecture diagram" width="80%" >}}
 
 Here's an overview of how ingest storage architecture works:
 
