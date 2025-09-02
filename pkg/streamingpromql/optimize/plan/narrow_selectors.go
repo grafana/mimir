@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package plan
 
 import (
@@ -47,8 +49,13 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 		// children from the left hand side of the expression. Note that this stops
 		// after finding the first node that allows us to generate hints for the query
 		// (binary expressions or aggregations).
-		e.Hints = n.hintsFromNode(e)
+		e.Hints = n.hintsFromNode(ctx, e)
 		if e.Hints != nil {
+			// If we find labels we can use as hints for this binary expression, disable eager
+			// loading on the right side since we always use the left side to build extra matchers
+			// from hints.
+			n.disableEagerLoad(ctx, e.RHS)
+
 			sl := spanlogger.FromContext(ctx, n.logger)
 			sl.DebugLog("msg", "setting query hint on binary expression", "fields", e.Hints.GetInclude())
 		}
@@ -64,9 +71,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	return nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) hintsFromNode(node planning.Node) *core.BinaryExpressionHints {
-	// TODO: We should probably look for selectors here too and treat those as hints.
-
+func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node) *core.BinaryExpressionHints {
 	switch e := node.(type) {
 	case *core.BinaryExpression:
 		if e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
@@ -77,23 +82,39 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(node planning.Node) *cor
 
 		// If this is a binary expression with no matching, try to find a suitable query hint
 		// from the left side (such as an aggregation), don't bother checking the right side.
-		return n.hintsFromNode(e.LHS)
+		return n.hintsFromNode(ctx, e.LHS)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {
 			return &core.BinaryExpressionHints{
 				Include: slices.Clone(e.Grouping),
 			}
 		}
-
 	}
 
 	// If the current node isn't a binary expression or aggregation, keep looking at the
 	// children to see if there are any that we can use to find a suitable query hint.
 	for _, child := range node.Children() {
-		if h := n.hintsFromNode(child); h != nil {
+		if h := n.hintsFromNode(ctx, child); h != nil {
 			return h
 		}
 	}
 
 	return nil
+}
+
+func (n *NarrowSelectorsOptimizationPass) disableEagerLoad(ctx context.Context, node planning.Node) {
+	switch e := node.(type) {
+	case *core.MatrixSelector:
+		sl := spanlogger.FromContext(ctx, n.logger)
+		sl.DebugLog("msg", "disabled eager load for matrix selector", "node", e.Describe())
+		e.DisableEagerLoad = true
+	case *core.VectorSelector:
+		sl := spanlogger.FromContext(ctx, n.logger)
+		sl.DebugLog("msg", "disabled eager load for vector selector", "node", e.Describe())
+		e.DisableEagerLoad = true
+	}
+
+	for _, child := range node.Children() {
+		n.disableEagerLoad(ctx, child)
+	}
 }
