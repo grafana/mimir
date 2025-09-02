@@ -39,6 +39,7 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -128,11 +129,11 @@ func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 
 	ctx := context.Background()
 	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
-	require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
+	require.Equal(t, apierror.New(apierror.TypeBadData, "0s is not a valid interval for a range query, must be greater than 0"), err)
 
 	start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
 	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
-	require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
+	require.Equal(t, apierror.New(apierror.TypeBadData, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z"), err)
 }
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
@@ -144,10 +145,10 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 
 	ctx := context.Background()
 	_, err = engine.NewRangeQuery(ctx, nil, nil, "metric[3m]", time.Now(), time.Now(), time.Second)
-	require.EqualError(t, err, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar")
+	require.Equal(t, apierror.New(apierror.TypeBadData, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar"), err)
 
 	_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
-	require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
+	require.Equal(t, apierror.New(apierror.TypeBadData, "query expression produces a string, but expression for range queries must produce an instant vector or scalar"), err)
 }
 
 func TestNewInstantQuery_Strings(t *testing.T) {

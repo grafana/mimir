@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -161,11 +162,11 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	if interval <= 0 {
-		return nil, fmt.Errorf("%v is not a valid interval for a range query, must be greater than 0", interval)
+		return nil, apierror.Newf(apierror.TypeBadData, "%v is not a valid interval for a range query, must be greater than 0", interval)
 	}
 
 	if end.Before(start) {
-		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
+		return nil, apierror.Newf(apierror.TypeBadData, "range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
 	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))

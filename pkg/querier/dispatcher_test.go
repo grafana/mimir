@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -47,6 +48,10 @@ func TestErrorTypeForError(t *testing.T) {
 		"storage error": {
 			err:      promql.ErrStorage{Err: errors.New("could not load data")},
 			expected: mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+		},
+		"apierror.APIError": {
+			err:      apierror.New(apierror.TypeNotAcceptable, "request is not acceptable"),
+			expected: mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
 		},
 		// These types shouldn't be emitted by MQE, but we support them for consistency.
 		"query canceled error": {
