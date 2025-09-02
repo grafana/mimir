@@ -19,6 +19,10 @@ Compared with classic architecture, ingest storage architecture fundamentally ch
 
 Ingest storage architecture mitigates this issue by decoupling the read and write paths and reducing the statefulness of ingesters. It uses Kafka as a central data transfer pipeline between the write and read paths.
 
+The following diagram shows how ingest storage architecture works:
+
+![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_architecture.png)
+
 Here's an overview of how ingest storage architecture works:
 
 - Distributors receive write requests and validate them, apply transformations, and forward samples to the storage layer.
@@ -28,8 +32,6 @@ Here's an overview of how ingest storage architecture works:
 - Ingesters consume write requests from Kafka partitions continuously, with each ingester consuming from a single partition.
 - Multiple ingesters across different zones consume from the same partition to provide high availability on the read path.
 - Ingesters add the fetched write requests to in-memory state and persist them to disk, making the samples available for queries.
-
-Diagram! (WIP)
 
 ### Benefits of ingest storage architecture
 
