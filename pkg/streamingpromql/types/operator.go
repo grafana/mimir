@@ -53,7 +53,7 @@ type SeriesOperator interface {
 	// SeriesMetadata should be called no more than once.
 	// TODO: Docs
 	// TODO: Pointer or value type?
-	SeriesMetadata(ctx context.Context, selectors *SeriesSelectors) ([]SeriesMetadata, error)
+	SeriesMetadata(ctx context.Context, selector *Selector) ([]SeriesMetadata, error)
 }
 
 // InstantVectorOperator represents all operators that produce instant vectors.
@@ -97,15 +97,11 @@ type StringOperator interface {
 	GetValue() string
 }
 
-type QueryHints struct {
-	Include []string
-}
-
-type SeriesSelectors struct {
+type Selector struct {
 	Matchers []*labels.Matcher
 }
 
-func (s *SeriesSelectors) Merge(other *SeriesSelectors) *SeriesSelectors {
+func (s *Selector) Merge(other *Selector) *Selector {
 	if s == nil {
 		return other
 	}
@@ -114,7 +110,7 @@ func (s *SeriesSelectors) Merge(other *SeriesSelectors) *SeriesSelectors {
 		return s
 	}
 
-	return &SeriesSelectors{
+	return &Selector{
 		Matchers: append(s.Matchers, other.Matchers...),
 	}
 }

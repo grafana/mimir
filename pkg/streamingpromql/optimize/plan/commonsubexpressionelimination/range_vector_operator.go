@@ -59,11 +59,11 @@ func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationCons
 	}
 }
 
-func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, selectors)
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, selector)
 		if err != nil {
 			return nil, err
 		}
@@ -324,8 +324,8 @@ type RangeVectorDuplicationConsumer struct {
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
 
-func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx, selectors)
+func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+	return d.Buffer.SeriesMetadata(ctx, selector)
 }
 
 func (d *RangeVectorDuplicationConsumer) NextSeries(ctx context.Context) error {

@@ -53,8 +53,8 @@ func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
-// TODO: Actually use selectors
-func (s *Selector) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+// TODO: Actually use selector
+func (s *Selector) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil

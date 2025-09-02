@@ -64,13 +64,13 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	return nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) hintsFromNode(node planning.Node) *core.Hints {
+func (n *NarrowSelectorsOptimizationPass) hintsFromNode(node planning.Node) *core.BinaryExpressionHints {
 	// TODO: We should probably look for selectors here too and treat those as hints.
 
 	switch e := node.(type) {
 	case *core.BinaryExpression:
 		if e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
-			return &core.Hints{
+			return &core.BinaryExpressionHints{
 				Include: slices.Clone(e.VectorMatching.MatchingLabels),
 			}
 		}
@@ -80,7 +80,7 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(node planning.Node) *cor
 		return n.hintsFromNode(e.LHS)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {
-			return &core.Hints{
+			return &core.BinaryExpressionHints{
 				Include: slices.Clone(e.Grouping),
 			}
 		}

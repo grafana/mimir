@@ -35,8 +35,8 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, RunDelayedNameRemoval: runDelayedNameRemoval}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := d.Inner.SeriesMetadata(ctx, selectors)
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := d.Inner.SeriesMetadata(ctx, selector)
 
 	if err != nil {
 		return nil, err

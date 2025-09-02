@@ -42,8 +42,8 @@ func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRang
 	}
 }
 
-func (a *Absent) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.Inner.SeriesMetadata(ctx, selectors)
+func (a *Absent) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	}
