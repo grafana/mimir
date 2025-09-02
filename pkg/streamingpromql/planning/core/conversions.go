@@ -13,14 +13,14 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 )
 
-func (h *Hints) ToQueryHint() *types.QueryHints {
+func (h *BinaryExpressionHints) ToQueryHint() *binops.QueryHints {
 	if h == nil {
 		return nil
 	}
-	return &types.QueryHints{
+	return &binops.QueryHints{
 		Include: slices.Clone(h.Include),
 	}
 }

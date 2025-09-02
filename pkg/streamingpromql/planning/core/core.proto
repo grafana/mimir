@@ -20,7 +20,7 @@ message PositionRange {
   int64 end = 2 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
 }
 
-message Hints {
+message BinaryExpressionHints {
   repeated string include = 1;
 }
 
@@ -57,7 +57,7 @@ message BinaryExpressionDetails {
   VectorMatching vectorMatching = 2;
   bool returnBool = 3;
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
-  Hints hints = 5;
+  BinaryExpressionHints hints = 5;
 }
 
 // Why don't we just use the parser.ItemType values?

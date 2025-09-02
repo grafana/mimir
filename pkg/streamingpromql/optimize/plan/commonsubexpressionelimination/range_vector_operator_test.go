@@ -393,7 +393,7 @@ type testRangeVectorOperator struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, _ *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, _ *types.Selector) ([]types.SeriesMetadata, error) {
 	if len(t.series) == 0 {
 		return nil, nil
 	}
@@ -515,7 +515,7 @@ type failingRangeVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
+func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ *types.Selector) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 

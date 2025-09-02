@@ -46,8 +46,8 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context, selectors *types.SeriesSelectors) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := s.inner.SeriesMetadata(ctx, selectors)
+func (s *SortByLabel) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := s.inner.SeriesMetadata(ctx, selector)
 	if err != nil {
 		return nil, err
 	}
