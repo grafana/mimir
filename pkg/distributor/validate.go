@@ -133,7 +133,7 @@ type labelValueTooLongError struct {
 }
 
 func (e labelValueTooLongError) Error() string {
-	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, e.Series)
+	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Limit, e.Label.Name, e.Label.Value, e.Series)
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.
