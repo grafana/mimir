@@ -89,6 +89,11 @@ const (
 	MaxFetchedSeriesPerQueryParameter              = "max_fetched_series_per_query"
 	MaxEstimatedChunksPerQueryMultiplierParameter  = "max_estimated_fetched_chunks_per_query_multiplier"
 	MaxEstimatedMemoryConsumptionPerQueryParameter = "max_estimated_memory_consumption_per_query"
+	MaxPartialQueryLengthParameter                 = "max_partial_query_length"
+	MaxTotalQueryLengthParameter                   = "max_total_query_length"
+	MaxQueryExpressionSizeBytesParameter           = "max_query_expression_size_bytes"
+	AlertmanagerMaxGrafanaConfigSizeBytesParameter = "alertmanager_max_grafana_config_size_bytes"
+	AlertmanagerMaxGrafanaStateSizeBytesParameter  = "alertmanager_max_grafana_state_size_bytes"
 )
 
 var (

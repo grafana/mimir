@@ -49,11 +49,11 @@ const (
 var (
 	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
 		"Alertmanager configuration is too big, limit: %d bytes",
-		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
+		validation.AlertmanagerMaxGrafanaConfigSizeBytesParameter,
 	)
 	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
 		"Alertmanager state is too big, limit: %d bytes",
-		validation.AlertmanagerMaxGrafanaStateSizeFlag,
+		validation.AlertmanagerMaxGrafanaStateSizeBytesParameter,
 	)
 )
 

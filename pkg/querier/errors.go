@@ -20,7 +20,7 @@ var (
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) validation.LimitError {
 	return validation.NewLimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
-		validation.MaxPartialQueryLengthFlag))
+		validation.MaxPartialQueryLengthParameter))
 }
 
 func NewMaxSeriesQueryLimitError(limit, maxLimit int) validation.LimitError {

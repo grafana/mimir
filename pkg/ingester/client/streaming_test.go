@@ -350,13 +350,13 @@ func TestSeriesChunksStreamReader_QueryAndChunksLimits(t *testing.T) {
 			maxChunks:          4,
 			maxChunkBytes:      100,
 			maxEstimatedMemory: 400,
-			expectedError:      "the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
+			expectedError:      "the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure max_fetched_chunk_bytes_per_query, or contact your service administrator.",
 		},
 		"query uses too much estimated memory": {
 			maxChunks:          4,
 			maxChunkBytes:      200,
 			maxEstimatedMemory: 50,
-			expectedError:      "the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 50 bytes) (err-mimir-max-estimated-memory-consumption-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-estimated-memory-consumption-per-query, or contact your service administrator.",
+			expectedError:      "the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 50 bytes) (err-mimir-max-estimated-memory-consumption-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure max_estimated_memory_consumption_per_query, or contact your service administrator.",
 		},
 	}
 
