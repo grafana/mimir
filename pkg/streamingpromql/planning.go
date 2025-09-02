@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -76,8 +75,7 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 	}
 
 	if opts.EnableNarrowBinarySelectors {
-		// TODO: Real logger
-		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(log.NewNopLogger()))
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
 	}
 
 	return planner, nil
