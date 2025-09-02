@@ -2617,7 +2617,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			},
 			hints:             &storage.SelectHints{},
 			maxSeriesPerQuery: 1,
-			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure max_fetched_series_per_query, or contact your service administrator."),
 		},
 		"should error out if max series per query is reached before hint limit": {
 			matchers: []*labels.Matcher{
@@ -2627,7 +2627,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				Limit: 2,
 			},
 			maxSeriesPerQuery: 1,
-			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure max_fetched_series_per_query, or contact your service administrator."),
 		},
 		"should not return more metrics than hint limit": {
 			matchers: []*labels.Matcher{
