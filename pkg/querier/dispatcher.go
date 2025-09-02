@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -190,6 +191,14 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 	var storageError promql.ErrStorage
 	if errors.As(err, &storageError) {
 		return mimirpb.QUERY_ERROR_TYPE_INTERNAL
+	}
+
+	var apiError *apierror.APIError
+	if errors.As(err, &apiError) {
+		t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiError.Type)
+		if conversionErr == nil {
+			return t
+		}
 	}
 
 	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
