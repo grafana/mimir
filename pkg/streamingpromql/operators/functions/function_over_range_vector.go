@@ -40,6 +40,7 @@ type FunctionOverRangeVector struct {
 	buildingIntermediate bool
 	usingIntermediate    bool
 	intermediateResults  []IntermediateResultBlock
+	seriesToBlockRefs    [][]BlockSeriesRef
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -103,9 +104,21 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		}
 	}
 
-	metadata, err := m.Inner.SeriesMetadata(ctx)
-	if err != nil {
-		return nil, err
+	var metadata []types.SeriesMetadata
+	var err error
+
+	if m.usingIntermediate || m.buildingIntermediate {
+		var seriesToBlockRefs [][]BlockSeriesRef
+		metadata, seriesToBlockRefs, err = m.seriesMetadataWithIntermediate(ctx)
+		if err != nil {
+			return nil, err
+		}
+		m.seriesToBlockRefs = seriesToBlockRefs
+	} else {
+		metadata, err = m.Inner.SeriesMetadata(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if m.metricNames != nil {
@@ -148,10 +161,29 @@ func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
 
 // Compute the function for one series, and return results for all steps computed by m.Inner.
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if err := m.Inner.NextSeries(ctx); err != nil {
-		return types.InstantVectorSeriesData{}, err
+	// Decide whether we need to move to the next uncached series
+	var cachedResult []BlockSeriesRef
+	var hasUncached bool
+	if (m.usingIntermediate || m.buildingIntermediate) && m.currentSeriesIndex < len(m.seriesToBlockRefs) {
+		result := m.seriesToBlockRefs[m.currentSeriesIndex]
+		// If the ordered series groups has an uncached component, move to the next inner series
+		// The uncached component is always the first elem in the slice
+		// TODO: refactor and encapsulate cached pieces more, so instead of all this lookups being done here, the logic
+		// should just be to check the next series coming which source (cached, uncached, or both).
+		if result[0].SeriesIdx == UncachedSeriesRef {
+			hasUncached = true
+			if err := m.Inner.NextSeries(ctx); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			cachedResult = result[1:] // ignore uncached results
+		} else {
+			cachedResult = result
+		}
+	} else {
+		if err := m.Inner.NextSeries(ctx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
 	}
-
 	defer func() {
 		m.currentSeriesIndex++
 	}()
@@ -161,22 +193,28 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	// FIXME: compile time err introduced after rebasing - m.Inner.Range() was removed in https://github.com/grafana/mimir/pull/12489
 	if m.usingIntermediate || m.buildingIntermediate {
-		pieces = make([]IntermediateResult, m.Inner.Range()/intermediateCacheBlockLength)
+		pieces = make([]IntermediateResult, (m.Inner.Range()/intermediateCacheBlockLength)+2) // add two for head and tail
 	}
 
 	for {
 		// FIXME when using cached pieces we only want the head and tail here; when building pieces we want multiple blocks.
-		step, err := m.Inner.NextStepSamples(ctx)
+		// TODO: handle nil case when hasUncached == false
+		var step *types.RangeVectorStepData
+		var err error
+		if hasUncached {
+			step, err = m.Inner.NextStepSamples(ctx)
 
-		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-		if err == types.EOS {
-			if m.seriesValidationFunc != nil {
-				m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
+			if err == types.EOS { // FIXME: have this run for a cache-only step too
+				if m.seriesValidationFunc != nil {
+					// TODO: make sure this works with the combined metadata
+					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+				}
+
+				return data, nil
+			} else if err != nil {
+				return types.InstantVectorSeriesData{}, err
 			}
-
-			return data, nil
-		} else if err != nil {
-			return types.InstantVectorSeriesData{}, err
 		}
 
 		var (
@@ -185,7 +223,69 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			h        *histogram.FloatHistogram
 		)
 		// when building pieces, we want to do a range query where the step is the cache block length
-		if m.usingIntermediate {
+		if m.usingIntermediate || m.buildingIntermediate {
+			//TODO: range start/end or stepT?
+			// Get start/end for possible cached blocks
+			blockLengthMs := intermediateCacheBlockLength.Milliseconds()
+			cachedStart := ((step.RangeStart / blockLengthMs) + 1) * blockLengthMs
+			cachedEnd := (step.RangeEnd / blockLengthMs) * blockLengthMs
+
+			// calculate head piece
+			// todo: create splitStep function to split the current step into a selected time range
+			updatedStep := splitStep(step, step.RangeStart, cachedStart)
+			headPiece, err := m.Func.GenerateFunc(
+				updatedStep,
+				0, //FIXME
+				m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+			if err == nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			pieces[0] = headPiece
+			piecesIdx := 1
+			cachedIdx := 0
+			// calculate missing pieces in the middle (or use cached version)
+			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
+				// find the cached piece/series that corresponds to this value
+				foundCached := false
+				for ; cachedIdx < len(cachedResult); cachedIdx++ {
+					if m.intermediateResults[cachedResult[cachedIdx].BlockIdx].StartTimestampMs < int(cachedStart) {
+						continue
+					}
+					if m.intermediateResults[cachedResult[cachedIdx].BlockIdx].StartTimestampMs == int(cachedStart) {
+						foundCached = true
+						break
+					}
+					// getting here means too far
+					break
+				}
+
+				if foundCached {
+					pieces[piecesIdx] = m.intermediateResults[cachedResult[cachedIdx].BlockIdx].Results[cachedResult[cachedIdx].SeriesIdx]
+				} else {
+					updatedStep = splitStep(step, cachedStart, cachedStart+intermediateCacheBlockLength.Milliseconds())
+					// TODO: cache this
+					pieces[piecesIdx], err = m.Func.GenerateFunc(
+						updatedStep,
+						0, //FIXME
+						m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+					if err != nil {
+						return types.InstantVectorSeriesData{}, err
+					}
+				}
+				piecesIdx++
+			}
+
+			// calculate tail piece
+			updatedStep = splitStep(step, cachedEnd, step.RangeEnd)
+			tailPiece, err := m.Func.GenerateFunc(
+				updatedStep,
+				0, //FIXME
+				m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+			if err == nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			pieces[piecesIdx] = tailPiece
+
 			f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 		} else {
 			f, hasFloat, h, err = m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
@@ -300,4 +400,94 @@ func (m *FunctionOverRangeVector) Close() {
 	}
 
 	m.scalarArgsData = nil
+}
+
+type BlockSeriesRef struct {
+	BlockIdx  int
+	SeriesIdx int
+}
+
+const UncachedSeriesRef = -1
+
+// This code is mostly copied from deduplicate_and_merge.go
+// Merges the series metadata from uncached samples with the cached pieces
+// TODO: can we guarantee series are sorted in lexiographical order? or a stable order? I don't think so, e.g. if there's a subquery with sort(), then different time ranges might return values in different orders
+//  we might just have to filter out cases where that happens (while sort() only works on instant queries, if we might make multiple instant queries over different time ranges)
+//  sort_by_label() (experimental) might have similar effects though in this case the order should be the same (assuming a stable sort), it just can't be assumed to be lexicographical wrt all series
+func (m *FunctionOverRangeVector) seriesMetadataWithIntermediate(ctx context.Context) ([]types.SeriesMetadata, [][]BlockSeriesRef, error) {
+	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
+	labelsToRefUncached := map[string][]BlockSeriesRef{}
+
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	labelBytes := make([]byte, 0, 1024)
+
+	// TODO: only load raw samples where needed (when cached is not enough) - this will result in a list of time ranges being passed in to inner (or the inner node to be materialized)
+	uncachedMetadata, err := m.Inner.SeriesMetadata(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for seriesIdx, series := range uncachedMetadata {
+		labelBytes = series.Labels.Bytes(labelBytes)
+		g, groupExists := labelsToRefUncached[string(labelBytes)]
+		if !groupExists {
+			labelsToRefUncached[string(labelBytes)] = []BlockSeriesRef{{UncachedSeriesRef, seriesIdx}}
+		} else {
+			labelsToRefUncached[string(labelBytes)] = append(g, BlockSeriesRef{UncachedSeriesRef, seriesIdx})
+		}
+	}
+
+	// separate map for cache-only (as we need the uncached parts to be ordered as they are returned)
+	labelsToRefCachedOnly := make(map[string][]BlockSeriesRef)
+
+	for irIdx, result := range m.intermediateResults {
+		for seriesIdx, series := range result.Series {
+			labelBytes = series.Labels.Bytes(labelBytes)
+			g, groupExists := labelsToRefUncached[string(labelBytes)]
+			if !groupExists {
+				cg, cgroupExists := labelsToRefCachedOnly[string(labelBytes)]
+				if !cgroupExists {
+					labelsToRefCachedOnly[string(labelBytes)] = []BlockSeriesRef{{irIdx, seriesIdx}}
+				} else {
+					labelsToRefCachedOnly[string(labelBytes)] = append(cg, BlockSeriesRef{irIdx, seriesIdx})
+				}
+			} else {
+				labelsToRefUncached[string(labelBytes)] = append(g, BlockSeriesRef{irIdx, seriesIdx})
+			}
+		}
+	}
+
+	seriesToBlockRefs := make([][]BlockSeriesRef, 0, len(labelsToRefUncached))
+	for _, group := range labelsToRefUncached {
+		seriesToBlockRefs = append(seriesToBlockRefs, group)
+	}
+	// order by uncached metadata (as Inner.NextSeries() is called in defined order)
+	for _, metadata := range uncachedMetadata {
+		labelBytes = metadata.Labels.Bytes(labelBytes)
+		seriesToBlockRefs = append(seriesToBlockRefs, labelsToRefUncached[string(labelBytes)])
+	}
+	// Add any cache-only groups to the end of the list
+	// TODO: deterministic order
+	for _, metadata := range labelsToRefCachedOnly {
+		seriesToBlockRefs = append(seriesToBlockRefs, metadata)
+	}
+
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(seriesToBlockRefs), m.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, blockRefs := range seriesToBlockRefs {
+		first := blockRefs[0]
+		if first.BlockIdx == UncachedSeriesRef {
+			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, uncachedMetadata[first.SeriesIdx])
+		} else {
+			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, m.intermediateResults[first.BlockIdx].Series[first.SeriesIdx])
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return outputMetadata, seriesToBlockRefs, nil
 }
