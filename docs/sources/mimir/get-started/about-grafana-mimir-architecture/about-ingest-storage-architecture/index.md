@@ -21,7 +21,11 @@ Ingest storage architecture mitigates this issue by decoupling the read and writ
 
 The following diagram shows how ingest storage architecture works:
 
+<div align="center">
+
 ![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_arch.png)
+
+</div>
 
 Here's an overview of how ingest storage architecture works:
 
@@ -41,3 +45,7 @@ Ingest storage architecture offers the following advantages over classic archite
 - Decoupled read and write paths to prevent performance interference
 - Less stateful, easier to manage ingesters
 - Reduced cross-availability zone data transfer costs through the use of object storage
+
+## Grafana Mimir components in ingest storage architecture
+
+<!-- Add content from https://github.com/grafana/mimir/pull/12515 -->
