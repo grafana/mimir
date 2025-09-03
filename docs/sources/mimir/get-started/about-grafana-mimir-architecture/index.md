@@ -172,6 +172,4 @@ The Mimir ingester uses Kafka **consumer groups** to persist how far an ingester
 1. When an ingester is abruptly terminated and has not had the chance to persist its offset in the consumer group. In that case the ingester will pick back up where the consumer group offset points to.
 2. Ingesters can optionally be configured to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In those cases the ingester will use the **ListOffsets API** to discover the target offset.
 
-Ingesters do not need Kafka to be available to serve queries. During a Kafka outage, ingesters can continue serving queries with the data they have already consumed from Kafka and stored in memory or on disk.
 
-Kafka retention should be configured based on how long of an ingester outage the operator wants to be able to withstand without data loss. If ingesters are unavailable for longer than the Kafka retention period, they will not be able to resume from the offset in their consumer group, leading to a gap in ingested samples.
