@@ -611,6 +611,99 @@ func TestCachingAndInvalidation(t *testing.T) {
 	})
 }
 
+func TestDynamicLoadConcurrency(t *testing.T) {
+	tc := []struct {
+		name            string
+		in              map[string]rulespb.RuleGroupList
+		targetPerWorker int
+		maxWorkers      int
+		exp             int
+	}{
+		{
+			name:            "empty groups",
+			in:              map[string]rulespb.RuleGroupList{},
+			targetPerWorker: 1,
+			maxWorkers:      10,
+			exp:             0,
+		},
+		{
+			name: "empty users",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": {},
+				"user-2": {},
+			},
+			targetPerWorker: 1,
+			maxWorkers:      10,
+			exp:             0,
+		},
+		{
+			name: "1/10 one file per worker",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": testGroups(3),
+				"user-2": testGroups(4),
+			},
+			targetPerWorker: 1,
+			maxWorkers:      10,
+			exp:             7,
+		},
+		{
+			name: "1/10 max of 10",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": testGroups(5),
+				"user-2": testGroups(12),
+			},
+			targetPerWorker: 1,
+			maxWorkers:      10,
+			exp:             10,
+		},
+		{
+			name: "5/50 divisible by 5",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": testGroups(5),
+				"user-2": testGroups(20),
+			},
+			targetPerWorker: 5,
+			maxWorkers:      50,
+			exp:             5,
+		},
+		{
+			name: "5/50 not divisible rounds down",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": testGroups(7),
+				"user-2": testGroups(20),
+			},
+			targetPerWorker: 5,
+			maxWorkers:      50,
+			exp:             5,
+		},
+		{
+			name: "5/50 max of 50",
+			in: map[string]rulespb.RuleGroupList{
+				"user-1": testGroups(15000),
+				"user-2": testGroups(26),
+			},
+			targetPerWorker: 5,
+			maxWorkers:      50,
+			exp:             50,
+		},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			res := dynamicLoadConcurrency(tt.in, tt.targetPerWorker, tt.maxWorkers)
+			require.Equal(t, tt.exp, res)
+		})
+	}
+}
+
 func matchAll(string) bool {
 	return true
+}
+
+func testGroups(count int) rulespb.RuleGroupList {
+	res := make(rulespb.RuleGroupList, count)
+	for i := range count {
+		res[i] = &rulespb.RuleGroupDesc{}
+	}
+	return res
 }
