@@ -8,7 +8,6 @@ package querier
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -18,7 +17,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel/attribute"
@@ -182,43 +180,17 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 }
 
 func errorTypeForError(err error) mimirpb.QueryErrorType {
-	// This method mirrors the behaviour of Prometheus' returnAPIError (https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682).
-	if errors.Is(err, context.Canceled) {
-		return mimirpb.QUERY_ERROR_TYPE_CANCELED
-	}
+	apiErrorType := apierror.TypeForError(err, apierror.TypeExec)
+	t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiErrorType)
 
-	if errors.Is(err, context.DeadlineExceeded) {
-		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
-	}
-
-	var queryCanceledErr promql.ErrQueryCanceled
-	if errors.As(err, &queryCanceledErr) {
-		return mimirpb.QUERY_ERROR_TYPE_CANCELED
-	}
-
-	var queryTimeoutErr promql.ErrQueryTimeout
-	if errors.As(err, &queryTimeoutErr) {
-		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
-	}
-
-	var storageError promql.ErrStorage
-	if errors.As(err, &storageError) {
+	// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
+	// in sync (and this is enforced with a test).
+	// If this does fail, it's a bug and should be fixed.
+	if conversionErr != nil {
 		return mimirpb.QUERY_ERROR_TYPE_INTERNAL
 	}
 
-	var apiError *apierror.APIError
-	if errors.As(err, &apiError) {
-		t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiError.Type)
-
-		// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
-		// in sync (and this is enforced with a test).
-		// If this does fail, it's a bug and should be fixed.
-		if conversionErr == nil {
-			return t
-		}
-	}
-
-	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
+	return t
 }
 
 type httpResultStream struct {

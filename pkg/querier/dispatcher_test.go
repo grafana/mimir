@@ -4,8 +4,6 @@ package querier
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -15,11 +13,9 @@ import (
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -27,54 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
-
-func TestErrorTypeForError(t *testing.T) {
-	testCases := map[string]struct {
-		err      error
-		expected mimirpb.QueryErrorType
-	}{
-		"generic error": {
-			err:      errors.New("something went wrong"),
-			expected: mimirpb.QUERY_ERROR_TYPE_EXECUTION,
-		},
-		"context canceled": {
-			err:      context.Canceled,
-			expected: mimirpb.QUERY_ERROR_TYPE_CANCELED,
-		},
-		"context deadline exceeded": {
-			err:      context.DeadlineExceeded,
-			expected: mimirpb.QUERY_ERROR_TYPE_TIMEOUT,
-		},
-		"storage error": {
-			err:      promql.ErrStorage{Err: errors.New("could not load data")},
-			expected: mimirpb.QUERY_ERROR_TYPE_INTERNAL,
-		},
-		"apierror.APIError": {
-			err:      apierror.New(apierror.TypeNotAcceptable, "request is not acceptable"),
-			expected: mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
-		},
-		// These types shouldn't be emitted by MQE, but we support them for consistency.
-		"query canceled error": {
-			err:      promql.ErrQueryCanceled("canceled"),
-			expected: mimirpb.QUERY_ERROR_TYPE_CANCELED,
-		},
-		"query timeout error": {
-			err:      promql.ErrQueryTimeout("timed out"),
-			expected: mimirpb.QUERY_ERROR_TYPE_TIMEOUT,
-		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, errorTypeForError(testCase.err))
-		})
-
-		t.Run(name+" (wrapped)", func(t *testing.T) {
-			err := fmt.Errorf("something went wrong one level down: %w", testCase.err)
-			require.Equal(t, testCase.expected, errorTypeForError(err))
-		})
-	}
-}
 
 func TestDispatcher_HandleProtobuf(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `

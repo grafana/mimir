@@ -5,12 +5,14 @@ package error
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -97,4 +99,53 @@ func TestIsRetryableAPIError(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestTypeForError(t *testing.T) {
+	fallback := TypeNotFound
+
+	testCases := map[string]struct {
+		err      error
+		expected Type
+	}{
+		"generic error": {
+			err:      errors.New("something went wrong"),
+			expected: fallback,
+		},
+		"context canceled": {
+			err:      context.Canceled,
+			expected: TypeCanceled,
+		},
+		"context deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: TypeTimeout,
+		},
+		"storage error": {
+			err:      promql.ErrStorage{Err: errors.New("could not load data")},
+			expected: TypeInternal,
+		},
+		"query canceled error": {
+			err:      promql.ErrQueryCanceled("canceled"),
+			expected: TypeCanceled,
+		},
+		"query timeout error": {
+			err:      promql.ErrQueryTimeout("timed out"),
+			expected: TypeTimeout,
+		},
+		"APIError": {
+			err:      New(TypeNotAcceptable, "request is not acceptable"),
+			expected: TypeNotAcceptable,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, TypeForError(testCase.err, fallback))
+		})
+
+		t.Run(name+" (wrapped)", func(t *testing.T) {
+			err := fmt.Errorf("something went wrong one level down: %w", testCase.err)
+			require.Equal(t, testCase.expected, TypeForError(err, fallback))
+		})
+	}
 }
