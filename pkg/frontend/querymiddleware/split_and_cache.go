@@ -710,7 +710,7 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 	if err != nil {
 		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
-	inspect(expr, func(n parser.Node) error {
+	_ = inspect(expr, func(n parser.Node) error {
 		switch exprAt := n.(type) {
 		case *parser.VectorSelector:
 			switch exprAt.StartOrEnd {

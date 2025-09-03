@@ -344,7 +344,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	}
 
-	inspect(expr, func(n parser.Node) error {
+	_ = inspect(expr, func(n parser.Node) error {
 		switch e := n.(type) {
 		case *parser.VectorSelector:
 			return check(e.Timestamp, e.OriginalOffset)
