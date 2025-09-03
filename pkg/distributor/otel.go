@@ -159,9 +159,9 @@ func OTLPHandler(
 				httpCode = http.StatusServiceUnavailable
 			}
 		} else {
-			var errCause mimirpb.ErrorCause
-			grpcCode, httpCode, errCause = toOtlpGRPCHTTPStatus(pushErr)
-			if errCause == mimirpb.ERROR_CAUSE_SOFT_BAD_DATA {
+			var isSoft bool
+			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
+			if isSoft {
 				handlePartialOTLPPush(pushErr, w, r, req, logger)
 				return
 			}
@@ -404,24 +404,17 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, mimirpb.ErrorCause) {
+func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 	var distributorErr Error
 	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
-		return codes.Internal, http.StatusServiceUnavailable, mimirpb.ERROR_CAUSE_UNKNOWN
+		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
 	errCause := distributorErr.Cause()
+	isSoft := distributorErr.IsSoft()
 	grpcStatusCode := errorCauseToGRPCStatusCode(errCause, false)
-
-	var httpStatusCode int
-	switch errCause {
-	case mimirpb.ERROR_CAUSE_SOFT_BAD_DATA:
-		httpStatusCode = http.StatusOK
-	default:
-		httpStatusCode = errorCauseToHTTPStatusCode(errCause, false)
-	}
-
-	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), errCause
+	httpStatusCode := errorCauseToHTTPStatusCode(errCause, false)
+	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), isSoft
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according

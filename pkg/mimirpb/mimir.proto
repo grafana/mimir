@@ -59,11 +59,11 @@ enum ErrorCause {
   ERROR_CAUSE_METHOD_NOT_ALLOWED = 11;
   ERROR_CAUSE_TENANT_LIMIT = 12;
   ERROR_CAUSE_ACTIVE_SERIES_LIMITED = 13;
-  ERROR_CAUSE_SOFT_BAD_DATA = 14;
 }
 
 message ErrorDetails {
   ErrorCause Cause = 1;
+  bool Soft = 2;
 }
 
 message TimeSeries {

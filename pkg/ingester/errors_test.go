@@ -224,12 +224,12 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
 	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test, exemplar={traceID=\"123\"}", anotherErr)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, mimirpb.ERROR_CAUSE_SOFT_BAD_DATA, true)
+	checkIngesterError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
-	checkIngesterError(t, wrappedErr, mimirpb.ERROR_CAUSE_SOFT_BAD_DATA, true)
+	checkIngesterError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA, true)
 }
 
 func TestTooBusyError(t *testing.T) {
@@ -434,85 +434,85 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			err:             newSampleError("id", "sample error", timestamp, labelAdapters),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: newSampleError("id", "sample error", timestamp, labelAdapters).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
 		"a wrapped sampleError gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newSampleError("id", "sample error", timestamp, labelAdapters).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
-		"a exemplarError gets translated into an ErrorWithStatus InvalidArgument error with details": {
+		"an exemplarError gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
 		"a wrapped exemplarError gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
 		"a tsdbIngestExemplarErr gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_SOFT_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
 		"a wrapped tsdbIngestExemplarErr gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             fmt.Errorf("wrapped: %w", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.InvalidArgument,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_SOFT_BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
 		"a perUserSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             newPerUserSeriesLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerUserSeriesLimitReachedError(10).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a wrapped perUserSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserSeriesLimitReachedError(10).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a perUserMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             newPerUserMetadataLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerUserMetadataLimitReachedError(10).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a wrapped perUserMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserMetadataLimitReachedError(10).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             newPerMetricSeriesLimitReachedError(10, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerMetricSeriesLimitReachedError(10, labelAdapters).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricSeriesLimitReachedError(10, labelAdapters).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             newPerMetricMetadataLimitReachedError(10, family),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerMetricMetadataLimitReachedError(10, family).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, family).Error()),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_TENANT_LIMIT, Soft: true},
 		},
 		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
 			err:             newCircuitBreakerOpenError("foo", 1*time.Second),

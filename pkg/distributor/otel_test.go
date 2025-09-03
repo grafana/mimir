@@ -1510,184 +1510,184 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 		err                error
 		expectedHTTPStatus int
 		expectedGRPCStatus codes.Code
-		expectedCause      mimirpb.ErrorCause
+		expectedSoft       bool
 	}
 	testCases := map[string]testStruct{
 		"a generic error gets translated into gRPC code.Internal and HTTP 503 statuses": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"a DoNotLog of a generic error gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"a context.DeadlineExceeded gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                context.DeadlineExceeded,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"a replicasDidNotMatchError gets translated into gRPC codes.AlreadyExists and HTTP 202 statuses": {
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedGRPCStatus: codes.AlreadyExists,
-			expectedCause:      mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a replicasDidNotMatchError gets translated into gRPC codes.AlreadyExists and HTTP 202 statuses": {
 			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedGRPCStatus: codes.AlreadyExists,
-			expectedCause:      mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH,
+			expectedSoft:       false,
 		},
 		"a tooManyClustersError gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
-			expectedCause:      mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a tooManyClustersError gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
-			expectedCause:      mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS,
+			expectedSoft:       false,
 		},
 		"a validationError gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
-			expectedCause:      mimirpb.ERROR_CAUSE_BAD_DATA,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a validationError gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
-			expectedCause:      mimirpb.ERROR_CAUSE_BAD_DATA,
+			expectedSoft:       false,
 		},
 		"an ingestionRateLimitedError gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
-			expectedCause:      mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
-			expectedCause:      mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
-			expectedCause:      mimirpb.ERROR_CAUSE_BAD_DATA,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
-			expectedCause:      mimirpb.ERROR_CAUSE_BAD_DATA,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with TENANT_LIMIT cause gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.ERROR_CAUSE_TENANT_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
-			expectedCause:      mimirpb.ERROR_CAUSE_TENANT_LIMIT,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with TENANT_LIMIT cause gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.ERROR_CAUSE_TENANT_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
-			expectedCause:      mimirpb.ERROR_CAUSE_TENANT_LIMIT,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.Unimplemented and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
-			expectedCause:      mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.Unimplemented and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
-			expectedCause:      mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
-			expectedCause:      mimirpb.ERROR_CAUSE_UNKNOWN,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
-			expectedCause:      mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN,
+			expectedSoft:       false,
 		},
 		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
 			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
-			expectedCause:      mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN,
+			expectedSoft:       false,
 		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			gStatus, status, cause := toOtlpGRPCHTTPStatus(tc.err)
+			gStatus, status, soft := toOtlpGRPCHTTPStatus(tc.err)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 			assert.Equal(t, tc.expectedGRPCStatus, gStatus)
-			assert.Equal(t, tc.expectedCause, cause)
+			assert.Equal(t, tc.expectedSoft, soft)
 		})
 	}
 }

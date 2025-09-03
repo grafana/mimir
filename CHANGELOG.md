@@ -53,7 +53,7 @@
 * [BUGFIX] Querier: Fix possible panic when evaluating a nested subquery where the parent has no steps. #12524
 * [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
 * [BUGFIX] Ingester: Fix a bug where prepare-instance-ring-downscale endpoint would return an error while compacting and not read-only. #12548
-* [BUGFIX] OTLP: Return HTTP OK when partially rejecting due to OOO exemplars. #12579
+* [BUGFIX] OTLP: Return HTTP OK for partially rejected requests, e.g. due to OOO exemplars. #12579
 
 ### Mixin
 
