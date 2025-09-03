@@ -2,16 +2,16 @@
 aliases:
   - ../../../operators-guide/architecture/components/query-scheduler/
 description: The query-scheduler distributes work to queriers.
-menuTitle: (Optional) Query-scheduler
-title: (Optional) Grafana Mimir query-scheduler
-weight: 120
+menuTitle: Query-scheduler
+title: Grafana Mimir query-scheduler
+weight: 70
 ---
 
 <!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
-# (Optional) Grafana Mimir query-scheduler
+# Grafana Mimir query-scheduler
 
-The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers](../querier/).
+The query-scheduler is stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers](../querier/).
 
 ![Query-scheduler architecture](query-scheduler-architecture.png)
 
@@ -27,17 +27,13 @@ The following flow describes how a query moves through a Grafana Mimir cluster:
 
 ## Benefits of using the query-scheduler
 
-Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited](../query-frontend/#why-query-frontend-scalability-is-limited).
-
-### How query-scheduler solves query-frontend scalability limits
-
-When you use the query-scheduler, the queue is moved from the query-frontend to the query-scheduler, and the query-frontend can be scaled to any number of replicas.
-
-The query-scheduler is affected by the same scalability limits as the query-frontend, but because a query-scheduler replica can handle high amounts of query throughput, scaling the query-scheduler to a number of replicas greater than `-querier.max-concurrent` is typically not required, even for very large Grafana Mimir clusters.
+Query-scheduler enables the scaling of query-frontends by moving queuing of requests to a separate component.
+The query-scheduler prevents queries that only require ingesters from being affected by degradation of store-gateways and vice versa.
+The query-scheduler ensures tenant fairness using a simple round-robin between all tenants with non-empty query request queues.
 
 ## Configuration
 
-To use the query-scheduler, query-frontends and queriers need to discover the addresses of query-scheduler instances.
+Query-frontends and queriers need to discover the addresses of query-scheduler instances.
 The query-scheduler supports two service discovery mechanisms:
 
 - DNS-based service discovery
@@ -54,11 +50,6 @@ To use the query-scheduler with DNS-based service discovery, configure the query
 The configured query-scheduler address should be in the `host:port` format.
 
 If multiple query-schedulers are running, the host should be a DNS name resolving to all query-scheduler instances.
-{{< /admonition >}}
-
-{{< admonition type="note" >}}
-The querier pulls queries only from the query-frontend or the query-scheduler, but not both.
-`-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive and you can only set one option.
 {{< /admonition >}}
 
 ### Ring-based service discovery
