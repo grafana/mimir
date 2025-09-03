@@ -43,16 +43,16 @@ func TestID_MessageWithPerTenantLimitConfig(t *testing.T) {
 		actual   string
 	}{
 		{
-			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limit, configure my_param1, or contact your service administrator.",
-			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my_param1"),
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limit, configure -my-flag1, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my-flag1"),
 		},
 		{
-			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limits, configure my_param1 and my_param2, or contact your service administrator.",
-			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my_param1", "my_param2"),
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limits, configure -my-flag1 and -my-flag2, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my-flag1", "my-flag2"),
 		},
 		{
-			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limits, configure my_param1, my_param2 and my_param3, or contact your service administrator.",
-			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my_param1", "my_param2", "my_param3"),
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limits, configure -my-flag1, -my-flag2 and -my-flag3, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithPerTenantLimitConfig("an error", "my-flag1", "my-flag2", "my-flag3"),
 		},
 	} {
 		assert.Equal(t, tc.expected, tc.actual)

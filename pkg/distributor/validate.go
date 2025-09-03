@@ -72,11 +72,11 @@ var (
 
 	labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
 		"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
-		validation.MaxLabelNameLengthParameter,
+		validation.MaxLabelNameLengthFlag,
 	)
 	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
 		"received a series whose label value length of %d exceeds the limit of %d, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
-		validation.MaxLabelValueLengthParameter,
+		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
 	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' metric: '%.200s'")
@@ -84,11 +84,11 @@ var (
 
 	tooManyLabelsMsgFormat = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
-		validation.MaxLabelNamesPerSeriesParameter,
+		validation.MaxLabelNamesPerSeriesFlag,
 	)
 	tooManyInfoLabelsMsgFormat = globalerror.MaxLabelNamesPerInfoSeries.MessageWithPerTenantLimitConfig(
 		"received an info series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
-		validation.MaxLabelNamesPerInfoSeriesParameter,
+		validation.MaxLabelNamesPerInfoSeriesFlag,
 	)
 
 	noMetricNameMsgFormat                 = globalerror.MissingMetricName.Message("received series has no metric name")
@@ -98,11 +98,11 @@ var (
 	invalidSchemaNativeHistogramMsgFormat = globalerror.InvalidSchemaNativeHistogram.Message("received a native histogram sample with an invalid schema: %d")
 	sampleTimestampTooNewMsgFormat        = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
-		validation.CreationGracePeriodParameter,
+		validation.CreationGracePeriodFlag,
 	)
 	sampleTimestampTooOldMsgFormat = globalerror.SampleTooFarInPast.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the past, timestamp: %d series: '%.200s'",
-		validation.PastGracePeriodParameter,
+		validation.PastGracePeriodFlag,
 	)
 	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
 		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
@@ -117,11 +117,11 @@ var (
 	metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithPerTenantLimitConfig(
 		// When formatting this error the "cause" will always be an empty string.
 		"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
-		validation.MaxMetadataLengthParameter,
+		validation.MaxMetadataLengthFlag,
 	)
 	metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
 		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
-		validation.MaxMetadataLengthParameter,
+		validation.MaxMetadataLengthFlag,
 	)
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )

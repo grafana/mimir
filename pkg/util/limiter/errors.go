@@ -13,27 +13,27 @@ var (
 	maxSeriesHitMsgFormat = globalerror.MaxSeriesPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the maximum number of series (limit: %d series)",
 		cardinalityStrategy,
-		validation.MaxFetchedSeriesPerQueryParameter,
+		validation.MaxSeriesPerQueryFlag,
 	)
 	maxChunkBytesHitMsgFormat = globalerror.MaxChunkBytesPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the aggregated chunks size limit (limit: %d bytes)",
 		cardinalityStrategy,
-		validation.MaxFetchedChunkBytesPerQueryParameter,
+		validation.MaxChunkBytesPerQueryFlag,
 	)
 	maxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the maximum number of chunks (limit: %d chunks)",
 		cardinalityStrategy,
-		validation.MaxChunksPerQueryParameter,
+		validation.MaxChunksPerQueryFlag,
 	)
 	maxEstimatedChunksPerQueryLimitMsgFormat = globalerror.MaxEstimatedChunksPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the estimated number of chunks for the query exceeded the maximum allowed (limit: %d chunks)",
 		cardinalityStrategy,
-		validation.MaxEstimatedChunksPerQueryMultiplierParameter,
+		validation.MaxEstimatedChunksPerQueryMultiplierFlag,
 	)
 	maxEstimatedMemoryConsumptionPerQueryLimitMsgFormat = globalerror.MaxEstimatedMemoryConsumptionPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: %d bytes)",
 		cardinalityStrategy,
-		validation.MaxEstimatedMemoryConsumptionPerQueryParameter,
+		validation.MaxEstimatedMemoryConsumptionPerQueryFlag,
 	)
 )
 

@@ -116,19 +116,19 @@ func (id ID) MessageWithPerInstanceLimitConfig(msg, flag string, addFlags ...str
 }
 
 // MessageWithPerTenantLimitConfig returns the provided msg, appending the error id and a suggestion on
-// which configuration parameter(s) to use to change the per-tenant limit.
-func (id ID) MessageWithPerTenantLimitConfig(msg, param string, addParams ...string) string {
-	paramsList, plural := buildConfigParametersList(param, addParams...)
-	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, paramsList)
+// which configuration flag(s) to use to change the per-tenant limit.
+func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
 }
 
 // MessageWithStrategyAndPerTenantLimitConfig returns the provided msg, appending the error id and a
 // suggestion on which strategy to follow to try not hitting the limit, plus which configuration
 // flag(s) to otherwise change the per-tenant limit.
-func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, param string, addParams ...string) string {
-	paramsList, plural := buildConfigParametersList(param, addParams...)
+func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
 	return fmt.Sprintf("%s (%s%s). %s. Otherwise, to adjust the related per-tenant limit%s, configure %s, or contact your service administrator.",
-		msg, errPrefix, id, strategy, plural, paramsList)
+		msg, errPrefix, id, strategy, plural, flagsList)
 }
 
 // LabelValue returns the error ID converted to a form suitable for use as a Prometheus label value.
@@ -142,28 +142,18 @@ func (id ID) Error() string {
 }
 
 func buildFlagsList(flag string, addFlags ...string) (string, string) {
-	return buildWordList("-", flag, addFlags...)
-}
-
-func buildConfigParametersList(param string, addParams ...string) (string, string) {
-	return buildWordList("", param, addParams...)
-}
-
-func buildWordList(prefix string, word string, addWords ...string) (string, string) {
 	var sb strings.Builder
-	sb.WriteString(prefix)
-	sb.WriteString(word)
+	sb.WriteString("-")
+	sb.WriteString(flag)
 	plural := ""
-	if len(addWords) > 0 {
+	if len(addFlags) > 0 {
 		plural = "s"
-		for _, addWord := range addWords[:len(addWords)-1] {
-			sb.WriteString(", ")
-			sb.WriteString(prefix)
-			sb.WriteString(addWord)
+		for _, addFlag := range addFlags[:len(addFlags)-1] {
+			sb.WriteString(", -")
+			sb.WriteString(addFlag)
 		}
-		sb.WriteString(" and ")
-		sb.WriteString(prefix)
-		sb.WriteString(addWords[len(addWords)-1])
+		sb.WriteString(" and -")
+		sb.WriteString(addFlags[len(addFlags)-1])
 	}
 
 	return sb.String(), plural
