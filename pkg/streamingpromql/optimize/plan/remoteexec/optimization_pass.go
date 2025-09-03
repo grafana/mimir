@@ -25,9 +25,9 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
-	containsSelectors, containsShardedExpression := o.inspect(plan.Root)
+	containsSelectors, containsShardedOrSpunOffExpression := o.inspect(plan.Root)
 
-	if !containsSelectors || containsShardedExpression {
+	if !containsSelectors || containsShardedOrSpunOffExpression {
 		return plan, nil
 	}
 
@@ -43,19 +43,19 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 
 // inspect returns two booleans:
 // - the first indicates if node or any of its children is a selector
-// - the second indicates if node or any of its children is a vector selector containing a sharded expression
+// - the second indicates if node or any of its children is a vector selector containing a sharded or spun-off expression
 func (o *OptimizationPass) inspect(node planning.Node) (bool, bool) {
 	switch n := node.(type) {
 	case *core.MatrixSelector:
-		return true, false
+		return true, isSpunOff(n.Matchers)
 	case *core.VectorSelector:
 		return true, isSharded(n)
 	default:
 		anyChildContainsSelectors := false
 
 		for _, c := range n.Children() {
-			containsSelectors, containsShardedExpression := o.inspect(c)
-			if containsShardedExpression {
+			containsSelectors, containsShardedOrSpunOffExpression := o.inspect(c)
+			if containsShardedOrSpunOffExpression {
 				return true, true
 			}
 
@@ -69,6 +69,16 @@ func (o *OptimizationPass) inspect(node planning.Node) (bool, bool) {
 func isSharded(v *core.VectorSelector) bool {
 	for _, m := range v.Matchers {
 		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSpunOff(matchers []*core.LabelMatcher) bool {
+	for _, m := range matchers {
+		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
 			return true
 		}
 	}

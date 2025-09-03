@@ -79,13 +79,23 @@ func TestOptimizationPass(t *testing.T) {
 		},
 		"shardable instant vector expression": {
 			expr: `sum(my_metric)`,
-			// For now, we don't support using MQE's remote execution with shardable queries.
+			// Query-frontends use a query engine instance when evaluating sharded queries, and again when evaluating the individual legs.
+			// For now, we don't want to apply remote execution to the sharded queries, only to the individual legs.
 			// So we need to leave the query plan unchanged and allow it to fall through to the special
-			// sharding Queryable used in the query-frontend, which will then make the requests to
-			// queriers itself.
+			// sharding Queryable used in the query-frontend, which will then make the requests to queriers itself.
 			expectedPlan: `
 				- AggregateExpression: sum
 					- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(my_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(my_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+		},
+		"subquery with spin-off": {
+			expr: `sum_over_time(sum(my_metric)[6h:5m])`,
+			// Similar to the sharding case above, we only want to apply remote execution to the individual legs, not the
+			// overall query containing a subquery.
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: sum_over_time(...)
+						- MatrixSelector: {__query__="sum(my_metric)", __range__="6h0m0s", __step__="5m0s", __name__="__subquery_spinoff__"}[6h0m0s]
 			`,
 		},
 	}
@@ -104,6 +114,10 @@ func TestOptimizationPass(t *testing.T) {
 
 			// Rewrite the query in a shardable form, if we can.
 			testCase.expr, err = rewriteForQuerySharding(ctx, testCase.expr)
+			require.NoError(t, err)
+
+			// And do the same for queries eligible for subquery spin-off.
+			testCase.expr, err = rewriteForSubquerySpinoff(ctx, testCase.expr)
 			require.NoError(t, err)
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
@@ -139,4 +153,25 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	}
 
 	return shardedQuery.String(), nil
+}
+
+func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
+	stats := astmapper.NewSubquerySpinOffMapperStats()
+	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
+	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+	ast, err := parser.ParseExpr(expr)
+	if err != nil {
+		return "", err
+	}
+
+	rewrittenQuery, err := mapper.Map(ctx, ast)
+	if err != nil {
+		return "", err
+	}
+
+	if stats.SpunOffSubqueries() == 0 {
+		return expr, nil
+	}
+
+	return rewrittenQuery.String(), nil
 }
