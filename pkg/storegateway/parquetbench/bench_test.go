@@ -37,6 +37,7 @@ import (
 var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
 var benchmarkCompression = flag.Bool("benchmark-compression", true, "Enable compression for parquet data")
 var benchmarkSortBy = flag.String("benchmark-sort-by", "", "Comma-separated list of fields to sort by in parquet data")
+var benchmarkTSDBDir = flag.String("benchmark-tsdb-dir", "", "Path to directory containing pre-generated TSDB blocks (if not set, generates data on the fly)")
 
 var benchmarkCases = []struct {
 	name     string
@@ -71,7 +72,7 @@ var benchmarkCases = []struct {
 		matchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
 			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-0"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-1"),
 		},
 	},
 	// TODO this one is commented because it returns no series and current implementation requires it
@@ -151,7 +152,7 @@ func BenchmarkBucketStores_Series(b *testing.B) {
 		}
 	}
 
-	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression, sortByFields)
+	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression, sortByFields, *benchmarkTSDBDir)
 
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
 		storegateway.GrpcContextMetadataTenantID: []string{user},
