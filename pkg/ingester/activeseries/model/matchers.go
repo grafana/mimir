@@ -46,16 +46,18 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 				valuesMatchedPerLabelName[m.Name][m.Value] = struct{}{}
 				optimized = true
 				break
-			} else if sm := m.SetMatches(); len(sm) > 0 {
-				matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
-				if valuesMatchedPerLabelName[m.Name] == nil {
-					valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+			} else if m.Type == labels.MatchRegexp {
+				if sm := m.SetMatches(); len(sm) > 0 {
+					matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
+					if valuesMatchedPerLabelName[m.Name] == nil {
+						valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+					}
+					for _, v := range sm {
+						valuesMatchedPerLabelName[m.Name][v] = struct{}{}
+					}
+					optimized = true
+					break
 				}
-				for _, v := range sm {
-					valuesMatchedPerLabelName[m.Name][v] = struct{}{}
-				}
-				optimized = true
-				break
 			}
 		}
 		if !optimized {
