@@ -162,12 +162,12 @@ The use of Kafka protocol in Mimir is limited, which allows you to use many Kafk
 
 <!-- TODO dimitarvdimitrov: here' i'm not sure about the best way to structure this content. Would a table be better? -->
 
-On the write path the distributor rquires the Kafka cluster to be available for push requests to succeed.
+On the write path the distributor requires the Kafka cluster to be available for push requests to succeed.
 The distributor issues direct **Produce API** calls to the Kafka brokers and does not produce in **transactions** and does not need support for **idempotent writes**.
 
 Both the ingester and the distributor use the **Metadata API** to discover the leaders for a topic-partition.
 
-The Mimir ingester uses Kafka **consumer groups** to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records are not replayed after being consumed. There are two exxceptions to this:
+The Mimir ingester uses Kafka **consumer groups** to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records are not replayed after being consumed. There are two exceptions to this:
 
 1. When an ingester is abruptly terminated and has not had the chance to persist its offset in the consumer group. In that case the ingester will pick back up where the consumer group offset points to.
 2. Ingesters can optionally be configured to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In those cases the ingester will use the **ListOffsets API** to discover the target offset.
