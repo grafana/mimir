@@ -497,17 +497,17 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	t.Run("default config", func(t *testing.T) {
-		testQueryFrontendErrorMessageParityScenario(t, map[string]string{})
+		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{})
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
-		testQueryFrontendErrorMessageParityScenario(t, map[string]string{
+		testQueryFrontendErrorMessageParityScenario(t, true, map[string]string{
 			"-query-frontend.enable-remote-execution": "true",
 		})
 	})
 }
 
-func testQueryFrontendErrorMessageParityScenario(t *testing.T, additionalFlags map[string]string) {
+func testQueryFrontendErrorMessageParityScenario(t *testing.T, expectMQEErrorMessagesFromQueryFrontend bool, additionalFlags map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -629,12 +629,13 @@ overrides:
 	}
 
 	for _, tc := range []struct {
-		name          string
-		query         func(*e2emimir.Client) (*http.Response, []byte, error)
-		exclude       []string
-		expStatusCode int
-		expJSON       string
-		expBody       string
+		name           string
+		query          func(*e2emimir.Client) (*http.Response, []byte, error)
+		exclude        []string
+		expStatusCode  int
+		expJSON        string
+		expJSONWithMQE string
+		expBody        string
 	}{
 		{
 			name: "query blocked via regex for instant query",
@@ -801,8 +802,9 @@ overrides:
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
-			expStatusCode: http.StatusBadRequest,
-			expJSON:       `{"error":"invalid parameter \"query\": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
+			expStatusCode:  http.StatusBadRequest,
+			expJSON:        `{"error":"invalid parameter \"query\": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
+			expJSONWithMQE: `{"error":"query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -817,7 +819,9 @@ overrides:
 				resp, body, err := tc.query(c)
 				require.NoError(t, err)
 				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected status code for "+name)
-				if tc.expJSON != "" {
+				if expectMQEErrorMessagesFromQueryFrontend && tc.expJSONWithMQE != "" && name != "querier" {
+					assert.JSONEq(t, tc.expJSONWithMQE, string(body), "querier returns unexpected body for "+name)
+				} else if tc.expJSON != "" {
 					assert.JSONEq(t, tc.expJSON, string(body), "querier returns unexpected body for "+name)
 				} else {
 					assert.Equal(t, tc.expBody, strings.TrimSpace(string(body)), "querier returns unexpected body for "+name)
