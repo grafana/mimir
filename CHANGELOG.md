@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
 * [BUGFIX] Update to Go v1.24.6 to address [CVE-2025-4674](https://www.cve.org/CVERecord?id=CVE-2025-4674), [CVE-2025-47907](https://www.cve.org/CVERecord?id=CVE-2025-47907). #12580
 
 ## 2.17.0

@@ -3260,13 +3260,15 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Count the number of compactions in progress to keep the downscale handler from
 			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
 			i.numCompactionsInProgress.Inc()
-			defer i.numCompactionsInProgress.Dec()
 
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
+
+			// Decrement the counter after compaction is complete
+			i.numCompactionsInProgress.Dec()
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
@@ -3280,7 +3282,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 		case req := <-i.forceCompactTrigger:
 			// Note:
-			// Prepare compaction is not done here but before the force compaction is triggered.
+			// Inc/Dec numCompactionsInProgress is not done here but before the force compaction is triggered.
 			// This is because we want to track the number of compactions accurately before the
 			// downscale handler is called. This ensures that the ingester will never leave the
 			// read-only state. (See [Ingester.FlushHandler])
