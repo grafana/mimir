@@ -1,6 +1,6 @@
 ---
 # Source: mimir-distributed/templates/ruler-query-scheduler/ruler-query-scheduler-pdb.yaml
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: test-ruler-dedicated-query-path-values-mimir-ruler-query-scheduler

@@ -213,12 +213,9 @@ type limitedParallelismRoundTripper struct {
 }
 
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream: roundTripperHandler{
-			next:  next,
-			codec: codec,
-		},
+		downstream: next,
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),
@@ -270,17 +267,25 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
-// roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
+func NewHTTPQueryRequestRoundTripperHandler(next http.RoundTripper, codec Codec, logger log.Logger) MetricsQueryHandler {
+	return httpQueryRequestRoundTripperHandler{
+		next:   next,
+		codec:  codec,
+		logger: logger,
+	}
+}
+
+// httpQueryRequestRoundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
 // the requests and a Codec to translate between http Request/Response model and this package's Request/Response model.
 // It basically encodes a MetricsQueryRequest from MetricsQueryHandler.Do and decodes response from next roundtripper.
-type roundTripperHandler struct {
+type httpQueryRequestRoundTripperHandler struct {
 	logger log.Logger
 	next   http.RoundTripper
 	codec  Codec
 }
 
-func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "roundTripperHandler.Do")
+func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "httpQueryRequestRoundTripperHandler.Do")
 	defer spanLogger.Finish()
 
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)

@@ -58,7 +58,12 @@ func run() error {
 	}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	if err != nil {
+		return fmt.Errorf("could not create planner: %w", err)
+	}
+
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)
 	}

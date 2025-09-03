@@ -77,7 +77,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 			return nil, err
 		}
 		for stepIdx := range a.TimeRange.StepCount {
-			step, err := a.Inner.NextStepSamples()
+			step, err := a.Inner.NextStepSamples(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -121,6 +121,10 @@ func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 
 func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return a.Inner.Prepare(ctx, params)
+}
+
+func (a *AbsentOverTime) Finalize(ctx context.Context) error {
+	return a.Inner.Finalize(ctx)
 }
 
 func (a *AbsentOverTime) Close() {

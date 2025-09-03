@@ -86,12 +86,19 @@ func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVect
 }
 
 func (q *QuantileAggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := q.Aggregation.Prepare(ctx, params)
-	if err != nil {
+	if err := q.Aggregation.Prepare(ctx, params); err != nil {
 		return err
 	}
 
 	return q.Param.Prepare(ctx, params)
+}
+
+func (q *QuantileAggregation) Finalize(ctx context.Context) error {
+	if err := q.Aggregation.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return q.Param.Finalize(ctx)
 }
 
 func (q *QuantileAggregation) Close() {

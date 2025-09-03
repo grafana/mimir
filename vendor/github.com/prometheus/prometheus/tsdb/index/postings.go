@@ -941,6 +941,11 @@ func (c *PostingsCloner) Clone() Postings {
 	return newListPostings(c.ids...)
 }
 
+// EstimateSize returns an estimate of the size of the PostingsCloner.
+func (c *PostingsCloner) EstimateSize() int64 {
+	return int64(len(c.ids) * 8)
+}
+
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.
 // Returned indexes are not sorted.

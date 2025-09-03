@@ -475,11 +475,19 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 }
 
 func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := h.f.Prepare(ctx, params)
-	if err != nil {
+	if err := h.f.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return h.inner.Prepare(ctx, params)
+}
+
+func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	if err := h.inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return h.inner.Finalize(ctx)
 }
 
 func (h *HistogramFunction) Close() {

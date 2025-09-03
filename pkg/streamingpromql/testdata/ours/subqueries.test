@@ -137,3 +137,14 @@ eval range from 0 to 4m step 15s last_over_time((metric > Inf)[20s:10s])
 
 eval instant at 3m last_over_time((metric > Inf)[20s:10s])
   # Should produce no results.
+
+clear
+
+load 1m
+  metric 0+1x7200
+
+eval instant at 1h8m count_over_time(metric[7m:1h])
+  # Should produce no results: there are no steps within the 7m range.
+
+eval instant at 1h8m count_over_time((sum_over_time(metric[5m:2m]))[7m:1h])
+  # Should produce no results: there are no steps within the 7m range.

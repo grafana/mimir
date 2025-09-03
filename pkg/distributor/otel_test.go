@@ -1301,7 +1301,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
-				NameValidationScheme:          validation.ValidationSchemeValue(model.LegacyValidation),
+				NameValidationScheme:          model.LegacyValidation,
 				OTelMetricSuffixesEnabled:     false,
 			}
 			limits := validation.NewOverrides(
@@ -1392,7 +1392,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	limits := validation.NewOverrides(
 		validation.Limits{
-			NameValidationScheme:    validation.ValidationSchemeValue(model.LegacyValidation),
+			NameValidationScheme:    model.LegacyValidation,
 			OTelTranslationStrategy: validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
 		},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),

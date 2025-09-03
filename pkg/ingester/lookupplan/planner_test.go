@@ -84,31 +84,6 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 			testCases[tcIdx].expectedScanMatchers = result.ScanMatchers()
 		})
 	}
-
-	t.Run("error_statistics", func(t *testing.T) {
-		errorStats := newErrorMockStatistics()
-		metrics := NewMetrics(nil)
-		planner := NewCostBasedPlanner(metrics, errorStats)
-
-		for _, tc := range testCases {
-			// Skip empty matcher case since it doesn't call statistics methods
-			if len(tc.inputMatchers) == 0 {
-				continue
-			}
-
-			t.Run(fmt.Sprintf("%s", tc.inputMatchers), func(t *testing.T) {
-				// Create a basic lookup plan with the input matchers
-				inputPlan := &basicLookupPlan{
-					indexMatchers: tc.inputMatchers,
-				}
-
-				result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
-				// Should get an error back due to statistics errors
-				assert.Error(t, err)
-				assert.Nil(t, result)
-			})
-		}
-	})
 }
 
 func matchersStrings(ms []*labels.Matcher) []string {
@@ -257,4 +232,68 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
 	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
 	assert.Nil(t, result, "Result should be nil when no matchers are provided")
+}
+
+func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
+	stats := newHighCardinalityMockStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
+
+	inputPlan := &basicLookupPlan{
+		indexMatchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "cpu_usage_percent"),
+			labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "non_existent", ""), // this would normally be set as a scan matcher since it doesn't exist
+		},
+		scanMatchers: []*labels.Matcher{},
+	}
+
+	t.Run("disabled_planning_returns_input_plan", func(t *testing.T) {
+		ctx := ContextWithDisabledPlanning(context.Background())
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// The result should be exactly the same as the input plan
+		assert.Equal(t, inputPlan, result)
+		assert.Equal(t, matchersStrings(inputPlan.IndexMatchers()), matchersStrings(result.IndexMatchers()))
+		assert.Equal(t, matchersStrings(inputPlan.ScanMatchers()), matchersStrings(result.ScanMatchers()))
+	})
+
+	t.Run("disabled_planning_works_with_mixed_matchers", func(t *testing.T) {
+		mixedPlan := &basicLookupPlan{
+			indexMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "cpu_usage_percent"),
+			},
+			scanMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
+				labels.MustNewMatcher(labels.MatchRegexp, "instance", "localhost.*"),
+			},
+		}
+
+		ctx := ContextWithDisabledPlanning(context.Background())
+		result, err := planner.PlanIndexLookup(ctx, mixedPlan, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// The result should be exactly the same as the input plan
+		assert.Equal(t, mixedPlan, result)
+		assert.Equal(t, matchersStrings(mixedPlan.IndexMatchers()), matchersStrings(result.IndexMatchers()))
+		assert.Equal(t, matchersStrings(mixedPlan.ScanMatchers()), matchersStrings(result.ScanMatchers()))
+	})
+
+	t.Run("disabled_planning_works_with_empty_plan", func(t *testing.T) {
+		emptyPlan := &basicLookupPlan{
+			indexMatchers: []*labels.Matcher{},
+			scanMatchers:  []*labels.Matcher{},
+		}
+
+		ctx := ContextWithDisabledPlanning(context.Background())
+		result, err := planner.PlanIndexLookup(ctx, emptyPlan, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// The result should be exactly the same as the input plan, even if empty
+		assert.Equal(t, emptyPlan, result)
+	})
 }

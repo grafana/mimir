@@ -1,6 +1,6 @@
 ---
 # Source: mimir-distributed/templates/graphite-proxy/graphite-metric-name-cache/graphite-metric-name-cache-pdb.yaml
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: graphite-enabled-values-mimir-gr-metricname-cache

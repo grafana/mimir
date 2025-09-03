@@ -723,6 +723,43 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRemoteQuerier_QueryRetryRequestBodyConsumption(t *testing.T) {
+	const testQuery = "up"
+	var requestBodies []string
+	var callCount atomic.Int64
+
+	mockClientFn := func(_ context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		count := callCount.Add(1)
+
+		requestBodies = append(requestBodies, string(req.Body))
+
+		// Fail on first call to trigger retry
+		if count == 1 {
+			return nil, httpgrpc.Errorf(http.StatusInternalServerError, "simulated server error")
+		}
+
+		// Succeed on retry
+		return &httpgrpc.HTTPResponse{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte(`{"status": "success","data": {"resultType":"vector","result":[]}}`),
+		}, nil
+	}
+
+	q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
+
+	_, err := q.Query(context.Background(), testQuery, time.Now())
+	require.NoError(t, err)
+
+	require.Equal(t, int64(2), callCount.Load())
+	require.Len(t, requestBodies, 2)
+
+	require.Contains(t, requestBodies[0], "query=up")
+	require.Contains(t, requestBodies[1], "query=up")
+}
+
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	var (
 		errorResp = &httpgrpc.HTTPResponse{

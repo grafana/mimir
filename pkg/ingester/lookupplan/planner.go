@@ -17,6 +17,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// UserTSDBStats is used to access index.Statistics for a particular user.
+type UserTSDBStats interface {
+
+	// UserTSDBStatistics pulls a user from the given context, and returns statistics for that user's TSDB
+	UserTSDBStatistics(ctx context.Context) (index.Statistics, error)
+}
+
 type NoopPlanner struct{}
 
 func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
@@ -24,12 +31,11 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats Statistics
-
+	stats   UserTSDBStats
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics UserTSDBStats) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,
@@ -37,6 +43,10 @@ func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlann
 }
 
 func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (_ index.LookupPlan, retErr error) {
+	if planningDisabled(ctx) {
+		return inPlan, nil
+	}
+
 	var allPlans []plan
 	defer func(start time.Time) {
 		var abortedEarly bool
@@ -51,8 +61,12 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	var err error
-	allPlans, err = p.generatePlans(ctx, matchers)
+	statistics, err := p.stats.UserTSDBStatistics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving stattistics: %w", err)
+	}
+
+	allPlans, err = p.generatePlans(ctx, statistics, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating plans: %w", err)
 	}
@@ -74,8 +88,8 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, matchers, p.stats)
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) ([]plan, error) {
+	noopPlan, err := newScanOnlyPlan(ctx, statistics, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
 	}
@@ -143,4 +157,19 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		logger.DebugLog(logKvs...)
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
+}
+
+type contextKey string
+
+const disabledPlanningContextKey contextKey = "disabled_planning"
+
+func ContextWithDisabledPlanning(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disabledPlanningContextKey, true)
+}
+
+// planningDisabled checks if planning is disabled in the context
+func planningDisabled(ctx context.Context) bool {
+	val := ctx.Value(disabledPlanningContextKey)
+	disabled, ok := val.(bool)
+	return ok && disabled
 }

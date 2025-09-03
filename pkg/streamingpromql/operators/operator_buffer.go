@@ -65,17 +65,19 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 		b.output[i] = d
 	}
 
+	if b.nextIndexToRead > b.lastSeriesIndexUsed {
+		// If we're not going to read any more series, we can close the inner operator.
+		if err := b.source.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		b.source.Close()
+	}
+
 	return b.output, nil
 }
 
 func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
-	defer func() {
-		if b.nextIndexToRead > b.lastSeriesIndexUsed {
-			// If we're not going to read any more series, we can close the inner operator.
-			b.source.Close()
-		}
-	}()
-
 	for seriesIndex > b.nextIndexToRead {
 		d, err := b.source.NextSeries(ctx)
 		if err != nil {

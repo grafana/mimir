@@ -10,6 +10,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.graphite.write_proxy.replicas }}
+  {{- with .Values.graphite.write_proxy.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-write-proxy") | nindent 6 }}

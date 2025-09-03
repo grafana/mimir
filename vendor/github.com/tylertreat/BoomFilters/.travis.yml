@@ -1,0 +1,12 @@
+language: go
+
+go:
+  - 1.10.x
+  - 1.11.x
+  - tip
+
+before_install: go get golang.org/x/tools/cmd/cover
+script: go test -cover ./...
+
+notifications:
+  email: false

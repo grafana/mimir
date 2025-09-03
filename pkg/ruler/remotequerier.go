@@ -66,6 +66,9 @@ type QueryFrontendConfig struct {
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
+	// HTTPClientConfig contains HTTP specific config options.
+	HTTPClientConfig HTTPConfig `yaml:"http_client_config" doc:"description=Configures the HTTP client used to communicate between the rulers and query-frontends."`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
 	MaxRetriesRate float64 `yaml:"max_retries_rate"`
@@ -75,11 +78,13 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.Address,
 		"ruler.query-frontend.address",
 		"",
-		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
-			"to enable client side load balancing.")
+		"Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) "+
+			"to enable GRPC client side load balancing.")
 
 	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
+
+	c.HTTPClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.http-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
@@ -95,6 +100,10 @@ func (c *QueryFrontendConfig) Validate() error {
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig, prometheusHTTPPrefix string, reg prometheus.Registerer, logger log.Logger) (http.RoundTripper, *url.URL, error) {
+	if strings.HasPrefix(cfg.Address, "http://") || strings.HasPrefix(cfg.Address, "https://") {
+		return dialQueryFrontendHTTP(cfg, reg, logger)
+	}
+
 	return dialQueryFrontendGRPC(cfg, prometheusHTTPPrefix, reg, logger)
 }
 
@@ -239,12 +248,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
 	defer cancel()
 
-	req, err := q.createRequest(ctx, query, ts)
-	if err != nil {
-		return promql.Vector{}, err
-	}
-
-	resp, err := q.sendRequest(req, logger)
+	resp, err := q.sendRequest(ctx, query, ts, logger)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
 			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
@@ -308,8 +312,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	return req, nil
 }
 
-func (q *RemoteQuerier) sendRequest(req *http.Request, logger log.Logger) (*http.Response, error) {
-	ctx := req.Context()
+func (q *RemoteQuerier) sendRequest(ctx context.Context, query string, ts time.Time, logger log.Logger) (*http.Response, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
@@ -320,6 +323,11 @@ func (q *RemoteQuerier) sendRequest(req *http.Request, logger log.Logger) (*http
 	retry := backoff.New(ctx, retryConfig)
 
 	for {
+		req, err := q.createRequest(ctx, query, ts)
+		if err != nil {
+			return nil, err
+		}
+
 		resp, err := q.client.RoundTrip(req)
 		if err == nil {
 			// Responses with status codes 4xx should always be considered erroneous.

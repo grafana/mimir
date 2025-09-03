@@ -99,6 +99,7 @@ data:
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
     distributor:
+      remote_timeout: 5s
       ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
@@ -199,7 +200,15 @@ data:
           tls_key_path: /certs/tls.key
           tls_server_name: gem.grafana.com
           url: https://gem-mimir-store-gateway-headless:8080
+    ingest_storage:
+      enabled: true
+      kafka:
+        address: enterprise-https-values-mimir-kafka.citestns.svc.cluster.local.:9092
+        auto_create_topic_default_partitions: 100
+        auto_create_topic_enabled: true
+        topic: mimir-ingest
     ingester:
+      push_grpc_method_enabled: false
       ring:
         final_sleep: 0s
         heartbeat_period: 2m

@@ -75,6 +75,7 @@ data:
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
     distributor:
+      remote_timeout: 5s
       ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
@@ -130,7 +131,15 @@ data:
       write_proxy:
         distributor_client:
           address: dns:///graphite-enabled-values-mimir-distributor.citestns.svc:9095
+    ingest_storage:
+      enabled: true
+      kafka:
+        address: graphite-enabled-values-mimir-kafka.citestns.svc.cluster.local.:9092
+        auto_create_topic_default_partitions: 100
+        auto_create_topic_enabled: true
+        topic: mimir-ingest
     ingester:
+      push_grpc_method_enabled: false
       ring:
         final_sleep: 0s
         heartbeat_period: 2m

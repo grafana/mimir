@@ -38,14 +38,12 @@ type app struct {
 	end   flagext.Time
 	step  time.Duration
 
-	planner *streamingpromql.QueryPlanner
-	logger  log.Logger
+	logger log.Logger
 }
 
 func main() {
 	a := &app{
-		planner: streamingpromql.NewQueryPlanner(streamingpromql.NewTestEngineOpts()),
-		logger:  log.NewLogfmtLogger(os.Stderr),
+		logger: log.NewLogfmtLogger(os.Stderr),
 	}
 
 	if err := a.Run(); err != nil {
@@ -99,8 +97,13 @@ func (a *app) Run() error {
 		return err
 	}
 
+	planner, err := streamingpromql.NewQueryPlanner(streamingpromql.NewTestEngineOpts())
+	if err != nil {
+		return fmt.Errorf("could not create planner: %w", err)
+	}
+
 	ctx := context.Background()
-	plan, err := a.planner.NewQueryPlan(ctx, a.expr, a.getQueryTimeRange(), streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, a.expr, a.getQueryTimeRange(), streamingpromql.NoopPlanningObserver{})
 	if err != nil {
 		return fmt.Errorf("could not create plan: %w", err)
 	}

@@ -1,6 +1,6 @@
 ---
 # Source: mimir-distributed/templates/query-scheduler/query-scheduler-pdb.yaml
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: scheduler-name-values-mimir-query-scheduler

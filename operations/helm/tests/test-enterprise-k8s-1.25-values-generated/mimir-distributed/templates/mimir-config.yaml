@@ -75,6 +75,7 @@ data:
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
     distributor:
+      remote_timeout: 5s
       ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
@@ -106,7 +107,15 @@ data:
           url: http://test-enterprise-k8s-1.25-values-mimir-ruler.citestns.svc:8080
         store_gateway:
           url: http://test-enterprise-k8s-1.25-values-mimir-store-gateway-headless.citestns.svc:8080
+    ingest_storage:
+      enabled: true
+      kafka:
+        address: test-enterprise-k8s-1.25-values-mimir-kafka.citestns.svc.cluster.local.:9092
+        auto_create_topic_default_partitions: 100
+        auto_create_topic_enabled: true
+        topic: mimir-ingest
     ingester:
+      push_grpc_method_enabled: false
       ring:
         final_sleep: 0s
         heartbeat_period: 2m

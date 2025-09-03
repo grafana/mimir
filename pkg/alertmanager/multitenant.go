@@ -74,13 +74,14 @@ var (
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
-	DataDir        string           `yaml:"data_dir"`
-	Retention      time.Duration    `yaml:"retention" category:"advanced"`
-	ExternalURL    flagext.URLValue `yaml:"external_url"`
-	PollInterval   time.Duration    `yaml:"poll_interval" category:"advanced"`
-	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size" category:"advanced"`
+	DataDir          string           `yaml:"data_dir"`
+	Retention        time.Duration    `yaml:"retention" category:"advanced"`
+	ExternalURL      flagext.URLValue `yaml:"external_url"`
+	PollInterval     time.Duration    `yaml:"poll_interval" category:"advanced"`
+	MaxRecvMsgSize   int64            `yaml:"max_recv_msg_size" category:"advanced"`
+	StateReadTimeout time.Duration    `yaml:"state_read_timeout" category:"experimental"`
 
-	// Sharding confiuration for the Alertmanager
+	// Sharding configuration for the Alertmanager.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
@@ -133,6 +134,7 @@ const (
 func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted.")
+	f.DurationVar(&cfg.StateReadTimeout, "alertmanager.storage.state-read-timeout", 15*time.Second, "Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout.")
 	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 100<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
 	_ = cfg.ExternalURL.Set("http://localhost:8080/alertmanager") // set the default
@@ -1118,6 +1120,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
+		StateReadTimeout:                  am.cfg.StateReadTimeout,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

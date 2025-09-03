@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -171,7 +170,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 		return nil, err
 	}
 
-	return planning.NewSingleUseOperatorFactory(operators.NewDeduplicateAndMerge(o, params.MemoryConsumptionTracker)), nil
+	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
 func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {

@@ -33,28 +33,47 @@ func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCase
 	// on the query engine.
 	engine := promql.NewEngine(streamingpromql.NewTestEngineOpts().CommonOpts)
 
+	ctx := user.InjectOrgID(context.Background(), "test")
+	startTime := timestamp.Time(0)
+	endTime := startTime.Add(time.Duration(numSamples) * time.Minute)
+
+	makeRangeQuery := func(query string) (promql.Query, error) {
+		return engine.NewRangeQuery(ctx, queryable, nil, query, startTime, endTime, step)
+	}
+
+	makeInstantQuery := func(query string) (promql.Query, error) {
+		return engine.NewInstantQuery(ctx, queryable, nil, query, endTime)
+	}
+
 	for input, expected := range testCases {
 		if input == expected {
 			continue
 		}
+
 		t.Run(input, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "test")
-			startTime := timestamp.Time(0)
-			endTime := startTime.Add(time.Duration(numSamples) * time.Minute)
+			t.Run("range query", func(t *testing.T) {
+				runAndCompare(t, input, expected, makeRangeQuery)
+			})
 
-			qInput, err := engine.NewRangeQuery(ctx, queryable, nil, input, startTime, endTime, step)
-			require.NoError(t, err)
-			t.Cleanup(qInput.Close)
-			resInput := qInput.Exec(context.Background())
-			require.NoError(t, resInput.Err)
-
-			qRewritten, err := engine.NewRangeQuery(ctx, queryable, nil, expected, startTime, endTime, step)
-			require.NoError(t, err)
-			t.Cleanup(qRewritten.Close)
-			resRewritten := qRewritten.Exec(context.Background())
-			require.NoError(t, resRewritten.Err)
-
-			testutils.RequireEqualResults(t, "", resInput, resRewritten, true)
+			t.Run("instant query", func(t *testing.T) {
+				runAndCompare(t, input, expected, makeInstantQuery)
+			})
 		})
 	}
+}
+
+func runAndCompare(t *testing.T, input, expected string, makeQuery func(string) (promql.Query, error)) {
+	qInput, err := makeQuery(input)
+	require.NoError(t, err)
+	t.Cleanup(qInput.Close)
+	resInput := qInput.Exec(context.Background())
+	require.NoError(t, resInput.Err)
+
+	qRewritten, err := makeQuery(expected)
+	require.NoError(t, err)
+	t.Cleanup(qRewritten.Close)
+	resRewritten := qRewritten.Exec(context.Background())
+	require.NoError(t, resRewritten.Err)
+
+	testutils.RequireEqualResults(t, "", resInput, resRewritten, true)
 }

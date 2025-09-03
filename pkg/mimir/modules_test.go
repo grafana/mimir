@@ -220,14 +220,6 @@ func TestMultiKVSetup(t *testing.T) {
 		QueryScheduler: func(t *testing.T, c Config) {
 			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
 		},
-
-		Backend: func(t *testing.T, c Config) {
-			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider)
-		},
 	} {
 		t.Run(target, func(t *testing.T) {
 			cfg := Config{}

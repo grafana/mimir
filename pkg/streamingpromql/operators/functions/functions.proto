@@ -84,5 +84,7 @@ enum Function {
   FUNCTION_SCALAR = 72;
   FUNCTION_TIME = 73;
 
-  reserved 74, 75; // Used by Adaptive Metrics query rewriting.
+  // Used by Adaptive Metrics query rewriting.
+  FUNCTION_ADAPTIVE_METRICS_RESERVED_1 = 74;
+  FUNCTION_ADAPTIVE_METRICS_RESERVED_2 = 75;
 }

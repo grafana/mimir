@@ -149,6 +149,10 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return s.inner.Prepare(ctx, params)
 }
 
+func (s *SortByLabel) Finalize(ctx context.Context) error {
+	return s.inner.Finalize(ctx)
+}
+
 func (s *SortByLabel) Close() {
 	if s.buffer != nil {
 		// Closing the buffer also closes its source operator which is our `inner`.

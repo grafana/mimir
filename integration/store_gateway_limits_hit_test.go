@@ -74,6 +74,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "test")
 
 	for i, ts := range []time.Time{timeStamp1, timeStamp2, timeStamp3} {
+		t.Logf("Writing block %d at timestamp %v", i+1, ts)
 		for j := 0; j < numSeriesPerBlock; j++ {
 			series, _, _ := generateAlternatingSeries(i)(fmt.Sprintf("series_%d", j), ts)
 			pushTimeSeries(t, client, series)
@@ -81,8 +82,10 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 		// Wait until the TSDB head is shipped to storage and removed from the ingester.
 		// We assume that the other two ingesters are doing the same in lockstep.
+		t.Logf("Waiting for block %d to be shipped to storage...", i+1)
 		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ingester_shipper_uploads_total"))
 		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
+		t.Logf("Block %d shipped successfully", i+1)
 	}
 
 	tests := map[string]struct {
@@ -146,10 +149,16 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			require.NoError(t, scenario.StartAndWaitReady(compactor))
 
 			// The querier and store-gateway will be ready after they discovered the blocks in the storage.
+			t.Logf("Starting querier with flags: %v", testData.additionalQuerierFlags)
+			t.Logf("Starting store-gateways with flags: %v", testData.additionalStoreGatewayFlags)
+
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
 			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
 			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
 			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway1, storeGateway2))
+
+			// Log component readiness
+			t.Logf("Components started and ready: querier, store-gateway-1, store-gateway-2")
 			t.Cleanup(func() {
 				require.NoError(t, scenario.Stop(querier, storeGateway1, storeGateway2, compactor))
 			})
@@ -157,11 +166,34 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
 			require.NoError(t, err)
 
+			// Log query parameters for debugging
+			t.Logf("Running query with params: query={__name__=~\"series_.+\"}, start=%v, end=%v, expectedErrorKey=%s",
+				timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), testData.expectedErrorKey)
+
+			// Wait for store-gateways to have loaded blocks
+			require.NoError(t, storeGateway1.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}, e2e.WaitMissingMetrics))
+			require.NoError(t, storeGateway2.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_bucket_store_blocks_loaded"}, e2e.WaitMissingMetrics))
+
 			// Verify we cannot successfully query timeseries because of the series/chunks limit.
 			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), time.Second)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode, string(rangeResultBody))
-			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey), string(rangeResultBody))
+
+			// Add detailed logging if assertion is about to fail
+			if rangeResultResponse.StatusCode != http.StatusUnprocessableEntity {
+				t.Logf("UNEXPECTED STATUS CODE: got %d, expected %d (422)", rangeResultResponse.StatusCode, http.StatusUnprocessableEntity)
+				t.Logf("Response body: %s", string(rangeResultBody))
+				t.Logf("Response headers: %+v", rangeResultResponse.Header)
+			}
+			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode,
+				"Expected 422 but got %d. Body: %s", rangeResultResponse.StatusCode, string(rangeResultBody))
+
+			// Add detailed logging if error key assertion is about to fail
+			if !strings.Contains(string(rangeResultBody), testData.expectedErrorKey) {
+				t.Logf("ERROR KEY NOT FOUND: expected '%s' in response body", testData.expectedErrorKey)
+				t.Logf("Full response body: %s", string(rangeResultBody))
+			}
+			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey),
+				"Expected error key '%s' not found in response body: %s", testData.expectedErrorKey, string(rangeResultBody))
 		})
 	}
 }

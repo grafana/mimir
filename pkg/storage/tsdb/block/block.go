@@ -147,14 +147,14 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 	eg, uctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {
 		if err := objstore.UploadDir(uctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname), opts...); err != nil {
-			return UploadError{err, FileTypeChunks}
+			return &UploadError{err, FileTypeChunks}
 		}
 		return nil
 	})
 
 	eg.Go(func() (err error) {
 		if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
-			return UploadError{err, FileTypeIndex}
+			return &UploadError{err, FileTypeIndex}
 		}
 		return nil
 	})
@@ -170,7 +170,7 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
 			// Don't call cleanUp. Uploading sparse index headers is best effort.
 			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
-			oerr = UploadError{err, FileTypeSparseIndexHeader}
+			oerr = &UploadError{err, FileTypeSparseIndexHeader}
 		}
 	}
 
@@ -180,7 +180,7 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		// and even though cleanUp will not see it yet, meta.json may appear in the bucket later.
 		// (Eg. S3 is known to behave this way when it returns 503 "SlowDown" error).
 		// If meta.json is not uploaded, this will produce partial blocks, but such blocks will be cleaned later.
-		return UploadError{err, FileTypeMeta}
+		return &UploadError{err, FileTypeMeta}
 	}
 	return oerr
 }
@@ -189,7 +189,7 @@ func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error
 	// Cleanup the dir with an uncancelable context.
 	cleanErr := Delete(context.Background(), logger, bkt, id)
 	if cleanErr != nil {
-		return errors.Wrapf(origErr, "failed to clean block after upload issue. Partial block in system. Err: %s", cleanErr.Error())
+		return fmt.Errorf("failed to clean block after upload issue. Partial block in system. Err: %s: %w", cleanErr.Error(), origErr)
 	}
 	return origErr
 }

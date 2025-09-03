@@ -98,6 +98,7 @@ type Config struct {
 	ExternalURL                       *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
+	StateReadTimeout                  time.Duration
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -224,7 +225,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.registry = reg
-	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, cfg.StateReadTimeout, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
 	var err error

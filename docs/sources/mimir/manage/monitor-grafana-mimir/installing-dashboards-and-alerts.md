@@ -15,10 +15,14 @@ weight: 30
 
 Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [dashboards](../dashboards/) and alerts to monitor the state and health of a Mimir cluster.
 
+## About HTTP status codes in alerting
+
+Mimir's default alerting mixins focus on actionable server-side issues. They include standard HTTP error codes, such as 500, 502, 503, that indicate service problems. They exclude error codes such as 529 and 598, that indicate client-side issues rather than server failures. You can create custom alerts for codes 529 and 598 if needed for your specific use case.
+
 ## Requirements
 
 - Grafana Mimir dashboards and alerts [require specific labels](../requirements/) to be set by Prometheus or Grafana Alloy when scraping your Mimir cluster metrics
-- Some dashboards require recording rules that you should install in your Prometheus
+- Some dashboards require recording rules that you should install in your Prometheus.
 
 ## Install from package
 

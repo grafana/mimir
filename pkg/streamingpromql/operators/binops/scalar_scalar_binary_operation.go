@@ -106,11 +106,19 @@ func (s *ScalarScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 }
 
 func (s *ScalarScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := s.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := s.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return s.Right.Prepare(ctx, params)
+}
+
+func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
+	if err := s.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return s.Right.Finalize(ctx)
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

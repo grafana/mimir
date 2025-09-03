@@ -463,6 +463,7 @@ Examples:
   "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
+  "kafka" "kafka"
   "memcached" "memcached"
   "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"

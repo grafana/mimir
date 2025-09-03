@@ -173,3 +173,7 @@ message LabelMatcher {
   string name = 2;
   string value = 3;
 }
+
+message DeduplicateAndMergeDetails {
+  // No fields needed - this operator just wraps another node
+}

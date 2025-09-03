@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -47,6 +48,10 @@ func TestErrorTypeForError(t *testing.T) {
 		"storage error": {
 			err:      promql.ErrStorage{Err: errors.New("could not load data")},
 			expected: mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+		},
+		"apierror.APIError": {
+			err:      apierror.New(apierror.TypeNotAcceptable, "request is not acceptable"),
+			expected: mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
 		},
 		// These types shouldn't be emitted by MQE, but we support them for consistency.
 		"query canceled error": {
@@ -83,7 +88,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	ctx := context.Background()
 	logger := log.NewNopLogger()
-	planner := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, logger)
 	require.NoError(t, err)
 
@@ -164,7 +170,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
@@ -179,7 +185,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 0, Value: 0.123},
 										{TimestampMs: 10_000, Value: 1.123},
@@ -195,7 +201,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 0, Value: 1.123},
 										{TimestampMs: 10_000, Value: 3.123},
@@ -438,7 +444,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 6,
+									NodeIndex: 7,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 									},
@@ -452,7 +458,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 6,
+									NodeIndex: 7,
 									Floats: []mimirpb.Sample{
 										{TimestampMs: 30_000, Value: math.Inf(1)},
 									},
@@ -489,7 +495,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
+									NodeIndex: 2,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},

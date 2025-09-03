@@ -212,6 +212,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
+  - Index lookup planning comparison to validate planning correctness
+    - `-blocks-storage.tsdb.index-lookup-planning-enabled`
+    - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -238,7 +241,6 @@ The following features are currently experimental:
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
-- Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
   - `/api/v1/cardinality/active_series`
