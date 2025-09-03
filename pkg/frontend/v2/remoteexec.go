@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
@@ -54,7 +55,7 @@ func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan
 	return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (*ProtobufResponseStream, error) {
+func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (responseStream, error) {
 	subsetPlan := &planning.QueryPlan{
 		TimeRange:          timeRange,
 		Root:               node,
@@ -84,8 +85,13 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 	return stream, nil
 }
 
+type responseStream interface {
+	Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error)
+	Close()
+}
+
 type scalarExecutionResponse struct {
-	stream                   *ProtobufResponseStream
+	stream                   responseStream
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
@@ -120,7 +126,7 @@ func (r *scalarExecutionResponse) Close() {
 }
 
 type instantVectorExecutionResponse struct {
-	stream                   *ProtobufResponseStream
+	stream                   responseStream
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
@@ -164,7 +170,7 @@ func (r *instantVectorExecutionResponse) Close() {
 }
 
 type rangeVectorExecutionResponse struct {
-	stream                   *ProtobufResponseStream
+	stream                   responseStream
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentSeriesIndex       int64
 	floats                   *types.FPointRingBuffer
@@ -172,7 +178,7 @@ type rangeVectorExecutionResponse struct {
 	stepData                 *types.RangeVectorStepData
 }
 
-func newRangeVectorExecutionResponse(stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
+func newRangeVectorExecutionResponse(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
 	return &rangeVectorExecutionResponse{
 		stream:                   stream,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -207,7 +213,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	}
 
 	if data.SeriesIndex != r.currentSeriesIndex {
-		return nil, fmt.Errorf("expected data for series index %v, but have series index %v", r.currentSeriesIndex, data.SeriesIndex)
+		return nil, fmt.Errorf("expected data for series index %v, but got data for series index %v", r.currentSeriesIndex, data.SeriesIndex)
 	}
 
 	fPoints := mimirpb.FromSamplesToFPoints(data.Floats)
@@ -243,10 +249,12 @@ func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (a
 }
 
 func (r *rangeVectorExecutionResponse) Close() {
+	r.floats.Close()
+	r.histograms.Close()
 	r.stream.Close()
 }
 
-func readNextEvaluateQueryResponse(ctx context.Context, stream *ProtobufResponseStream) (*querierpb.EvaluateQueryResponse, error) {
+func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, error) {
 	msg, err := stream.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -260,7 +268,7 @@ func readNextEvaluateQueryResponse(ctx context.Context, stream *ProtobufResponse
 	return resp, nil
 }
 
-func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	resp, err := readNextEvaluateQueryResponse(ctx, stream)
 	if err != nil {
 		return nil, err
@@ -286,21 +294,22 @@ func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, mem
 	return mqeSeries, nil
 }
 
-func readEvaluationCompleted(ctx context.Context, stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, stream)
-	if err != nil {
-		return nil, 0, err
+func readEvaluationCompleted(ctx context.Context, stream responseStream) (annotations.Annotations, int64, error) {
+	// Keep reading the stream until we get to an evaluation completed message.
+	for {
+		resp, err := readNextEvaluateQueryResponse(ctx, stream)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		completion := resp.GetEvaluationCompleted()
+		if completion == nil {
+			continue // Try the next message.
+		}
+
+		annos, totalSamples := decodeEvaluationCompletedMessage(completion)
+		return annos, totalSamples, nil
 	}
-
-	// TODO: exhaust stream (add tests for this)
-
-	completion := resp.GetEvaluationCompleted()
-	if completion == nil {
-		return nil, 0, fmt.Errorf("expected EvaluationCompleted, got %T", resp.Message)
-	}
-
-	annos, totalSamples := decodeEvaluationCompletedMessage(completion)
-	return annos, totalSamples, nil
 }
 
 func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (annotations.Annotations, int64) {
