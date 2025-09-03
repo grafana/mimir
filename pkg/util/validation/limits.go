@@ -75,7 +75,7 @@ const (
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
 )
 
-// NOTE: Keep these in sync with Limits struct tags and TestParameterConstantsMatchStructTags.
+// NOTE: Keep those in sync with Limits struct tags and TestParameterConstantsMatchStructTags.
 const (
 	MaxLabelNameLengthParameter                    = "max_label_name_length"
 	MaxLabelValueLengthParameter                   = "max_label_value_length"
