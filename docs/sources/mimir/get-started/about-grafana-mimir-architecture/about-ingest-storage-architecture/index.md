@@ -13,7 +13,7 @@ Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the d
 
 Ingest storage architecture enhances reliability, supports growth, and enables larger-scale use cases. It helps you run more robust and cost-effective Mimir deployments.
 
-### How ingest storage architecture works
+## How ingest storage architecture works
 
 Compared with classic architecture, ingest storage architecture fundamentally changes how Mimir handles data. In classic architecture, ingester nodes are highly stateful. They combine in-memory data with local write-ahead logs (WALs) and participate in both writes and reads. This can lead to heavy queries disrupting live writes.
 
@@ -37,7 +37,7 @@ Here's an overview of how ingest storage architecture works:
 - Multiple ingesters across different zones consume from the same partition to provide high availability on the read path.
 - Ingesters add the fetched write requests to in-memory state and persist them to disk, making the samples available for queries.
 
-### Benefits of ingest storage architecture
+## Benefits of ingest storage architecture
 
 Ingest storage architecture offers the following advantages over classic architecture:
 
