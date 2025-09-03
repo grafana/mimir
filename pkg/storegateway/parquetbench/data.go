@@ -2,6 +2,7 @@ package parquetbench
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -27,9 +28,15 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string) (bkt objstore.Bucket, mint, maxt int64) {
+func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string, tsdbDir string) (bkt objstore.Bucket, mint, maxt int64) {
 	ctx := context.Background()
 
+	// If tsdbDir is provided, use existing blocks
+	if tsdbDir != "" {
+		return setupFromExistingBlocks(b, user, tsdbDir)
+	}
+
+	// Otherwise, generate data on the fly (existing behavior)
 	st := teststorage.New(b)
 	b.Cleanup(func() { _ = st.Close() })
 	app := st.Appender(ctx)
@@ -143,4 +150,58 @@ func createBucketIndex(t *testing.B, bkt objstore.Bucket, userID string) *bucket
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))
 
 	return idx
+}
+
+// BlockMeta represents the structure of TSDB block meta.json
+type BlockMeta struct {
+	ULID    string `json:"ulid"`
+	MinTime int64  `json:"minTime"`
+	MaxTime int64  `json:"maxTime"`
+}
+
+// readBlockMeta reads the meta.json file from a block directory and extracts time range
+func readBlockMeta(blockDir string) (mint, maxt int64, err error) {
+	metaPath := filepath.Join(blockDir, "meta.json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read meta.json from %s: %w", metaPath, err)
+	}
+
+	var meta BlockMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse meta.json: %w", err)
+	}
+
+	return meta.MinTime, meta.MaxTime, nil
+}
+
+// setupFromExistingBlocks configures the benchmark to use pre-generated TSDB blocks
+func setupFromExistingBlocks(b *testing.B, user, tsdbDir string) (bkt objstore.Bucket, mint, maxt int64) {
+	// Create filesystem bucket pointing to the TSDB directory
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: tsdbDir})
+	require.NoError(b, err, "error creating filesystem bucket client")
+	b.Cleanup(func() { _ = bkt.Close() })
+
+	// Find the first block directory to read meta.json for time range
+	userBktPath := filepath.Join(tsdbDir, user)
+	entries, err := os.ReadDir(userBktPath)
+	require.NoError(b, err, "error reading user bucket directory")
+
+	var blockDir string
+	for _, entry := range entries {
+		if entry.IsDir() && len(entry.Name()) > 10 { // ULID-like directory names
+			blockDir = filepath.Join(userBktPath, entry.Name())
+			break
+		}
+	}
+	require.NotEmpty(b, blockDir, "no block directories found in %s", userBktPath)
+
+	// Read meta.json to get time range
+	mint, maxt, err = readBlockMeta(blockDir)
+	require.NoError(b, err, "error reading block metadata")
+
+	b.Logf("Using existing blocks from %s", tsdbDir)
+	b.Logf("Found block time range: %d - %d", mint, maxt)
+
+	return bkt, mint, maxt
 }
