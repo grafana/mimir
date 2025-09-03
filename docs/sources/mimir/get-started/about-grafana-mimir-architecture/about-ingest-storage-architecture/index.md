@@ -2,7 +2,7 @@
 description: Learn about Grafana Mimir's ingest storage architecture and how it handles data ingestion.
 menuTitle: Ingest storage architecture
 title: About ingest storage architecture
-weight: 22
+weight: 10
 ---
 
 # About ingest storage architecture
