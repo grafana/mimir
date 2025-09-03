@@ -410,11 +410,9 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
-	errCause := distributorErr.Cause()
-	isSoft := distributorErr.IsSoft()
-	grpcStatusCode := errorCauseToGRPCStatusCode(errCause, false)
-	httpStatusCode := errorCauseToHTTPStatusCode(errCause, false)
-	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), isSoft
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
