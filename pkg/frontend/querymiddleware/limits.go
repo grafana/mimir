@@ -312,14 +312,14 @@ type engineQueryRequestRoundTripperHandler struct {
 }
 
 func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, logger log.Logger) MetricsQueryHandler {
-	return engineQueryRequestRoundTripperHandler{
+	return &engineQueryRequestRoundTripperHandler{
 		engine:  engine,
 		storage: unqueryableQueryable{},
 		logger:  logger,
 	}
 }
 
-func (rth engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
 	defer spanLogger.Finish()
 
@@ -336,21 +336,21 @@ func (rth engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metri
 	}
 
 	if err != nil {
-		// TODO: convert to apierror?
+		err = convertToAPIError(err, apierror.TypeInternal)
 		spanLogger.Error(err)
 		return nil, err
 	}
 
 	res := q.Exec(ctx)
 	if res.Err != nil {
-		// TODO: convert to apierror?
-		spanLogger.Error(res.Err)
-		return nil, res.Err
+		err := convertToAPIError(res.Err, apierror.TypeExec)
+		spanLogger.Error(err)
+		return nil, err
 	}
 
 	data, err := promqlResultToSamples(res)
 	if err != nil {
-		// TODO: convert to apierror?
+		err = convertToAPIError(err, apierror.TypeInternal)
 		spanLogger.Error(err)
 		return nil, err
 	}
@@ -368,6 +368,16 @@ func (rth engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metri
 	}
 
 	return resp, nil
+}
+
+func convertToAPIError(err error, fallbackErrorType apierror.Type) error {
+	var apiError *apierror.APIError
+	if errors.As(err, &apiError) {
+		return apiError
+	}
+
+	t := apierror.TypeForError(err, fallbackErrorType)
+	return apierror.New(t, err.Error())
 }
 
 type unqueryableQueryable struct{}
