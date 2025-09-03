@@ -82,7 +82,7 @@ After the querier executes the query, it returns the results to the query-fronte
 
 ## The role of Prometheus
 
-Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
+Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://protobuf.dev/) messages inside the body of an HTTP `PUT` request.
 
 Grafana Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization](../../manage/secure/authentication-and-authorization/) are handled by an external reverse proxy.
