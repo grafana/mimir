@@ -32,11 +32,15 @@ import (
 var (
 	outputDir        = flag.String("output", "./benchmark-data", "Output directory for generated blocks")
 	userID           = flag.String("user", "test-user", "User ID for the generated blocks")
-	seriesCount      = flag.Int64("series", 1500000, "Total number of series to generate")
 	compression      = flag.Bool("compression", true, "Enable compression for parquet data")
-	sortBy           = flag.String("sort-by", "", "Comma-separated list of fields to sort by in parquet data")
+	sortBy           = flag.String("sort-by", "", "Comma-separated list of fields to sort by in parquet data. If unset it still sorts by __name__.")
 	storeType        = flag.String("store", "both", "Store type to generate: 'parquet', 'tsdb', or 'both'")
 	metricsCount     = flag.Int("metrics", 5, "Number of different metrics to generate")
+	instancesCount   = flag.Int("instances", 100, "Number of different instances to generate")
+	regionsCount     = flag.Int("regions", 5, "Number of different regions to generate")
+	zonesCount       = flag.Int("zones", 10, "Number of different zones to generate")
+	servicesCount    = flag.Int("services", 20, "Number of different services to generate")
+	environmentsCount = flag.Int("environments", 3, "Number of different environments to generate")
 	sampleValue      = flag.Float64("sample-value", 0, "Fixed sample value (0 = random)")
 	samplesPerSeries = flag.Int("samples", 10, "Number of samples per series")
 	timeRangeHours   = flag.Int("time-range", 2, "Time range in hours for the generated block")
@@ -46,8 +50,9 @@ var (
 func main() {
 	flag.Parse()
 
-	if *seriesCount <= 0 {
-		log.Fatal("Series count must be positive")
+	// Validate dimension counts
+	if *metricsCount <= 0 || *instancesCount <= 0 || *regionsCount <= 0 || *zonesCount <= 0 || *servicesCount <= 0 || *environmentsCount <= 0 {
+		log.Fatal("All dimension counts must be positive")
 	}
 
 	var sortByLabels []string
@@ -60,20 +65,33 @@ func main() {
 		}
 	}
 
-	if err := generateBlocks(*outputDir, *userID, *seriesCount, *compression, sortByLabels, 
-		*storeType, *metricsCount, *sampleValue, *samplesPerSeries, *timeRangeHours, *verboseLogging); err != nil {
+	dimensions := dimensions{
+		metrics:      *metricsCount,
+		instances:    *instancesCount,
+		regions:      *regionsCount,
+		zones:        *zonesCount,
+		services:     *servicesCount,
+		environments: *environmentsCount,
+	}
+
+	if err := generateBlocks(*outputDir, *userID, dimensions, *compression, sortByLabels,
+		*storeType, *sampleValue, *samplesPerSeries, *timeRangeHours, *verboseLogging); err != nil {
 		log.Fatalf("Failed to generate blocks: %v", err)
 	}
 }
 
-func generateBlocks(outputDir, userID string, seriesCount int64, compression bool, 
-	sortByLabels []string, storeType string, metricsCount int, sampleValue float64, 
+func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
+	sortByLabels []string, storeType string, sampleValue float64,
 	samplesPerSeries, timeRangeHours int, verbose bool) error {
-	
+
 	ctx := context.Background()
 
+	totalSeries := int64(dims.metrics * dims.instances * dims.regions * dims.zones * dims.services * dims.environments)
+	
 	if verbose {
-		log.Printf("Generating %d series for user %s", seriesCount, userID)
+		log.Printf("Generating %d series for user %s", totalSeries, userID)
+		log.Printf("Dimensions: %d metrics × %d instances × %d regions × %d zones × %d services × %d environments",
+			dims.metrics, dims.instances, dims.regions, dims.zones, dims.services, dims.environments)
 		log.Printf("Output directory: %s", outputDir)
 		log.Printf("Store type: %s", storeType)
 		log.Printf("Samples per series: %d", samplesPerSeries)
@@ -88,10 +106,10 @@ func generateBlocks(outputDir, userID string, seriesCount int64, compression boo
 	// Generate time series data
 	st := teststorage.New(nil)
 	defer func() { _ = st.Close() }()
-	
+
 	app := st.Appender(ctx)
-	
-	if err := generateSeries(app, seriesCount, metricsCount, sampleValue, samplesPerSeries, timeRangeHours, verbose); err != nil {
+
+	if err := generateSeries(app, dims, sampleValue, samplesPerSeries, timeRangeHours, verbose); err != nil {
 		return fmt.Errorf("failed to generate series: %w", err)
 	}
 
@@ -160,19 +178,10 @@ func generateBlocks(outputDir, userID string, seriesCount int64, compression boo
 	return nil
 }
 
-func generateSeries(app storage.Appender, seriesCount int64, metricsCount int, 
+func generateSeries(app storage.Appender, dims dimensions,
 	sampleValue float64, samplesPerSeries, timeRangeHours int, verbose bool) error {
-	
-	// Calculate dimensions to achieve target series count
-	dimensions := calculateDimensions(seriesCount, metricsCount)
-	
-	actualSeries := int64(dimensions.metrics * dimensions.instances * dimensions.regions * 
-						  dimensions.zones * dimensions.services * dimensions.environments)
-	
+
 	if verbose {
-		log.Printf("Calculated dimensions: %d metrics × %d instances × %d regions × %d zones × %d services × %d environments = %d series",
-			dimensions.metrics, dimensions.instances, dimensions.regions, dimensions.zones, 
-			dimensions.services, dimensions.environments, actualSeries)
 		log.Printf("Generating %d samples per series over %d hours", samplesPerSeries, timeRangeHours)
 	}
 
@@ -181,20 +190,20 @@ func generateSeries(app storage.Appender, seriesCount int64, metricsCount int,
 	startTime := now.Add(-time.Duration(timeRangeHours) * time.Hour)
 	endTime := now
 	timeStep := time.Duration(timeRangeHours) * time.Hour / time.Duration(samplesPerSeries-1)
-	
+
 	if verbose {
 		log.Printf("Time range: %s to %s (step: %s)", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339), timeStep)
 	}
 
 	seriesGenerated := int64(0)
 	sampleCount := int64(0)
-	
-	for m := 0; m < dimensions.metrics; m++ {
-		for i := 0; i < dimensions.instances; i++ {
-			for r := 0; r < dimensions.regions; r++ {
-				for z := 0; z < dimensions.zones; z++ {
-					for s := 0; s < dimensions.services; s++ {
-						for e := 0; e < dimensions.environments; e++ {
+
+	for m := 0; m < dims.metrics; m++ {
+		for i := 0; i < dims.instances; i++ {
+			for r := 0; r < dims.regions; r++ {
+				for z := 0; z < dims.zones; z++ {
+					for s := 0; s < dims.services; s++ {
+						for e := 0; e < dims.environments; e++ {
 							lbls := labels.FromStrings(
 								"__name__", fmt.Sprintf("test_metric_%d", m+1),
 								"instance", fmt.Sprintf("instance-%d", i+1),
@@ -203,19 +212,19 @@ func generateSeries(app storage.Appender, seriesCount int64, metricsCount int,
 								"service", fmt.Sprintf("service-%d", s+1),
 								"environment", fmt.Sprintf("environment-%d", e+1),
 							)
-							
+
 							// Generate multiple samples for this series
 							for sample := 0; sample < samplesPerSeries; sample++ {
 								timestamp := startTime.Add(time.Duration(sample) * timeStep)
-								
+
 								value := sampleValue
 								if value == 0 {
 									value = rand.Float64() * 100 // Scale to 0-100 for more realistic values
 								}
-								
+
 								_, err := app.Append(0, lbls, timestamp.UnixMilli(), value)
 								if err != nil {
-									return fmt.Errorf("failed to append sample for series %s at time %s: %w", 
+									return fmt.Errorf("failed to append sample for series %s at time %s: %w",
 										lbls.String(), timestamp.Format(time.RFC3339), err)
 								}
 								sampleCount++
@@ -244,39 +253,10 @@ type dimensions struct {
 	environments int
 }
 
-func calculateDimensions(targetSeries int64, metricsCount int) dimensions {
-	// Start with the metrics count as specified
-	remainingSeries := targetSeries / int64(metricsCount)
-	
-	// Use reasonable defaults that multiply to close to remainingSeries
-	instances := 100
-	regions := 5
-	zones := 10
-	services := 20
-	environments := 3
-	
-	// Adjust dimensions to get closer to target
-	current := int64(instances * regions * zones * services * environments)
-	
-	// Scale instances to get closer to target
-	if current != 0 {
-		scaleFactor := float64(remainingSeries) / float64(current)
-		instances = max(1, int(float64(instances)*scaleFactor))
-	}
 
-	return dimensions{
-		metrics:      metricsCount,
-		instances:    instances,
-		regions:      regions,
-		zones:        zones,
-		services:     services,
-		environments: environments,
-	}
-}
-
-func convertToParquet(ctx context.Context, userBkt objstore.InstrumentedBucket, head *tsdb.Head, blockID ulid.ULID, 
+func convertToParquet(ctx context.Context, userBkt objstore.InstrumentedBucket, head *tsdb.Head, blockID ulid.ULID,
 	compression bool, sortByLabels []string) error {
-	
+
 	convertOpts := []convert.ConvertOption{
 		convert.WithName(blockID.String()),
 		convert.WithLabelsCompression(schema.WithCompressionEnabled(compression)),
@@ -294,7 +274,7 @@ func convertToParquet(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		head.MaxTime(),
 		[]convert.Convertible{head},
 		convertOpts...)
-	
+
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 # Block Generator Tool
 
-A standalone tool for generating benchmark data blocks with configurable series counts and realistic time series data.
+A standalone tool for generating benchmark data blocks with configurable label cardinality dimensions and realistic time series data.
 
 ## Usage
 
@@ -14,11 +14,15 @@ go run main.go [flags]
 |------|---------|-------------|
 | `-output` | `./benchmark-data` | Output directory for generated blocks |
 | `-user` | `test-user` | User ID for the generated blocks |
-| `-series` | `1500000` | Total number of series to generate |
 | `-compression` | `true` | Enable compression for parquet data |
 | `-sort-by` | `""` | Comma-separated list of fields to sort by in parquet data |
 | `-store` | `both` | Store type to generate: 'parquet', 'tsdb', or 'both' |
 | `-metrics` | `5` | Number of different metrics to generate |
+| `-instances` | `100` | Number of different instances to generate |
+| `-regions` | `5` | Number of different regions to generate |
+| `-zones` | `10` | Number of different zones to generate |
+| `-services` | `20` | Number of different services to generate |
+| `-environments` | `3` | Number of different environments to generate |
 | `-sample-value` | `0` | Fixed sample value (0 = random) |
 | `-samples` | `10` | Number of samples per series |
 | `-time-range` | `2` | Time range in hours for the generated block |
@@ -26,14 +30,26 @@ go run main.go [flags]
 
 ## Examples
 
-### Generate 1.5M series (default)
+### Generate 1.5M series (default dimensions: 5×100×5×10×20×3)
 ```bash
 go run main.go -verbose
 ```
 
-### Generate 15M series
+### Generate 15M series by scaling instances
 ```bash
-go run main.go -series 15000000 -verbose
+go run main.go -instances 1000 -verbose
+```
+
+### High cardinality for specific dimensions
+```bash
+# 10M series with many instances and services
+go run main.go -instances 500 -services 100 -verbose
+```
+
+### Low cardinality test scenario
+```bash
+# Only 60 series with minimal dimensions
+go run main.go -metrics 2 -instances 2 -regions 3 -zones 5 -services 1 -environments 1 -verbose
 ```
 
 ### Generate only parquet blocks
@@ -84,17 +100,22 @@ The tool creates:
 - Bucket index files
 - All data organized under the specified user ID
 
-## Series Distribution
+## Series Calculation
 
-The tool calculates dimensions to achieve the target series count:
-- Metrics: Configurable via `-metrics` flag
-- Instances, regions, zones, services, environments: Automatically calculated
+Total series = metrics × instances × regions × zones × services × environments
 
-For 1.5M series with 5 metrics:
-- 5 metrics × 100 instances × 5 regions × 10 zones × 20 services × 3 environments = 1,500,000 series
+**Default dimensions:**
+- 5 metrics × 100 instances × 5 regions × 10 zones × 20 services × 3 environments = **1,500,000 series**
 
-For 15M series with 5 metrics:
-- 5 metrics × 1000 instances × 5 regions × 10 zones × 20 services × 3 environments = 15,000,000 series
+**Examples:**
+- **60 series**: `-metrics 2 -instances 2 -regions 3 -zones 5 -services 1 -environments 1`  
+- **15M series**: `-instances 1000` (keeping other defaults)
+- **10M series**: `-instances 500 -services 100` (with defaults: zones=10, regions=5, environments=3)
+
+**Cardinality Control:**
+- High cardinality dimensions (instances, services) → More realistic distribution patterns
+- Low cardinality dimensions (regions, environments) → Smaller label sets
+- Use different combinations to test various query selectivity scenarios
 
 ## Time Series Data
 
