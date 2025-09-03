@@ -18,6 +18,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -86,9 +87,10 @@ var (
 )
 
 type ownedSeriesState struct {
-	ownedSeriesCount int // Number of "owned" series, based on current ring.
-	shardSize        int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
-	localSeriesLimit int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
+	ownedSeriesCount           int // Number of "owned" series, based on current ring.
+	ownedTargetInfoSeriesCount int // Number of "owned" target_info series, based on current ring.
+	shardSize                  int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
+	localSeriesLimit           int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
 }
 
 type userTSDB struct {
@@ -334,6 +336,9 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	// but we will recompute owned series when ingester joins the ring.)
 	u.ownedStateMtx.Lock()
 	u.ownedState.ownedSeriesCount++
+	if metric.Get(model.MetricNameLabel) == "target_info" {
+		u.ownedState.ownedTargetInfoSeriesCount++
+	}
 	u.ownedStateMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
@@ -550,10 +555,15 @@ const (
 	recomputeOwnedSeriesMaxSeriesDiff = 1000
 )
 
-func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() (int, int)) (success bool, _ int) {
 	start := time.Now()
 
-	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore, localLimitBefore, localLimitNew int
+	var (
+		ownedSeriesNew, ownedSeriesBefore,
+		ownedTargetInfoSeriesNew, ownedTargetInfoSeriesBefore,
+		shardSizeBefore,
+		localLimitBefore, localLimitNew int
+	)
 
 	success = false
 	attempts := 0
@@ -562,11 +572,12 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 
 		os := u.ownedSeriesState()
 		ownedSeriesBefore = os.ownedSeriesCount
+		ownedTargetInfoSeriesBefore = os.ownedTargetInfoSeriesCount
 		shardSizeBefore = os.shardSize
 		localLimitBefore = os.localSeriesLimit
 
 		localLimitNew = u.limiter.maxSeriesPerUser(u.userID, 0)
-		ownedSeriesNew = compute()
+		ownedSeriesNew, ownedTargetInfoSeriesNew = compute()
 
 		u.ownedStateMtx.Lock()
 
@@ -575,12 +586,14 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		// (it may or may not include the new series, we don't know).
 		// In that case, just run the computation again -- if there are more attempts left.
 		seriesDiff := u.ownedState.ownedSeriesCount - ownedSeriesBefore
-		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
+		targetInfoSeriesDiff := u.ownedState.ownedTargetInfoSeriesCount - ownedTargetInfoSeriesBefore
+		if seriesDiff >= 0 && targetInfoSeriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff && targetInfoSeriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
 			success = true
 		}
 
-		// Even if we run computation again, we can start using our (possibly incorrect) values already.
+		// Even if we run the computation again, we can start using our (possibly incorrect) values already.
 		u.ownedState.ownedSeriesCount = ownedSeriesNew
+		u.ownedState.ownedTargetInfoSeriesCount = ownedTargetInfoSeriesNew
 		u.ownedState.shardSize = shardSize
 		u.ownedState.localSeriesLimit = localLimitNew
 
@@ -598,6 +611,8 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		"reason", reason,
 		"ownedSeriesBefore", ownedSeriesBefore,
 		"ownedSeriesNew", ownedSeriesNew,
+		"ownedTargetInfoSeriesBefore", ownedTargetInfoSeriesBefore,
+		"ownedTargetInfoSeriesNew", ownedTargetInfoSeriesNew,
 		"shardSizeBefore", shardSizeBefore,
 		"shardSizeNew", shardSize,
 		"localLimitBefore", localLimitBefore,
@@ -618,25 +633,34 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-func (u *userTSDB) computeOwnedSeries() int {
+func (u *userTSDB) computeOwnedSeries() (int, int) {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
 		u.activeSeries.Clear()
-		return 0
+		return 0, 0
 	}
 
 	count := 0
+	targetInfoCount := 0
 	idx := u.Head().MustIndex()
 	defer idx.Close()
 
+	lb := labels.NewScratchBuilder(128)
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
+				lb.Reset()
+				if err := idx.Series(storage.SeriesRef(refs[i]), &lb, nil); err != nil {
+					panic(fmt.Errorf("obtain owned series labels: %w", err))
+				}
+				if lb.Labels().Get(model.MetricNameLabel) == "target_info" {
+					targetInfoCount++
+				}
 			} else {
 				u.activeSeries.Delete(refs[i], idx)
 			}
 		}
 	})
-	return count
+	return count, targetInfoCount
 }
