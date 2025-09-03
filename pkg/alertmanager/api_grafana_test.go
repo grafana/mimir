@@ -287,7 +287,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "smtp_config": {
 					"from_address": %q,
 					"static_headers": {
-						"Header-1": "Value-1",
+						"Header-1": "Value-1",	
 						"Header-2": "Value-2"
 					},
 					"ehlo_identity": "",
@@ -300,7 +300,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				},
 				"smtp_from": %q,
 				"static_headers": {
-					"Header-1": "Value-1",
+					"Header-1": "Value-1",	
 					"Header-2": "Value-2"
 				}
 			},
@@ -426,7 +426,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-				"error": "Alertmanager configuration is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-config-size). To adjust the related per-tenant limit, configure alertmanager_max_grafana_config_size_bytes, or contact your service administrator.",
+				"error": "Alertmanager configuration is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-config-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-config-size-bytes, or contact your service administrator.",
 				"status": "error"
 			}
 			`,
@@ -653,7 +653,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-				"error": "Alertmanager state is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-state-size). To adjust the related per-tenant limit, configure alertmanager_max_grafana_state_size_bytes, or contact your service administrator.",
+				"error": "Alertmanager state is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-state-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-state-size-bytes, or contact your service administrator.",
 				"status": "error"
 			}
 			`,

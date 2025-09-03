@@ -2288,11 +2288,6 @@ func TestParameterConstantsMatchStructTags(t *testing.T) {
 		{MaxFetchedSeriesPerQueryParameter, "MaxFetchedSeriesPerQuery"},
 		{MaxEstimatedChunksPerQueryMultiplierParameter, "MaxEstimatedChunksPerQueryMultiplier"},
 		{MaxEstimatedMemoryConsumptionPerQueryParameter, "MaxEstimatedMemoryConsumptionPerQuery"},
-		{MaxPartialQueryLengthParameter, "MaxPartialQueryLength"},
-		{MaxTotalQueryLengthParameter, "MaxTotalQueryLength"},
-		{MaxQueryExpressionSizeBytesParameter, "MaxQueryExpressionSizeBytes"},
-		{AlertmanagerMaxGrafanaConfigSizeBytesParameter, "AlertmanagerMaxGrafanaConfigSizeBytes"},
-		{AlertmanagerMaxGrafanaStateSizeBytesParameter, "AlertmanagerMaxGrafanaStateSizeBytes"},
 	} {
 		field, found := reflect.TypeOf(Limits{}).FieldByName(tc.fieldName)
 		require.True(t, found, "Field Limits.%s does not exist", tc.fieldName)

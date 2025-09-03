@@ -24,7 +24,7 @@ func TestQuerier_Errors(t *testing.T) {
 		},
 		"err-mimir-max-query-length has a correct message": {
 			err:              NewMaxQueryLengthError(time.Hour, time.Minute),
-			expectedErrorMsg: "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). To adjust the related per-tenant limit, configure max_partial_query_length, or contact your service administrator.",
+			expectedErrorMsg: "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). To adjust the related per-tenant limit, configure -querier.max-partial-query-length, or contact your service administrator.",
 		},
 	}
 	for testName, testData := range tests {

@@ -14,14 +14,14 @@ import (
 func newMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Duration) error {
 	return apierror.New(apierror.TypeBadData, globalerror.MaxTotalQueryLength.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the total query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxTotalQueryLength),
-		validation.MaxTotalQueryLengthParameter,
+		validation.MaxTotalQueryLengthFlag,
 	))
 }
 
 func newMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int) error {
 	return apierror.New(apierror.TypeBadData, globalerror.MaxQueryExpressionSizeBytes.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the raw query size in bytes exceeds the limit (query size: %d, limit: %d)", actualSizeBytes, maxQuerySizeBytes),
-		validation.MaxQueryExpressionSizeBytesParameter,
+		validation.MaxQueryExpressionSizeBytesFlag,
 	))
 }
 
