@@ -1048,6 +1048,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Distributor,
 		embeddedQueryable,
 		queryFunc,
+		rulesFS,
 		concurrencyController,
 		t.Overrides,
 		t.Registerer,

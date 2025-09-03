@@ -257,8 +257,9 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, afero.NewOsFs())
+	rulesFS := afero.NewOsFs()
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, rulesFS, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, rulesFS)
 	require.NoError(t, err)
 
 	return manager

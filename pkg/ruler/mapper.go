@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"bytes"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
@@ -171,4 +174,35 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 	}
 
 	return true, nil
+}
+
+// FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
+type FSLoader struct {
+	fs afero.Fs
+}
+
+func NewFSLoader(fs afero.Fs) FSLoader {
+	return FSLoader{
+		fs: fs,
+	}
+}
+
+func (f FSLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return parseFile(f.fs, identifier, ignoreUnknownFields, nameValidationScheme)
+}
+
+func (FSLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+
+// parseFile reads and parses rules from a file.
+// Duplicate of Prometheus' rulefmt.ParseFile, but injects the FS.
+func parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	b, err := afero.ReadFile(fs, file)
+	if err != nil {
+		return nil, []error{fmt.Errorf("%s: %w", file, err)}
+	}
+	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme)
+	for i := range errs {
+		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
+	}
+	return rgs, errs
 }
