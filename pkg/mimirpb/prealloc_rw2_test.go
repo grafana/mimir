@@ -414,6 +414,108 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		require.Equal(t, expSymbols, rw2.SymbolsRW2)
 		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
 	})
+
+	t.Run("when matching to timeseries, repeated metadata are deduplicated", func(t *testing.T) {
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
+						Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+					},
+				},
+			},
+			Metadata: []*MetricMetadata{
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
+				},
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series.",
+					Unit:             "megawatts",
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
+
+		expSymbols := []string{"", "__name__", "my_cool_series", "job", "foo/bar", "It's a cool series.", "megawatts"}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 5,
+					UnitRef: 6,
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Nil(t, rw2.Metadata)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
+
+	t.Run("when matching to timeseries, and metadata conflicts, the first one is matched and the rest are preserved", func(t *testing.T) {
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels:  FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_cool_series", "job": "foo/bar"})),
+						Samples: []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+					},
+				},
+			},
+			Metadata: []*MetricMetadata{
+				{
+					Type:             COUNTER,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series, but old description.",
+					Unit:             "megawatts",
+				},
+				{
+					Type:             GAUGE,
+					MetricFamilyName: "my_cool_series",
+					Help:             "It's a cool series, but new description.",
+					Unit:             "megawatts",
+				},
+			},
+		}
+
+		rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
+
+		expSymbols := []string{"", "__name__", "my_cool_series", "job", "foo/bar", "It's a cool series, but old description.", "megawatts", "It's a cool series, but new description."}
+		expTimeseries := []TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4},
+				Samples:    []Sample{{Value: 123, TimestampMs: 1234567890}, {Value: 456, TimestampMs: 1234567900}},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_COUNTER,
+					HelpRef: 5,
+					UnitRef: 6,
+				},
+			},
+			{
+				LabelsRefs: []uint32{1, 2},
+				Metadata: MetadataRW2{
+					Type:    METRIC_TYPE_GAUGE,
+					HelpRef: 7,
+					UnitRef: 6,
+				},
+			},
+		}
+		require.NoError(t, err)
+		require.Nil(t, rw2.Timeseries)
+		require.Nil(t, rw2.Metadata)
+		require.Equal(t, expSymbols, rw2.SymbolsRW2)
+		require.Equal(t, expTimeseries, rw2.TimeseriesRW2)
+	})
 }
 
 func TestExemplarConversion(t *testing.T) {

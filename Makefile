@@ -414,6 +414,13 @@ lint: check-makefiles check-merge-conflicts
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
+	# Use the faster slices.Sort where we can.
+	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
+	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
+	faillint -paths \
+		"sort.{Strings,Ints}=slices.Sort" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \
 		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
@@ -772,9 +779,6 @@ check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
 	cd development/mimir-microservices-mode && make check
-
-check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-read-write-mode.
-	cd development/mimir-read-write-mode && make check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

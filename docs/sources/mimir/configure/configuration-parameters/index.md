@@ -3272,8 +3272,9 @@ ring:
 [query_stats_enabled: <boolean> | default = false]
 
 query_frontend:
-  # GRPC listen address of the query-frontend(s). Must be a DNS address
-  # (prefixed with dns:///) to enable client side load balancing.
+  # Can be either the GRPC listen address of the query-frontend(s) or the
+  # HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address
+  # (prefixed with dns:///) to enable GRPC client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
@@ -3282,6 +3283,13 @@ query_frontend:
   # The CLI flags prefix for this block configuration is:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
+
+  # Configures the HTTP client used to communicate between the rulers and
+  # query-frontends.
+  http_client_config:
+    # (advanced) Timeout for establishing a connection to the query-frontend.
+    # CLI flag: -ruler.query-frontend.http-client-config.connect-timeout
+    [connect_timeout: <duration> | default = 30s]
 
   # Format to use when retrieving query results from query-frontends. Supported
   # values: json, protobuf

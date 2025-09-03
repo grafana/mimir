@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r357-e1978586
+  tag: r358-8fb2d603
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -246,6 +246,9 @@ mimir:
         heartbeat_timeout: 4m
 
     distributor:
+      # Increase the default remote write timeout (applied to writing to Kafka too) because writing
+      # to Kafka-compatible backend may be slower than writing directly to ingesters.
+      remote_timeout: 5s
       ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
@@ -309,7 +312,23 @@ mimir:
         {{- end}}
     {{- end }}
 
+    ingest_storage:
+      enabled: true
+      kafka:
+        {{- if .Values.kafka.enabled }}
+        # Address of Kafka broker to bootstrap the connection.
+        address: {{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:{{ $.Values.kafka.service.port }}
+        {{- end }}
+        # Topic name.
+        topic: mimir-ingest
+        # Mimir will auto-create the topic on start up.
+        # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 100 is for demo purposes.
+        auto_create_topic_enabled: true
+        auto_create_topic_default_partitions: 100
+
     ingester:
+      # Disallow Push gRPC API; everything comes through Kafka in the ingest storage architecture.
+      push_grpc_method_enabled: false
       ring:
         final_sleep: 0s
         num_tokens: 512
@@ -3059,8 +3078,8 @@ minio:
   configPathmc: "/tmp/minio/mc/"
 
 kafka:
-  # -- Enable Kafka for ingest-storage architecture (demo purposes only)
-  enabled: false
+  # -- Enable Kafka for ingest-storage architecture
+  enabled: true
 
   image:
     # -- The container image registry
@@ -4237,7 +4256,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r357-babedf88
+    tag: r358-f31db949
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
