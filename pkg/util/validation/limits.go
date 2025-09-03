@@ -75,26 +75,23 @@ const (
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
 )
 
-// NOTE: Keep those in sync with Limits struct tags and TestParameterConstantsMatchStructTags.
-const (
-	MaxLabelNameLengthParameter                    = "max_label_name_length"
-	MaxLabelValueLengthParameter                   = "max_label_value_length"
-	MaxLabelNamesPerSeriesParameter                = "max_label_names_per_series"
-	MaxLabelNamesPerInfoSeriesParameter            = "max_label_names_per_info_series"
-	MaxMetadataLengthParameter                     = "max_metadata_length"
-	CreationGracePeriodParameter                   = "creation_grace_period"
-	PastGracePeriodParameter                       = "past_grace_period"
-	MaxChunksPerQueryParameter                     = "max_fetched_chunks_per_query"
-	MaxFetchedChunkBytesPerQueryParameter          = "max_fetched_chunk_bytes_per_query"
-	MaxFetchedSeriesPerQueryParameter              = "max_fetched_series_per_query"
-	MaxEstimatedChunksPerQueryMultiplierParameter  = "max_estimated_fetched_chunks_per_query_multiplier"
-	MaxEstimatedMemoryConsumptionPerQueryParameter = "max_estimated_memory_consumption_per_query"
-)
-
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+
+	MaxLabelNameLengthParameter                    = extractYamlStructTag(Limits{}, "MaxLabelNameLength")
+	MaxLabelValueLengthParameter                   = extractYamlStructTag(Limits{}, "MaxLabelValueLength")
+	MaxLabelNamesPerSeriesParameter                = extractYamlStructTag(Limits{}, "MaxLabelNamesPerSeries")
+	MaxLabelNamesPerInfoSeriesParameter            = extractYamlStructTag(Limits{}, "MaxLabelNamesPerInfoSeries")
+	MaxMetadataLengthParameter                     = extractYamlStructTag(Limits{}, "MaxMetadataLength")
+	CreationGracePeriodParameter                   = extractYamlStructTag(Limits{}, "CreationGracePeriod")
+	PastGracePeriodParameter                       = extractYamlStructTag(Limits{}, "PastGracePeriod")
+	MaxChunksPerQueryParameter                     = extractYamlStructTag(Limits{}, "MaxChunksPerQuery")
+	MaxFetchedChunkBytesPerQueryParameter          = extractYamlStructTag(Limits{}, "MaxFetchedChunkBytesPerQuery")
+	MaxFetchedSeriesPerQueryParameter              = extractYamlStructTag(Limits{}, "MaxFetchedSeriesPerQuery")
+	MaxEstimatedChunksPerQueryMultiplierParameter  = extractYamlStructTag(Limits{}, "MaxEstimatedChunksPerQueryMultiplier")
+	MaxEstimatedMemoryConsumptionPerQueryParameter = extractYamlStructTag(Limits{}, "MaxEstimatedMemoryConsumptionPerQuery")
 )
 
 const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
@@ -1821,4 +1818,16 @@ func limitsToStructWithExtensionFields(limits *Limits) interface{} {
 	}
 
 	return cfg.Interface()
+}
+
+func extractYamlStructTag(s any, fieldName string) string {
+	field, ok := reflect.TypeOf(s).FieldByName(fieldName)
+	if !ok {
+		panic("field name not found: " + fieldName)
+	}
+	tag := field.Tag.Get("yaml")
+	if tag == "" {
+		panic("empty yaml struct tag for field " + fieldName)
+	}
+	return tag
 }

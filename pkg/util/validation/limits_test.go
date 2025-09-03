@@ -2271,38 +2271,6 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 	})
 }
 
-func TestParameterConstantsMatchStructTags(t *testing.T) {
-	for _, tc := range []struct {
-		constant  string
-		fieldName string
-	}{
-		{MaxLabelNameLengthParameter, "MaxLabelNameLength"},
-		{MaxLabelValueLengthParameter, "MaxLabelValueLength"},
-		{MaxLabelNamesPerSeriesParameter, "MaxLabelNamesPerSeries"},
-		{MaxLabelNamesPerInfoSeriesParameter, "MaxLabelNamesPerInfoSeries"},
-		{MaxMetadataLengthParameter, "MaxMetadataLength"},
-		{CreationGracePeriodParameter, "CreationGracePeriod"},
-		{PastGracePeriodParameter, "PastGracePeriod"},
-		{MaxChunksPerQueryParameter, "MaxChunksPerQuery"},
-		{MaxFetchedChunkBytesPerQueryParameter, "MaxFetchedChunkBytesPerQuery"},
-		{MaxFetchedSeriesPerQueryParameter, "MaxFetchedSeriesPerQuery"},
-		{MaxEstimatedChunksPerQueryMultiplierParameter, "MaxEstimatedChunksPerQueryMultiplier"},
-		{MaxEstimatedMemoryConsumptionPerQueryParameter, "MaxEstimatedMemoryConsumptionPerQuery"},
-	} {
-		field, found := reflect.TypeOf(Limits{}).FieldByName(tc.fieldName)
-		require.True(t, found, "Field Limits.%s does not exist", tc.fieldName)
-
-		yamlTag := field.Tag.Get("yaml")
-		require.NotEmpty(t, yamlTag, "Field Limits.%s missing yaml struct tag", tc.fieldName)
-
-		actual := strings.Split(yamlTag, ",")[0]
-
-		require.Equal(t, tc.constant, actual,
-			"Constant %vParameter=%q does not match yaml struct tag value %q for field Limits.%s",
-			tc.fieldName, tc.constant, actual, tc.fieldName)
-	}
-}
-
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
