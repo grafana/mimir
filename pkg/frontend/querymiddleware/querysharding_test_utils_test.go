@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -337,8 +336,7 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
 		planner, err := streamingpromql.NewQueryPlanner(mqeOpts)
 		require.NoError(t, err)
-		logger := log.NewNopLogger()
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner, logger)
+		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner)
 		if err != nil {
 			t.Fatalf("error creating MQE engine for testing: %s", err)
 		}

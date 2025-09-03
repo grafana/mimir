@@ -37,9 +37,11 @@ type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
 	selectorsInspected         prometheus.Counter
+
+	logger log.Logger
 }
 
-func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer) *OptimizationPass {
+func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries: enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries,
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -54,6 +56,7 @@ func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInsta
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected",
 			Help: "Number of selectors inspected by the common subexpression elimination optimization pass, before elimination.",
 		}),
+		logger: logger,
 	}
 }
 
@@ -74,7 +77,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	e.selectorsInspected.Add(float64(len(paths)))
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
 
-	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	spanLog := spanlogger.FromContext(ctx, e.logger)
 	spanLog.DebugLog("msg", "attempted common subexpression elimination", "selectors_inspected", len(paths), "selectors_eliminated", selectorsEliminated)
 
 	return plan, nil
