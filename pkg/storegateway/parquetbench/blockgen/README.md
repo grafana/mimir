@@ -13,7 +13,7 @@ go run main.go [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-output` | `./benchmark-data` | Output directory for generated blocks |
-| `-user` | `test-user` | User ID for the generated blocks |
+| `-user` | `benchmark-user` | User ID for the generated blocks |
 | `-compression` | `true` | Enable compression for parquet data |
 | `-sort-by` | `""` | Comma-separated list of fields to sort by in parquet data |
 | `-store` | `both` | Store type to generate: 'parquet', 'tsdb', or 'both' |

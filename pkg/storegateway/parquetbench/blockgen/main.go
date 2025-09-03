@@ -31,7 +31,7 @@ import (
 
 var (
 	outputDir        = flag.String("output", "./benchmark-data", "Output directory for generated blocks")
-	userID           = flag.String("user", "test-user", "User ID for the generated blocks")
+	userID           = flag.String("user", "benchmark-user", "User ID for the generated blocks")
 	compression      = flag.Bool("compression", true, "Enable compression for parquet data")
 	sortBy           = flag.String("sort-by", "", "Comma-separated list of fields to sort by in parquet data. If unset it still sorts by __name__.")
 	storeType        = flag.String("store", "both", "Store type to generate: 'parquet', 'tsdb', or 'both'")
