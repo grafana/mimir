@@ -90,7 +90,7 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 // containedExperimentalFunctions returns any PromQL experimental functions used in the query.
 func containedExperimentalFunctions(expr parser.Expr) map[string]struct{} {
 	expFuncNames := map[string]struct{}{}
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+	_ = inspect(expr, func(node parser.Node) error {
 		call, ok := node.(*parser.Call)
 		if ok {
 			if parser.Functions[call.Func.Name].Experimental {
