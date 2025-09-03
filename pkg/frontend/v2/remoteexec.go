@@ -61,6 +61,8 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 		OriginalExpression: fullPlan.OriginalExpression,
 	}
 
+	// FIXME: need to capture the affected query components (ingester, store-gateway or both) here by calling QueriedTimeRange
+
 	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)
 	if err != nil {
 		return nil, err
@@ -88,14 +90,9 @@ type scalarExecutionResponse struct {
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	msg, err := r.stream.Next(ctx)
+	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return types.ScalarData{}, err
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return types.ScalarData{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
 	scalar := resp.GetScalarValue()
@@ -132,14 +129,9 @@ func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) 
 }
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	msg, err := r.stream.Next(ctx)
+	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return types.InstantVectorSeriesData{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
 	seriesData := resp.GetInstantVectorSeriesData()
@@ -204,14 +196,9 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	msg, err := r.stream.Next(ctx)
+	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return nil, err
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
 	data := resp.GetRangeVectorStepData()
@@ -259,7 +246,7 @@ func (r *rangeVectorExecutionResponse) Close() {
 	r.stream.Close()
 }
 
-func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+func readNextEvaluateQueryResponse(ctx context.Context, stream *ProtobufResponseStream) (*querierpb.EvaluateQueryResponse, error) {
 	msg, err := stream.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -268,6 +255,15 @@ func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, mem
 	resp := msg.GetEvaluateQueryResponse()
 	if resp == nil {
 		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	return resp, nil
+}
+
+func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	resp, err := readNextEvaluateQueryResponse(ctx, stream)
+	if err != nil {
+		return nil, err
 	}
 
 	seriesMetadata := resp.GetSeriesMetadata()
@@ -291,14 +287,9 @@ func readSeriesMetadata(ctx context.Context, stream *ProtobufResponseStream, mem
 }
 
 func readEvaluationCompleted(ctx context.Context, stream *ProtobufResponseStream) (annotations.Annotations, int64, error) {
-	msg, err := stream.Next(ctx)
+	resp, err := readNextEvaluateQueryResponse(ctx, stream)
 	if err != nil {
 		return nil, 0, err
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, 0, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
 	// TODO: exhaust stream (add tests for this)
