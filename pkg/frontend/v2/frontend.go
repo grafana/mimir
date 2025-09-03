@@ -47,7 +47,7 @@ import (
 var tracer = otel.Tracer("pkg/frontend/v2")
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
-var errStreamClosed = cancellation.NewErrorf("stream closed before response exhausted")
+var errStreamClosed = cancellation.NewErrorf("stream closed")
 var errUnexpectedHTTPResponse = errors.New("unexpected HTTP response to non-HTTP request")
 
 // Config for a Frontend.
@@ -430,7 +430,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 		}
 	}
 
-	if err != nil {
+	if err != nil && !errors.Is(err, errStreamClosed) {
 		_ = s.spanLogger.Error(err)
 	}
 
@@ -445,7 +445,9 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 // writeEnqueueError writes an error message to the stream.
 // This method must only be called once per ProtobufResponseStream instance to ensure it does not block.
 func (s *ProtobufResponseStream) writeEnqueueError(err error) {
-	_ = s.spanLogger.Error(err)
+	if !errors.Is(err, errStreamClosed) {
+		_ = s.spanLogger.Error(err)
+	}
 
 	// This is guaranteed not to block provided this method is only called once per request,
 	// as enqueueError is buffered with a size of 1.
@@ -495,6 +497,7 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 }
 
 func (s *ProtobufResponseStream) Close() {
+	s.spanLogger.DebugLog("msg", "response stream closed")
 	s.cancel(errStreamClosed)
 }
 
