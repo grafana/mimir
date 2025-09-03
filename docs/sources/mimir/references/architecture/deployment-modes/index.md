@@ -61,7 +61,11 @@ The following diagrams show how Mimir works in microservices mode using ingest s
 
 Ingest storage architecture:
 
+<div align="center">
+
 ![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_arch.png)
+
+</div>
 
 Classic architecture:
 
