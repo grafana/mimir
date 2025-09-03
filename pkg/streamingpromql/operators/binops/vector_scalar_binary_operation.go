@@ -47,7 +47,7 @@ func NewVectorScalarBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	timeRange types.QueryTimeRange,
-	opParams planning.OperatorParameters,
+	opParams *planning.OperatorParameters,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
 	var f binaryOperationFunc

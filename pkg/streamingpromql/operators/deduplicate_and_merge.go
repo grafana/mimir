@@ -53,6 +53,7 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 			if err != nil {
 				return nil, err
 			}
+			innerMetadata[i].DropName = false
 		}
 	}
 

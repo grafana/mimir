@@ -159,6 +159,10 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		g.group.remainingSeriesCount++
 		g.group.lastSeriesIndex = seriesIdx
 		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g.group)
+		if !g.dropName && series.DropName {
+			g.dropName = series.DropName
+			groups[string(groupLabelsString)] = g
+		}
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time

@@ -165,7 +165,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 		vector = lhsVector
 	}
 
-	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, *params, b.ExpressionPosition())
+	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, params, b.ExpressionPosition())
 	if err != nil {
 		return nil, err
 	}

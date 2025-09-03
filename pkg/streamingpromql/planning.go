@@ -181,20 +181,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			} else {
 				// Don't run delayed name removal or deduplicate and merge where there are no
 				// vector selectors.
-				shouldWrapInDedupAndMerge := true
-				switch node := root.(type) {
-				case *core.NumberLiteral, *core.StringLiteral:
-					shouldWrapInDedupAndMerge = false
-				case *core.BinaryExpression:
-					if node.VectorMatching == nil {
-						shouldWrapInDedupAndMerge = false
-					}
-				case *core.FunctionCall:
-					if !functionHasVectorSelectors(node.Function) {
-						shouldWrapInDedupAndMerge = false
-					}
-				}
-				if shouldWrapInDedupAndMerge {
+				if shouldWrapInDedupAndMerge(root) {
 					root = &core.DeduplicateAndMerge{
 						Inner:                      root,
 						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
@@ -232,10 +219,19 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	return plan, err
 }
 
-func functionHasVectorSelectors(fn functions.Function) bool {
-	switch fn {
-	case functions.FUNCTION_SCALAR, functions.FUNCTION_PI, functions.FUNCTION_TIME:
+func shouldWrapInDedupAndMerge(root planning.Node) bool {
+	switch node := root.(type) {
+	case *core.NumberLiteral, *core.StringLiteral:
 		return false
+	case *core.BinaryExpression:
+		if node.VectorMatching == nil {
+			return false
+		}
+	case *core.FunctionCall:
+		fn, exists := parser.Functions[node.Function.PromQLName()]
+		if exists && fn.ReturnType == parser.ValueTypeScalar {
+			return false
+		}
 	}
 	return true
 }

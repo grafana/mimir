@@ -13,12 +13,48 @@ eval instant at 10m rate(up[5m]) or rate(down[5m])
   {foo="bar2"} 0.05
   {foo="bar3"} 0.08333333333333333
 
+eval instant at 10m rate(up[5m]) or down
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m up or rate(down[5m])
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+  up{foo="bar3"} 50
+
+eval instant at 10m up or down
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+  up{foo="bar3"} 50
+
 eval instant at 10m rate(up[5m]) and rate(down[5m])
   {foo="bar"} 0.016666666666666666
   {foo="bar2"} 0.05
 
+eval instant at 10m rate(up[5m]) and down
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+
+eval instant at 10m up and rate(down[5m])
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+
+eval instant at 10m up and down
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+
 eval instant at 10m rate(up[5m]) unless rate(down[5m])
   {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m rate(up[5m]) unless down
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m up unless rate(down[5m])
+  up{foo="bar3"} 50
+
+eval instant at 10m up unless down
+  up{foo="bar3"} 50
 
 eval instant at 10m label_replace(3 * {foo="bar"}, "__name__", "mul_$1", "__name__", "(.+)")
   mul_up{foo="bar"} 30

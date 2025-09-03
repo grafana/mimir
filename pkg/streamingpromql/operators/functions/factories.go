@@ -20,7 +20,7 @@ import (
 type FunctionOperatorFactory func(
 	args []types.Operator,
 	absentLabels labels.Labels, // Only used by absent and absent_over_time.
-	opParams planning.OperatorParameters,
+	opParams *planning.OperatorParameters,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) (types.Operator, error)
@@ -32,7 +32,7 @@ type FunctionOperatorFactory func(
 //   - name: The name of the function
 //   - f: The function implementation
 func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstantVectorDefinition) FunctionOperatorFactory {
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -69,7 +69,7 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc Insta
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		var inner types.InstantVectorOperator
 		if len(args) == 0 {
 			// if the argument is not provided, it will default to vector(time())
@@ -118,7 +118,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	name string,
 	f FunctionOverRangeVectorDefinition,
 ) FunctionOperatorFactory {
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -134,7 +134,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	}
 }
 
-func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := PredictLinear
 
 	if len(args) != 2 {
@@ -159,7 +159,7 @@ func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams plann
 	return o, nil
 }
 
-func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := QuantileOverTime
 
 	if len(args) != 2 {
@@ -184,7 +184,7 @@ func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, opParams pl
 	return o, nil
 }
 
-func scalarToInstantVectorOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.Operator, error) {
+func scalarToInstantVectorOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for vector, got %v", len(args))
@@ -199,7 +199,7 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ labels.Labels
 	return scalars.NewScalarToInstantVector(inner, expressionPosition, opParams.MemoryConsumptionTracker), nil
 }
 
-func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	// It is valid for label_join to have no source label names. ie, only 3 arguments are actually required.
 	if len(args) < 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -244,7 +244,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, op
 	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
-func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 5 arguments for label_replace, got %v", len(args))
@@ -290,7 +290,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels,
 	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
-func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("expected exactly 1 parameter for 'absent', got %v", len(args))
 	}
@@ -303,7 +303,7 @@ func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, opParams
 	return NewAbsent(inner, labels, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
 }
 
-func AbsentOverTimeOperatorFactory(args []types.Operator, labels labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func AbsentOverTimeOperatorFactory(args []types.Operator, labels labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("expected exactly 1 parameter for 'absent_over_time', got %v", len(args))
 	}
@@ -316,7 +316,7 @@ func AbsentOverTimeOperatorFactory(args []types.Operator, labels labels.Labels, 
 	return NewAbsentOverTime(inner, labels, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
 }
 
-func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for clamp, got %v", len(args))
@@ -349,7 +349,7 @@ func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opPara
 }
 
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 2 arguments for %s, got %v", functionName, len(args))
@@ -376,7 +376,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Functio
 	}
 }
 
-func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 && len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected 1 or 2 arguments for round, got %v", len(args))
@@ -407,7 +407,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opPara
 	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
-func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 2 arguments for histogram_quantile, got %v", len(args))
@@ -428,7 +428,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.La
 	return NewHistogramQuantileFunction(ph, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
-func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for histogram_fraction, got %v", len(args))
@@ -455,7 +455,7 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
-func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for timestamp, got %v", len(args))
@@ -485,7 +485,7 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 		functionName = "sort_by_label_desc"
 	}
 
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) < 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected at least 1 argument for %s, got %v", functionName, len(args))
@@ -526,7 +526,7 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 		functionName = "sort_desc"
 	}
 
-	return func(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
@@ -579,7 +579,7 @@ func RegisterFunction(function Function, name string, returnType parser.ValueTyp
 	return nil
 }
 
-func piOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func piOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
@@ -588,7 +588,7 @@ func piOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning
 	return scalars.NewScalarConstant(math.Pi, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
 }
 
-func timeOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func timeOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
@@ -597,7 +597,7 @@ func timeOperatorFactory(args []types.Operator, _ labels.Labels, opParams planni
 	return operators.NewTime(timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
 }
 
-func instantVectorToScalarOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func instantVectorToScalarOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for scalar, got %v", len(args))
@@ -612,7 +612,7 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, _ labels.Labels
 	return scalars.NewInstantVectorToScalar(inner, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
 }
 
-func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.Operator {
+func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.Operator {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         UnaryNegation,
 		SeriesMetadataFunction: DropSeriesName,
@@ -622,7 +622,7 @@ func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 	return o
 }
 
-func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := DoubleExponentialSmoothing
 
 	functionName := "double_exponential_smoothing"

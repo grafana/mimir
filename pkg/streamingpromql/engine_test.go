@@ -221,8 +221,9 @@ func TestOurTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
 	mimirEngine, prometheusEngine := makeEngines(t, opts)
 
-	opts.CommonOpts.EnableDelayedNameRemoval = true
-	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, opts)
+	optsWithDelayedNameRemoval := NewTestEngineOpts()
+	optsWithDelayedNameRemoval.CommonOpts.EnableDelayedNameRemoval = true
+	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")

@@ -15,6 +15,7 @@ import (
 // TestOperator is an InstantVectorOperator used only in tests.
 type TestOperator struct {
 	Series                   []labels.Labels
+	DropName                 bool
 	Data                     []types.InstantVectorSeriesData
 	Finalized                bool
 	Closed                   bool
@@ -43,6 +44,9 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 		err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
 		if err != nil {
 			return nil, err
+		}
+		if t.DropName {
+			metadata[i].DropName = true
 		}
 	}
 	return metadata, nil
