@@ -3,148 +3,28 @@
 package activeseriesmodel
 
 import (
-	"cmp"
-	"maps"
-	"slices"
+	"sort"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
-	names := make([]string, 0, len(matchersConfig.config))
-	unoptimized := make([]indexedMatchers, 0, len(matchersConfig.config))
-
-	// singleLabelMatchers is a map of label names to matchers that match on that single label.
-	// This is an optimization under the assumption that there are more of these than labels in a series,
-	// so we don't have to lookup the label value every time.
-	// This does not include matchers that match on empty labels.
-	singleLabelMatchers := make(map[string][]indexedMatchers)
-
-	// matchersForExactValue is a list of matchers that have at least one SetMatcher or exact value matcher.
-	matchersForExactValue := make([]indexedMatchers, 0, len(matchersConfig.config))
-	// As we scan them, keep track of the amount of different values matched per label name.
-	valuesMatchedPerLabelName := map[string]map[string]struct{}{}
-	for name, ms := range matchersConfig.config {
-		index := len(names)
-		names = append(names, name)
-
-		if len(ms) == 1 && !ms[0].Matches("") {
-			// This is a single matcher that matches on a single label.
-			// We can optimize it by treating it as a single label matcher.
-			singleLabelMatchers[ms[0].Name] = append(singleLabelMatchers[ms[0].Name], indexedMatchers{labelsMatchers: ms, index: index})
-			continue
-		}
-
-		optimized := false
-		for _, m := range ms {
-			if m.Type == labels.MatchEqual && m.Value != "" {
-				matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
-				if valuesMatchedPerLabelName[m.Name] == nil {
-					valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
-				}
-				valuesMatchedPerLabelName[m.Name][m.Value] = struct{}{}
-				optimized = true
-				break
-			} else if sm := m.SetMatches(); len(sm) > 0 {
-				matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
-				if valuesMatchedPerLabelName[m.Name] == nil {
-					valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
-				}
-				for _, v := range sm {
-					valuesMatchedPerLabelName[m.Name][v] = struct{}{}
-				}
-				optimized = true
-				break
-			}
-		}
-		if !optimized {
-			unoptimized = append(unoptimized, indexedMatchers{labelsMatchers: ms, index: index})
-		}
+	asm := &Matchers{cfg: matchersConfig}
+	for name, matchers := range matchersConfig.config {
+		asm.matchers = append(asm.matchers, matchers)
+		asm.names = append(asm.names, name)
 	}
-
-	// Get label names and sort them by popularity (desc).
-	// We select labels that have the most different values matched first to make the decision tree higher and lower.
-	labelNames := slices.SortedFunc(
-		maps.Keys(valuesMatchedPerLabelName),
-		func(a, b string) int {
-			return cmp.Compare(len(valuesMatchedPerLabelName[b]), len(valuesMatchedPerLabelName[a]))
-		},
-	)
-
-	// valueMatchers is a map of label names to a map of values to indexedMatchers.
-	valueMatchers := make(map[string]map[string][]indexedMatchers, len(labelNames))
-	// We can probably optimize this 3 nested loops, but:
-	// - This is not the hot path
-	// - Probably there are not so many labelNames.
-	// - Probably there are not so many labelsMatchers
-	for _, name := range labelNames {
-		for mi := 0; mi < len(matchersForExactValue); {
-			ms := matchersForExactValue[mi]
-			removed := false
-			for lmi, m := range ms.labelsMatchers {
-				if m.Name != name {
-					continue
-				}
-				var sm []string
-				if m.Type == labels.MatchEqual && m.Value != "" {
-					// This is not a set matcher, but a simple equality matcher.
-					// We'll treat it as a set matcher with a single value.
-					sm = []string{m.Value}
-				} else if sm = m.SetMatches(); len(sm) == 0 {
-					continue
-				}
-
-				if valueMatchers[name] == nil {
-					valueMatchers[name] = make(map[string][]indexedMatchers)
-				}
-				var lms labelsMatchers
-				if len(ms.labelsMatchers) > 1 {
-					// Remove this matcher, keep the rest.
-					lms = slices.Delete(slices.Clone(ms.labelsMatchers), lmi, lmi+1)
-				}
-				for _, v := range sm {
-					valueMatchers[name][v] = append(valueMatchers[name][v], indexedMatchers{labelsMatchers: lms, index: ms.index})
-				}
-				// Remove this matcher from matchersForExactValue list, so we don't have to check it again.
-				matchersForExactValue = slices.Delete(matchersForExactValue, mi, mi+1)
-				// Don't increase mi, because we just removed an element.
-				removed = true
-				break
-			}
-			if !removed {
-				mi++
-			}
-		}
-	}
-	if len(matchersForExactValue) > 0 {
-		panic("this should not happen, we should've classified all matchers in the previous loop")
-	}
-
-	return &Matchers{
-		cfg:   matchersConfig,
-		names: names,
-		// singleLabelMatchers is a map of label names to matchers that match on that single label.
-		singleLabelMatchers: singleLabelMatchers,
-		// valueMatchers is a map of label names to a map of values to indexedMatchers that match on that label and value.
-		valueMatchers: valueMatchers,
-		// unoptimized matchers are the rest of the matchers that are not optimized.
-		unoptimized: unoptimized,
-	}
+	// Sort the result to make it deterministic for tests.
+	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
+	sort.Sort(asm)
+	return asm
 }
 
 type Matchers struct {
-	cfg                 CustomTrackersConfig
-	names               []string
-	unoptimized         []indexedMatchers
-	valueMatchers       map[string]map[string][]indexedMatchers
-	singleLabelMatchers map[string][]indexedMatchers
-}
-
-type indexedMatchers struct {
-	labelsMatchers
-	// index is the index of the matcher name in the matchers names slice.
-	index int
+	cfg      CustomTrackersConfig
+	names    []string
+	matchers []labelsMatchers
 }
 
 func (m *Matchers) MatcherNames() []string {
@@ -157,33 +37,13 @@ func (m *Matchers) Config() CustomTrackersConfig {
 
 // Matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
 func (m *Matchers) Matches(series labels.Labels) PreAllocDynamicSlice {
-	var matches PreAllocDynamicSlice
-	if len(m.valueMatchers)+len(m.singleLabelMatchers) > 0 {
-		series.Range(func(l labels.Label) {
-			// Are there valueMatchers for this label?
-			if vm, ok := m.valueMatchers[l.Name]; ok {
-				// Is this label value in the valueMatchers?
-				// Check all matchers for this label value.
-				for _, ms := range vm[l.Value] {
-					if ms.Matches(series) {
-						matches.Append(ms.index)
-					}
-				}
-			}
-			// Are there singleLabelMatchers for this label?
-			if slm, ok := m.singleLabelMatchers[l.Name]; ok {
-				// Check all singleLabelMatchers for this label.
-				for _, ms := range slm {
-					if ms.Matches(series) {
-						matches.Append(ms.index)
-					}
-				}
-			}
-		})
+	if len(m.matchers) == 0 {
+		return PreAllocDynamicSlice{}
 	}
-	for _, ms := range m.unoptimized {
-		if ms.Matches(series) {
-			matches.Append(ms.index)
+	var matches PreAllocDynamicSlice
+	for i, sm := range m.matchers {
+		if sm.Matches(series) {
+			matches.Append(i)
 		}
 	}
 	return matches
@@ -201,6 +61,19 @@ func (ms labelsMatchers) Matches(lset labels.Labels) bool {
 		}
 	}
 	return true
+}
+
+func (m *Matchers) Len() int {
+	return len(m.names)
+}
+
+func (m *Matchers) Less(i, j int) bool {
+	return m.names[i] < m.names[j]
+}
+
+func (m *Matchers) Swap(i, j int) {
+	m.names[i], m.names[j] = m.names[j], m.names[i]
+	m.matchers[i], m.matchers[j] = m.matchers[j], m.matchers[i]
 }
 
 func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
