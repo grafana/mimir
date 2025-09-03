@@ -63,7 +63,7 @@ type RemoteExecutionResponse interface {
 	// If any unread part of the response is not the evaluation info (eg. there is unread series data), this is skipped until the evaluation info or an error is found.
 	//
 	// GetEvaluationInfo can only be called before Close is called.
-	GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error)
+	GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error)
 
 	// Close cleans up any resources associated with this request.
 	//

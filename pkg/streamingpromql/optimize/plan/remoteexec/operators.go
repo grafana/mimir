@@ -16,7 +16,7 @@ func finalise(ctx context.Context, resp RemoteExecutionResponse, annos *annotati
 		return err
 	}
 
-	annos.Merge(newAnnos)
+	annos.Merge(*newAnnos)
 
 	if queryStats != nil {
 		// FIXME: once we support evaluating multiple nodes at once, only do this once per request, not once per requested node

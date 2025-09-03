@@ -117,7 +117,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 	return v, nil
 }
 
-func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -161,7 +161,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	return mqeData, nil
 }
 
-func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -244,7 +244,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	return r.stepData, nil
 }
 
-func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (annotations.Annotations, int64, error) {
+func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -294,7 +294,7 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 	return mqeSeries, nil
 }
 
-func readEvaluationCompleted(ctx context.Context, stream responseStream) (annotations.Annotations, int64, error) {
+func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, int64, error) {
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
 		resp, err := readNextEvaluateQueryResponse(ctx, stream)
@@ -312,7 +312,7 @@ func readEvaluationCompleted(ctx context.Context, stream responseStream) (annota
 	}
 }
 
-func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (annotations.Annotations, int64) {
+func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, int64) {
 	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
 
 	annos := make(annotations.Annotations, count)
@@ -324,7 +324,7 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 		annos.Add(newRemoteWarning(a))
 	}
 
-	return annos, msg.Stats.TotalSamples
+	return &annos, msg.Stats.TotalSamples
 }
 
 // Prometheus' annotations.Annotations type stores Golang error types and checks if they
