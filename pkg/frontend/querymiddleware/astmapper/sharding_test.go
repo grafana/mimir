@@ -601,8 +601,7 @@ func TestShardSummer(t *testing.T) {
 
 				willShardAllSelectors, err := summer.willShardAllSelectors(expr)
 				require.NoError(t, err)
-				hasVectorSelectors, err := AnyNode(expr, isVectorSelector)
-				require.NoError(t, err)
+				hasVectorSelectors := AnyNode(expr, isVectorSelector)
 
 				if hasVectorSelectors {
 					require.Equal(t, tt.expectedShardableQueries > 0, willShardAllSelectors, "willShardAllSelectors should be true if the expression is shardable, and false otherwise")

@@ -35,18 +35,18 @@ func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request Metri
 	}
 
 	forbiddenFunctionName := ""
-	containsInternalFunction, err := astmapper.AnyNode(expr, func(node parser.Node) (bool, error) {
+	containsInternalFunction := astmapper.AnyNode(expr, func(node parser.Node) bool {
 		call, isCall := node.(*parser.Call)
 		if !isCall {
-			return false, nil
+			return false
 		}
 
 		if b.functionsToBlock.Contains(call.Func.Name) {
 			forbiddenFunctionName = call.Func.Name
-			return true, nil
+			return true
 		}
 
-		return false, nil
+		return false
 	})
 
 	if err != nil {
