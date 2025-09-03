@@ -436,7 +436,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	wg.Wait()
 
 	// Compute the expected number of queries.
-	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 6
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
 	// +1 because the spun off subquery ends up as additional ingester queries.
