@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -866,7 +867,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 }
 
 func writeRuleGroupToFiles(t *testing.T, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
-	_, files, err := newMapper(path, logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
+	_, files, err := newMapper(path, afero.NewOsFs(), logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
 		"namespace": {rulespb.FromProto(&ruleGroup)},
 	})
 	require.NoError(t, err)

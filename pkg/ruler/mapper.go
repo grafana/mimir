@@ -29,10 +29,10 @@ type mapper struct {
 	logger log.Logger
 }
 
-func newMapper(path string, logger log.Logger) *mapper {
+func newMapper(path string, FS afero.Fs, logger log.Logger) *mapper {
 	m := &mapper{
 		Path:   path,
-		FS:     afero.NewOsFs(),
+		FS:     FS,
 		logger: logger,
 	}
 	m.cleanup()
