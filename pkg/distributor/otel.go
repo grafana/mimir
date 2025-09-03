@@ -241,6 +241,7 @@ func newOTLPParser(
 				}
 
 				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
+				// TODO: Read in chunks, checking context cancellation regularly.
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
 						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
@@ -252,6 +253,7 @@ func newOTLPParser(
 					return exportReq, 0, errors.Wrap(err, "read write request")
 				}
 
+				// TODO: Make unmarshalling dependent on context cancellation.
 				return exportReq, buf.Len(), exportReq.UnmarshalJSON(buf.Bytes())
 			}
 

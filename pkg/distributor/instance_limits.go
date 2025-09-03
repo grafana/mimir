@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"flag"
+	"time"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
@@ -28,6 +29,7 @@ type InstanceLimits struct {
 	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInflightPushRequests      int     `yaml:"max_inflight_push_requests" category:"advanced"`
 	MaxInflightPushRequestsBytes int     `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
+	OTLPParseTimeout             time.Duration
 }
 
 func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
