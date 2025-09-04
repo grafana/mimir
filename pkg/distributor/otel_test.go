@@ -1277,6 +1277,36 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=503 err="rpc error: code = Unknown desc = unexpected error calling some dependency"`},
 			expectedRetryHeader:   true,
 		},
+		{
+			name:       "Unexpected ingesterPushError",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "unexpected ingester error", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: false}
+			},
+			responseCode:          http.StatusBadRequest,
+			responseContentType:   pbContentType,
+			responseContentLength: 29,
+			errMessage:            "unexpected ingester error",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="unexpected ingester error" insight=true`},
+			expectedRetryHeader:   false,
+		},
+		{
+			// this one needs a fix because the returned status has an unknown field
+			name:       "Unexpected soft ingesterPushError",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "unexpected ingester error", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true}
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 29,
+			errMessage:            "unexpected ingester error",
+			expectedRetryHeader:   false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
