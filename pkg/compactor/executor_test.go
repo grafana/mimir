@@ -22,7 +22,24 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
+
+func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
+	return Config{
+		PlanningMode:                        PlanningMode,
+		SchedulerAddress:                    schedulerAddress,
+		SchedulerUpdateInterval:             20 * time.Second,
+		CompactionJobsOrder:                 CompactionOrderOldestFirst,
+		SchedulerMinBackoff:                 100 * time.Millisecond,
+		SchedulerMaxBackoff:                 1 * time.Second,
+		MaxOpeningBlocksConcurrency:         1,
+		MaxClosingBlocksConcurrency:         1,
+		SymbolsFlushersConcurrency:          1,
+		MaxBlockUploadValidationConcurrency: 1,
+		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+	}
+}
 
 // mockCompactorSchedulerClient implements CompactorSchedulerClient
 type mockCompactorSchedulerClient struct {

@@ -27,12 +27,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	testutil "github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -46,6 +40,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	testutil "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestConfig_ShouldSupportYamlConfig(t *testing.T) {
@@ -2405,24 +2406,4 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
-}
-
-func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
-	return Config{
-		PlanningMode:                        PlanningMode,
-		SchedulerAddress:                    schedulerAddress,
-		SchedulerUpdateInterval:             20 * time.Second,
-		CompactionJobsOrder:                 CompactionOrderOldestFirst,
-		SchedulerMinBackoff:                 100 * time.Millisecond,
-		SchedulerMaxBackoff:                 1 * time.Second,
-		MaxOpeningBlocksConcurrency:         1,
-		MaxClosingBlocksConcurrency:         1,
-		SymbolsFlushersConcurrency:          1,
-		MaxBlockUploadValidationConcurrency: 1,
-		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-	}
-}
-
-func mockBucketFactory(ctx context.Context) (objstore.Bucket, error) {
-	return &bucket.ClientMock{}, nil
 }
