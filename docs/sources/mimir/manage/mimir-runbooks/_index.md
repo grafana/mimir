@@ -1809,7 +1809,7 @@ This alert fires when the block-builder-scheduler reports pending jobs for an ex
 How it **works**:
 
 - The block-builder-scheduler watches the Kafka topic backlog.
-- The block-builder-scheduler divide the backlog into jobs, and distributes the jobs between the block-builder instances.
+- The block-builder-scheduler divides the backlog into jobs, and distributes the jobs between the block-builder instances.
 - A block-builder must consume records from a job's start offset to its end offset, and process the records into TSDB blocks.
 - When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
 - The jobs that haven't been yet assigned to any block-builder instance are reported as "pending" jobs.

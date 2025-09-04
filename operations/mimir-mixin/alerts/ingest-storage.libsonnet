@@ -233,7 +233,7 @@
           },
         },
 
-        // Alert if block-builder-scheduler reports pending jobs for extended period of time.
+        // Alert if block-builder scheduler reports pending jobs for extended period of time.
         {
           alert: $.alertName('BlockBuilderSchedulerPendingJobs'),
           'for': '40m',
