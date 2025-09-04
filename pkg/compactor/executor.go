@@ -22,17 +22,17 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// CompactionExecutor defines how compaction work is executed.
-type CompactionExecutor interface {
-	Run(ctx context.Context, compactor *MultitenantCompactor) error
-	CreateShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy
-	Stop() error
+// compactionExecutor defines how compaction work is executed.
+type compactionExecutor interface {
+	run(ctx context.Context, compactor *MultitenantCompactor) error
+	createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy
+	stop() error
 }
 
-// StandaloneExecutor runs compaction on a timer without external scheduling.
-type StandaloneExecutor struct{}
+// standaloneExecutor runs compaction on a timer without external scheduling.
+type standaloneExecutor struct{}
 
-func (e *StandaloneExecutor) Run(ctx context.Context, c *MultitenantCompactor) error {
+func (e *standaloneExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
 
 	c.compactUsers(ctx)
 
@@ -51,17 +51,17 @@ func (e *StandaloneExecutor) Run(ctx context.Context, c *MultitenantCompactor) e
 	}
 }
 
-func (e *StandaloneExecutor) Stop() error {
+func (e *standaloneExecutor) stop() error {
 	return nil
 }
 
-func (e *StandaloneExecutor) CreateShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
+func (e *standaloneExecutor) createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
 	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
 	return newSplitAndMergeShardingStrategy(allowedTenants, ring, ringLifecycler, cfgProvider)
 }
 
-// SchedulerExecutor requests compaction jobs from an external scheduler.
-type SchedulerExecutor struct {
+// schedulerExecutor requests compaction jobs from an external scheduler.
+type schedulerExecutor struct {
 	cfg                      Config
 	logger                   log.Logger
 	schedulerClient          schedulerpb.CompactorSchedulerClient
@@ -69,9 +69,9 @@ type SchedulerExecutor struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func NewSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*SchedulerExecutor, error) {
+func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
 
-	executor := &SchedulerExecutor{
+	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
@@ -88,7 +88,7 @@ func NewSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 	return executor, nil
 }
 
-func (e *SchedulerExecutor) Run(ctx context.Context, c *MultitenantCompactor) error {
+func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
 	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerAddress, "worker_id", workerID)
 
@@ -118,7 +118,7 @@ func (e *SchedulerExecutor) Run(ctx context.Context, c *MultitenantCompactor) er
 	}
 }
 
-func (e *SchedulerExecutor) Stop() error {
+func (e *schedulerExecutor) stop() error {
 	if e.schedulerConn != nil {
 		return e.schedulerConn.Close()
 	}
@@ -126,7 +126,7 @@ func (e *SchedulerExecutor) Stop() error {
 }
 
 // startJobStatusUpdater starts a goroutine that handles periodic keep-alive updates and final status updates
-func (e *SchedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, statusChan <-chan schedulerpb.UpdateType) {
+func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, statusChan <-chan schedulerpb.UpdateType) {
 	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
 	defer ticker.Stop()
 
@@ -149,7 +149,7 @@ func (e *SchedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 	return
 }
 
-func (e *SchedulerExecutor) CreateShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
+func (e *schedulerExecutor) createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
 	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
 	return &schedulerShardingStrategy{
 		allowedTenants: allowedTenants,
@@ -159,7 +159,7 @@ func (e *SchedulerExecutor) CreateShardingStrategy(enabledTenants, disabledTenan
 	}
 }
 
-func (e *SchedulerExecutor) makeSchedulerClient() (schedulerpb.CompactorSchedulerClient, *grpc.ClientConn, error) {
+func (e *schedulerExecutor) makeSchedulerClient() (schedulerpb.CompactorSchedulerClient, *grpc.ClientConn, error) {
 	invalidClusterReporter := util.NewInvalidClusterValidationReporter(e.cfg.GRPCClientConfig.ClusterValidation.Label, e.invalidClusterValidation, e.logger)
 	opts, err := e.cfg.GRPCClientConfig.DialOption(nil, nil, invalidClusterReporter)
 	if err != nil {
@@ -177,7 +177,7 @@ func (e *SchedulerExecutor) makeSchedulerClient() (schedulerpb.CompactorSchedule
 	return client, conn, nil
 }
 
-func (e *SchedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, workerID string) (bool, error) {
+func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, workerID string) (bool, error) {
 	req := &schedulerpb.LeaseJobRequest{
 		WorkerId: workerID,
 	}
@@ -216,14 +216,13 @@ func (e *SchedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	}
 
 	if jobType == schedulerpb.PLANNING {
-		var plannedJobs []*schedulerpb.PlannedCompactionJob
-
-		status, plannedJobs, err = e.executePlanningJob(ctx, c, resp.Spec)
-		if err != nil {
-			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
+		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
+		if planErr != nil {
+			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			statusChan <- schedulerpb.ABANDON
-			return true, err
+			return true, planErr
 		}
+
 		if err := e.sendPlannedJobs(ctx, resp.Spec, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			statusChan <- schedulerpb.ABANDON
@@ -234,7 +233,7 @@ func (e *SchedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	return true, nil
 }
 
-func (e *SchedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, updType schedulerpb.UpdateType) error {
+func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, updType schedulerpb.UpdateType) error {
 	switch spec.JobType {
 	case schedulerpb.COMPACTION:
 		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
@@ -247,14 +246,14 @@ func (e *SchedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerp
 	}
 }
 
-func (e *SchedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, error) {
+func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, error) {
 	return schedulerpb.COMPLETE, nil
 }
 
-func (e *SchedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, []*schedulerpb.PlannedCompactionJob, error) {
+func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) ([]*schedulerpb.PlannedCompactionJob, error) {
 	randBlockID, err := ulid.New(ulid.Timestamp(time.Unix(0, 0)), rand.Reader)
 	if err != nil {
-		return schedulerpb.ABANDON, nil, err
+		return nil, err
 	}
 
 	plannedJob := &schedulerpb.PlannedCompactionJob{
@@ -265,11 +264,11 @@ func (e *SchedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		},
 	}
 
-	return schedulerpb.COMPLETE, []*schedulerpb.PlannedCompactionJob{plannedJob}, nil
+	return []*schedulerpb.PlannedCompactionJob{plannedJob}, nil
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler.
-func (e *SchedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
 	req := &schedulerpb.PlannedJobsRequest{
 		Key: &schedulerpb.JobKey{
 			Id:    fmt.Sprintf("debug-planned-%s", spec.Tenant),

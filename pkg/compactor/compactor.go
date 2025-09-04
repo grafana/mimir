@@ -326,8 +326,8 @@ type MultitenantCompactor struct {
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
 
-	// CompactionExecutor used to set the planning and compaction strategy
-	executor CompactionExecutor
+	// compactionExecutor used to set the planning and compaction strategy
+	executor compactionExecutor
 
 	// Ring used for sharding compactions.
 	ringLifecycler         *ring.BasicLifecycler
@@ -541,12 +541,12 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
 	// will periodically request to lease a job from a scheduler service at cfg.SchedulerAddress.
 	if c.compactorCfg.PlanningMode == planningModeScheduler {
-		c.executor, err = NewSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
+		c.executor, err = newSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
 		if err != nil {
 			return errors.Wrap(err, "failed to create scheduler executor")
 		}
 	} else {
-		c.executor = &StandaloneExecutor{}
+		c.executor = &standaloneExecutor{}
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -592,7 +592,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	c.shardingStrategy = c.executor.CreateShardingStrategy(
+	c.shardingStrategy = c.executor.createShardingStrategy(
 		c.compactorCfg.EnabledTenants,
 		c.compactorCfg.DisabledTenants,
 		c.ring,
@@ -659,7 +659,7 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 
 	// Stop executor first to clean up any resources
 	if c.executor != nil {
-		if err := c.executor.Stop(); err != nil {
+		if err := c.executor.stop(); err != nil {
 			level.Warn(c.logger).Log("msg", "failed to stop executor", "err", err)
 		}
 	}
@@ -672,7 +672,7 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 }
 
 func (c *MultitenantCompactor) running(ctx context.Context) error {
-	return c.executor.Run(ctx, c)
+	return c.executor.run(ctx, c)
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {

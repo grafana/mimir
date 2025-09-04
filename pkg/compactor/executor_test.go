@@ -167,7 +167,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			bucketClient.MockIter("test-tenant/", []string{}, nil)
 			bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
 
-			schedulerExec := &SchedulerExecutor{
+			schedulerExec := &schedulerExecutor{
 				cfg:             cfg,
 				logger:          log.NewNopLogger(),
 				schedulerClient: mockSchedulerClient,
@@ -175,7 +175,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
-			c.shardingStrategy = schedulerExec.CreateShardingStrategy(
+			c.shardingStrategy = schedulerExec.createShardingStrategy(
 				c.compactorCfg.EnabledTenants,
 				c.compactorCfg.DisabledTenants,
 				c.ring,
@@ -297,12 +297,12 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
 
 			// Create a scheduler executor with the mock client
-			schedulerExec := &SchedulerExecutor{
+			schedulerExec := &schedulerExecutor{
 				cfg:             cfg,
 				logger:          c.logger,
 				schedulerClient: mockSchedulerClient,
 			}
-			c.shardingStrategy = schedulerExec.CreateShardingStrategy(
+			c.shardingStrategy = schedulerExec.createShardingStrategy(
 				c.compactorCfg.EnabledTenants,
 				c.compactorCfg.DisabledTenants,
 				c.ring,
@@ -312,7 +312,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- schedulerExec.Run(context.Background(), c)
+				errCh <- schedulerExec.run(context.Background(), c)
 			}()
 
 			require.Eventually(t, func() bool {
@@ -346,9 +346,9 @@ func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
 
 	require.NotNil(t, c.executor, "executor should be initialized after starting")
 
-	schedulerExec, ok := c.executor.(*SchedulerExecutor)
+	schedulerExec, ok := c.executor.(*schedulerExecutor)
 
-	require.True(t, ok, "executor should be a SchedulerExecutor in scheduler mode")
+	require.True(t, ok, "executor should be a schedulerExecutor in scheduler mode")
 	assert.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be initialized within executor")
 
 	assert.True(t, c.ringSubservices.IsHealthy())
@@ -379,8 +379,8 @@ func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 	assert.Equal(t, services.Running, c.State())
 
 	require.NotNil(t, c.executor, "executor should be initialized")
-	schedulerExec, ok := c.executor.(*SchedulerExecutor)
-	require.True(t, ok, "executor should be a SchedulerExecutor")
+	schedulerExec, ok := c.executor.(*schedulerExecutor)
+	require.True(t, ok, "executor should be a schedulerExecutor")
 	require.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be created")
 	require.NotNil(t, schedulerExec.schedulerConn, "scheduler connection should be created")
 
