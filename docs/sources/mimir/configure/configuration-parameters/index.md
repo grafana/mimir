@@ -5200,10 +5200,6 @@ sharding_ring:
 # CLI flag: -compactor.scheduler-update-interval
 [scheduler_update_interval: <duration> | default = 15s]
 
-# (experimental) Maximum duration for a compaction job before it is cancelled.
-# CLI flag: -compactor.scheduler-max-job-duration
-[scheduler_max_job_duration: <duration> | default = 6h]
-
 # (experimental) Minimum backoff time between scheduler job lease requests.
 # CLI flag: -compactor.scheduler-min-backoff
 [scheduler_min_backoff: <duration> | default = 100ms]

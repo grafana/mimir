@@ -11265,17 +11265,6 @@
         },
         {
           "kind": "field",
-          "name": "scheduler_max_job_duration",
-          "required": false,
-          "desc": "Maximum duration for a compaction job before it is cancelled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 21600000000000,
-          "fieldFlag": "compactor.scheduler-max-job-duration",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "scheduler_min_backoff",
           "required": false,
           "desc": "Minimum backoff time between scheduler job lease requests.",
