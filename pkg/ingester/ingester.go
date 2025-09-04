@@ -329,6 +329,10 @@ type Ingester struct {
 
 	tsdbMetrics *tsdbMetrics
 
+	// Per-user block statistics managers
+	blockStatsManagersMtx sync.RWMutex
+	blockStatsManagers    map[string]*blockStatsManager
+
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
 
@@ -387,6 +391,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
+		blockStatsManagers:  make(map[string]*blockStatsManager),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
@@ -982,6 +987,47 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
+// getBlockStatistics returns statistics for a specific block ULID
+func (i *Ingester) getBlockStatistics(ctx context.Context, blockID ulid.ULID) (index.Statistics, error) {
+	user, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
+	}
+
+	db := i.getTSDB(user)
+	if db == nil {
+		return nil, fmt.Errorf("no TSDB found for user %s", user)
+	}
+
+	// Get the block statistics manager for this user
+	statsManager := i.getBlockStatsManager(user)
+	return statsManager.GetBlockStatistics(blockID, db.db)
+}
+
+// getBlockStatsManager returns or creates a block statistics manager for the given user
+func (i *Ingester) getBlockStatsManager(userID string) *blockStatsManager {
+	i.blockStatsManagersMtx.RLock()
+	manager, exists := i.blockStatsManagers[userID]
+	i.blockStatsManagersMtx.RUnlock()
+
+	if exists {
+		return manager
+	}
+
+	// Create a new manager
+	i.blockStatsManagersMtx.Lock()
+	defer i.blockStatsManagersMtx.Unlock()
+
+	// Check again in case another goroutine created it
+	if manager, exists := i.blockStatsManagers[userID]; exists {
+		return manager
+	}
+
+	manager = newBlockStatsManager(userID, i.logger)
+	i.blockStatsManagers[userID] = manager
+	return manager
+}
+
 func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
 	user, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -993,6 +1039,185 @@ func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, er
 		return nil, fmt.Errorf("no TSDB found for user %s", user)
 	}
 	return db.Head().PostingsStats(), nil
+}
+
+// blockStatsManager manages per-block index statistics for a single user
+type blockStatsManager struct {
+	userID string
+	logger log.Logger
+
+	// Cache of block statistics by block ULID
+	blockStats map[ulid.ULID]index.Statistics
+	mutex      sync.RWMutex
+}
+
+// newBlockStatsManager creates a new manager for the given user
+func newBlockStatsManager(userID string, logger log.Logger) *blockStatsManager {
+	return &blockStatsManager{
+		userID:     userID,
+		logger:     logger,
+		blockStats: make(map[ulid.ULID]index.Statistics),
+	}
+}
+
+// GetBlockStatistics returns statistics for the given block, generating them if needed
+func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	// Check if we already have cached statistics
+	m.mutex.RLock()
+	stats, exists := m.blockStats[blockID]
+	m.mutex.RUnlock()
+
+	if exists {
+		return stats, nil
+	}
+
+	// Generate statistics for this block
+	stats, err := m.generateBlockStatistics(blockID, db)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the statistics
+	m.mutex.Lock()
+	m.blockStats[blockID] = stats
+	m.mutex.Unlock()
+
+	return stats, nil
+}
+
+// generateBlockStatistics creates statistics for a specific block using its IndexReader
+func (m *blockStatsManager) generateBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	// Find the block in the TSDB
+	blocks := db.Blocks()
+	var targetBlock tsdb.BlockReader
+
+	for _, block := range blocks {
+		if block.Meta().ULID == blockID {
+			targetBlock = block
+			break
+		}
+	}
+
+	if targetBlock == nil {
+		// Block not found - it might be the head block or recently deleted
+		// Fall back to head statistics
+		level.Debug(m.logger).Log("msg", "block not found, using head statistics", "user", m.userID, "block", blockID.String())
+		return db.Head().PostingsStats(), nil
+	}
+
+	// Open the block's index reader
+	indexReader, err := targetBlock.Index()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open index reader for block %s: %w", blockID.String(), err)
+	}
+	defer indexReader.Close()
+
+	// Generate statistics using IndexReader methods
+	return m.generateStatisticsFromIndexReader(indexReader, blockID)
+}
+
+// generateStatisticsFromIndexReader creates statistics using Postings and LabelNames methods
+func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
+	ctx := context.Background() // Use background context for statistics generation
+
+	// Get all label names
+	labelNames, err := r.LabelNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get label names for block %s: %w", blockID.String(), err)
+	}
+
+	// For now, create a simple statistics implementation
+	// This is a basic approach - we could make it more sophisticated later
+	totalSeries := 0
+	labelValueCounts := make(map[string]int)
+
+	// Process each label name
+	for _, labelName := range labelNames {
+		// Get all values for this label
+		labelValues, err := r.LabelValues(ctx, labelName, nil)
+		if err != nil {
+			level.Warn(m.logger).Log("msg", "failed to get label values, skipping", "user", m.userID, "block", blockID.String(), "label", labelName, "err", err)
+			continue
+		}
+
+		labelValueCounts[labelName] = len(labelValues)
+
+		// Count postings for a few sample values to estimate series count
+		// We'll sample the first few values to get a rough estimate
+		sampleCount := 0
+		maxSamples := min(5, len(labelValues)) // Sample at most 5 values
+
+		for i := 0; i < maxSamples; i++ {
+			postings, err := r.Postings(ctx, labelName, labelValues[i])
+			if err != nil {
+				continue // Skip on error
+			}
+
+			// Count the postings
+			count := 0
+			for postings.Next() {
+				count++
+			}
+			if err := postings.Err(); err != nil {
+				continue // Skip on error
+			}
+			sampleCount += count
+		}
+
+		// Estimate total series for this label (rough approximation)
+		if maxSamples > 0 {
+			avgPerValue := sampleCount / maxSamples
+			estimatedTotal := avgPerValue * len(labelValues)
+			if estimatedTotal > totalSeries {
+				totalSeries = estimatedTotal
+			}
+		}
+	}
+
+	level.Debug(m.logger).Log("msg", "generated block statistics", "user", m.userID, "block", blockID.String(), "label_names", len(labelNames), "estimated_series", totalSeries)
+
+	// Create a basic statistics implementation
+	return &basicStatistics{
+		totalSeries:      totalSeries,
+		labelValueCounts: labelValueCounts,
+	}, nil
+}
+
+// basicStatistics implements index.Statistics interface with basic functionality
+type basicStatistics struct {
+	totalSeries      int
+	labelValueCounts map[string]int
+}
+
+func (s *basicStatistics) TotalSeries() uint64 {
+	return uint64(s.totalSeries)
+}
+
+func (s *basicStatistics) LabelValuesCount(ctx context.Context, labelName string) uint64 {
+	if count, exists := s.labelValueCounts[labelName]; exists {
+		return uint64(count)
+	}
+	return 0
+}
+
+func (s *basicStatistics) LabelValuesCardinality(ctx context.Context, labelName string, matchers ...string) uint64 {
+	// For simplicity, return the same as count (converted to uint64)
+	// This could be improved with actual cardinality estimation that considers matchers
+	if count, exists := s.labelValueCounts[labelName]; exists {
+		return uint64(count)
+	}
+	return 0
+}
+
+// blockStatsProvider provides block-specific statistics for index lookup planning.
+// It wraps the ingester and holds the specific block ULID.
+type blockStatsProvider struct {
+	ingester *Ingester
+	blockID  ulid.ULID
+}
+
+func (b *blockStatsProvider) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
+	return b.ingester.getBlockStatistics(ctx, b.blockID)
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -2754,14 +2979,26 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it uses the CostBasedPlanner,
-// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
+// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
+// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-// The function ignores the BlockReader parameter for now, maintaining current behavior.
 func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		planner := lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
-		return func(tsdb.BlockReader) index.LookupPlanner { return planner }
+		metrics := lookupplan.NewMetrics(r)
+		return func(blockReader tsdb.BlockReader) index.LookupPlanner {
+			if blockReader == nil {
+				// This is the head block - use the original behavior with head statistics
+				return lookupplan.NewCostBasedPlanner(metrics, i)
+			}
+
+			// For disk blocks, create a block-specific statistics provider
+			blockID := blockReader.Meta().ULID
+			blockProvider := &blockStatsProvider{
+				ingester: i,
+				blockID:  blockID,
+			}
+			return lookupplan.NewCostBasedPlanner(metrics, blockProvider)
+		}
 	}
 	return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 }
