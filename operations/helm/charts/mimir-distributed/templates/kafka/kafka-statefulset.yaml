@@ -49,6 +49,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
+      {{- with .dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: kafka
           image: "{{ .image.repository }}:{{ .image.tag }}"
