@@ -148,7 +148,6 @@ type Config struct {
 	PlanningMode            string            `yaml:"planning_mode" category:"experimental"`
 	SchedulerAddress        string            `yaml:"scheduler_address" category:"experimental"`
 	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
-	SchedulerMaxJobDuration time.Duration     `yaml:"scheduler_max_job_duration" category:"experimental"`
 	SchedulerMinBackoff     time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
 	SchedulerMaxBackoff     time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
 	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
@@ -177,7 +176,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.PlanningMode, "compactor.planning-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
 	f.StringVar(&cfg.SchedulerAddress, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
 	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
-	f.DurationVar(&cfg.SchedulerMaxJobDuration, "compactor.scheduler-max-job-duration", 6*time.Hour, "Maximum duration for a compaction job before it is cancelled.")
 	f.DurationVar(&cfg.SchedulerMinBackoff, "compactor.scheduler-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.SchedulerMaxBackoff, "compactor.scheduler-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
@@ -242,9 +240,6 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		}
 		if cfg.SchedulerUpdateInterval <= 0 {
 			return errInvalidSchedulerUpdateInterval
-		}
-		if cfg.SchedulerMaxJobDuration <= 0 {
-			return fmt.Errorf("scheduler max job duration must be positive")
 		}
 		if cfg.SchedulerMinBackoff <= 0 {
 			return fmt.Errorf("scheduler min backoff must be positive")
@@ -595,8 +590,13 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
+	c.shardingStrategy = c.executor.CreateShardingStrategy(
+		c.compactorCfg.EnabledTenants,
+		c.compactorCfg.DisabledTenants,
+		c.ring,
+		c.ringLifecycler,
+		c.cfgProvider,
+	)
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{

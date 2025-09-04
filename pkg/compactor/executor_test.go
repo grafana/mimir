@@ -22,7 +22,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // mockCompactorSchedulerClient implements CompactorSchedulerClient
@@ -59,11 +58,10 @@ func (m *mockCompactorSchedulerClient) UpdatePlanJob(ctx context.Context, in *sc
 }
 
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
+
 	testCases := map[string]struct {
 		setupMock           func(*mockCompactorSchedulerClient)
-		jobTimeout          time.Duration
 		expectedFinalStatus schedulerpb.UpdateType
-		expectError         bool
 	}{
 		"successful_job_sends_complete": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -80,9 +78,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 					return &schedulerpb.UpdateJobResponse{}, nil
 				}
 			},
-			jobTimeout:          5 * time.Second,
 			expectedFinalStatus: schedulerpb.COMPLETE,
-			expectError:         false,
 		},
 	}
 
@@ -91,9 +87,9 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			// Track first and last status updates
+			// Track first and last status updates. We wrap the test's UpdateJobFunc w. a new UpdateJobFunc
+			// that stores the first update message sent
 			var firstUpdate, lastUpdate schedulerpb.UpdateType
-
 			mockSchedulerClient.UpdateJobFunc = func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
 				if mockSchedulerClient.updateJobCallCount == 0 {
 					firstUpdate = in.Update
@@ -103,147 +99,41 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			}
 
 			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-			cfg.SchedulerMaxJobDuration = tc.jobTimeout
-			cfg.SchedulerUpdateInterval = 1 * time.Hour // long interval to avoid noise
+			cfg.SchedulerUpdateInterval = 1 * time.Hour
+			cfg.CompactionConcurrency = 1
 
 			bucketClient := &bucket.ClientMock{}
-			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
+			bucketClient.MockIter("test-tenant/", []string{}, nil)
+			bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
 
 			schedulerExec := &SchedulerExecutor{
 				cfg:             cfg,
-				logger:          c.logger,
+				logger:          log.NewNopLogger(),
 				schedulerClient: mockSchedulerClient,
 			}
 
-			ctx := context.Background()
-			gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")
+			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
+			c.bucketClient = bucketClient
+			c.shardingStrategy = schedulerExec.CreateShardingStrategy(
+				c.compactorCfg.EnabledTenants,
+				c.compactorCfg.DisabledTenants,
+				c.ring,
+				c.ringLifecycler,
+				c.cfgProvider,
+			)
 
-			// Verify error expectation
-			if tc.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			require.True(t, gotWork, "should return true indicating work was attempted")
+			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
+			require.NoError(t, err)
+			require.True(t, gotWork, "should return true to indicate a job was acquired from the scheduler")
 
-			// Give the status update goroutine time to send the final status
-			time.Sleep(200 * time.Millisecond)
+			// Wait for job status goroutine to send the final status
+			time.Sleep(100 * time.Millisecond)
 
-			// Verify status updates
-			require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "should have at least initial IN_PROGRESS and final status")
-			assert.Equal(t, schedulerpb.IN_PROGRESS, firstUpdate, "first status should be IN_PROGRESS")
-			assert.Equal(t, tc.expectedFinalStatus, lastUpdate, "final status should match expected")
+			require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "should have at least two status updates")
+			assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "first job status should be IN_PROGRESS")
+			assert.Equal(t, tc.expectedFinalStatus.String(), lastUpdate.String(), "final job status should match expected")
 		})
 	}
-}
-
-func TestSchedulerExecutor_ClientLifecycle(t *testing.T) {
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	inmem := objstore.NewInMemBucket()
-
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerAddress = "localhost:9095"
-	cfg.PlanningMode = planningModeScheduler
-	c, _, _, _, _ := prepare(t, cfg, inmem)
-
-	assert.Nil(t, c.executor, "executor should be nil before service start")
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-
-	require.NotNil(t, c.executor, "executor should be initialized after starting")
-	schedulerExec, ok := c.executor.(*SchedulerExecutor)
-
-	require.True(t, ok, "executor should be a SchedulerExecutor in scheduler mode")
-	assert.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be initialized within executor")
-
-	assert.True(t, c.ringSubservices.IsHealthy())
-	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
-
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
-	assert.Equal(t, schedulerExec.schedulerConn.GetState(), connectivity.Shutdown)
-}
-
-func TestSchedulerExecutor_StartupWithUnreachableScheduler(t *testing.T) {
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	inmem := objstore.NewInMemBucket()
-
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerAddress = "unreachable-scheduler:9095"
-	cfg.PlanningMode = planningModeScheduler
-
-	c, _, _, _, _ := prepare(t, cfg, inmem)
-
-	// Starting should succeed if a valid cfg.SchedulerAddress string is passed, do not Dial w. block
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c), "compactor should start even when scheduler is unreachable")
-	assert.Equal(t, services.Running, c.State())
-
-	require.NotNil(t, c.executor, "executor should be initialized")
-	schedulerExec, ok := c.executor.(*SchedulerExecutor)
-	require.True(t, ok, "executor should be a SchedulerExecutor")
-	require.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be created")
-	require.NotNil(t, schedulerExec.schedulerConn, "scheduler connection should be created")
-
-	// Check RPC calls fail due to unreachable scheduler
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	_, err := schedulerExec.schedulerClient.LeaseJob(ctx, &schedulerpb.LeaseJobRequest{WorkerId: "test"})
-	assert.Error(t, err, "RPC calls should fail when scheduler is unreachable")
-
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
-}
-
-func TestSchedulerExecutor_RPCFailureHandling(t *testing.T) {
-	mockSchedulerClient := &mockCompactorSchedulerClient{
-		LeaseJobFunc: func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
-			return nil, errors.New("scheduler unavailable")
-		},
-	}
-
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerAddress = "localhost:9095"
-	cfg.PlanningMode = planningModeScheduler
-
-	inmem := objstore.NewInMemBucket()
-	c, _, _, _, _ := prepare(t, cfg, inmem)
-
-	reg := prometheus.NewPedanticRegistry()
-	c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
-
-	schedulerExec := &SchedulerExecutor{
-		cfg:             cfg,
-		logger:          c.logger,
-		schedulerClient: mockSchedulerClient,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- schedulerExec.Run(ctx, c)
-	}()
-	time.Sleep(time.Second)
-
-	// Verify client made lease attempts with backoff while scheduler was unavailable
-	mockSchedulerClient.mu.Lock()
-	leaseCallCount := mockSchedulerClient.leaseJobCallCount
-	mockSchedulerClient.mu.Unlock()
-	assert.GreaterOrEqual(t, leaseCallCount, 3, "should have retried lease attempts with backoff")
 }
 
 func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
@@ -263,7 +153,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			expectedLeaseCalls:  3,
 			expectedUpdateCalls: 0,
 		},
-		"successful_job_execution": {
+		"successful_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
 					resp := &schedulerpb.LeaseJobResponse{
@@ -298,10 +188,15 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			cfg.ShardingRing.Common.KVStore.Mock = ringStore
 			cfg.SchedulerAddress = "localhost:9095"
 			cfg.PlanningMode = planningModeScheduler
-			cfg.SchedulerUpdateInterval = 1 * time.Hour // set SchedulerUpdateInterval long, only testing initial progress update
+			// set cfg.SchedulerUpdateInterval long, only testing initial progress update
+			cfg.SchedulerUpdateInterval = 1 * time.Hour
 
-			inmem := objstore.NewInMemBucket()
-			c, _, _, _, _ := prepare(t, cfg, inmem)
+			bucketClient := &bucket.ClientMock{}
+			bucketClient.MockIter("user-1/", []string{}, nil)
+			bucketClient.MockIter("user-1/markers/", []string{}, nil)
+
+			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
+			c.bucketClient = bucketClient
 
 			reg := prometheus.NewPedanticRegistry()
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
@@ -312,6 +207,13 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				logger:          c.logger,
 				schedulerClient: mockSchedulerClient,
 			}
+			c.shardingStrategy = schedulerExec.CreateShardingStrategy(
+				c.compactorCfg.EnabledTenants,
+				c.compactorCfg.DisabledTenants,
+				c.ring,
+				c.ringLifecycler,
+				c.cfgProvider,
+			)
 
 			errCh := make(chan error, 1)
 			go func() {
@@ -330,57 +232,68 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 	}
 }
 
-func TestSchedulerExecutor_JobLeasing(t *testing.T) {
-	tests := map[string]struct {
-		setupMock   func(*mockCompactorSchedulerClient)
-		expectedJob bool
-	}{
-		"valid_job_should_succeed": {
-			setupMock: func(mock *mockCompactorSchedulerClient) {
-				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
-					return &schedulerpb.LeaseJobResponse{
-						Key: &schedulerpb.JobKey{Id: "valid-job"},
-						Spec: &schedulerpb.JobSpec{
-							Tenant: "test-tenant",
-							Job:    &schedulerpb.CompactionJob{Split: false},
-						},
-					}, nil
-				}
-				mock.UpdateJobFunc = func(_ context.Context, _ *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
-					return &schedulerpb.UpdateJobResponse{}, nil
-				}
-			},
-			expectedJob: true,
-		},
-	}
+func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	for testName, tc := range tests {
-		t.Run(testName, func(t *testing.T) {
-			mockSchedulerClient := &mockCompactorSchedulerClient{}
-			tc.setupMock(mockSchedulerClient)
+	inmem := objstore.NewInMemBucket()
 
-			c, err := newMultitenantCompactor(
-				makeTestCompactorConfig(planningModeScheduler, "localhost:9095"),
-				mimir_tsdb.BlocksStorageConfig{},
-				nil,
-				log.NewNopLogger(),
-				prometheus.NewPedanticRegistry(),
-				mockBucketFactory,
-				nil,
-				nil,
-			)
-			require.NoError(t, err)
+	cfg := prepareConfig(t)
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+	cfg.SchedulerAddress = "localhost:9095"
+	cfg.PlanningMode = planningModeScheduler
+	c, _, _, _, _ := prepare(t, cfg, inmem)
 
-			// Create a scheduler executor with the mock client
-			schedulerExec := &SchedulerExecutor{
-				cfg:             c.compactorCfg,
-				logger:          c.logger,
-				schedulerClient: mockSchedulerClient,
-			}
+	assert.Nil(t, c.executor, "executor should be nil before service start")
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
-			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedJob, gotWork)
-		})
-	}
+	require.NotNil(t, c.executor, "executor should be initialized after starting")
+
+	schedulerExec, ok := c.executor.(*SchedulerExecutor)
+
+	require.True(t, ok, "executor should be a SchedulerExecutor in scheduler mode")
+	assert.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be initialized within executor")
+
+	assert.True(t, c.ringSubservices.IsHealthy())
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+	assert.Equal(t, schedulerExec.schedulerConn.GetState(), connectivity.Shutdown)
+}
+
+func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	inmem := objstore.NewInMemBucket()
+
+	cfg := prepareConfig(t)
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+	cfg.SchedulerAddress = "unreachable-scheduler:9095"
+	cfg.PlanningMode = planningModeScheduler
+
+	c, _, _, _, _ := prepare(t, cfg, inmem)
+
+	// Starting should succeed if a valid cfg.SchedulerAddress string is passed, do not Dial w. block
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c), "compactor should start even when scheduler is unreachable")
+	assert.Equal(t, services.Running, c.State())
+
+	require.NotNil(t, c.executor, "executor should be initialized")
+	schedulerExec, ok := c.executor.(*SchedulerExecutor)
+	require.True(t, ok, "executor should be a SchedulerExecutor")
+	require.NotNil(t, schedulerExec.schedulerClient, "scheduler client should be created")
+	require.NotNil(t, schedulerExec.schedulerConn, "scheduler connection should be created")
+
+	// Check LeaseJob call fails due to unreachable scheduler
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	_, err := schedulerExec.schedulerClient.LeaseJob(ctx, &schedulerpb.LeaseJobRequest{WorkerId: "test"})
+	assert.Error(t, err, "LeaseJob should fail when scheduler is unreachable")
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 }

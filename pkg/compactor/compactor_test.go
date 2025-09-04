@@ -2412,7 +2412,6 @@ func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 		PlanningMode:                        PlanningMode,
 		SchedulerAddress:                    schedulerAddress,
 		SchedulerUpdateInterval:             20 * time.Second,
-		SchedulerMaxJobDuration:             6 * time.Hour,
 		CompactionJobsOrder:                 CompactionOrderOldestFirst,
 		SchedulerMinBackoff:                 100 * time.Millisecond,
 		SchedulerMaxBackoff:                 1 * time.Second,
