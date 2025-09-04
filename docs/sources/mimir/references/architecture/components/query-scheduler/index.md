@@ -29,7 +29,7 @@ The following flow describes how a query moves through a Grafana Mimir cluster:
 
 Query-scheduler enables the scaling of query-frontends by moving queuing of requests to a separate component.
 The query-scheduler prevents queries that only require ingesters from being affected by degradation of store-gateways and vice versa.
-The query-scheduler ensures tenant fairness using a simple round-robin between all tenants with non-empty query request queues.
+The query-scheduler ensures tenant fairness using a simple round-robin between all tenants with active queries.
 
 ## Configuration
 
