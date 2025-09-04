@@ -18,7 +18,7 @@ cascade:
 menuTitle: Grafana Mimir
 title: Grafana Mimir documentation
 hero:
-  title: Grafana Mimir
+  title: Mimir
   level: 1
   image: /media/docs/mimir/GrafanaLogo_Mimir_icon.png
   width: 100

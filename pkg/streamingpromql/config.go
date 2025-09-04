@@ -7,11 +7,15 @@ import (
 	"math"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql"
 )
 
 type EngineOpts struct {
 	CommonOpts promql.EngineOpts `yaml:"-"`
+
+	ActiveQueryTracker QueryTracker `yaml:"-"`
+	Logger             log.Logger   `yaml:"-"`
 
 	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
 	// (indicating something was not returned to a pool).
@@ -51,6 +55,7 @@ func NewTestEngineOpts() EngineOpts {
 		},
 
 		Pedantic: true,
+		Logger:   log.NewNopLogger(),
 
 		EnablePruneToggles: true,
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -21,9 +22,10 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Evaluator struct {
-	root                       types.Operator
-	engine                     *Engine
-	activityTrackerDescription string
+	root               types.Operator
+	engine             *Engine
+	originalExpression string
+	timeRange          types.QueryTimeRange
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -32,16 +34,17 @@ type Evaluator struct {
 	cancel      context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, activityTrackerDescription string) (*Evaluator, error) {
+func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, originalExpression string) (*Evaluator, error) {
 	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Evaluator{
-		root:                       root,
-		engine:                     engine,
-		activityTrackerDescription: activityTrackerDescription,
+		root:               root,
+		engine:             engine,
+		originalExpression: originalExpression,
+		timeRange:          timeRange,
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
@@ -54,6 +57,9 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 // Evaluate will always call observer.EvaluationCompleted before returning nil.
 // It may return a non-nil error after calling observer.EvaluationCompleted if observer.EvaluationCompleted returned a non-nil error.
 func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) error {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.Evaluate")
+	defer span.Finish()
+
 	defer e.root.Close()
 
 	if e.engine.pedantic {
@@ -80,7 +86,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer cancel(errQueryFinished)
 
-	queryID, err := e.engine.activeQueryTracker.Insert(ctx, e.activityTrackerDescription)
+	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
 	if err != nil {
 		return err
 	}

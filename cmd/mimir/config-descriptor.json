@@ -10777,6 +10777,17 @@
             },
             {
               "kind": "field",
+              "name": "head_statistics_collection_frequency",
+              "required": false,
+              "desc": "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -10960,6 +10971,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_comparison_portion",
+              "required": false,
+              "desc": "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-comparison-portion",
+              "fieldType": "float",
               "fieldCategory": "experimental"
             }
           ],
@@ -13661,7 +13683,7 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
+              "desc": "Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.query-frontend.address",
@@ -13945,6 +13967,27 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "Timeout for establishing a connection to the query-frontend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler.query-frontend.http-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

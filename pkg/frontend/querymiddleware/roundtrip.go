@@ -288,8 +288,9 @@ func newQueryTripperware(
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
 
-		queryrange := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := NewLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		queryHandler := NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
+		queryrange := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, queryRangeMiddleware...)
+		instant := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, queryInstantMiddleware...)
 		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.

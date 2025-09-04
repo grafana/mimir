@@ -274,6 +274,10 @@ type Options struct {
 	// HeadPostingsForMatchersCacheMetrics holds the metrics tracked by PostingsForMatchers cache when querying the Head.
 	HeadPostingsForMatchersCacheMetrics *PostingsForMatchersCacheMetrics
 
+	// HeadStatisticsCollectionFrequency determines how often label name cardinality statistics should be calculated
+	// from postings in the Head. These statistics are used for optimization of query execution. 0 to disable.
+	HeadStatisticsCollectionFrequency time.Duration
+
 	// BlockPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache of each compacted block.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	BlockPostingsForMatchersCacheTTL time.Duration
@@ -1223,6 +1227,13 @@ func (db *DB) BlockMetas() []BlockMeta {
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
+	var headStatsUpdateTicker <-chan time.Time
+	if db.opts.HeadStatisticsCollectionFrequency > 0 {
+		t := time.NewTicker(db.opts.HeadStatisticsCollectionFrequency)
+		defer t.Stop()
+		headStatsUpdateTicker = t.C
+	}
+
 	backoff := time.Duration(0)
 
 	for {
@@ -1261,6 +1272,11 @@ func (db *DB) run(ctx context.Context) {
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
+
+		case <-headStatsUpdateTicker:
+			// If needed, this could instead be spun off concurrently as an optimization to allow
+			// head compaction to interrupt statistics collection (by taking the postings mutex).
+			db.head.updateHeadStatistics()
 		case <-db.stopc:
 			return
 		}

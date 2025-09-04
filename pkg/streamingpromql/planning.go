@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/tracing"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -19,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -35,15 +37,18 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
-	activeQueryTracker       promql.QueryTracker
+	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
@@ -57,7 +62,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableSkippingHistogramDecoding {
@@ -65,15 +70,19 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
-	return planner
+	return planner, nil
 }
 
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, error) {
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
@@ -85,7 +94,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
-	}
+	}, nil
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
@@ -110,7 +119,11 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
+	span, ctx := tracing.StartSpanFromContext(ctx, "QueryPlanner.NewQueryPlan")
+	defer span.Finish()
+	span.SetTag("query", qs)
+
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +137,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	if !timeRange.IsInstant {
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
+			return nil, apierror.Newf(apierror.TypeBadData, "query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
 
@@ -556,7 +569,10 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_HISTOGRAM_SUM,
 		// Label manipulation functions
 		functions.FUNCTION_LABEL_JOIN,
-		functions.FUNCTION_LABEL_REPLACE:
+		functions.FUNCTION_LABEL_REPLACE,
+		// Adaptive metrics reserved functions
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2:
 		return true
 
 	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)

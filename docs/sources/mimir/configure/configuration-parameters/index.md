@@ -3267,8 +3267,9 @@ ring:
 [query_stats_enabled: <boolean> | default = false]
 
 query_frontend:
-  # GRPC listen address of the query-frontend(s). Must be a DNS address
-  # (prefixed with dns:///) to enable client side load balancing.
+  # Can be either the GRPC listen address of the query-frontend(s) or the
+  # HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address
+  # (prefixed with dns:///) to enable GRPC client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
@@ -3277,6 +3278,13 @@ query_frontend:
   # The CLI flags prefix for this block configuration is:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
+
+  # Configures the HTTP client used to communicate between the rulers and
+  # query-frontends.
+  http_client_config:
+    # (advanced) Timeout for establishing a connection to the query-frontend.
+    # CLI flag: -ruler.query-frontend.http-client-config.connect-timeout
+    [connect_timeout: <duration> | default = 30s]
 
   # Format to use when retrieving query results from query-frontends. Supported
   # values: json, protobuf
@@ -5960,6 +5968,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
+  # (experimental) How frequently to collect head statistics, which are used in
+  # query execution optimization. 0 to disable.
+  # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
+  [head_statistics_collection_frequency: <duration> | default = 0s]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
@@ -6058,6 +6071,12 @@ tsdb:
   # performance.
   # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
   [index_lookup_planning_enabled: <boolean> | default = false]
+
+  # (experimental) Portion of queries where a mirrored chunk querier compares
+  # results with and without index lookup planning. Value between 0 (disabled)
+  # and 1 (all queries).
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-comparison-portion
+  [index_lookup_planning_comparison_portion: <float> | default = 0]
 ```
 
 ### compactor

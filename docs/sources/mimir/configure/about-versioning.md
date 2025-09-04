@@ -212,6 +212,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
+  - Index lookup planning comparison to validate planning correctness
+    - `-blocks-storage.tsdb.index-lookup-planning-enabled`
+    - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -238,7 +241,6 @@ The following features are currently experimental:
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
-- Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
   - `/api/v1/cardinality/active_series`
@@ -290,10 +292,10 @@ For details about what _deprecated_ means, see [Parameter lifecycle](../configur
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
-- Distributor's HA tracker timeouts can now be configured on a per-tenant basis. To support this, their configuration has moved from [`distributor.ha_tracker`](../configuration-parameters/#distributor) to [`limits`](../configuration-parameters/#limits) (deprecated since Mimir 2.17)
 - Tracing configuration through Jaeger `JAEGER_*` environment variables and Jaeger tracing exposition protocol (deprecated since Mimir 2.17)
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
+- etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.

@@ -807,6 +807,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.head-statistics-collection-frequency duration
+    	[experimental] How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.
+  -blocks-storage.tsdb.index-lookup-planning-comparison-portion float
+    	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning-enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -2900,7 +2904,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.protected-namespaces comma-separated-list-of-strings
     	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
   -ruler.query-frontend.address string
-    	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+    	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration
@@ -2947,6 +2951,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.http-client-config.connect-timeout duration
+    	Timeout for establishing a connection to the query-frontend. (default 30s)
   -ruler.query-frontend.max-retries-rate float
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string

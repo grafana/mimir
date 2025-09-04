@@ -17,6 +17,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// UserTSDBStats is used to access index.Statistics for a particular user.
+type UserTSDBStats interface {
+
+	// UserTSDBStatistics pulls a user from the given context, and returns statistics for that user's TSDB
+	UserTSDBStatistics(ctx context.Context) (index.Statistics, error)
+}
+
 type NoopPlanner struct{}
 
 func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
@@ -24,12 +31,11 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats Statistics
-
+	stats   UserTSDBStats
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics UserTSDBStats) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,
@@ -55,8 +61,12 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	var err error
-	allPlans, err = p.generatePlans(ctx, matchers)
+	statistics, err := p.stats.UserTSDBStatistics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving stattistics: %w", err)
+	}
+
+	allPlans, err = p.generatePlans(ctx, statistics, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating plans: %w", err)
 	}
@@ -67,8 +77,9 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	// Select the cheapest plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.
-	for _, p := range allPlans {
+	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
+			allPlans = allPlans[i:]
 			return p, nil
 		}
 	}
@@ -78,8 +89,8 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, matchers, p.stats)
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) ([]plan, error) {
+	noopPlan, err := newScanOnlyPlan(ctx, statistics, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
 	}

@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250818234656-8ff9c6532e85
+	github.com/grafana/dskit v0.0.0-20250828173137-de14cf923eeb
 	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -30,7 +30,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.28.1
-	github.com/prometheus/client_golang v1.23.1-0.20250825092754-3692d7faba80
+	github.com/prometheus/client_golang v1.23.1-0.20250826105716-84a4734fe73a
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.1-0.20250825082953-9deefbac4820
 	github.com/prometheus/prometheus v1.99.0
@@ -76,10 +76,10 @@ require (
 	github.com/prometheus/otlptranslator v0.0.2
 	github.com/prometheus/procfs v0.17.0
 	github.com/shirou/gopsutil/v4 v4.24.12
-	github.com/spf13/pflag v1.0.7
+	github.com/spf13/pflag v1.0.9
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
 	github.com/tjhop/slog-gokit v0.1.4
-	github.com/twmb/franz-go v1.19.4
+	github.com/twmb/franz-go v1.19.5
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250729165834-29dc44e616cd
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
@@ -96,7 +96,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.34.0
 	google.golang.org/api v0.239.0
-	google.golang.org/protobuf v1.36.7
+	google.golang.org/protobuf v1.36.8
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
@@ -175,6 +175,7 @@ require (
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/tylertreat/BoomFilters v0.0.0-20250630160909-db6545748bc4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -273,7 +274,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20250428181140-a78a5f9b0a0e
+	github.com/grafana/gomemcache v0.0.0-20250828162811-a96f6acee2fe
 	github.com/hashicorp/consul/api v1.32.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -340,13 +341,13 @@ require (
 	golang.org/x/tools v0.36.0 // indirect
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250826171959-ef028d996bc1
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250822071318-06bf0d9362b2
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250828210026-3d101a4e1e55
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

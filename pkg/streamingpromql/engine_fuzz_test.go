@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -88,7 +87,9 @@ func buildStorage(f *testing.F, dataFile string) storage.Queryable {
 func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *fuzzTestEnvironment {
 	opts := NewTestEngineOpts()
 
-	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(f, err)
+	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(f, err)
 
 	environment := &fuzzTestEnvironment{
