@@ -6006,7 +6006,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (deprecated) Maximum number of entries in the cache for postings for
+  # (experimental) Maximum number of entries in the cache for postings for
   # matchers in the Head and OOOHead when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
@@ -6027,7 +6027,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (deprecated) Maximum number of entries in the cache for postings for
+  # (experimental) Maximum number of entries in the cache for postings for
   # matchers in each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
   [block_postings_for_matchers_cache_size: <int> | default = 100]

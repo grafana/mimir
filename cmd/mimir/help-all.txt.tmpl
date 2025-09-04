@@ -770,7 +770,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
     	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
+    	[experimental] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
@@ -802,7 +802,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
     	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
+    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
