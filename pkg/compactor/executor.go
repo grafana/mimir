@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/ring"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -123,6 +125,30 @@ func (e *SchedulerExecutor) Stop() error {
 	return nil
 }
 
+// startJobStatusUpdater starts a goroutine that handles periodic keep-alive updates and final status updates
+func (e *SchedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, statusChan <-chan schedulerpb.UpdateType) {
+	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
+	defer ticker.Stop()
+
+	jobId := key.Id
+	jobTenant := spec.Tenant
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := e.updateJobStatus(ctx, key, spec, schedulerpb.IN_PROGRESS); err != nil {
+				level.Warn(e.logger).Log("msg", "failed to send status update", "job_id", jobId, "tenant", jobTenant, "status", schedulerpb.IN_PROGRESS, "err", err)
+			}
+		case status := <-statusChan:
+			if err := e.updateJobStatus(ctx, key, spec, status); err != nil {
+				level.Warn(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
+			}
+			return
+		}
+	}
+	return
+}
+
 func (e *SchedulerExecutor) CreateShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
 	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
 	return &schedulerShardingStrategy{
@@ -161,65 +187,101 @@ func (e *SchedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		return false, err
 	}
 
-	level.Info(e.logger).Log("msg", "leased job from scheduler", "job_id", resp.Key.Id, "tenant", resp.Spec.Tenant)
+	jobID := resp.Key.Id
+	jobTenant := resp.Spec.Tenant
+	jobType := resp.Spec.JobType
 
-	// TODO: Consider retry logic for status update failures. We currently only log a warning
-	// if the scheduler is unreachable. First update will be retried when ticker.C fires, but how
-	// to handle scheduler down for a final status update?
-	if err := e.updateJobStatus(ctx, resp.Key, resp.Spec.Tenant, schedulerpb.IN_PROGRESS); err != nil {
-		level.Warn(e.logger).Log("msg", "failed to mark job as in progress", "job_id", resp.Key.Id, "err", err)
+	// TODO: Consider retry logic for status update failures. We currently only log a warning if the scheduler is unreachable.
+	// First and intermediate status updates will be retried when ticker.C fires, what if scheduler is down for final status update?
+	if err := e.updateJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.IN_PROGRESS); err != nil {
+		level.Warn(e.logger).Log("msg", "failed to mark job as in progress", "job_id", jobID, "err", err)
 	}
 
 	statusCtx := context.WithoutCancel(ctx)
 	statusChan := make(chan schedulerpb.UpdateType, 1)
 
-	// Status updater goroutine handles both keep-alive status updates and reports final job status
-	// Use WithoutCancel to ensure status updates can succeed even during shutdown
-	go func() {
-		ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
-		defer ticker.Stop()
+	// start async status updater, handles renewing lease every cfg.SchedulerUpdateInterval
+	go e.startJobStatusUpdater(statusCtx, resp.Key, resp.Spec, statusChan)
 
-		for {
-			select {
-			case <-ticker.C:
-				if err := e.updateJobStatus(statusCtx, resp.Key, resp.Spec.Tenant, schedulerpb.IN_PROGRESS); err != nil {
-					level.Warn(e.logger).Log("msg", "failed to send status update", "job_id", resp.Key.Id, "tenant", resp.Spec.Tenant, "status", schedulerpb.IN_PROGRESS, "err", err)
-				}
-			case status := <-statusChan:
-				// TODO: Consider retry logic for status update failures.
-				if err := e.updateJobStatus(statusCtx, resp.Key, resp.Spec.Tenant, status); err != nil {
-					level.Warn(e.logger).Log("msg", "failed to send final status update", "job_id", resp.Key.Id, "tenant", resp.Spec.Tenant, "status", status, "err", err)
-				}
-				return
-			}
+	var status schedulerpb.UpdateType
+
+	if jobType == schedulerpb.COMPACTION {
+		status, err = e.executeCompactionJob(ctx, c, resp.Spec)
+		if err != nil {
+			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
+			statusChan <- schedulerpb.ABANDON
+			return true, err
 		}
-	}()
-
-	status, err := e.executeCompactionJob(ctx, c, resp.Spec)
-	if err != nil {
-		statusChan <- schedulerpb.ABANDON
-		return true, err
+		statusChan <- status
 	}
-	statusChan <- status
+
+	if jobType == schedulerpb.PLANNING {
+		var plannedJobs []*schedulerpb.PlannedCompactionJob
+
+		status, plannedJobs, err = e.executePlanningJob(ctx, c, resp.Spec)
+		if err != nil {
+			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
+			statusChan <- schedulerpb.ABANDON
+			return true, err
+		}
+		if err := e.sendPlannedJobs(ctx, resp.Spec, plannedJobs); err != nil {
+			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
+			statusChan <- schedulerpb.ABANDON
+			return true, err
+		}
+	}
+
 	return true, nil
 }
 
-func (e *SchedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, tenant string, updType schedulerpb.UpdateType) error {
-	req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: tenant, Update: updType}
-	_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
-	return err
+func (e *SchedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, updType schedulerpb.UpdateType) error {
+	switch spec.JobType {
+	case schedulerpb.COMPACTION:
+		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
+		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
+		return err
+	default:
+		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: updType}
+		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
+		return err
+	}
 }
 
-// executeCompactionJob executes the compaction work for a scheduled job.
-//
-// NOTE: This is a stubbed implementation. For the time being, assume jobs will only have a spec.Tenant set,
-// we will not differentiate between planning and compaction.
 func (e *SchedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, error) {
-
-	tenant := spec.Tenant
-	if err := c.compactUser(ctx, tenant); err != nil {
-		level.Error(e.logger).Log("msg", "compaction failed for tenant", "tenant", tenant, "err", err)
-		return schedulerpb.ABANDON, err
-	}
 	return schedulerpb.COMPLETE, nil
+}
+
+func (e *SchedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, spec *schedulerpb.JobSpec) (schedulerpb.UpdateType, []*schedulerpb.PlannedCompactionJob, error) {
+	randBlockID, err := ulid.New(ulid.Timestamp(time.Unix(0, 0)), rand.Reader)
+	if err != nil {
+		return schedulerpb.ABANDON, nil, err
+	}
+
+	plannedJob := &schedulerpb.PlannedCompactionJob{
+		Id: randBlockID.String(),
+		Job: &schedulerpb.CompactionJob{
+			BlockIds: [][]byte{[]byte(randBlockID.String())},
+			Split:    false,
+		},
+	}
+
+	return schedulerpb.COMPLETE, []*schedulerpb.PlannedCompactionJob{plannedJob}, nil
+}
+
+// sendPlannedJobs sends the planned compaction jobs back to the scheduler.
+func (e *SchedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
+	req := &schedulerpb.PlannedJobsRequest{
+		Key: &schedulerpb.JobKey{
+			Id:    fmt.Sprintf("debug-planned-%s", spec.Tenant),
+			Epoch: 0,
+		},
+		Jobs: plannedJobs,
+	}
+
+	_, err := e.schedulerClient.PlannedJobs(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

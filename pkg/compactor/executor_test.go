@@ -71,6 +71,9 @@ func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *sche
 }
 
 func (m *mockCompactorSchedulerClient) UpdatePlanJob(ctx context.Context, in *schedulerpb.UpdatePlanJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
+	m.mu.Lock()
+	m.updateJobCallCount++
+	m.mu.Unlock()
 	return m.UpdatePlanJobFunc(ctx, in)
 }
 
@@ -80,15 +83,12 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 		setupMock           func(*mockCompactorSchedulerClient)
 		expectedFinalStatus schedulerpb.UpdateType
 	}{
-		"successful_job_sends_complete": {
+		"successful_compaction_job_sends_complete": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
 					return &schedulerpb.LeaseJobResponse{
-						Key: &schedulerpb.JobKey{Id: "success-job"},
-						Spec: &schedulerpb.JobSpec{
-							Tenant: "test-tenant",
-							Job:    &schedulerpb.CompactionJob{Split: false},
-						},
+						Key:  &schedulerpb.JobKey{Id: "compaction-job"},
+						Spec: &schedulerpb.JobSpec{Tenant: "test-tenant", Job: &schedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-1")}}, JobType: schedulerpb.COMPACTION},
 					}, nil
 				}
 				mock.UpdateJobFunc = func(_ context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
@@ -97,6 +97,23 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			},
 			expectedFinalStatus: schedulerpb.COMPLETE,
 		},
+		"successful_planning_job_no_status_update": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+					return &schedulerpb.LeaseJobResponse{
+						Key:  &schedulerpb.JobKey{Id: "planning-job"},
+						Spec: &schedulerpb.JobSpec{Tenant: "test-tenant", Job: &schedulerpb.CompactionJob{}, JobType: schedulerpb.PLANNING},
+					}, nil
+				}
+				mock.UpdatePlanJobFunc = func(_ context.Context, in *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+					return &schedulerpb.UpdateJobResponse{}, nil
+				}
+				mock.PlannedJobsFunc = func(_ context.Context, in *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+					return &schedulerpb.PlannedJobsResponse{}, nil
+				}
+			},
+			expectedFinalStatus: schedulerpb.IN_PROGRESS,
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -104,18 +121,36 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			// Track first and last status updates. We wrap the test's UpdateJobFunc w. a new UpdateJobFunc
-			// that stores the first update message sent
 			var updateMu sync.Mutex
 			var firstUpdate, lastUpdate schedulerpb.UpdateType
-			mockSchedulerClient.UpdateJobFunc = func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+			var plannedJobsSent bool
+			trackUpdate := func(update schedulerpb.UpdateType) {
 				updateMu.Lock()
 				defer updateMu.Unlock()
 				if mockSchedulerClient.updateJobCallCount == 0 {
-					firstUpdate = in.Update
+					firstUpdate = update
 				}
-				lastUpdate = in.Update
-				return &schedulerpb.UpdateJobResponse{}, nil
+				lastUpdate = update
+			}
+
+			originalUpdateJobFunc := mockSchedulerClient.UpdateJobFunc
+			mockSchedulerClient.UpdateJobFunc = func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+				trackUpdate(in.Update)
+				return originalUpdateJobFunc(ctx, in)
+			}
+
+			originalUpdatePlanJobFunc := mockSchedulerClient.UpdatePlanJobFunc
+			mockSchedulerClient.UpdatePlanJobFunc = func(ctx context.Context, in *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+				trackUpdate(in.Update)
+				return originalUpdatePlanJobFunc(ctx, in)
+			}
+
+			originalPlannedJobsFunc := mockSchedulerClient.PlannedJobsFunc
+			mockSchedulerClient.PlannedJobsFunc = func(ctx context.Context, in *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+				updateMu.Lock()
+				plannedJobsSent = true
+				updateMu.Unlock()
+				return originalPlannedJobsFunc(ctx, in)
 			}
 
 			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
@@ -151,9 +186,20 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			updateMu.Lock()
 			defer updateMu.Unlock()
-			require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "should have at least two status updates")
-			assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "first job status should be IN_PROGRESS")
-			assert.Equal(t, tc.expectedFinalStatus.String(), lastUpdate.String(), "final job status should match expected")
+
+			// Check behavior based on test case
+			if tc.expectedFinalStatus == schedulerpb.IN_PROGRESS {
+				// Planning job: should only have initial IN_PROGRESS update, no final status
+				require.True(t, plannedJobsSent, "planning jobs should send PlannedJobs message")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "planning jobs should only send IN_PROGRESS status")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), lastUpdate.String(), "planning jobs should not send final status update")
+			} else {
+				// Compaction job: should have at least two status updates
+				require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "compaction jobs should have at least two status updates")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "first job status should be IN_PROGRESS")
+				assert.Equal(t, tc.expectedFinalStatus.String(), lastUpdate.String(), "final job status should match expected")
+				assert.False(t, plannedJobsSent, "compaction jobs should not send PlannedJobs message")
+			}
 		})
 	}
 }
@@ -175,14 +221,15 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			expectedLeaseCalls:  3,
 			expectedUpdateCalls: 0,
 		},
-		"successful_execution_should_not_backoff": {
+		"successful_compaction_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
 					resp := &schedulerpb.LeaseJobResponse{
-						Key: &schedulerpb.JobKey{Id: "test-job"},
+						Key: &schedulerpb.JobKey{Id: "compaction-job"},
 						Spec: &schedulerpb.JobSpec{
-							Tenant: "user-1",
-							Job:    &schedulerpb.CompactionJob{Split: true, BlockIds: IDs},
+							Tenant:  "user-1",
+							Job:     &schedulerpb.CompactionJob{Split: true, BlockIds: IDs},
+							JobType: schedulerpb.COMPACTION,
 						},
 					}
 					return resp, nil
@@ -193,6 +240,29 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectedLeaseCalls:  3,
 			expectedUpdateCalls: 6,
+		},
+		"successful_planning_execution_should_not_backoff": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.LeaseJobFunc = func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+					resp := &schedulerpb.LeaseJobResponse{
+						Key: &schedulerpb.JobKey{Id: "planning-job"},
+						Spec: &schedulerpb.JobSpec{
+							Tenant:  "user-1",
+							Job:     &schedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}}, // Empty BlockIds = planning
+							JobType: schedulerpb.PLANNING,
+						},
+					}
+					return resp, nil
+				}
+				mock.UpdatePlanJobFunc = func(_ context.Context, _ *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+					return &schedulerpb.UpdateJobResponse{}, nil
+				}
+				mock.PlannedJobsFunc = func(_ context.Context, _ *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+					return &schedulerpb.PlannedJobsResponse{}, nil
+				}
+			},
+			expectedLeaseCalls:  3,
+			expectedUpdateCalls: 3, // Only initial IN_PROGRESS updates, no final status for planning jobs
 		},
 	}
 

@@ -14,9 +14,15 @@ message JobKey {
   int64 epoch = 2;
 }
 
+enum JobType {
+  COMPACTION = 0;
+  PLANNING = 1;
+}
+
 message JobSpec {
   string tenant = 1;
   CompactionJob job = 2;
+  JobType job_type = 3;
 }
 
 message CompactionJob {
