@@ -89,8 +89,11 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			// Track first and last status updates. We wrap the test's UpdateJobFunc w. a new UpdateJobFunc
 			// that stores the first update message sent
+			var updateMu sync.Mutex
 			var firstUpdate, lastUpdate schedulerpb.UpdateType
 			mockSchedulerClient.UpdateJobFunc = func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+				updateMu.Lock()
+				defer updateMu.Unlock()
 				if mockSchedulerClient.updateJobCallCount == 0 {
 					firstUpdate = in.Update
 				}
@@ -129,6 +132,8 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			// Wait for job status goroutine to send the final status
 			time.Sleep(100 * time.Millisecond)
 
+			updateMu.Lock()
+			defer updateMu.Unlock()
 			require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "should have at least two status updates")
 			assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "first job status should be IN_PROGRESS")
 			assert.Equal(t, tc.expectedFinalStatus.String(), lastUpdate.String(), "final job status should match expected")
