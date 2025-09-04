@@ -18,10 +18,13 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+	boom "github.com/tylertreat/BoomFilters"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -144,6 +147,9 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache
+
+	// Block statistics management
+	blockStatsMgr *blockStatsManager
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -639,4 +645,265 @@ func (u *userTSDB) computeOwnedSeries() int {
 		}
 	})
 	return count
+}
+
+// blockStatsManager manages per-block index statistics for a single user TSDB
+type blockStatsManager struct {
+	userID string
+	logger log.Logger
+
+	// Cache of block statistics by block ULID
+	blockStats map[ulid.ULID]index.Statistics
+	mutex      sync.RWMutex
+
+	// Background cleanup tracking
+	lastKnownBlocks map[ulid.ULID]bool
+
+	// Metrics
+	metrics *blockStatsMetrics
+}
+
+// blockStatsMetrics holds metrics for block statistics operations
+type blockStatsMetrics struct {
+	cachedStats     prometheus.Gauge
+	generationTotal prometheus.Counter
+	generationTime  prometheus.Histogram
+}
+
+// newBlockStatsMetrics creates metrics for block statistics
+func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsMetrics {
+	return &blockStatsMetrics{
+		cachedStats: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_cached_total",
+			Help:        "Number of cached block statistics per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+		}),
+		generationTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_generation_total",
+			Help:        "Total number of block statistics generation operations per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+		}),
+		generationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_generation_duration_seconds",
+			Help:        "Time spent generating block statistics per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+			Buckets:     prometheus.DefBuckets,
+		}),
+	}
+}
+
+// newBlockStatsManager creates a new manager for the given user
+func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Registerer) *blockStatsManager {
+	return &blockStatsManager{
+		userID:          userID,
+		logger:          logger,
+		blockStats:      make(map[ulid.ULID]index.Statistics),
+		lastKnownBlocks: make(map[ulid.ULID]bool),
+		metrics:         newBlockStatsMetrics(reg, userID),
+	}
+}
+
+// GetBlockStatistics returns statistics for the given block, generating them if needed
+func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	// Check if we already have cached statistics
+	m.mutex.RLock()
+	stats, exists := m.blockStats[blockID]
+	m.mutex.RUnlock()
+
+	if exists {
+		return stats, nil
+	}
+
+	// Generate statistics for this block
+	stats, err := m.generateBlockStatistics(blockID, db)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the statistics
+	m.mutex.Lock()
+	m.blockStats[blockID] = stats
+	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
+	m.mutex.Unlock()
+
+	return stats, nil
+}
+
+// generateBlockStatistics creates statistics for a specific block using its IndexReader
+func (m *blockStatsManager) generateBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	start := time.Now()
+	defer func() {
+		m.metrics.generationTime.Observe(time.Since(start).Seconds())
+		m.metrics.generationTotal.Inc()
+	}()
+	// Find the block in the TSDB
+	blocks := db.Blocks()
+	var targetBlock tsdb.BlockReader
+	for _, block := range blocks {
+		if block.Meta().ULID == blockID {
+			targetBlock = block
+			break
+		}
+	}
+
+	if targetBlock == nil {
+		return nil, fmt.Errorf("block %s not found in TSDB", blockID)
+	}
+
+	// Get the index reader for this block
+	indexReader, err := targetBlock.Index()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index reader for block %s: %w", blockID, err)
+	}
+	defer indexReader.Close()
+
+	return m.generateStatisticsFromIndexReader(indexReader, blockID)
+}
+
+// generateStatisticsFromIndexReader creates statistics using count-min sketches
+func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
+	ctx := context.Background() // Use background context for statistics generation
+
+	// Use the "all series" postings to count total series
+	allPostingsName, allPostingsValue := index.AllPostingsKey()
+	allPostings, err := r.Postings(ctx, allPostingsName, allPostingsValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all postings for block %s: %w", blockID, err)
+	}
+
+	// Count total series by expanding the postings
+	var seriesCount uint64
+	for allPostings.Next() {
+		seriesCount++
+	}
+	if err := allPostings.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating postings for block %s: %w", blockID, err)
+	}
+
+	// Get all label names
+	labelNames, err := r.LabelNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get label names for block %s: %w", blockID, err)
+	}
+
+	// Build count-min sketches for each label
+	const countMinEpsilon = 0.005
+	labelSketches := make(map[string]*labelValuesSketch)
+
+	for _, labelName := range labelNames {
+		// Get all values for this label
+		values, err := r.LabelValues(ctx, labelName, nil)
+		if err != nil {
+			level.Warn(m.logger).Log("msg", "failed to get label values", "block", blockID, "label", labelName, "err", err)
+			continue
+		}
+
+		// Create count-min sketch for this label
+		sketch := &labelValuesSketch{
+			s:              boom.NewCountMinSketch(countMinEpsilon, 0.01),
+			distinctValues: uint64(len(values)),
+		}
+
+		// Add each value to the sketch
+		// For each value, we need to count how many series have that value
+		for _, value := range values {
+			// Get postings for this label name/value pair
+			postings, err := r.Postings(ctx, labelName, value)
+			if err != nil {
+				level.Warn(m.logger).Log("msg", "failed to get postings", "block", blockID, "label", labelName, "value", value, "err", err)
+				continue
+			}
+
+			// Count the number of series for this value
+			var seriesCountForValue uint64
+			for postings.Next() {
+				seriesCountForValue++
+			}
+			if err := postings.Err(); err != nil {
+				level.Warn(m.logger).Log("msg", "error iterating postings", "block", blockID, "label", labelName, "value", value, "err", err)
+				continue
+			}
+
+			// Add to the sketch
+			sketch.s.AddN([]byte(value), seriesCountForValue)
+		}
+
+		labelSketches[labelName] = sketch
+	}
+
+	// Create and return the statistics
+	return &blockStatistics{
+		totalSeries: seriesCount,
+		labelNames:  labelSketches,
+	}, nil
+}
+
+// syncWithBlocks updates the manager to reflect the current set of blocks
+// It removes statistics for blocks that no longer exist
+func (m *blockStatsManager) syncWithBlocks(currentBlocks []tsdb.BlockReader) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	// Build a set of current block ULIDs
+	currentBlockSet := make(map[ulid.ULID]bool)
+	for _, block := range currentBlocks {
+		currentBlockSet[block.Meta().ULID] = true
+	}
+
+	// Remove statistics for blocks that no longer exist
+	removedCount := 0
+	for blockID := range m.blockStats {
+		if !currentBlockSet[blockID] {
+			delete(m.blockStats, blockID)
+			removedCount++
+		}
+	}
+
+	// Update tracking and metrics
+	m.lastKnownBlocks = currentBlockSet
+	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
+
+	if removedCount > 0 {
+		level.Debug(m.logger).Log("msg", "cleaned up block statistics", "user", m.userID, "removed_blocks", removedCount, "total_cached", len(m.blockStats))
+	}
+}
+
+// blockStatistics implements index.Statistics interface using count-min sketches
+type blockStatistics struct {
+	totalSeries uint64
+	labelNames  map[string]*labelValuesSketch
+}
+
+type labelValuesSketch struct {
+	s              *boom.CountMinSketch
+	distinctValues uint64
+}
+
+func (s *blockStatistics) TotalSeries() uint64 {
+	return s.totalSeries
+}
+
+func (s *blockStatistics) LabelValuesCount(ctx context.Context, name string) uint64 {
+	sketch, ok := s.labelNames[name]
+	if !ok {
+		return 0
+	}
+	return sketch.distinctValues
+}
+
+func (s *blockStatistics) LabelValuesCardinality(ctx context.Context, name string, values ...string) uint64 {
+	sketch, ok := s.labelNames[name]
+	if !ok {
+		return 0
+	}
+
+	if len(values) == 0 {
+		return sketch.s.TotalCount()
+	}
+
+	totalCount := uint64(0)
+	for _, val := range values {
+		totalCount += sketch.s.Count([]byte(val))
+	}
+	return totalCount
 }
