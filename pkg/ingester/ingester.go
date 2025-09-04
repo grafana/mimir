@@ -332,6 +332,7 @@ type Ingester struct {
 	// Per-user block statistics managers
 	blockStatsManagersMtx sync.RWMutex
 	blockStatsManagers    map[string]*blockStatsManager
+	blockStatsRegisterer  prometheus.Registerer
 
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
@@ -393,16 +394,17 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
-		blockStatsManagers:  make(map[string]*blockStatsManager),
-		blockStatsSyncStop:  make(chan struct{}),
-		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer, logger),
-		shipperMetrics:      newShipperMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		tsdbs:                make(map[string]*userTSDB),
+		usersMetadata:        make(map[string]*userMetricsMetadata),
+		blockStatsManagers:   make(map[string]*blockStatsManager),
+		blockStatsRegisterer: registerer,
+		blockStatsSyncStop:   make(chan struct{}),
+		bucket:               bucketClient,
+		tsdbMetrics:          newTSDBMetrics(registerer, logger),
+		shipperMetrics:       newShipperMetrics(registerer),
+		forceCompactTrigger:  make(chan requestWithUsersAndCallback),
+		shipTrigger:          make(chan requestWithUsersAndCallback),
+		seriesHashCache:      hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
@@ -1034,7 +1036,7 @@ func (i *Ingester) getBlockStatsManager(userID string) *blockStatsManager {
 		return manager
 	}
 
-	manager = newBlockStatsManager(userID, i.logger)
+	manager = newBlockStatsManager(userID, i.logger, i.blockStatsRegisterer)
 	i.blockStatsManagers[userID] = manager
 	return manager
 }
@@ -1117,15 +1119,48 @@ type blockStatsManager struct {
 
 	// Background cleanup tracking
 	lastKnownBlocks map[ulid.ULID]bool
+
+	// Metrics
+	metrics *blockStatsMetrics
+}
+
+// blockStatsMetrics holds metrics for block statistics operations
+type blockStatsMetrics struct {
+	cachedStats     prometheus.Gauge
+	generationTotal prometheus.Counter
+	generationTime  prometheus.Histogram
+}
+
+// newBlockStatsMetrics creates metrics for block statistics
+func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsMetrics {
+	return &blockStatsMetrics{
+		cachedStats: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_cached_total",
+			Help:        "Number of cached block statistics per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+		}),
+		generationTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_generation_total",
+			Help:        "Total number of block statistics generation operations per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+		}),
+		generationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:        "cortex_ingester_tsdb_block_statistics_generation_duration_seconds",
+			Help:        "Time spent generating block statistics per user.",
+			ConstLabels: prometheus.Labels{"user": userID},
+			Buckets:     prometheus.DefBuckets,
+		}),
+	}
 }
 
 // newBlockStatsManager creates a new manager for the given user
-func newBlockStatsManager(userID string, logger log.Logger) *blockStatsManager {
+func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Registerer) *blockStatsManager {
 	return &blockStatsManager{
 		userID:          userID,
 		logger:          logger,
 		blockStats:      make(map[ulid.ULID]index.Statistics),
 		lastKnownBlocks: make(map[ulid.ULID]bool),
+		metrics:         newBlockStatsMetrics(reg, userID),
 	}
 }
 
@@ -1149,6 +1184,7 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (
 	// Cache the statistics
 	m.mutex.Lock()
 	m.blockStats[blockID] = stats
+	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
 	m.mutex.Unlock()
 
 	return stats, nil
@@ -1156,6 +1192,11 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (
 
 // generateBlockStatistics creates statistics for a specific block using its IndexReader
 func (m *blockStatsManager) generateBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	start := time.Now()
+	defer func() {
+		m.metrics.generationTime.Observe(time.Since(start).Seconds())
+		m.metrics.generationTotal.Inc()
+	}()
 	// Find the block in the TSDB
 	blocks := db.Blocks()
 	var targetBlock tsdb.BlockReader
@@ -1273,8 +1314,9 @@ func (m *blockStatsManager) syncWithBlocks(currentBlocks []tsdb.BlockReader) {
 		}
 	}
 
-	// Update tracking
+	// Update tracking and metrics
 	m.lastKnownBlocks = currentBlockSet
+	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
 
 	if removedCount > 0 {
 		level.Debug(m.logger).Log("msg", "cleaned up block statistics", "user", m.userID, "removed_blocks", removedCount, "total_cached", len(m.blockStats))
