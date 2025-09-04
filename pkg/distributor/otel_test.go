@@ -1681,6 +1681,18 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.Unavailable,
 			expectedSoft:       false,
 		},
+		"a soft ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 200 statuses": {
+			err:                newIngesterPushError(createSoftStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       true,
+		},
+		"a wrapped soft ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 200 statuses": {
+			err:                errors.Wrap(newIngesterPushError(createSoftStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID), "wrapped"),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       true,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
