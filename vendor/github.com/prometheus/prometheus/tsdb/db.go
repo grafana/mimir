@@ -316,6 +316,11 @@ type Options struct {
 
 	// IndexLookupPlanner can be optionally used when querying the index of blocks.
 	IndexLookupPlanner index.LookupPlanner
+
+	// IndexLookupPlannerFunc is a function to return index.LookupPlanner from a BlockReader.
+	// Similar to BlockChunkQuerierFunc, this allows per-block planner creation.
+	// If both IndexLookupPlanner and IndexLookupPlannerFunc are set, IndexLookupPlannerFunc takes precedence.
+	IndexLookupPlannerFunc func(b BlockReader) index.LookupPlanner
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -733,7 +738,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{}, nil, DefaultPostingsForMatchersCacheFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{}, nil, nil, DefaultPostingsForMatchersCacheFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -1108,6 +1113,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if opts.IndexLookupPlanner != nil {
 		headOpts.IndexLookupPlanner = opts.IndexLookupPlanner
 	}
+	// For now, IndexLookupPlannerFunc is only used for on-disk blocks, not for the head
+	// The head continues to use the regular IndexLookupPlanner (if provided)
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1762,7 +1769,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlanner, db.opts.SeriesHashCache, db.blockPostingsForMatchersCacheFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlanner, db.opts.IndexLookupPlannerFunc, db.opts.SeriesHashCache, db.blockPostingsForMatchersCacheFactory)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1862,7 +1869,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner, cache *hashcache.SeriesHashCache, postingsCacheFactory PostingsForMatchersCacheFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner, plannerFunc func(BlockReader) index.LookupPlanner, cache *hashcache.SeriesHashCache, postingsCacheFactory PostingsForMatchersCacheFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1884,7 +1891,22 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, planner, cacheProvider, postingsCacheFactory)
+			// Determine which planner to use: if plannerFunc is provided, we need to
+			// create a per-block planner; otherwise use the global planner
+			blockPlanner := planner
+			if plannerFunc != nil {
+				// First open the block temporarily to get a BlockReader for plannerFunc
+				tempBlock, err := OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, planner, cacheProvider, postingsCacheFactory)
+				if err != nil {
+					corrupted[meta.ULID] = err
+					continue
+				}
+				blockPlanner = plannerFunc(tempBlock)
+				// Close the temporary block since we'll reopen with the correct planner
+				tempBlock.Close()
+			}
+
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, blockPlanner, cacheProvider, postingsCacheFactory)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
