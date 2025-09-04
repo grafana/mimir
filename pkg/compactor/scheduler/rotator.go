@@ -5,10 +5,10 @@ package scheduler
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/grafana/dskit/services"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 )
