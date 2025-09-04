@@ -436,23 +436,35 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	wg.Wait()
 
 	// Compute the expected number of queries.
-	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 6
+	simpleQueryCount := float64(numUsers * numQueriesPerUser)
+	expectedQueryFrontendQueryCount := simpleQueryCount + 6
+	expectedMinimumQuerierQueryCount := simpleQueryCount +
+		31 + // Minimum number of split queries
+		1 + // Series query
+		1 + // Scalar query
+		1 + // Range vector query
+		1 // Subquery spin-off query
+
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
 	// +1 because the spun off subquery ends up as additional ingester queries.
-	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
+	expectedIngesterQueriesCount := simpleQueryCount + 2
+
 	if cfg.queryStatsEnabled {
-		expectedQueriesCount++
+		expectedQueryFrontendQueryCount++
+		expectedMinimumQuerierQueryCount++
 		expectedIngesterQueriesCount++
 	}
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_query_frontend_queries_total"))
+	expectedMaximumQuerierQueryCount := expectedMinimumQuerierQueryCount + 2 // Depending on what time of day it is, the long-range query and spun-off subquery can be split into another interval.
 
-	// The number of received requests may be greater than the query requests because include
-	// requests to /metrics and /ready.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"))
+
+	routeNames := []string{"prometheus_api_v1_series", "prometheus_api_v1_query", "prometheus_api_v1_query_range"}
+	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchRegexp, "route", strings.Join(routeNames, "|")))
+	require.NoErrorf(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(expectedQueryFrontendQueryCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected %v queries to query-frontend", expectedQueryFrontendQueryCount)
+	require.NoErrorf(t, querier.WaitSumMetricsWithOptions(e2e.Between(expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected between %v and %v queries to querier", expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount)
+	require.NoErrorf(t, querier.WaitSumMetricsWithOptions(e2e.Between(expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected between %v and %v queries to querier", expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount)
 
 	// Ensure query stats metrics are tracked only when enabled.
 	if cfg.queryStatsEnabled {
@@ -467,7 +479,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	// When the ingest storage is used, we expect that each query issued by this test was processed
 	// with strong read consistency.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_ingest_storage_strong_consistency_requests_total"))
 
 		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
 		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
