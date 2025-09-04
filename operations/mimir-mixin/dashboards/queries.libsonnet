@@ -183,7 +183,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.heatmapPanel('Query Expression Length') +
         $.queryPanel(
-          'cortex_query_frontend_queries_expression_bytes',
+          'sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval]))',
           'Bytes'
         ) +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } }
@@ -191,15 +191,15 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Query Expression Percentiles') +
         $.queryPanel(
-          'histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{namespace="$namespace"})',
+          'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           '99th Percentile'
         ) +
         $.queryPanel(
-          'histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{namespace="$namespace"})',
+          'histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           '90th Percentile'
         ) +
         $.queryPanel(
-          'histogram_avg(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"})',
+          'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           'Average'
         ) +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } }

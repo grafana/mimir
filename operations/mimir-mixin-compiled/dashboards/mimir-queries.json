@@ -811,7 +811,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "cortex_query_frontend_queries_expression_bytes",
+                        "expr": "sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "Bytes",
                         "legendLink": null
@@ -859,19 +859,19 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
                         "format": "time_series",
                         "legendFormat": "99th Percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.90, cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                        "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
                         "format": "time_series",
                         "legendFormat": "90th Percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_avg(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"})",
+                        "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "legendLink": null

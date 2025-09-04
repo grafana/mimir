@@ -161,7 +161,7 @@ local filename = 'mimir-top-tenants.json';
           },
           {
             user: { alias: 'User', unit: 'string' },
-            Value: { alias: 'Bytes (99th Percentile)', unit: 'bytes', noValue: '0' },
+            Value: { alias: 'Bytes (99th Percentile)', unit: 'bytes' },
           },
         )
       ),
