@@ -342,6 +342,10 @@ type Ingester struct {
 	// Timeout chosen for idle compactions.
 	compactionIdleTimeout time.Duration
 
+	// Background block statistics sync
+	blockStatsSyncTicker *time.Ticker
+	blockStatsSyncStop   chan struct{}
+
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
 
@@ -392,6 +396,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		blockStatsManagers:  make(map[string]*blockStatsManager),
+		blockStatsSyncStop:  make(chan struct{}),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
@@ -674,6 +679,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.circuitBreaker.push.activate()
 	}
 
+	// Start the background process to sync block statistics
+	i.startBlockStatsSyncProcess()
+
 	return nil
 }
 
@@ -685,6 +693,9 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
+	// Stop the background process to sync block statistics
+	i.stopBlockStatsSyncProcess()
+
 	if i.ingestReader != nil {
 		if err := services.StopAndAwaitTerminated(context.Background(), i.ingestReader); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to stop partition reader", "err", err)
@@ -1028,6 +1039,60 @@ func (i *Ingester) getBlockStatsManager(userID string) *blockStatsManager {
 	return manager
 }
 
+// startBlockStatsSyncProcess starts the background process to sync block statistics
+func (i *Ingester) startBlockStatsSyncProcess() {
+	// Sync every 5 minutes - this doesn't need to be very frequent
+	i.blockStatsSyncTicker = time.NewTicker(5 * time.Minute)
+
+	go func() {
+		defer i.blockStatsSyncTicker.Stop()
+
+		for {
+			select {
+			case <-i.blockStatsSyncStop:
+				level.Debug(i.logger).Log("msg", "stopping block statistics sync process")
+				return
+			case <-i.blockStatsSyncTicker.C:
+				i.syncAllBlockStatistics()
+			}
+		}
+	}()
+
+	level.Debug(i.logger).Log("msg", "started block statistics sync process")
+}
+
+// stopBlockStatsSyncProcess stops the background sync process
+func (i *Ingester) stopBlockStatsSyncProcess() {
+	if i.blockStatsSyncStop != nil {
+		close(i.blockStatsSyncStop)
+	}
+}
+
+// syncAllBlockStatistics syncs block statistics for all users
+func (i *Ingester) syncAllBlockStatistics() {
+	users := i.getTSDBUsers()
+
+	for _, userID := range users {
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		// Get the block statistics manager for this user
+		manager := i.getBlockStatsManager(userID)
+
+		// Get current blocks and sync the manager
+		blocks := db.db.Blocks()
+		blockReaders := make([]tsdb.BlockReader, len(blocks))
+		for i, block := range blocks {
+			blockReaders[i] = block
+		}
+		manager.syncWithBlocks(blockReaders)
+	}
+
+	level.Debug(i.logger).Log("msg", "synced block statistics for all users", "users", len(users))
+}
+
 func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
 	user, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1049,14 +1114,18 @@ type blockStatsManager struct {
 	// Cache of block statistics by block ULID
 	blockStats map[ulid.ULID]index.Statistics
 	mutex      sync.RWMutex
+
+	// Background cleanup tracking
+	lastKnownBlocks map[ulid.ULID]bool
 }
 
 // newBlockStatsManager creates a new manager for the given user
 func newBlockStatsManager(userID string, logger log.Logger) *blockStatsManager {
 	return &blockStatsManager{
-		userID:     userID,
-		logger:     logger,
-		blockStats: make(map[ulid.ULID]index.Statistics),
+		userID:          userID,
+		logger:          logger,
+		blockStats:      make(map[ulid.ULID]index.Statistics),
+		lastKnownBlocks: make(map[ulid.ULID]bool),
 	}
 }
 
@@ -1181,6 +1250,35 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 		totalSeries:      totalSeries,
 		labelValueCounts: labelValueCounts,
 	}, nil
+}
+
+// syncWithBlocks updates the manager to reflect the current set of blocks
+// It removes statistics for blocks that no longer exist
+func (m *blockStatsManager) syncWithBlocks(currentBlocks []tsdb.BlockReader) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	// Build set of current block IDs
+	currentBlockSet := make(map[ulid.ULID]bool)
+	for _, block := range currentBlocks {
+		currentBlockSet[block.Meta().ULID] = true
+	}
+
+	// Remove statistics for blocks that no longer exist
+	removedCount := 0
+	for blockID := range m.blockStats {
+		if !currentBlockSet[blockID] {
+			delete(m.blockStats, blockID)
+			removedCount++
+		}
+	}
+
+	// Update tracking
+	m.lastKnownBlocks = currentBlockSet
+
+	if removedCount > 0 {
+		level.Debug(m.logger).Log("msg", "cleaned up block statistics", "user", m.userID, "removed_blocks", removedCount, "total_cached", len(m.blockStats))
+	}
 }
 
 // basicStatistics implements index.Statistics interface with basic functionality
