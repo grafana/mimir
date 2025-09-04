@@ -146,7 +146,6 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 			return
 		}
 	}
-	return
 }
 
 func (e *schedulerExecutor) createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
