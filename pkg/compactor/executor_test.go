@@ -46,6 +46,9 @@ type mockCompactorSchedulerClient struct {
 	mu                 sync.Mutex
 	leaseJobCallCount  int
 	updateJobCallCount int
+	firstUpdate        schedulerpb.UpdateType
+	lastUpdate         schedulerpb.UpdateType
+	recvPlannedReq     bool
 	LeaseJobFunc       func(ctx context.Context, in *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error)
 	UpdateJobFunc      func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error)
 	PlannedJobsFunc    func(ctx context.Context, in *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error)
@@ -61,20 +64,55 @@ func (m *mockCompactorSchedulerClient) LeaseJob(ctx context.Context, in *schedul
 
 func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
 	m.mu.Lock()
+	if m.updateJobCallCount == 0 {
+		m.firstUpdate = in.Update
+	}
+	m.lastUpdate = in.Update
 	m.updateJobCallCount++
 	m.mu.Unlock()
 	return m.UpdateJobFunc(ctx, in)
 }
 
 func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *schedulerpb.PlannedJobsRequest, opts ...grpc.CallOption) (*schedulerpb.PlannedJobsResponse, error) {
+	m.mu.Lock()
+	m.recvPlannedReq = true
+	m.mu.Unlock()
 	return m.PlannedJobsFunc(ctx, in)
 }
 
 func (m *mockCompactorSchedulerClient) UpdatePlanJob(ctx context.Context, in *schedulerpb.UpdatePlanJobRequest, opts ...grpc.CallOption) (*schedulerpb.UpdateJobResponse, error) {
 	m.mu.Lock()
+	if m.updateJobCallCount == 0 {
+		m.firstUpdate = in.Update
+	}
+	m.lastUpdate = in.Update
 	m.updateJobCallCount++
 	m.mu.Unlock()
 	return m.UpdatePlanJobFunc(ctx, in)
+}
+
+func (m *mockCompactorSchedulerClient) GetFirstUpdate() schedulerpb.UpdateType {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.firstUpdate
+}
+
+func (m *mockCompactorSchedulerClient) GetLastUpdate() schedulerpb.UpdateType {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastUpdate
+}
+
+func (m *mockCompactorSchedulerClient) ReceivedPlannedRequest() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.recvPlannedReq
+}
+
+func (m *mockCompactorSchedulerClient) GetUpdateJobCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.updateJobCallCount
 }
 
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
@@ -121,38 +159,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			var updateMu sync.Mutex
-			var firstUpdate, lastUpdate schedulerpb.UpdateType
-			var plannedJobsSent bool
-			trackUpdate := func(update schedulerpb.UpdateType) {
-				updateMu.Lock()
-				defer updateMu.Unlock()
-				if mockSchedulerClient.updateJobCallCount == 0 {
-					firstUpdate = update
-				}
-				lastUpdate = update
-			}
-
-			originalUpdateJobFunc := mockSchedulerClient.UpdateJobFunc
-			mockSchedulerClient.UpdateJobFunc = func(ctx context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
-				trackUpdate(in.Update)
-				return originalUpdateJobFunc(ctx, in)
-			}
-
-			originalUpdatePlanJobFunc := mockSchedulerClient.UpdatePlanJobFunc
-			mockSchedulerClient.UpdatePlanJobFunc = func(ctx context.Context, in *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
-				trackUpdate(in.Update)
-				return originalUpdatePlanJobFunc(ctx, in)
-			}
-
-			originalPlannedJobsFunc := mockSchedulerClient.PlannedJobsFunc
-			mockSchedulerClient.PlannedJobsFunc = func(ctx context.Context, in *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
-				updateMu.Lock()
-				plannedJobsSent = true
-				updateMu.Unlock()
-				return originalPlannedJobsFunc(ctx, in)
-			}
-
 			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
 			cfg.CompactionConcurrency = 1
@@ -184,21 +190,18 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			// Wait for job status goroutine to send the final status
 			time.Sleep(100 * time.Millisecond)
 
-			updateMu.Lock()
-			defer updateMu.Unlock()
-
 			// Check behavior based on test case
 			if tc.expectedFinalStatus == schedulerpb.IN_PROGRESS {
 				// Planning job: should only have initial IN_PROGRESS update, no final status
-				require.True(t, plannedJobsSent, "planning jobs should send PlannedJobs message")
-				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "planning jobs should only send IN_PROGRESS status")
-				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), lastUpdate.String(), "planning jobs should not send final status update")
+				require.True(t, mockSchedulerClient.ReceivedPlannedRequest(), "planning jobs should send PlannedJobs message")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "planning jobs should only send IN_PROGRESS status")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetLastUpdate().String(), "planning jobs should not send final status update")
 			} else {
 				// Compaction job: should have at least two status updates
-				require.GreaterOrEqual(t, mockSchedulerClient.updateJobCallCount, 2, "compaction jobs should have at least two status updates")
-				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), firstUpdate.String(), "first job status should be IN_PROGRESS")
-				assert.Equal(t, tc.expectedFinalStatus.String(), lastUpdate.String(), "final job status should match expected")
-				assert.False(t, plannedJobsSent, "compaction jobs should not send PlannedJobs message")
+				require.GreaterOrEqual(t, mockSchedulerClient.GetUpdateJobCallCount(), 2, "compaction jobs should have at least two status updates")
+				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "first job status should be IN_PROGRESS")
+				assert.Equal(t, tc.expectedFinalStatus.String(), mockSchedulerClient.GetLastUpdate().String(), "final job status should match expected")
+				assert.False(t, mockSchedulerClient.ReceivedPlannedRequest(), "compaction jobs should not send PlannedJobs message")
 			}
 		})
 	}
