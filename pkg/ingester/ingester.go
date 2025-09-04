@@ -3008,10 +3008,10 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 
 	blockMeta := b.Meta()
 
-	// Check if block is older than 5 hours (5 * 60 * 60 * 1000 milliseconds)
-	// 1h in memory + 2h for compaction + 2h buffer for last compacted block
-	fiveHoursAgo := time.Now().UnixMilli() - (5 * 60 * 60 * 1000)
-	if blockMeta.MaxTime < fiveHoursAgo {
+	// Check if block is older than 3 hours.
+	// 1h in memory + 2h for compaction - only use stats for very recent (mostly in-memory) blocks
+	threeHoursAgo := time.Now().Add(-3 * time.Hour).UnixMilli()
+	if blockMeta.MaxTime < threeHoursAgo {
 		// For old blocks, use a querier with disabled lookup planning to avoid using outdated statistics
 		return &disabledPlanningChunkQuerier{
 			delegate: defaultQuerier,
