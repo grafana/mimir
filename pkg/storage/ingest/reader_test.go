@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -2151,13 +2152,28 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	)
 
 	consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+		var minOffset, maxOffset int64 = -1, -1
+		var recordCount int64
 		for rec := range records {
 			totalConsumedRecords.Inc()
+			recordCount++
+
+			if minOffset == -1 || rec.Offset < minOffset {
+				minOffset = rec.Offset
+			}
+			if maxOffset == -1 || rec.Offset > maxOffset {
+				maxOffset = rec.Offset
+			}
 
 			// Parse the record ID from the actual record data.
 			recordID, err := strconv.ParseInt(string(rec.Value[7:12]), 10, 64)
 			require.NoError(t, err)
 			consumedRecordIDs.Store(recordID, struct{}{})
+		}
+
+		if recordCount > 0 {
+			fmt.Printf("DEBUG: Consumer received batch - count: %d, offset range: [%d-%d]\n",
+				recordCount, minOffset, maxOffset)
 		}
 
 		return nil
@@ -2277,6 +2293,8 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 						return nil, fmt.Errorf("failed to make a copy of FetchResponse: %v", err), true
 					}
 
+					fmt.Printf("DEBUG: Test mock returning error for offset %d\n",
+						req.Topics[0].Partitions[0].FetchOffset)
 					resCopy.Topics[0].Partitions[0].ErrorCode = kerr.UnknownServerError.Code
 					res = resCopy
 				}
@@ -2321,6 +2339,25 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 			test.Poll(t, 60*time.Second, int64(totalProducedRecords), func() interface{} {
 				return totalConsumedRecords.Load()
 			})
+
+			// Check for gaps in consumed records (should detect the records lost due to errors)
+			fmt.Printf("DEBUG: Checking for missed records in metrics...\n")
+			missedRecordsMetric := &dto.Metric{}
+			metric, err := reg.Gather()
+			require.NoError(t, err)
+			for _, mf := range metric {
+				if mf.GetName() == "cortex_ingest_storage_reader_missed_records_total" {
+					if len(mf.GetMetric()) > 0 {
+						missedRecordsMetric = mf.GetMetric()[0]
+						break
+					}
+				}
+			}
+			missedRecords := int64(0)
+			if missedRecordsMetric.Counter != nil {
+				missedRecords = int64(missedRecordsMetric.Counter.GetValue())
+			}
+			fmt.Printf("DEBUG: Missed records count: %d\n", missedRecords)
 
 			// Ensure that the actual records content match the expected one.
 			for i := int64(0); i < totalProducedRecords; i++ {

@@ -317,7 +317,12 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 
 	// instrument only after we've done all pre-processing of records. We don't expect the set of records to change beyond this point.
 	instrumentGaps(findGapsInRecords(fetches, r.lastSeenOffset), r.metrics.missedRecords, r.logger)
-	r.lastSeenOffset = max(r.lastSeenOffset, lastOffset(fetches))
+	newLastSeenOffset := max(r.lastSeenOffset, lastOffset(fetches))
+	if newLastSeenOffset != r.lastSeenOffset {
+		fmt.Printf("DEBUG: Reader advancing lastSeenOffset from %d to %d (batch contained %d records)\n",
+			r.lastSeenOffset, newLastSeenOffset, fetches.NumRecords())
+	}
+	r.lastSeenOffset = newLastSeenOffset
 
 	err := r.consumeFetches(ctx, fetches)
 	if err != nil {
@@ -463,10 +468,21 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 
 func filterOutErrFetches(fetches kgo.Fetches) kgo.Fetches {
 	filtered := make(kgo.Fetches, 0, len(fetches))
+	totalRecords := fetches.NumRecords()
+	var droppedRecords int
+
 	for i, fetch := range fetches {
 		if !isErrFetch(fetch) {
 			filtered = append(filtered, fetches[i])
+		} else {
+			droppedRecords += kgo.Fetches{fetch}.NumRecords()
 		}
+	}
+
+	filteredRecords := filtered.NumRecords()
+	if droppedRecords > 0 {
+		fmt.Printf("DEBUG: filterOutErrFetches - Total records: %d, Filtered records: %d, Dropped records: %d\n",
+			totalRecords, filteredRecords, droppedRecords)
 	}
 
 	return filtered
@@ -476,6 +492,8 @@ func isErrFetch(fetch kgo.Fetch) bool {
 	for _, t := range fetch.Topics {
 		for _, p := range t.Partitions {
 			if p.Err != nil {
+				fmt.Printf("DEBUG: isErrFetch - Found error in partition %d: %v (records in this fetch: %d)\n",
+					p.Partition, p.Err, len(p.Records))
 				return true
 			}
 		}

@@ -85,13 +85,16 @@ type fetchWant struct {
 func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fetchWant {
 	estimatedBytesPerRecord = max(estimatedBytesPerRecord, 1)
 	estimatedNumberOfRecords := max(1, targetMaxBytes/estimatedBytesPerRecord)
-	return fetchWant{
+	fw := fetchWant{
 		startOffset:             offset,
 		endOffset:               offset + int64(estimatedNumberOfRecords),
 		targetMaxBytes:          targetMaxBytes,
 		estimatedBytesPerRecord: estimatedBytesPerRecord,
 		result:                  make(chan fetchResult),
 	}
+	fmt.Printf("DEBUG: fetchWantFrom - requesting offset range [%d-%d) (estimated %d records)\n",
+		fw.startOffset, fw.endOffset, estimatedNumberOfRecords)
+	return fw
 }
 
 // Next returns the fetchWant for the next numRecords starting from the last known offset.
@@ -442,6 +445,8 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 
 func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.Logger) {
 	for _, gap := range gaps {
+		fmt.Printf("DEBUG: Gap detected - missing offsets [%d-%d) (count: %d)\n",
+			gap.start, gap.end, gap.numOffsets())
 		level.Error(logger).Log(
 			"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
 			"records_offset_gap_start_inclusive", gap.start,
@@ -615,6 +620,8 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected partition ID in the Fetch response (expected: %d got %d)", expected, actual))
 	}
 	if code := resp.Topics[0].Partitions[0].ErrorCode; code != 0 {
+		fmt.Printf("DEBUG: Fetch failed - requested offset %d, error: %s\n",
+			startOffset, kerr.ErrorForCode(code).Error())
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
@@ -642,6 +649,17 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	partition.EachRecord(func(r *kgo.Record) {
 		spanlogger.FromContext(r.Context, log.NewNopLogger()).DebugLog("msg", "received record")
 	})
+
+	// Add debug logging for successful fetches
+	recordCount := len(partition.Records)
+	if recordCount > 0 {
+		minOffset := partition.Records[0].Offset
+		maxOffset := partition.Records[recordCount-1].Offset
+		fmt.Printf("DEBUG: Successful fetch - requested offset %d, got %d records, offset range [%d-%d]\n",
+			startOffset, recordCount, minOffset, maxOffset)
+	} else {
+		fmt.Printf("DEBUG: Successful fetch - requested offset %d, got 0 records\n", startOffset)
+	}
 
 	fetchedBytes := len(rawPartitionResp.RecordBatches)
 	if !r.trackCompressedBytes {
