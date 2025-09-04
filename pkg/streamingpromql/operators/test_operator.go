@@ -15,7 +15,7 @@ import (
 // TestOperator is an InstantVectorOperator used only in tests.
 type TestOperator struct {
 	Series                   []labels.Labels
-	DropName                 bool
+	DropName                 []bool
 	Data                     []types.InstantVectorSeriesData
 	Finalized                bool
 	Closed                   bool
@@ -45,7 +45,7 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 		if err != nil {
 			return nil, err
 		}
-		if t.DropName {
+		if t.DropName != nil && t.DropName[i] {
 			metadata[i].DropName = true
 		}
 	}

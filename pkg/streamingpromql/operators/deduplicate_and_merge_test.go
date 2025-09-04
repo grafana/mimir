@@ -16,22 +16,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type testCase struct {
-	inputSeries   []labels.Labels
-	inputData     []types.InstantVectorSeriesData
-	inputDropName bool
-
-	expectConflict       bool
-	expectedOutputSeries []labels.Labels
-	expectedOutputData   []types.InstantVectorSeriesData
-}
-
 func TestDeduplicateAndMerge(t *testing.T) {
 	// Most of the edge cases are already covered by the tests for MergeSeries and InstantVectorOperatorBuffer, so we focus
 	// on the logic unique to DeduplicateAndMerge: handling conflicts and correctly sorting the output series to minimise
 	// the number of buffered series.
 
-	testCases := map[string]testCase{
+	testCases := map[string]struct {
+		inputSeries           []labels.Labels
+		inputData             []types.InstantVectorSeriesData
+		inputDropName         []bool
+		runDelayedNameRemoval bool
+
+		expectConflict         bool
+		expectedOutputSeries   []labels.Labels
+		expectedOutputData     []types.InstantVectorSeriesData
+		expectedOutputDropName []bool
+	}{
 		"no series": {
 			inputSeries: []labels.Labels{},
 			inputData:   []types.InstantVectorSeriesData{},
@@ -156,18 +156,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 
 			expectConflict: true,
 		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			testDeduplicateAndMerge(t, false, testCase)
-		})
-	}
-}
-
-func TestDeduplicateAndMergeWithDelayedNameRemoval(t *testing.T) {
-	testCases := map[string]testCase{
-		"with dropName set": {
+		"with dropName set partially and runDelayedNameRemoval=false": {
 			inputSeries: []labels.Labels{
 				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
 				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
@@ -178,11 +167,49 @@ func TestDeduplicateAndMergeWithDelayedNameRemoval(t *testing.T) {
 				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
 				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
 			},
-			inputDropName: true,
+			inputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+			},
+			expectedOutputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			expectedOutputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+		},
+		"with dropName set partially and runDelayedNameRemoval=true": {
+			inputSeries: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+			},
+			inputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			inputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+			runDelayedNameRemoval: true,
 
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("foo", "1"),
-				labels.FromStrings("foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
 				labels.FromStrings("foo", "3"),
 			},
 			expectedOutputData: []types.InstantVectorSeriesData{
@@ -191,68 +218,41 @@ func TestDeduplicateAndMergeWithDelayedNameRemoval(t *testing.T) {
 				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
 			},
 		},
-		"without dropName set": {
-			inputSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
-			},
-			inputData: []types.InstantVectorSeriesData{
-				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
-				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
-				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
-			},
-
-			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
-			},
-			expectedOutputData: []types.InstantVectorSeriesData{
-				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
-				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
-				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
-			},
-		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			testDeduplicateAndMerge(t, true, testCase)
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, DropName: testCase.inputDropName, MemoryConsumptionTracker: memoryConsumptionTracker}
+			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, testCase.runDelayedNameRemoval)
+
+			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+
+			if !testCase.expectConflict {
+				require.Equal(t, testutils.LabelsToSeriesMetadataWithDropName(testCase.expectedOutputSeries, testCase.expectedOutputDropName), outputSeriesMetadata)
+			}
+
+			outputData := []types.InstantVectorSeriesData{}
+
+			for {
+				var nextSeries types.InstantVectorSeriesData
+				nextSeries, err = o.NextSeries(ctx)
+
+				if err != nil {
+					break
+				}
+
+				outputData = append(outputData, nextSeries)
+			}
+
+			if testCase.expectConflict {
+				require.EqualError(t, err, "vector cannot contain metrics with the same labelset")
+			} else {
+				require.Equal(t, types.EOS, err)
+				require.Equal(t, testCase.expectedOutputData, outputData)
+			}
 		})
-	}
-}
-
-func testDeduplicateAndMerge(t *testing.T, runDelayedNameRemoval bool, testCase testCase) {
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, DropName: testCase.inputDropName, MemoryConsumptionTracker: memoryConsumptionTracker}
-	o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, runDelayedNameRemoval)
-
-	outputSeriesMetadata, err := o.SeriesMetadata(ctx)
-	require.NoError(t, err)
-
-	if !testCase.expectConflict {
-		require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
-	}
-
-	outputData := []types.InstantVectorSeriesData{}
-
-	for {
-		var nextSeries types.InstantVectorSeriesData
-		nextSeries, err = o.NextSeries(ctx)
-
-		if err != nil {
-			break
-		}
-
-		outputData = append(outputData, nextSeries)
-	}
-
-	if testCase.expectConflict {
-		require.EqualError(t, err, "vector cannot contain metrics with the same labelset")
-	} else {
-		require.Equal(t, types.EOS, err)
-		require.Equal(t, testCase.expectedOutputData, outputData)
 	}
 }

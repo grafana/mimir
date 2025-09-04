@@ -225,12 +225,17 @@ func shouldWrapInDedupAndMerge(root planning.Node) bool {
 	case *core.NumberLiteral, *core.StringLiteral:
 		return false
 	case *core.BinaryExpression:
-		if node.VectorMatching == nil {
+		resL, err := node.LHS.ResultType()
+		if err == nil && resL != parser.ValueTypeScalar {
+			break
+		}
+		resR, err := node.RHS.ResultType()
+		if err == nil && resR == parser.ValueTypeScalar {
 			return false
 		}
 	case *core.FunctionCall:
-		fn, exists := parser.Functions[node.Function.PromQLName()]
-		if exists && fn.ReturnType == parser.ValueTypeScalar {
+		res, err := root.ResultType()
+		if err == nil && res == parser.ValueTypeScalar {
 			return false
 		}
 	}

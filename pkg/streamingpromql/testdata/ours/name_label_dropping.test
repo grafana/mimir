@@ -56,6 +56,9 @@ eval instant at 10m up unless rate(down[5m])
 eval instant at 10m up unless down
   up{foo="bar3"} 50
 
+eval instant at 10m up == 10
+  up{foo="bar"} 10
+
 eval instant at 10m label_replace(3 * {foo="bar"}, "__name__", "mul_$1", "__name__", "(.+)")
   mul_up{foo="bar"} 30
   mul_down{foo="bar"} 60
@@ -86,3 +89,8 @@ eval instant at 10m count_values("value_count", {foo="bar"})
 eval instant at 10m up / on(foo) group_right() down
   {foo="bar"} 0.5
   {foo="bar2"} 0.75
+
+eval instant at 10m sum by (__name__, foo) (down or rate(up[5m]))
+  down{foo="bar"} 20
+  down{foo="bar2"} 40
+  {foo="bar3"} 0.08333333333333334
