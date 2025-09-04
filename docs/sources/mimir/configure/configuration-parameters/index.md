@@ -4876,7 +4876,7 @@ blocked_requests:
 # (experimental) Enable labels query optimizations. When enabled, the
 # query-frontend may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
-[labels_query_optimizer_enabled: <boolean> | default = false]
+[labels_query_optimizer_enabled: <boolean> | default = true]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
