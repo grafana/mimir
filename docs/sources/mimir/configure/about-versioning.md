@@ -298,3 +298,4 @@ The following features or configuration parameters are currently deprecated and 
   - `evaluation_delay` field: use `query_offset` instead
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
+- etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.
