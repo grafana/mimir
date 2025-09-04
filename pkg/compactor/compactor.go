@@ -68,6 +68,8 @@ var (
 	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
 	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address, required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
+	errInvalidSchedulerMinBackoff                 = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
+	errInvalidSchedulerMaxBackoff                 = fmt.Errorf("invalid scheduler-max-backoff, must be greater than min backoff")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -242,10 +244,10 @@ func (cfg *Config) Validate(logger log.Logger) error {
 			return errInvalidSchedulerUpdateInterval
 		}
 		if cfg.SchedulerMinBackoff <= 0 {
-			return fmt.Errorf("scheduler min backoff must be positive")
+			return errInvalidSchedulerMinBackoff
 		}
 		if cfg.SchedulerMaxBackoff <= cfg.SchedulerMinBackoff {
-			return fmt.Errorf("scheduler max backoff must be greater than min backoff")
+			return errInvalidSchedulerMaxBackoff
 		}
 	}
 
@@ -537,7 +539,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
-	// will periodically request to lease a job from a central scheduler at cfg.SchedulerAddress.
+	// will periodically request to lease a job from a scheduler service at cfg.SchedulerAddress.
 	if c.compactorCfg.PlanningMode == planningModeScheduler {
 		c.executor, err = NewSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
 		if err != nil {
@@ -1052,6 +1054,34 @@ func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (
 	}
 
 	return rs.Instances[0].Addr == instanceAddr, nil
+}
+
+type schedulerShardingStrategy struct {
+	allowedTenants *util.AllowList
+	ring           *ring.Ring
+	ringLifecycler *ring.BasicLifecycler
+	configProvider ConfigProvider
+}
+
+func (s *schedulerShardingStrategy) compactorOwnsUser(userID string) (bool, error) {
+	return s.allowedTenants.IsAllowed(userID), nil
+}
+
+func (s *schedulerShardingStrategy) blocksCleanerOwnsUser(userID string) (bool, error) {
+	if !s.allowedTenants.IsAllowed(userID) {
+		return false, nil
+	}
+
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), userID)
+}
+
+func (s *schedulerShardingStrategy) ownJob(job *Job) (bool, error) {
+	return true, nil
+}
+
+func (s *schedulerShardingStrategy) instanceOwningJob(job *Job) (ring.InstanceDesc, error) {
+	return ring.InstanceDesc{}, nil
 }
 
 const compactorMetaPrefix = "compactor-meta-"

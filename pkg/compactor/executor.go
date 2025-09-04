@@ -67,34 +67,6 @@ type SchedulerExecutor struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-type schedulerShardingStrategy struct {
-	allowedTenants *util.AllowList
-	ring           *ring.Ring
-	ringLifecycler *ring.BasicLifecycler
-	configProvider ConfigProvider
-}
-
-func (s *schedulerShardingStrategy) compactorOwnsUser(userID string) (bool, error) {
-	return s.allowedTenants.IsAllowed(userID), nil
-}
-
-func (s *schedulerShardingStrategy) blocksCleanerOwnsUser(userID string) (bool, error) {
-	if !s.allowedTenants.IsAllowed(userID) {
-		return false, nil
-	}
-
-	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
-	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), userID)
-}
-
-func (s *schedulerShardingStrategy) ownJob(job *Job) (bool, error) {
-	return true, nil
-}
-
-func (s *schedulerShardingStrategy) instanceOwningJob(job *Job) (ring.InstanceDesc, error) {
-	return ring.InstanceDesc{}, nil
-}
-
 func NewSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*SchedulerExecutor, error) {
 
 	executor := &SchedulerExecutor{
