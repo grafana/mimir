@@ -780,9 +780,6 @@ check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
 	cd development/mimir-microservices-mode && make check
 
-check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-read-write-mode.
-	cd development/mimir-read-write-mode && make check
-
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker,stringlabels ./integration/...

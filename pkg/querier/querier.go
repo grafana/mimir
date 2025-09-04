@@ -190,7 +190,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
+		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

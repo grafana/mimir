@@ -87,10 +87,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	ctx := context.Background()
-	logger := log.NewNopLogger()
 	planner, err := streamingpromql.NewQueryPlanner(opts)
 	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, logger)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64) *prototypes.Any {
@@ -123,7 +122,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		return createQueryRequestForSpecificNode(expr, timeRange, -1)
 	}
 
-	dispatcher := NewDispatcher(logger, engine, storage)
+	dispatcher := NewDispatcher(opts.Logger, engine, storage)
 	startT := timestamp.Time(0)
 
 	testCases := map[string]struct {

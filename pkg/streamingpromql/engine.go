@@ -41,7 +41,7 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -90,7 +90,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
-		logger: logger,
+		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",

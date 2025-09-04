@@ -119,11 +119,6 @@ const (
 	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
 	Vault                            string = "vault"
 
-	// Write Read and Backend are the targets used when using the read-write deployment mode.
-	Write   string = "write"
-	Read    string = "read"
-	Backend string = "backend"
-
 	All string = "all"
 )
 
@@ -832,7 +827,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	case querier.PrometheusEngine:
 		eng = promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner, util_log.Logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -959,8 +954,8 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
-	// If the ruler is not configured and Mimir is running in monolithic or read-write mode, then we just skip starting the ruler.
-	if t.Cfg.isAnyModuleExplicitlyTargeted(Backend, All) && t.Cfg.RulerStorage.IsDefaults() {
+	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
+	if t.Cfg.isAnyModuleExplicitlyTargeted(All) && t.Cfg.RulerStorage.IsDefaults() {
 		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
@@ -1373,10 +1368,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(UsageTrackerPartitionRing, t.initUsageTrackerPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 
-	mm.RegisterModule(Write, nil)
-	mm.RegisterModule(Read, nil)
-	mm.RegisterModule(Backend, nil)
-
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
@@ -1417,10 +1408,6 @@ func (t *Mimir) setupModuleManager() error {
 		UsageTracker:                     {API, Overrides, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		UsageTrackerInstanceRing:         {MemberlistKV},
 		UsageTrackerPartitionRing:        {MemberlistKV, UsageTrackerInstanceRing},
-
-		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		Read:    {QueryFrontend, Querier},
-		Write:   {Distributor, Ingester},
 
 		All: {QueryFrontend, QueryScheduler, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
