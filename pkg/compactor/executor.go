@@ -69,6 +69,9 @@ type SchedulerExecutor struct {
 
 type schedulerShardingStrategy struct {
 	allowedTenants *util.AllowList
+	ring           *ring.Ring
+	ringLifecycler *ring.BasicLifecycler
+	configProvider ConfigProvider
 }
 
 func (s *schedulerShardingStrategy) compactorOwnsUser(userID string) (bool, error) {
@@ -76,7 +79,12 @@ func (s *schedulerShardingStrategy) compactorOwnsUser(userID string) (bool, erro
 }
 
 func (s *schedulerShardingStrategy) blocksCleanerOwnsUser(userID string) (bool, error) {
-	return s.allowedTenants.IsAllowed(userID), nil
+	if !s.allowedTenants.IsAllowed(userID) {
+		return false, nil
+	}
+
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), userID)
 }
 
 func (s *schedulerShardingStrategy) ownJob(job *Job) (bool, error) {
@@ -145,7 +153,12 @@ func (e *SchedulerExecutor) Stop() error {
 
 func (e *SchedulerExecutor) CreateShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
 	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
-	return &schedulerShardingStrategy{allowedTenants: allowedTenants}
+	return &schedulerShardingStrategy{
+		allowedTenants: allowedTenants,
+		ring:           ring,
+		ringLifecycler: ringLifecycler,
+		configProvider: cfgProvider,
+	}
 }
 
 func (e *SchedulerExecutor) makeSchedulerClient() (schedulerpb.CompactorSchedulerClient, *grpc.ClientConn, error) {
