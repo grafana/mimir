@@ -18,13 +18,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// UserTSDBStats is used to access index.Statistics for a particular user.
-type UserTSDBStats interface {
-
-	// UserTSDBStatistics pulls a user from the given context, and returns statistics for that user's TSDB
-	UserTSDBStatistics(ctx context.Context) (index.Statistics, error)
-}
-
 type NoopPlanner struct{}
 
 func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
@@ -32,11 +25,11 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats   UserTSDBStats
+	stats   index.Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics UserTSDBStats) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,
@@ -62,12 +55,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	statistics, err := p.stats.UserTSDBStatistics(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving statistics: %w", err)
-	}
-
-	allPlansUnordered, err := p.generatePlans(ctx, statistics, matchers)
+	allPlansUnordered, err := p.generatePlans(ctx, p.stats, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating plans: %w", err)
 	}
