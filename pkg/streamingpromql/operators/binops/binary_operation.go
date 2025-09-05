@@ -5,6 +5,7 @@ package binops
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -753,26 +754,34 @@ type QueryHints struct {
 	Include []string
 }
 
-func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) []*labels.Matcher {
+func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) types.Matchers {
 	var matchers []*labels.Matcher
 
 	for _, field := range hints.Include {
-		var values []string
+		values := make(map[string]struct{})
 
 		for _, series := range metadata {
-			// TODO: Abort if there are more than N values already? Matcher for every single
-			//  value probably isn't fast or useful.
 			val := series.Labels.Get(field)
 			if val != "" {
-				values = append(values, regexp.QuoteMeta(val))
+				values[regexp.QuoteMeta(val)] = struct{}{}
 			}
 		}
 
+		// TODO: Skip using this particular field if there are more than N values. Note
+		//  that since we're building a regex, we need to not include it at all if we exceed
+		//  the max number of values rather than include only a few matchers.
+
 		if len(values) != 0 {
+			ordered := make([]string, 0, len(values))
+			for k := range maps.Keys(values) {
+				ordered = append(ordered, k)
+			}
+
+			slices.Sort(ordered)
 			matchers = append(matchers, &labels.Matcher{
 				Type:  labels.MatchRegexp,
 				Name:  field,
-				Value: strings.Join(values, "|"),
+				Value: strings.Join(ordered, "|"),
 			})
 		}
 	}

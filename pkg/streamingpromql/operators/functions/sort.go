@@ -40,8 +40,8 @@ func NewSort(
 	}
 }
 
-func (s *Sort) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
-	allSeries, err := s.inner.SeriesMetadata(ctx, selector)
+func (s *Sort) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	allSeries, err := s.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
