@@ -56,7 +56,6 @@
 * [BUGFIX] Ruler: Fix ruler remotequerier request body consumption on retries. #12514
 * [BUGFIX] Block-builder: Fix a bug where a consumption error can cause a job to stay assigned to a worker for the remainder of its lifetime. #12522
 * [BUGFIX] Querier: Fix possible panic when evaluating a nested subquery where the parent has no steps. #12524
-* [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
 * [BUGFIX] Ingester: Fix a bug where prepare-instance-ring-downscale endpoint would return an error while compacting and not read-only. #12548
 
 ### Mixin
@@ -77,6 +76,13 @@
 
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+
+## 2.17.1
+
+### Grafana Mimir
+
+* [BUGFIX] Ingester: Fix a bug ingesters would get stuck in read-only mode after compactions. #12538
+* [BUGFIX] Update to Go v1.24.6 to address [CVE-2025-4674](https://www.cve.org/CVERecord?id=CVE-2025-4674), [CVE-2025-47907](https://www.cve.org/CVERecord?id=CVE-2025-47907). #12580
 
 ## 2.17.0
 
