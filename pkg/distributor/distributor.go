@@ -988,8 +988,12 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
+	newLabels, err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt)
+	if err != nil {
 		return err
+	}
+	if newLabels != nil {
+		ts.Labels = newLabels
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
