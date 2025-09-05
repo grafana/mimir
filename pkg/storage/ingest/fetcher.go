@@ -145,6 +145,10 @@ type fetchResult struct {
 }
 
 func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
+	// Check if fr.ctx is valid to avoid issues with zero-value fetchResult
+	if fr.ctx == nil {
+		return
+	}
 	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewNopLogger())
 
 	msg := "fetched records"
