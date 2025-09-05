@@ -74,7 +74,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node) *core.BinaryExpressionHints {
 	switch e := node.(type) {
 	case *core.BinaryExpression:
-		if e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
+		if e.VectorMatching != nil && e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
 			return &core.BinaryExpressionHints{
 				Include: slices.Clone(e.VectorMatching.MatchingLabels),
 			}

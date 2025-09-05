@@ -181,12 +181,12 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunction) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := h.f.LoadArguments(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx, selector)
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}

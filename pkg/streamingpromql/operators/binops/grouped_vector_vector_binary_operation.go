@@ -199,8 +199,8 @@ func NewGroupedVectorVectorBinaryOperation(
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, selector); err != nil {
+func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
 		if err := g.Finalize(ctx); err != nil {
@@ -241,12 +241,12 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 // loadSeriesMetadata loads series metadata from both sides of this operation.
 // It returns false if one side returned no series and that means there is no way for this operation to return any series.
 // (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, selectors *types.Selector) (bool, error) {
+func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, matchers types.Matchers) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, selectors)
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return false, err
 	}
@@ -256,7 +256,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, selectors)
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return false, err
 	}
