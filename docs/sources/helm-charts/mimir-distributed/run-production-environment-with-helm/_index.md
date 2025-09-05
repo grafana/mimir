@@ -42,11 +42,20 @@ Meet all the follow prerequisites:
   or OpenStack Swift. Alternatively, to deploy MinIO yourself, see [MinIO High
   Performance Object Storage](https://min.io/docs/minio/kubernetes/upstream/index.html).
 
-- {{% admonition type="note" %}}
+  {{% admonition type="note" %}}
   Like Amazon S3, the chosen object storage implementation must not create directories.
   Grafana Mimir doesn't have any notion of object storage directories, and so will leave
   empty directories behind when removing blocks. For example, if you use Azure Blob Storage, you must disable
   [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
+  {{% /admonition %}}
+
+- You have an external Apache Kafka or Kafka-compatible backend, that is different from the one
+  that `mimir-distributed` deploys. The Helm chart deploys a single-node Kafka cluster, which is intended for demo purposes and is not intended for production use.
+
+  The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled with Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with credentials of a production-grade Kafka cluster.
+
+  {{% admonition type="note" %}}
+  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart comes with a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with the ingest storage mode disabled.
   {{% /admonition %}}
 
 ## Plan capacity
@@ -202,6 +211,38 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
        #  storage:
        #    s3:
        #      bucket_name: gem-admin
+   ```
+
+## Configure Mimir to use Kafka-compatible backend
+
+1. Add the following YAML to your values file, if you are not using the classic architecture
+   preset that is [noted above](#before-you-begin):
+
+   ```yaml
+   kafka:
+     enabled: false
+   ```
+
+2. Prepare the credentials for the Kafka cluster.
+
+3. Add the Kafka-related configuration to the Helm chart values. Nest the object storage configuration under
+   `mimir.structuredConfig`.
+
+   ```yaml
+   mimir:
+     structuredConfig:
+       ingest_storage:
+         kafka:
+           # Address of Kafka broker to bootstrap the connection
+           address: kafka:9092
+           # (optional) SASL credentials provisioned for communications with clients within the cluster
+           sasl_username: "${KAFKA_SASL_USERNAME}" # This is a secret injected via an environment variable
+           sasl_password: "${KAFKA_SASL_PASSWORD}" # This is a secret injected via an environment variable
+           # Mimir will auto-create the topic on start up.
+           # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 1000 here arbitrary large to guarantee that.
+           topic: mimir-ingest
+           auto_create_topic_enabled: true
+           auto_create_topic_default_partitions: 1000
    ```
 
 ## Meet security compliance regulations
