@@ -15,13 +15,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -150,9 +147,6 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache
-
-	// Block statistics management
-	blockStatsMgr *blockStatsManager
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -185,12 +179,7 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
-	errs := multierror.MultiError{}
-	if u.blockStatsMgr != nil {
-		errs.Add(services.StopAndAwaitTerminated(context.Background(), u.blockStatsMgr))
-	}
-	errs.Add(u.db.Close())
-	return errs.Err()
+	return u.db.Close()
 }
 
 func (u *userTSDB) Compact() error {
@@ -655,161 +644,44 @@ func (u *userTSDB) computeOwnedSeries() int {
 	return count
 }
 
-// blockStatsManager manages per-block index statistics for a single user TSDB
-type blockStatsManager struct {
-	services.Service
-
+// blockStatisticsGenerator generates per-block index statistics on-demand (stateless)
+type blockStatisticsGenerator struct {
 	userID string
 	logger log.Logger
-	db     *tsdb.DB
-
-	// Cache of block statistics by block ULID
-	blockStats map[ulid.ULID]index.Statistics
-	mutex      sync.RWMutex
-
-	// Metrics
-	metrics *blockStatsMetrics
 }
 
-// blockStatsMetrics holds metrics for block statistics operations
-type blockStatsMetrics struct {
-	generationTotal prometheus.Counter
-	generationTime  prometheus.Histogram
-}
-
-// newBlockStatsMetrics creates metrics for block statistics
-func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsMetrics {
-	return &blockStatsMetrics{
-		generationTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_ingester_tsdb_block_statistics_generation_total",
-			Help:        "Total number of block statistics generation operations per user.",
-			ConstLabels: prometheus.Labels{"user": userID},
-		}),
-		generationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:        "cortex_ingester_tsdb_block_statistics_generation_duration_seconds",
-			Help:        "Time spent generating block statistics per user.",
-			ConstLabels: prometheus.Labels{"user": userID},
-			Buckets:     prometheus.DefBuckets,
-		}),
+// newBlockStatisticsGenerator creates a new stateless generator for the given user
+func newBlockStatisticsGenerator(userID string, logger log.Logger) *blockStatisticsGenerator {
+	return &blockStatisticsGenerator{
+		userID: userID,
+		logger: logger,
 	}
 }
 
-// newBlockStatsManager creates a new manager for the given user
-func newBlockStatsManager(userID string, logger log.Logger, db *tsdb.DB, reg prometheus.Registerer) *blockStatsManager {
-	m := &blockStatsManager{
-		userID:     userID,
-		logger:     logger,
-		db:         db,
-		blockStats: make(map[ulid.ULID]index.Statistics),
-		metrics:    newBlockStatsMetrics(reg, userID),
+// GenerateBlockStatistics generates statistics for a given block reader
+func (g *blockStatisticsGenerator) GenerateBlockStatistics(blockReader tsdb.BlockReader, userDB *userTSDB) index.Statistics {
+	// Check if this is the head block
+	if blockReader == userDB.Head() {
+		// For head block, use existing PostingsStats
+		return userDB.Head().PostingsStats()
 	}
 
-	// Create timer service that runs statistics gathering every 5 minutes
-	m.Service = services.NewTimerService(5*time.Minute, nil, m.ticker, nil)
-
-	return m
-}
-
-// GetBlockStatistics returns cached statistics for the given block, or error if not found
-func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statistics, error) {
-	// Check if we have cached statistics
-	m.mutex.RLock()
-	stats, exists := m.blockStats[blockID]
-	m.mutex.RUnlock()
-
-	if !exists {
-		return nil, fmt.Errorf("statistics not found for block %s", blockID.String())
-	}
-
-	return stats, nil
-}
-
-// getAllBlocks returns disk blocks and head block separately
-func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) ([]tsdb.BlockReader, tsdb.BlockReader) {
-	diskBlocks := db.Blocks()
-	head := db.Head()
-
-	// Convert disk blocks to BlockReader slice
-	blockReaders := make([]tsdb.BlockReader, len(diskBlocks))
-	for i, block := range diskBlocks {
-		blockReaders[i] = block
-	}
-
-	return blockReaders, head
-}
-
-// ticker is called periodically by the dskit timer service
-func (m *blockStatsManager) ticker(ctx context.Context) error {
-	if err := m.gatherStatistics(); err != nil {
-		level.Warn(m.logger).Log("msg", "failed to update block statistics", "user", m.userID, "err", err)
-		// Don't return the error to avoid stopping the timer service
+	// For disk blocks, generate statistics on-demand
+	indexReader, err := blockReader.Index()
+	if err != nil {
+		level.Warn(g.logger).Log("msg", "failed to get index reader for block", "block", blockReader.Meta().ULID.String(), "user", g.userID, "err", err)
 		return nil
 	}
-	return nil
-}
+	defer indexReader.Close()
 
-// gatherStatistics generates statistics for all existing blocks in the TSDB.
-// Only recomputes statistics for the head block, as disk block statistics are immutable once written.
-func (m *blockStatsManager) gatherStatistics() error {
-	diskBlocks, head := m.getAllBlocks(m.db)
-
-	// Create a new map to hold all the statistics so that we can discard blocks that have been deleted.
-	newBlockStats := make(map[ulid.ULID]index.Statistics, len(diskBlocks)+1)
-
-	// Handle disk blocks - reuse existing statistics if available, otherwise generate
-	for _, block := range diskBlocks {
-		blockID := block.Meta().ULID
-
-		// Check if we already have statistics for this disk block
-		m.mutex.RLock()
-		existingStats, hasExisting := m.blockStats[blockID]
-		m.mutex.RUnlock()
-
-		if hasExisting {
-			// Reuse existing statistics for immutable disk blocks
-			newBlockStats[blockID] = existingStats
-		} else {
-			// Generate statistics for new disk block
-			indexReader, err := block.Index()
-			if err != nil {
-				level.Warn(m.logger).Log("msg", "failed to get index reader for disk block", "block", blockID.String(), "err", err)
-				continue
-			}
-
-			stats, err := m.generateStatisticsFromIndexReader(indexReader, blockID)
-			indexReader.Close()
-			if err != nil {
-				level.Warn(m.logger).Log("msg", "failed to generate statistics for disk block", "block", blockID.String(), "err", err)
-				continue
-			}
-			newBlockStats[blockID] = stats
-		}
-	}
-
-	// Always recompute statistics for the head block since it changes
-	headID := head.Meta().ULID
-	headIndexReader, err := head.Index()
+	stats, err := generateStatisticsFromIndexReader(indexReader, blockReader.Meta().ULID)
 	if err != nil {
-		level.Warn(m.logger).Log("msg", "failed to get index reader for head block", "block", headID.String(), "err", err)
-	} else {
-		headStats, err := m.generateStatisticsFromIndexReader(headIndexReader, headID)
-		headIndexReader.Close()
-		if err != nil {
-			level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", headID.String(), "err", err)
-		} else {
-			newBlockStats[headID] = headStats
-		}
+		level.Warn(g.logger).Log("msg", "failed to generate statistics for block", "block", blockReader.Meta().ULID.String(), "user", g.userID, "err", err)
+		return nil
 	}
 
-	// Replace the entire map atomically
-	m.mutex.Lock()
-	m.blockStats = newBlockStats
-	m.mutex.Unlock()
-
-	return nil
+	return stats
 }
-
-// gatherStatistics creates statistics for a specific block using its IndexReader
 
 // countPostings counts the number of series in the given postings
 func countPostings(postings index.Postings) (uint64, error) {
@@ -821,7 +693,7 @@ func countPostings(postings index.Postings) (uint64, error) {
 }
 
 // generateStatisticsFromIndexReader creates statistics using count-min sketches
-func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
+func generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
 	ctx := context.Background()
 
 	// Use the "all series" postings to count total series

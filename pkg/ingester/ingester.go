@@ -983,16 +983,6 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
-// blockStatsManagerAdapter adapts the blockStatsManager to work with the lookup planner.
-type blockStatsManagerAdapter struct {
-	manager *blockStatsManager
-	blockID ulid.ULID
-}
-
-func (b *blockStatsManagerAdapter) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	return b.manager.GetBlockStatistics(b.blockID)
-}
-
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
@@ -2761,16 +2751,20 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 	}
 
 	metrics := lookupplan.NewMetrics(r)
+	generator := newBlockStatisticsGenerator(userID, i.logger)
+
 	return func(blockReader tsdb.BlockReader) index.LookupPlanner {
 		userDB := i.getTSDB(userID)
-		if userDB == nil || userDB.blockStatsMgr == nil {
+		if userDB == nil {
 			return lookupplan.NoopPlanner{}
 		}
 
-		return lookupplan.NewCostBasedPlanner(metrics, &blockStatsManagerAdapter{
-			manager: userDB.blockStatsMgr,
-			blockID: blockReader.Meta().ULID,
-		})
+		stats := generator.GenerateBlockStatistics(blockReader, userDB)
+		if stats == nil {
+			return lookupplan.NoopPlanner{}
+		}
+
+		return lookupplan.NewCostBasedPlanner(metrics, stats)
 	}
 }
 
@@ -2941,19 +2935,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
-
-	// Create and start the block statistics manager service for this user's TSDB
-	userDB.blockStatsMgr = newBlockStatsManager(userID, userLogger, db, tsdbPromReg)
-
-	// Generate initial statistics for all existing blocks
-	if err := userDB.blockStatsMgr.gatherStatistics(); err != nil {
-		level.Warn(userLogger).Log("msg", "failed to generate initial block statistics", "err", err)
-	}
-
-	// Start the dskit timer service for periodic statistics updates
-	if err := services.StartAndAwaitRunning(context.Background(), userDB.blockStatsMgr); err != nil {
-		level.Warn(userLogger).Log("msg", "failed to start block statistics service", "err", err)
-	}
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
