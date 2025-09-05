@@ -4475,6 +4475,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
+# (advanced) What to do for label values over the length limit. Options are:
+# 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full
+# value is added as a new label, named '<original label
+# name><label_value_length_over_limit_hash_suffix>'.
+# CLI flag: -validation.label-value-length-over-limit-strategy
+[label_value_length_over_limit_strategy: <int> | default =  ]
+
+# (advanced) When label_value_length_over_limit_hash_suffix is 'truncate' or
+# 'drop', for label values over the length limit, what suffix to use for the
+# label name that is added with the hash of the full label value.
+# CLI flag: -validation.label-value-length-over-limit-hash-suffix
+[label_value_length_over_limit_hash_suffix: <string> | default = "_hash"]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
