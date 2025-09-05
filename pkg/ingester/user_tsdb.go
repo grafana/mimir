@@ -656,9 +656,6 @@ type blockStatsManager struct {
 	blockStats map[ulid.ULID]index.Statistics
 	mutex      sync.RWMutex
 
-	// Background cleanup tracking
-	lastKnownBlocks map[ulid.ULID]bool
-
 	// Metrics
 	metrics *blockStatsMetrics
 }
@@ -689,10 +686,10 @@ func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsM
 // newBlockStatsManager creates a new manager for the given user
 func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Registerer) *blockStatsManager {
 	return &blockStatsManager{
-		logger:          logger,
-		blockStats:      make(map[ulid.ULID]index.Statistics),
-		lastKnownBlocks: make(map[ulid.ULID]bool),
-		metrics:         newBlockStatsMetrics(reg, userID),
+		userID:     userID,
+		logger:     logger,
+		blockStats: make(map[ulid.ULID]index.Statistics),
+		metrics:    newBlockStatsMetrics(reg, userID),
 	}
 }
 
