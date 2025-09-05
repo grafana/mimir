@@ -5571,7 +5571,7 @@
           "required": false,
           "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
