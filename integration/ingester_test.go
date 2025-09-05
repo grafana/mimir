@@ -811,7 +811,10 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 	}
 
 	pushPromRemoteWrite := func(client *e2emimir.Client) (*http.Response, error) { return client.Push(series) }
-	pushOTLP := func(client *e2emimir.Client) (*http.Response, error) { return client.PushOTLP(series, metadata) }
+	pushOTLP := func(client *e2emimir.Client) (*http.Response, error) {
+		res, _, err := client.PushOTLP(series, metadata)
+		return res, err
+	}
 
 	testCases := map[string]struct {
 		distributorClusterLabel           string

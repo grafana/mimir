@@ -63,6 +63,7 @@ enum ErrorCause {
 
 message ErrorDetails {
   ErrorCause Cause = 1;
+  bool Soft = 2;
 }
 
 message TimeSeries {

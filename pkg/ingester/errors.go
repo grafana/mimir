@@ -37,13 +37,18 @@ var (
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting ErrorWithStatus will be enriched by the details backed by
 // ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
+// Furthermore, iff the given error is a softError, the details' Soft field will be true.
 func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWithStatus {
 	var (
 		ingesterErr  ingesterError
+		softErr      softError
 		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
 		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
+		if errors.As(originalErr, &softErr) {
+			errorDetails.Soft = true
+		}
 	}
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
