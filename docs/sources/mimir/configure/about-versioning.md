@@ -236,7 +236,7 @@ The following features are currently experimental:
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
   - Labels query optimizer (`-query-frontend.labels-query-optimizer-enabled`)
-  - Rewriting of queries to optimize processing using a query frontend middleware: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
