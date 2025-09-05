@@ -1306,6 +1306,8 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
+	t.Cfg.ContinuousTest.IngestStorageRecordTest.Kafka = t.Cfg.IngestStorage.KafkaConfig
+
 	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
@@ -1313,6 +1315,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {
 		return t.ContinuousTestManager.Run(ctx)
