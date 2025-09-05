@@ -257,7 +257,7 @@ type ConcurrentFetchers struct {
 	partitionID int32
 	topicID     [16]byte
 	topicName   string
-	metrics     *readerMetrics
+	metrics     *ReaderMetrics
 	tracer      *kotel.Tracer
 
 	minBytesWaitTime time.Duration
@@ -300,7 +300,7 @@ func NewConcurrentFetchers(
 	offsetReader *partitionOffsetClient,
 	startOffsetsReader *GenericOffsetReader[int64],
 	fetchBackoffConfig backoff.Config,
-	metrics *readerMetrics,
+	metrics *ReaderMetrics,
 ) (*ConcurrentFetchers, error) {
 	if fetchBackoffConfig.MaxBackoff == 0 {
 		// Ensure it's not the zero value, which means we haven't got the backoff config due to a bug.
@@ -492,9 +492,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 func (r *ConcurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
-	if r.metrics != nil {
-		instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
-	}
+	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
 
 	var (
 		doubleFetchedBytes             = 0
@@ -516,9 +514,7 @@ func (r *ConcurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 		}
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
-	if r.metrics != nil {
-		r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
-	}
+	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
 
 	if skippedRecordsCount > 0 {
 		spanlogger.FromContext(f.Records[0].Context, r.logger).DebugLog(
@@ -555,10 +551,7 @@ func (r *ConcurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 
 	// Build the Fetch request.
 	req := r.buildFetchRequest(fw, leaderEpoch)
-
-	if r.metrics != nil {
-		r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
-	}
+	r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
 
 	// Send the Fetch request to the leader broker.
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
@@ -635,9 +628,7 @@ func (r *ConcurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 
 	observeMetrics := func(m kgo.FetchBatchMetrics) {
 		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
-		if r.metrics != nil {
-			r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
-		}
+		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)

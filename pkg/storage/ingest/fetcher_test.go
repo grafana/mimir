@@ -732,7 +732,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{}, topicName)
+		metrics := NewReaderMetrics(partitionID, reg, noopReaderMetricsSource{}, topicName)
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
@@ -1207,7 +1207,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{}, topic)
+	metrics := NewReaderMetrics(partition, reg, noopReaderMetricsSource{}, topic)
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.

@@ -54,6 +54,7 @@ type BlockBuilder struct {
 
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
+	readerMetrics         *ingest.ReaderMetrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
@@ -74,6 +75,12 @@ func newWithSchedulerClient(
 	limits *validation.Overrides,
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
+	var readerMetrics *ingest.ReaderMetrics
+	if cfg.Kafka.FetchConcurrencyMax > 0 {
+		m := ingest.NewReaderMetrics(-1, reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic)
+		readerMetrics = &m
+	}
+
 	b := &BlockBuilder{
 		cfg:                   cfg,
 		logger:                logger,
@@ -81,6 +88,7 @@ func newWithSchedulerClient(
 		limits:                limits,
 		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
 		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
+		readerMetrics:         readerMetrics,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
 	}
 
@@ -232,6 +240,10 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
+func (b *BlockBuilder) shouldUseConcurrentFetchers() bool {
+	return b.cfg.Kafka.FetchConcurrencyMax > 0
+}
+
 type fetchPoller interface {
 	PollFetches(context.Context) kgo.Fetches
 }
@@ -301,11 +313,12 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRecOffset  = int64(-1)
 	)
 
-	var fetchPoller fetchPoller
+	var fetchPoller fetchPoller = b.kafkaClient
 
-	if b.cfg.Kafka.FetchConcurrencyMax <= 0 {
-		fetchPoller = b.kafkaClient
-	} else {
+	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
+		if b.readerMetrics == nil {
+			panic("readerMetrics should be non-nil when concurrent fetchers are used")
+		}
 		f, ferr := ingest.NewConcurrentFetchers(
 			ctx,
 			b.kafkaClient,
@@ -317,13 +330,13 @@ func (b *BlockBuilder) consumePartitionSection(
 			100_000_000,
 			false,
 			5*time.Second,
-			nil,
+			nil, // Don't need a reader since we've provided the start offset.
 			ingest.NewGenericOffsetReader(func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
 			backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
 				MaxBackoff: 1 * time.Second,
 			},
-			nil)
+			b.readerMetrics)
 		if ferr != nil {
 			return lastConsumedOffset, fmt.Errorf("creating concurrent fetcher: %w", ferr)
 		}

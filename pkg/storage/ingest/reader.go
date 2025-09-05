@@ -79,7 +79,7 @@ type PartitionReader struct {
 	fetcher atomic.Pointer[fetcher]
 
 	newConsumer consumerFactory
-	metrics     readerMetrics
+	metrics     ReaderMetrics
 
 	committer *partitionCommitter
 
@@ -113,7 +113,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = newReaderMetrics(partitionID, reg, r, kafkaCfg.Topic)
+	r.metrics = NewReaderMetrics(partitionID, reg, r, kafkaCfg.Topic)
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -945,7 +945,7 @@ func (r *partitionCommitter) stop(error) error {
 	return nil
 }
 
-type readerMetrics struct {
+type ReaderMetrics struct {
 	services.Service
 
 	bufferedFetchedRecords           prometheus.GaugeFunc
@@ -972,7 +972,21 @@ type readerMetricsSource interface {
 	EstimatedBytesPerRecord() int64
 }
 
-func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource, topic string) readerMetrics {
+type NoOpReaderMetricsSource struct{}
+
+func (n *NoOpReaderMetricsSource) BufferedBytes() int64 {
+	return 0
+}
+
+func (n *NoOpReaderMetricsSource) BufferedRecords() int64 {
+	return 0
+}
+
+func (n *NoOpReaderMetricsSource) EstimatedBytesPerRecord() int64 {
+	return 0
+}
+
+func NewReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource, topic string) ReaderMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -994,7 +1008,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 	// Initialise the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	lastConsumedOffset.Set(-1)
 
-	m := readerMetrics{
+	m := ReaderMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
 			Help: "The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.",
