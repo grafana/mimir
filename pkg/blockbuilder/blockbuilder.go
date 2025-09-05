@@ -295,6 +295,12 @@ func (b *BlockBuilder) consumePartitionSection(
 	}(time.Now())
 
 	b.kafkaClient.ForceMetadataRefresh()
+	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		b.cfg.Kafka.Topic: {
+			partition: kgo.NewOffset().At(startOffset),
+		},
+	})
+	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
 	var fetchPoller fetchPoller
 
@@ -329,13 +335,6 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		fetchPoller = &fetchWrapper{f}
 	} else {
-		b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-			b.cfg.Kafka.Topic: {
-				partition: kgo.NewOffset().At(startOffset),
-			},
-		})
-		defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
-
 		fetchPoller = b.kafkaClient
 	}
 
