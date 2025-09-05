@@ -11,6 +11,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -728,6 +729,7 @@ func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) []tsdb.BlockReader {
 
 	return blocks
 }
+
 // GatherStatistics generates statistics for all existing blocks in the TSDB
 func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 	blocks := m.getAllBlocks(db)
@@ -819,7 +821,7 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 
 	// Build count-min sketches for each label
 	const countMinEpsilon = 0.005
-	labelSketches := make(map[string]*labelValuesSketch)
+	labelSketches := make(map[string]*LabelValuesSketch)
 
 	for _, labelName := range labelNames {
 		// Get all values for this label
@@ -830,7 +832,7 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 		}
 
 		// Create count-min sketch for this label
-		sketch := &labelValuesSketch{
+		sketch := &LabelValuesSketch{
 			s:              boom.NewCountMinSketch(countMinEpsilon, 0.01),
 			distinctValues: uint64(len(values)),
 		}
@@ -853,55 +855,74 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 			}
 
 			// Add to the sketch
-			sketch.s.AddN([]byte(value), seriesCountForValue)
+			valBytes := yoloBytes(value)
+			sketch.s.AddN(valBytes, seriesCountForValue)
 		}
 
 		labelSketches[labelName] = sketch
 	}
 
 	// Create and return the statistics
-	return &blockStatistics{
+	return &BlockStatistics{
 		totalSeries: seriesCount,
 		labelNames:  labelSketches,
 	}, nil
 }
 
-// blockStatistics implements index.Statistics interface using count-min sketches
-type blockStatistics struct {
+// BlockStatistics contains count-min sketches of the values for each label name in a TSDB block.
+// It implements index.Statistics, which can be used to inform query plan generation.
+type BlockStatistics struct {
 	totalSeries uint64
-	labelNames  map[string]*labelValuesSketch
+	labelNames  map[string]*LabelValuesSketch
 }
 
-type labelValuesSketch struct {
+// LabelValuesSketch contains a count-min sketch for a specific label name.
+type LabelValuesSketch struct {
 	s              *boom.CountMinSketch
 	distinctValues uint64
 }
 
-func (s *blockStatistics) TotalSeries() uint64 {
+// TotalSeries returns the number of series in the TSDB block.
+func (s *BlockStatistics) TotalSeries() uint64 {
 	return s.totalSeries
 }
 
-func (s *blockStatistics) LabelValuesCount(ctx context.Context, name string) uint64 {
+// LabelValuesCount returns the number of values for a label name. If the given label name does not exist,
+// it returns 0.
+func (s *BlockStatistics) LabelValuesCount(ctx context.Context, name string) uint64 {
 	sketch, ok := s.labelNames[name]
 	if !ok {
+		// If we don't find a sketch for a label name, we return 0 but no error, since we assume that the nonexistence
+		// of a sketch is equivalent to the nonexistence of values for the label name.
 		return 0
 	}
 	return sketch.distinctValues
 }
 
-func (s *blockStatistics) LabelValuesCardinality(ctx context.Context, name string, values ...string) uint64 {
+// LabelValuesCardinality returns the cardinality of a given label name (i.e., the number of series which
+// contain that label name). If values are provided, it returns the combined cardinality of all given values;
+// otherwise, it returns the total cardinality across all values for the label name. If the label name does not exist,
+// it returns 0.
+func (s *BlockStatistics) LabelValuesCardinality(ctx context.Context, name string, values ...string) uint64 {
 	sketch, ok := s.labelNames[name]
 	if !ok {
+		// If we don't find a sketch for a label name, we return 0 but no error, since we assume that the nonexistence
+		// of a label name is equivalent to 0 cardinality
 		return 0
 	}
 
 	if len(values) == 0 {
 		return sketch.s.TotalCount()
 	}
-
 	totalCount := uint64(0)
 	for _, val := range values {
-		totalCount += sketch.s.Count([]byte(val))
+		valBytes := yoloBytes(val)
+		totalCount += sketch.s.Count(valBytes)
 	}
 	return totalCount
+}
+
+// yoloBytes converts a string to a byte slice without allocation.
+func yoloBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
