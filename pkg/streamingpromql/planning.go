@@ -182,7 +182,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			} else {
 				// Don't run delayed name removal or deduplicate and merge where there are no
 				// vector selectors.
-				if shouldWrapInDedupAndMerge(root) {
+				shouldWrap, err := shouldWrapInDedupAndMerge(root)
+				if err != nil {
+					return nil, err
+				}
+				if shouldWrap {
 					root = &core.DeduplicateAndMerge{
 						Inner:                      root,
 						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
@@ -220,26 +224,32 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	return plan, err
 }
 
-func shouldWrapInDedupAndMerge(root planning.Node) bool {
+func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
 	switch node := root.(type) {
 	case *core.NumberLiteral, *core.StringLiteral:
-		return false
+		return false, nil
 	case *core.BinaryExpression:
 		resL, err := node.LHS.ResultType()
-		if err == nil && resL != parser.ValueTypeScalar {
+		if err != nil {
+			return false, err
+		}
+		if resL != parser.ValueTypeScalar {
 			break
 		}
 		resR, err := node.RHS.ResultType()
-		if err == nil && resR == parser.ValueTypeScalar {
-			return false
+		if err != nil {
+			return false, err
+		}
+		if resR == parser.ValueTypeScalar {
+			return false, nil
 		}
 	case *core.FunctionCall:
 		res, err := root.ResultType()
 		if err == nil && res == parser.ValueTypeScalar {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {

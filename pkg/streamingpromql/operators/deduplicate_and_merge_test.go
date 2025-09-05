@@ -217,6 +217,11 @@ func TestDeduplicateAndMerge(t *testing.T) {
 				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
 				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
 			},
+			expectedOutputDropName: []bool{
+				false,
+				false,
+				false,
+			},
 		},
 	}
 

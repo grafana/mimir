@@ -235,8 +235,9 @@ func LabelsToSeriesMetadataWithDropName(lbls []labels.Labels, dropName []bool) [
 	m := LabelsToSeriesMetadata(lbls)
 
 	if dropName == nil {
-		dropName = make([]bool, len(lbls))
+		return m
 	}
+
 	for i := range lbls {
 		m[i].DropName = dropName[i]
 	}
