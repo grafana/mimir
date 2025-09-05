@@ -294,6 +294,8 @@ func (b *BlockBuilder) consumePartitionSection(
 			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
 	}(time.Now())
 
+	b.kafkaClient.ForceMetadataRefresh()
+
 	var fetchPoller fetchPoller
 
 	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
@@ -327,7 +329,6 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		fetchPoller = &fetchWrapper{f}
 	} else {
-		b.kafkaClient.ForceMetadataRefresh()
 		b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 			b.cfg.Kafka.Topic: {
 				partition: kgo.NewOffset().At(startOffset),
