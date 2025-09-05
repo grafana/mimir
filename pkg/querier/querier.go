@@ -17,9 +17,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/instrument"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -794,4 +797,38 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+type RequestMetrics struct {
+	RequestDuration     *prometheus.HistogramVec
+	ReceivedMessageSize *prometheus.HistogramVec
+	SentMessageSize     *prometheus.HistogramVec
+	InflightRequests    *prometheus.GaugeVec
+}
+
+func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
+	return &RequestMetrics{
+		RequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_request_duration_seconds",
+			Help:    "Time (in seconds) spent serving HTTP requests to the querier.",
+			Buckets: instrument.DefBuckets,
+		}, []string{"method", "route", "status_code", "ws"}),
+
+		ReceivedMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_request_message_bytes",
+			Help:    "Size (in bytes) of messages received in the request to the querier.",
+			Buckets: middleware.BodySizeBuckets,
+		}, []string{"method", "route"}),
+
+		SentMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_response_message_bytes",
+			Help:    "Size (in bytes) of messages sent in response by the querier.",
+			Buckets: middleware.BodySizeBuckets,
+		}, []string{"method", "route"}),
+
+		InflightRequests: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_requests",
+			Help: "Current number of inflight requests to the querier.",
+		}, []string{"method", "route"}),
+	}
 }

@@ -60,13 +60,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.Evaluate")
 	defer span.Finish()
 
-	defer e.root.Close()
-
-	if e.engine.pedantic {
-		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
-		defer e.root.Close()
-	}
-
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
 	// chunks from store-gateways or ingesters.
@@ -82,9 +75,18 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		defer cancelTimeoutCtx()
 	}
 
-	// The order of the deferred cancellations is important: we want to cancel with errQueryFinished first, so we must defer this cancellation last
+	// The order of the deferred cancellations is important: we want to close all operators first, then
+	// cancel with errQueryFinished and not a timeout, so we must defer this function last
 	// (so that it runs before the cancellation of the context with timeout created above).
-	defer cancel(errQueryFinished)
+	defer func() {
+		e.root.Close()
+		cancel(errQueryFinished)
+	}()
+
+	if e.engine.pedantic {
+		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
+		defer e.root.Close()
+	}
 
 	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
 	if err != nil {

@@ -6,12 +6,14 @@
 package error
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/promql"
 )
 
 type Type string
@@ -30,6 +32,41 @@ const (
 	TypeTooLargeEntry   Type = "too_large_entry"
 	TypeNotAcceptable   Type = "not_acceptable"
 )
+
+// TypeForError returns the appropriate Type for err, or fallback if no appropriate Type
+// can be inferred.
+func TypeForError(err error, fallback Type) Type {
+	// This method mirrors the behaviour of Prometheus' returnAPIError (https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682).
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		return apiError.Type
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return TypeCanceled
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return TypeTimeout
+	}
+
+	var queryCanceledErr promql.ErrQueryCanceled
+	if errors.As(err, &queryCanceledErr) {
+		return TypeCanceled
+	}
+
+	var queryTimeoutErr promql.ErrQueryTimeout
+	if errors.As(err, &queryTimeoutErr) {
+		return TypeTimeout
+	}
+
+	var storageError promql.ErrStorage
+	if errors.As(err, &storageError) {
+		return TypeInternal
+	}
+
+	return fallback
+}
 
 type APIError struct {
 	Type    Type

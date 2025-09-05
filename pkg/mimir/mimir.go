@@ -837,6 +837,7 @@ type Mimir struct {
 
 	API                              *api.API
 	Server                           *server.Server
+	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
 	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
@@ -853,6 +854,7 @@ type Mimir struct {
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
