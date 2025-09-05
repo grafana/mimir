@@ -23,7 +23,6 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -49,9 +48,6 @@ type BlockBuilder struct {
 	bucketClient    objstore.Bucket
 	schedulerClient schedulerpb.SchedulerClient
 	schedulerConn   *grpc.ClientConn
-
-	// the current job iteration number. For tests.
-	jobIteration atomic.Int64
 
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
@@ -217,8 +213,6 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		if err := b.schedulerClient.CompleteJob(key); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
-
-		b.jobIteration.Inc()
 	}
 }
 
