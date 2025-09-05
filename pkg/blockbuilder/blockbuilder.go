@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
@@ -55,6 +56,7 @@ type BlockBuilder struct {
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
 	readerMetrics         *ingest.ReaderMetrics
+	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
@@ -75,11 +77,13 @@ func newWithSchedulerClient(
 	limits *validation.Overrides,
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
+	kpm := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", reg)
+
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
 		// Reader metrics tracks some per-partition things, but block-builder
 		// will always be dealing with different partitions. So we pass -1.
-		m := ingest.NewReaderMetrics(-1, reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic)
+		m := ingest.NewReaderMetrics(-1, reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic, kpm)
 		readerMetrics = &m
 	}
 
@@ -91,6 +95,7 @@ func newWithSchedulerClient(
 		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
 		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
 		readerMetrics:         readerMetrics,
+		kpromMetrics:          kpm,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
 	}
 
@@ -155,7 +160,7 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
 		b.cfg.Kafka,
-		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", b.register),
+		b.kpromMetrics,
 		b.logger,
 	)
 	if err != nil {
