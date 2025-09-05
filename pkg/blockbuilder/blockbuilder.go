@@ -294,23 +294,7 @@ func (b *BlockBuilder) consumePartitionSection(
 			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
 	}(time.Now())
 
-	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		b.cfg.Kafka.Topic: {
-			partition: kgo.NewOffset().At(startOffset),
-		},
-	})
-	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
-
-	b.kafkaClient.ForceMetadataRefresh()
-
-	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
-
-	var (
-		firstRecOffset = int64(-1)
-		lastRecOffset  = int64(-1)
-	)
-
-	var fetchPoller fetchPoller = b.kafkaClient
+	var fetchPoller fetchPoller
 
 	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
 		if b.readerMetrics == nil {
@@ -342,10 +326,22 @@ func (b *BlockBuilder) consumePartitionSection(
 		defer f.Stop()
 
 		fetchPoller = &fetchWrapper{f}
+	} else {
+		b.kafkaClient.ForceMetadataRefresh()
+		b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+			b.cfg.Kafka.Topic: {
+				partition: kgo.NewOffset().At(startOffset),
+			},
+		})
+		defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
+
+		fetchPoller = b.kafkaClient
 	}
 
-	//consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprint(partition))
-	//metricUpdatePending := 0
+	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
+
+	firstRecOffset := int64(-1)
+	lastRecOffset := int64(-1)
 
 	for lastRecOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
