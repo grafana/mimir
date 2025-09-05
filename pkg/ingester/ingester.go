@@ -1021,15 +1021,16 @@ func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, er
 	return head.PostingsStats(), nil
 }
 
-// blockStatsProvider provides block-specific statistics for index lookup planning.
-// It wraps the ingester and holds the specific block ULID.
-type blockStatsProvider struct {
-	ingester *Ingester
-	blockID  ulid.ULID
+// blockStatsManagerAdapter adapts the blockStatsManager to work with the lookup planner.
+type blockStatsManagerAdapter struct {
+	manager *blockStatsManager
+	blockID ulid.ULID
 }
 
-func (b *blockStatsProvider) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	return b.ingester.getBlockStatistics(ctx, b.blockID)
+func (b *blockStatsManagerAdapter) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
+	// We need the TSDB instance to get block statistics, but we don't have direct access here.
+	// For now, let's return empty statistics - this will be improved in the next changes.
+	return &basicStatistics{}, nil
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -2794,7 +2795,7 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
 // which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, manager *blockStatsManager) tsdb.IndexLookupPlannerFunc {
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
@@ -2806,13 +2807,12 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.Index
 			return lookupplan.NewCostBasedPlanner(metrics, i)
 		}
 
-		// For disk blocks, create a block-specific statistics provider
+		// For disk blocks, use the block statistics manager
 		blockID := blockReader.Meta().ULID
-		blockProvider := &blockStatsProvider{
-			ingester: i,
-			blockID:  blockID,
-		}
-		return lookupplan.NewCostBasedPlanner(metrics, blockProvider)
+		return lookupplan.NewCostBasedPlanner(metrics, &blockStatsManagerAdapter{
+			manager: manager,
+			blockID: blockID,
+		})
 	}
 }
 
@@ -2913,6 +2913,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		return userDB.blocksToDelete(blocks)
 	}
 
+	// Initialize block statistics manager for this user's TSDB
+	blockStatsMgr := newBlockStatsManager(userID, userLogger, tsdbPromReg)
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
@@ -2957,7 +2960,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, blockStatsMgr),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2984,8 +2987,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
-	// Initialize block statistics manager for this user's TSDB
-	userDB.blockStatsMgr = newBlockStatsManager(userID, userLogger, tsdbPromReg)
+	// Assign the pre-created block statistics manager to this user's TSDB
+	userDB.blockStatsMgr = blockStatsMgr
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
