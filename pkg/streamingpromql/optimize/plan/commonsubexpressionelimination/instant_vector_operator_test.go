@@ -337,7 +337,7 @@ type failingInstantVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context, _ *types.Selector) ([]types.SeriesMetadata, error) {
+func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 

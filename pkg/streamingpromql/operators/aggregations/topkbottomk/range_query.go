@@ -52,12 +52,12 @@ type RangeQuery struct {
 
 var _ types.InstantVectorOperator = &RangeQuery{}
 
-func (t *RangeQuery) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+func (t *RangeQuery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := t.Inner.SeriesMetadata(ctx, selector)
+	innerSeries, err := t.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
