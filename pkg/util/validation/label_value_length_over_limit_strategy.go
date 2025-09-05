@@ -13,7 +13,9 @@ import (
 var (
 	_ interface {
 		yaml.Unmarshaler
+		yaml.Marshaler
 		json.Unmarshaler
+		json.Marshaler
 		pflag.Value
 	} = new(LabelValueLengthOverLimitStrategy)
 )
@@ -34,12 +36,20 @@ func (s *LabelValueLengthOverLimitStrategy) UnmarshalYAML(value *yaml.Node) erro
 	return s.Set(repr)
 }
 
+func (s LabelValueLengthOverLimitStrategy) MarshalYAML() (any, error) {
+	return s.String(), nil
+}
+
 func (s *LabelValueLengthOverLimitStrategy) UnmarshalJSON(bytes []byte) error {
 	var repr string
 	if err := json.Unmarshal(bytes, &repr); err != nil {
 		return err
 	}
 	return s.Set(repr)
+}
+
+func (s LabelValueLengthOverLimitStrategy) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
 }
 
 func (s LabelValueLengthOverLimitStrategy) String() string {
