@@ -5574,7 +5574,7 @@
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
