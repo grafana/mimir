@@ -711,9 +711,26 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statist
 	return stats, nil
 }
 
+// getAllBlocks returns all blocks (both disk blocks and head as BlockReader)
+func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) []tsdb.BlockReader {
+	diskBlocks := db.Blocks()
+	head := db.Head()
+
+	blocks := make([]tsdb.BlockReader, 0, len(diskBlocks)+1)
+
+	// Add disk blocks
+	for _, block := range diskBlocks {
+		blocks = append(blocks, block)
+	}
+
+	// Add head as BlockReader
+	blocks = append(blocks, head)
+
+	return blocks
+}
 // GatherStatistics generates statistics for all existing blocks in the TSDB
 func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
-	blocks := db.Blocks()
+	blocks := m.getAllBlocks(db)
 
 	// Create a new map to hold all the statistics
 	newBlockStats := make(map[ulid.ULID]index.Statistics, len(blocks))
@@ -745,7 +762,7 @@ func (m *blockStatsManager) gatherStatistics(blockID ulid.ULID, db *tsdb.DB) (in
 		m.metrics.generationTotal.Inc()
 	}(time.Now())
 	// Find the block in the TSDB
-	blocks := db.Blocks()
+	blocks := m.getAllBlocks(db)
 	var targetBlock tsdb.BlockReader
 	for _, block := range blocks {
 		if block.Meta().ULID == blockID {
@@ -847,35 +864,6 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 		totalSeries: seriesCount,
 		labelNames:  labelSketches,
 	}, nil
-}
-
-// syncWithBlocks updates the manager to reflect the current set of blocks
-// It removes statistics for blocks that no longer exist
-func (m *blockStatsManager) syncWithBlocks(currentBlocks []tsdb.BlockReader) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	// Build a set of current block ULIDs
-	currentBlockSet := make(map[ulid.ULID]bool)
-	for _, block := range currentBlocks {
-		currentBlockSet[block.Meta().ULID] = true
-	}
-
-	// Remove statistics for blocks that no longer exist
-	removedCount := 0
-	for blockID := range m.blockStats {
-		if !currentBlockSet[blockID] {
-			delete(m.blockStats, blockID)
-			removedCount++
-		}
-	}
-
-	// Update tracking and metrics
-	m.lastKnownBlocks = currentBlockSet
-
-	if removedCount > 0 {
-		level.Debug(m.logger).Log("msg", "cleaned up block statistics", "user", m.userID, "removed_blocks", removedCount, "total_cached", len(m.blockStats))
-	}
 }
 
 // blockStatistics implements index.Statistics interface using count-min sketches
