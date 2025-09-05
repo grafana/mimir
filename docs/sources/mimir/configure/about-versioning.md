@@ -236,6 +236,7 @@ The following features are currently experimental:
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
   - Labels query optimizer (`-query-frontend.labels-query-optimizer-enabled`)
+  - Rewriting of queries to optimize processing using a query frontend middleware: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -296,6 +297,5 @@ The following features or configuration parameters are currently deprecated and 
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
 - etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.
