@@ -1106,13 +1106,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		opts.HeadPostingsForMatchersCacheMetrics,
 	)
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
-	if opts.IndexLookupPlannerFunc != nil {
-		// Create a planner for the head using the function
-		headOpts.IndexLookupPlanner = opts.IndexLookupPlannerFunc(nil) // Head doesn't have BlockReader metadata
-	} else {
-		// Use default planner for head if no function provided
-		headOpts.IndexLookupPlanner = &index.ScanEmptyMatchersLookupPlanner{}
-	}
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1125,6 +1118,11 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		return nil, err
 	}
 	db.head.writeNotified = db.writeNotified
+	if opts.IndexLookupPlannerFunc != nil {
+		db.head.opts.IndexLookupPlanner = opts.IndexLookupPlannerFunc(db.head)
+	} else {
+		db.head.opts.IndexLookupPlanner = &index.ScanEmptyMatchersLookupPlanner{}
+	}
 
 	// Register metrics after assigning the head block.
 	db.metrics = newDBMetrics(db, r)
