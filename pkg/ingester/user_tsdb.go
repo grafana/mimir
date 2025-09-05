@@ -742,27 +742,24 @@ func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 	// Create a new map to hold all the statistics
 	newBlockStats := make(map[ulid.ULID]index.Statistics, len(blocks))
 
-	// Copy existing statistics for disk blocks, only recompute for head block
-	m.mutex.RLock()
-	for blockID, stats := range m.blockStats {
-		if blockID != headULID {
-			newBlockStats[blockID] = stats
-		}
-	}
-	m.mutex.RUnlock()
-
 	for _, block := range blocks {
 		blockID := block.Meta().ULID
 
-		// Only recompute statistics for head block, as disk blocks are immutable
-		if blockID != headULID {
-			// Skip disk blocks - their statistics don't change once written
+		// Check if we already have statistics for this block
+		m.mutex.RLock()
+		existingStats, hasExisting := m.blockStats[blockID]
+		m.mutex.RUnlock()
+
+		// For disk blocks (non-head), reuse existing statistics if available
+		if blockID != headULID && hasExisting {
+			newBlockStats[blockID] = existingStats
 			continue
 		}
 
+		// Generate new statistics for head block or missing disk blocks
 		stats, err := m.gatherStatistics(blockID, db)
 		if err != nil {
-			level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", blockID.String(), "err", err)
+			level.Warn(m.logger).Log("msg", "failed to generate statistics for block", "block", blockID.String(), "err", err)
 			continue
 		}
 
