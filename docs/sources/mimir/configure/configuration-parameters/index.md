@@ -4480,7 +4480,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value is added as a new label, named '<original label
 # name><label_value_length_over_limit_hash_suffix>'.
 # CLI flag: -validation.label-value-length-over-limit-strategy
-[label_value_length_over_limit_strategy: <int> | default =  ]
+[label_value_length_over_limit_strategy: <int> | default = error]
 
 # (advanced) When label_value_length_over_limit_hash_suffix is 'truncate' or
 # 'drop', for label values over the length limit, what suffix to use for the
