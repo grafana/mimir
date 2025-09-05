@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -729,7 +730,7 @@ func TestGetRules(t *testing.T) {
 
 			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
 			for _, reg := range registryByRuler {
-				verifySyncRulesMetric(t, reg, 1, 0)
+				verifySyncRulesMetrics(t, reg, 1, 0)
 			}
 
 			// Inject the tokens for each ruler.
@@ -1367,7 +1368,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 			// Pre-condition check: each ruler should have synced the rules once (at startup).
 			for _, reg := range regs {
-				verifySyncRulesMetric(t, reg, 1, 0)
+				verifySyncRulesMetrics(t, reg, 1, 0)
 			}
 
 			// Pre-condition check: each ruler should have an updated view over the ring.
@@ -1390,7 +1391,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 				// Wait until rules syncing triggered on both rulers (with reason "API change").
 				for _, reg := range regs {
-					verifySyncRulesMetric(t, reg, 1, 1)
+					verifySyncRulesMetrics(t, reg, 1, 1)
 				}
 
 				// GetRules() should return all configured rule groups. We use test.Poll() because
@@ -1413,7 +1414,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 				// Wait until rules syncing triggered on both rulers (with reason "API change").
 				for _, reg := range regs {
-					verifySyncRulesMetric(t, reg, 1, 2)
+					verifySyncRulesMetrics(t, reg, 1, 2)
 				}
 
 				// GetRules() should return all configured rule groups except the one just deleted.
@@ -1436,7 +1437,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 				// Wait until rules syncing triggered on both rulers (with reason "API change").
 				for _, reg := range regs {
-					verifySyncRulesMetric(t, reg, 1, 3)
+					verifySyncRulesMetrics(t, reg, 1, 3)
 				}
 
 				// GetRules() should return no rule groups. We use test.Poll() because
@@ -1453,7 +1454,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 			// Post-condition check: there should have been no other rules syncing other than the initial one
 			// and the one driven by the API.
 			for _, reg := range regs {
-				verifySyncRulesMetric(t, reg, 1, 3)
+				verifySyncRulesMetrics(t, reg, 1, 3)
 			}
 		})
 	}
@@ -1477,7 +1478,7 @@ func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
 	require.ErrorIs(t, services.StartAndAwaitRunning(context.Background(), ruler), wantErr)
 
 	// Two initial syncs because of the retry.
-	verifySyncRulesMetric(t, reg, 2, 0)
+	verifySyncRulesMetrics(t, reg, 2, 0)
 }
 
 func TestRuler_notifySyncRules_IgnoresLeavingRulers(t *testing.T) {
@@ -1540,7 +1541,7 @@ func TestRuler_notifySyncRules_IgnoresLeavingRulers(t *testing.T) {
 
 			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
 			for _, reg := range registryByRuler {
-				verifySyncRulesMetric(t, reg, 1, 0)
+				verifySyncRulesMetrics(t, reg, 1, 0)
 			}
 
 			// Inject the tokens for each ruler.
@@ -1662,7 +1663,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 	// Pre-condition check: each ruler should have synced the rules once (at startup).
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 0)
+		verifySyncRulesMetrics(t, reg, 1, 0)
 	}
 
 	// Pre-condition check: each ruler should have an updated view over the ring.
@@ -1684,7 +1685,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 	// Wait until rules syncing triggered on both rulers (with reason "API change").
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 1)
+		verifySyncRulesMetrics(t, reg, 1, 1)
 	}
 
 	// GetRules() should return all configured rule groups. We use test.Poll() because
@@ -1723,7 +1724,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 	// Wait until rules syncing triggered on both rulers (with reason "API change").
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 2)
+		verifySyncRulesMetrics(t, reg, 1, 2)
 	}
 
 	// GetRules() should return all configured rule groups. We use test.Poll() because
@@ -1753,7 +1754,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// Post-condition check: there should have been no other rules syncing other than the initial one
 	// and the one driven by the API.
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 2)
+		verifySyncRulesMetrics(t, reg, 1, 2)
 	}
 }
 
@@ -1810,7 +1811,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// Pre-condition check: each ruler should have synced the rules once (at startup).
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 0)
+		verifySyncRulesMetrics(t, reg, 1, 0)
 	}
 
 	// Pre-condition check: each ruler should have an updated view over the ring.
@@ -1836,7 +1837,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// Ensure no rules syncing has been triggered in any ruler.
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 0)
+		verifySyncRulesMetrics(t, reg, 1, 0)
 	}
 
 	// GetRules() should return no configured rule groups, because no re-sync happened.
@@ -1899,7 +1900,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	ruler := prepareRuler(t, cfg, rs, withStart(), withPrometheusRegisterer(reg), withRulerAddrAutomaticMapping())
 
 	// Pre-condition check: the ruler should have synced the rules once (at startup).
-	verifySyncRulesMetric(t, reg, 1, 0)
+	verifySyncRulesMetrics(t, reg, 1, 0)
 
 	t.Run("should return 401 on missing tenant ID", func(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, callDeleteTenantConfigurationAPI(ruler, ""))
@@ -1914,7 +1915,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
 		// Ensure rules re-sync has been triggered.
-		verifySyncRulesMetric(t, reg, 1, 1)
+		verifySyncRulesMetrics(t, reg, 1, 1)
 	})
 
 	t.Run("should return 200 and delete the rule groups configured for the tenant", func(t *testing.T) {
@@ -1926,7 +1927,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
 		// Ensure rules re-sync has been triggered.
-		verifySyncRulesMetric(t, reg, 1, 2)
+		verifySyncRulesMetrics(t, reg, 1, 2)
 	})
 
 	t.Run("should return 200 and be idempotent if the tenant rule groups have already been deleted", func(t *testing.T) {
@@ -1939,7 +1940,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
 		// Ensure rules re-sync has been triggered.
-		verifySyncRulesMetric(t, reg, 1, 3)
+		verifySyncRulesMetrics(t, reg, 1, 3)
 	})
 }
 
@@ -1991,7 +1992,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	})
 }
 
-func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, apiChangeCount int) {
+func verifySyncRulesMetrics(t *testing.T, reg prometheus.Gatherer, initialCount, apiChangeCount int) {
 	t.Helper()
 
 	test.Poll(t, time.Second, nil, func() interface{} {
@@ -2004,6 +2005,8 @@ func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, 
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
 		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_ruler_sync_rules_duration_seconds"))
+	require.NoError(t, promtest.HasSampleCount(reg, "cortex_ruler_sync_rules_duration_seconds", float64(initialCount+apiChangeCount)))
 }
 
 func verifyRingMembersMetric(t *testing.T, reg prometheus.Gatherer, activeCount int) {
