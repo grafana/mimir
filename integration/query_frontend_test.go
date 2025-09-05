@@ -42,6 +42,7 @@ type queryFrontendTestConfig struct {
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	shardActiveSeriesQueries    bool
+	remoteExecutionEnabled      bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
@@ -204,14 +205,13 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 				BlocksStorageFlags(),
 			)
 
-			flags["-query-frontend.enable-remote-execution"] = "true"
-
 			minio := e2edb.NewMinio(9000, mimirBucketName)
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
 		},
-		withHistograms: true,
+		withHistograms:         true,
+		remoteExecutionEnabled: true,
 	})
 }
 
@@ -257,6 +257,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 		"-query-frontend.subquery-spin-off-enabled":         "true",
+		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
 	})
 
 	// Start the query-scheduler.
@@ -460,11 +461,18 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"))
 
-	routeNames := []string{"prometheus_api_v1_series", "prometheus_api_v1_query", "prometheus_api_v1_query_range"}
+	routeNames := []string{"prometheus_api_v1_series", "prometheus_api_v1_query", "prometheus_api_v1_query_range", "querierpb.EvaluateQueryRequest"}
 	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchRegexp, "route", strings.Join(routeNames, "|")))
 	require.NoErrorf(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(expectedQueryFrontendQueryCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected %v queries to query-frontend", expectedQueryFrontendQueryCount)
 	require.NoErrorf(t, querier.WaitSumMetricsWithOptions(e2e.Between(expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected between %v and %v queries to querier", expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount)
 	require.NoErrorf(t, querier.WaitSumMetricsWithOptions(e2e.Between(expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "expected between %v and %v queries to querier", expectedMinimumQuerierQueryCount, expectedMaximumQuerierQueryCount)
+
+	if cfg.remoteExecutionEnabled {
+		forbiddenRouteNames := []string{"prometheus_api_v1_query", "prometheus_api_v1_query_range"}
+		withForbiddenQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchRegexp, "route", strings.Join(forbiddenRouteNames, "|")))
+		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withForbiddenQueryRoutes, e2e.SkipMissingMetrics), "expected no HTTP-style requests to queriers")
+		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount, withForbiddenQueryRoutes, e2e.SkipMissingMetrics), "expected no HTTP-style requests to queriers")
+	}
 
 	// Ensure query stats metrics are tracked only when enabled.
 	if cfg.queryStatsEnabled {
