@@ -34,6 +34,9 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
+// headULID is the special ULID used to identify the head block in TSDB
+var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
+
 type tsdbState int
 
 const (
@@ -730,19 +733,36 @@ func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) []tsdb.BlockReader {
 	return blocks
 }
 
-// GatherStatistics generates statistics for all existing blocks in the TSDB
+// GatherStatistics generates statistics for all existing blocks in the TSDB.
+// Only recomputes statistics for the head block (identified by special headULID),
+// as disk block statistics are immutable once written.
 func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 	blocks := m.getAllBlocks(db)
 
 	// Create a new map to hold all the statistics
 	newBlockStats := make(map[ulid.ULID]index.Statistics, len(blocks))
 
+	// Copy existing statistics for disk blocks, only recompute for head block
+	m.mutex.RLock()
+	for blockID, stats := range m.blockStats {
+		if blockID != headULID {
+			newBlockStats[blockID] = stats
+		}
+	}
+	m.mutex.RUnlock()
+
 	for _, block := range blocks {
 		blockID := block.Meta().ULID
 
+		// Only recompute statistics for head block, as disk blocks are immutable
+		if blockID != headULID {
+			// Skip disk blocks - their statistics don't change once written
+			continue
+		}
+
 		stats, err := m.gatherStatistics(blockID, db)
 		if err != nil {
-			level.Warn(m.logger).Log("msg", "failed to generate initial statistics for block", "block", blockID.String(), "err", err)
+			level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", blockID.String(), "err", err)
 			continue
 		}
 
