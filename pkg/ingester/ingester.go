@@ -2795,24 +2795,25 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
 func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		metrics := lookupplan.NewMetrics(r)
-		return func(blockReader tsdb.BlockReader) index.LookupPlanner {
-			if blockReader == nil {
-				// This is the head block - use the original behavior with head statistics
-				return lookupplan.NewCostBasedPlanner(metrics, i)
-			}
-
-			// For disk blocks, create a block-specific statistics provider
-			blockID := blockReader.Meta().ULID
-			blockProvider := &blockStatsProvider{
-				ingester: i,
-				blockID:  blockID,
-			}
-			return lookupplan.NewCostBasedPlanner(metrics, blockProvider)
-		}
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-	return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
+
+	metrics := lookupplan.NewMetrics(r)
+	return func(blockReader tsdb.BlockReader) index.LookupPlanner {
+		if blockReader == nil {
+			// This is the head block - use the original behavior with head statistics
+			return lookupplan.NewCostBasedPlanner(metrics, i)
+		}
+
+		// For disk blocks, create a block-specific statistics provider
+		blockID := blockReader.Meta().ULID
+		blockProvider := &blockStatsProvider{
+			ingester: i,
+			blockID:  blockID,
+		}
+		return lookupplan.NewCostBasedPlanner(metrics, blockProvider)
+	}
 }
 
 // List all users for which we have a TSDB. We do it here in order
