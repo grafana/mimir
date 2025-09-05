@@ -2005,8 +2005,12 @@ func verifySyncRulesMetrics(t *testing.T, reg prometheus.Gatherer, initialCount,
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
 		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
-	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_ruler_sync_rules_duration_seconds"))
-	require.NoError(t, promtest.HasSampleCount(reg, "cortex_ruler_sync_rules_duration_seconds", float64(initialCount+apiChangeCount)))
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return promtest.HasNativeHistogram(reg, "cortex_ruler_sync_rules_duration_seconds")
+	})
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return promtest.HasSampleCount(reg, "cortex_ruler_sync_rules_duration_seconds", float64(initialCount+apiChangeCount))
+	})
 }
 
 func verifyRingMembersMetric(t *testing.T, reg prometheus.Gatherer, activeCount int) {
