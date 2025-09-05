@@ -714,6 +714,10 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statist
 // GatherStatistics generates statistics for all existing blocks in the TSDB
 func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 	blocks := db.Blocks()
+
+	// Create a new map to hold all the statistics
+	newBlockStats := make(map[ulid.ULID]index.Statistics, len(blocks))
+
 	for _, block := range blocks {
 		blockID := block.Meta().ULID
 
@@ -723,10 +727,13 @@ func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 			continue
 		}
 
-		m.mutex.Lock()
-		m.blockStats[blockID] = stats
-		m.mutex.Unlock()
+		newBlockStats[blockID] = stats
 	}
+
+	// Replace the entire map atomically
+	m.mutex.Lock()
+	m.blockStats = newBlockStats
+	m.mutex.Unlock()
 
 	return nil
 }
