@@ -150,7 +150,9 @@ type userTSDB struct {
 	postingsCache *tsdb.PostingsForMatchersCache
 
 	// Block statistics management
-	blockStatsMgr *blockStatsManager
+	blockStatsMgr     *blockStatsManager
+	statsUpdateCtx    context.Context
+	statsUpdateCancel context.CancelFunc
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -183,6 +185,7 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
+	u.stopStatsUpdateLoop()
 	return u.db.Close()
 }
 
@@ -646,6 +649,40 @@ func (u *userTSDB) computeOwnedSeries() int {
 		}
 	})
 	return count
+}
+
+// startStatsUpdateLoop starts a background goroutine that periodically updates block statistics
+func (u *userTSDB) startStatsUpdateLoop() {
+	ctx, cancel := context.WithCancel(context.Background())
+	u.statsUpdateCtx = ctx
+	u.statsUpdateCancel = cancel
+
+	go u.statsUpdateLoop(ctx)
+}
+
+// statsUpdateLoop runs the periodic statistics update process
+func (u *userTSDB) statsUpdateLoop(ctx context.Context) {
+	// Update statistics every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := u.blockStatsMgr.GatherStatistics(u.db); err != nil {
+				level.Warn(u.logger).Log("msg", "failed to update block statistics", "user", u.userID, "err", err)
+			}
+		}
+	}
+}
+
+// stopStatsUpdateLoop stops the background statistics update goroutine
+func (u *userTSDB) stopStatsUpdateLoop() {
+	if u.statsUpdateCancel != nil {
+		u.statsUpdateCancel()
+	}
 }
 
 // blockStatsManager manages per-block index statistics for a single user TSDB

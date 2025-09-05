@@ -2973,6 +2973,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		level.Warn(userLogger).Log("msg", "failed to generate initial block statistics", "err", err)
 	}
 
+	// Start the background goroutine for periodic statistics updates
+	userDB.startStatsUpdateLoop()
+
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
 		userDB.postingsCache = db.Head().PostingsForMatchersCache()
