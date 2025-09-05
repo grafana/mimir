@@ -190,7 +190,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 	for partition, endOffset := range endOffsets {
 		// If we never committed an offset for this partition yet, we just ignore it on the current run.
 		// It likely has a ton of history that hasn't been processed yet. We'll still seek to the end later on and pick up on the next time around.
-		committedOffset, ok := committedOffsets[t.cfg.Kafka.Topic][partition]
+		committedOffset, ok := committedOffsets.Lookup(t.cfg.Kafka.Topic, partition)
 		if !ok {
 			continue
 		}
