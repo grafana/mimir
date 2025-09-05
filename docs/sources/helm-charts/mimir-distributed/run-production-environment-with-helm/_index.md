@@ -55,7 +55,7 @@ Meet all the following prerequisites:
   The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled using an Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with the credentials of a production-grade Kafka cluster.
 
   {{% admonition type="note" %}}
-  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart includes a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with the ingest storage mode disabled.
+  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart includes a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with ingest storage disabled.
   {{% /admonition %}}
 
 ## Plan capacity
