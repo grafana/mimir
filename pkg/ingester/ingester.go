@@ -2989,7 +2989,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.blockStatsMgr = blockStatsMgr
 
 	// Generate initial statistics for all existing blocks
-	if err := blockStatsMgr.GenerateInitialStatistics(db); err != nil {
+	if err := blockStatsMgr.GatherStatistics(db); err != nil {
 		level.Warn(userLogger).Log("msg", "failed to generate initial block statistics", "err", err)
 	}
 

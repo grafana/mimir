@@ -665,7 +665,6 @@ type blockStatsManager struct {
 
 // blockStatsMetrics holds metrics for block statistics operations
 type blockStatsMetrics struct {
-	cachedStats     prometheus.Gauge
 	generationTotal prometheus.Counter
 	generationTime  prometheus.Histogram
 }
@@ -673,11 +672,6 @@ type blockStatsMetrics struct {
 // newBlockStatsMetrics creates metrics for block statistics
 func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsMetrics {
 	return &blockStatsMetrics{
-		cachedStats: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name:        "cortex_ingester_tsdb_block_statistics_cached_total",
-			Help:        "Number of cached block statistics per user.",
-			ConstLabels: prometheus.Labels{"user": userID},
-		}),
 		generationTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingester_tsdb_block_statistics_generation_total",
 			Help:        "Total number of block statistics generation operations per user.",
@@ -717,44 +711,32 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statist
 	return stats, nil
 }
 
-// GenerateInitialStatistics generates statistics for all existing blocks in the TSDB
-func (m *blockStatsManager) GenerateInitialStatistics(db *tsdb.DB) error {
+// GatherStatistics generates statistics for all existing blocks in the TSDB
+func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 	blocks := db.Blocks()
 	for _, block := range blocks {
 		blockID := block.Meta().ULID
 
-		// Skip if we already have statistics for this block
-		m.mutex.RLock()
-		_, exists := m.blockStats[blockID]
-		m.mutex.RUnlock()
-		if exists {
-			continue
-		}
-
-		// Generate statistics for this block
-		stats, err := m.generateBlockStatistics(blockID, db)
+		stats, err := m.gatherStatistics(blockID, db)
 		if err != nil {
 			level.Warn(m.logger).Log("msg", "failed to generate initial statistics for block", "block", blockID.String(), "err", err)
 			continue
 		}
 
-		// Cache the statistics
 		m.mutex.Lock()
 		m.blockStats[blockID] = stats
-		m.metrics.cachedStats.Set(float64(len(m.blockStats)))
 		m.mutex.Unlock()
 	}
 
 	return nil
 }
 
-// generateBlockStatistics creates statistics for a specific block using its IndexReader
-func (m *blockStatsManager) generateBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
-	start := time.Now()
-	defer func() {
+// gatherStatistics creates statistics for a specific block using its IndexReader
+func (m *blockStatsManager) gatherStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
+	defer func(start time.Time) {
 		m.metrics.generationTime.Observe(time.Since(start).Seconds())
 		m.metrics.generationTotal.Inc()
-	}()
+	}(time.Now())
 	// Find the block in the TSDB
 	blocks := db.Blocks()
 	var targetBlock tsdb.BlockReader
@@ -781,7 +763,7 @@ func (m *blockStatsManager) generateBlockStatistics(blockID ulid.ULID, db *tsdb.
 
 // generateStatisticsFromIndexReader creates statistics using count-min sketches
 func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
-	ctx := context.Background() // Use background context for statistics generation
+	ctx := context.Background()
 
 	// Use the "all series" postings to count total series
 	allPostingsName, allPostingsValue := index.AllPostingsKey()
@@ -880,7 +862,6 @@ func (m *blockStatsManager) syncWithBlocks(currentBlocks []tsdb.BlockReader) {
 
 	// Update tracking and metrics
 	m.lastKnownBlocks = currentBlockSet
-	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
 
 	if removedCount > 0 {
 		level.Debug(m.logger).Log("msg", "cleaned up block statistics", "user", m.userID, "removed_blocks", removedCount, "total_cached", len(m.blockStats))
