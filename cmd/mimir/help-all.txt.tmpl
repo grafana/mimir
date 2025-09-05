@@ -3911,6 +3911,10 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.label-value-length-over-limit-hash-suffix string
+    	When validation.label-value-length-over-limit-strategy, is 'truncate' or 'drop', for label values over the length limit, what suffix to use for the label name that is added with the hash of the full label value. (default "_hash")
+  -validation.label-value-length-over-limit-strategy value
+    	What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '<original label name><label_value_length_over_limit_hash_suffix>'.
   -validation.max-cost-attribution-cardinality int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
   -validation.max-label-names-per-info-series int
