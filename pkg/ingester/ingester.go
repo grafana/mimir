@@ -983,26 +983,6 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
-// getBlockStatistics returns statistics for a specific block ULID
-func (i *Ingester) getBlockStatistics(ctx context.Context, blockID ulid.ULID) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-
-	db := i.getTSDB(user)
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-
-	// Use the userTSDB's block statistics manager
-	if db.blockStatsMgr == nil {
-		return nil, fmt.Errorf("block statistics manager not initialized for user %s", user)
-	}
-
-	return db.blockStatsMgr.GetBlockStatistics(blockID, db.db)
-}
-
 // UserTSDBStatistics implements the lookupplan.UserTSDBStats interface for head statistics
 func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
 	user, err := tenant.TenantID(ctx)
