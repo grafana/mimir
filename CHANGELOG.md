@@ -39,6 +39,7 @@
 * [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. Sharing and head cache invalidation can be enabled via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and the number of metric versions per cache can be configured via -`blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
 * [ENHANCEMENT] Overrides-exporter: The overrides-exporter can now export arbitrary fields from the limits configuration. Metric names are automatically discovered from YAML tags in the limits structure, eliminating the need to maintain hardcoded lists when adding new exportable metrics. #12244
 * [ENHANCEMENT] OTLP: Stick to OTLP vocabulary on invalid label value length error. #12273
+* [ENHANCEMENT] Distributor: Support zstd decompression of OTLP messages. #12229
 * [ENHANCEMENT] Elide SeriesChunksStreamReader.StartBuffering span on queries; show as events on parent span. #12257
 * [ENHANCEMENT] Ruler: Add `-ruler.max-notification-batch-size` CLI flag that can be used to configure the maximum Alertmanager notification batch size. #12469
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
