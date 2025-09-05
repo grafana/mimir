@@ -53,7 +53,7 @@ func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
@@ -64,8 +64,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context, selector *types.Selector)
 	}
 
 	if !s.EagerLoad {
-		matchers := s.mergeMatchers(selector)
-		if err := s.loadSeriesSet(ctx, matchers); err != nil {
+		if err := s.loadSeriesSet(ctx, matchers.Merge(s.Matchers)); err != nil {
 			return nil, err
 		}
 	}
@@ -88,16 +87,6 @@ func (s *Selector) SeriesMetadata(ctx context.Context, selector *types.Selector)
 	}
 
 	return metadata, s.seriesSet.Err()
-}
-
-func (s *Selector) mergeMatchers(selector *types.Selector) []*labels.Matcher {
-	if selector == nil {
-		return s.Matchers
-	}
-
-	matchers := make([]*labels.Matcher, 0, len(s.Matchers)+len(selector.Matchers))
-	matchers = append(matchers, s.Matchers...)
-	return append(matchers, selector.Matchers...)
 }
 
 func (s *Selector) loadSeriesSet(ctx context.Context, matchers []*labels.Matcher) error {

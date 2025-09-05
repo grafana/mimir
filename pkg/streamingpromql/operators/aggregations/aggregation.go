@@ -118,9 +118,9 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *Aggregation) SeriesMetadata(ctx context.Context, selector *types.Selector) ([]types.SeriesMetadata, error) {
+func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
-	innerSeries, err := a.Inner.SeriesMetadata(ctx, selector)
+	innerSeries, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
