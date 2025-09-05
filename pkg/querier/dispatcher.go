@@ -19,6 +19,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -38,18 +40,24 @@ import (
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
 
 type Dispatcher struct {
-	engine         *streamingpromql.Engine
-	queryable      storage.Queryable
-	logger         log.Logger
+	engine    *streamingpromql.Engine
+	queryable storage.Queryable
+	logger    log.Logger
+
+	// We need to report two kinds of metrics, to mirror those emitted by HTTP requests:
+	// cortex_querier_... (eg. cortex_querier_inflight_requests), and
+	// cortex_... (eg. cortex_inflight_requests).
 	querierMetrics *RequestMetrics
+	serverMetrics  *server.Metrics
 }
 
-func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, logger log.Logger) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
 		engine:         engine,
 		queryable:      queryable,
 		logger:         logger,
 		querierMetrics: querierMetrics,
+		serverMetrics:  serverMetrics,
 	}
 }
 
@@ -102,9 +110,10 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in its method name, so we've made the querier/worker.ProtobufRequestHandler interface use "handle" as well.
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
 	writer := &queryResponseWriter{
-		stream:  stream,
-		metrics: d.querierMetrics,
-		logger:  d.logger,
+		stream:         stream,
+		querierMetrics: d.querierMetrics,
+		serverMetrics:  d.serverMetrics,
+		logger:         d.logger,
 	}
 
 	messageName, err := prototypes.AnyMessageName(req)
@@ -115,6 +124,14 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err))
 		return
 	}
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		return
+	}
+
+	writer.tenantID = tenantID
 
 	switch messageName {
 	case evaluateQueryRequestMessageName:
@@ -205,15 +222,19 @@ func (s *httpResultStream) Write(ctx context.Context, r *frontendv2pb.QueryResul
 }
 
 type queryResponseWriter struct {
-	stream  frontendv2pb.QueryResultStream
-	metrics *RequestMetrics
-	logger  log.Logger
+	stream         frontendv2pb.QueryResultStream
+	querierMetrics *RequestMetrics
+	serverMetrics  *server.Metrics
+	logger         log.Logger
 
-	inflightRequests     prometheus.Gauge
-	responseMessageBytes prometheus.Observer
-	startTime            time.Time
-	routeName            string
-	status               string
+	querierInflightRequests     prometheus.Gauge
+	serverInflightRequests      prometheus.Gauge
+	querierResponseMessageBytes prometheus.Observer
+	serverResponseMessageBytes  prometheus.Observer
+	startTime                   time.Time
+	routeName                   string
+	status                      string
+	tenantID                    string
 }
 
 // Start emits metrics at the start of request processing.
@@ -228,20 +249,28 @@ func (w *queryResponseWriter) Start(routeName string, payloadSize int) {
 	w.status = "OK"
 	w.startTime = time.Now()
 
-	w.inflightRequests = w.metrics.InflightRequests.WithLabelValues("gRPC", routeName)
-	w.inflightRequests.Inc()
+	w.querierInflightRequests = w.querierMetrics.InflightRequests.WithLabelValues("gRPC", routeName)
+	w.querierInflightRequests.Inc()
+	w.serverInflightRequests = w.serverMetrics.InflightRequests.WithLabelValues("gRPC", routeName)
+	w.serverInflightRequests.Inc()
 
-	w.metrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
-	w.responseMessageBytes = w.metrics.SentMessageSize.WithLabelValues("gRPC", routeName)
+	w.querierMetrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
+	w.serverMetrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
+	w.querierResponseMessageBytes = w.querierMetrics.SentMessageSize.WithLabelValues("gRPC", routeName)
+	w.serverResponseMessageBytes = w.serverMetrics.SentMessageSize.WithLabelValues("gRPC", routeName)
 }
 
 // Finish emits metrics at the end of request processing.
 // It should only be called after Start is called, and should only be called once per instance.
 func (w *queryResponseWriter) Finish() {
 	duration := time.Since(w.startTime)
-	w.metrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+	w.querierMetrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+	w.serverMetrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+	w.serverMetrics.PerTenantRequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false", w.tenantID).Observe(duration.Seconds())
+	w.serverMetrics.PerTenantRequestTotal.WithLabelValues("gRPC", w.routeName, w.status, "false", w.tenantID).Inc()
 
-	w.inflightRequests.Dec()
+	w.querierInflightRequests.Dec()
+	w.serverInflightRequests.Dec()
 }
 
 func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQueryResponse) error {
@@ -251,8 +280,7 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 		},
 	}
 
-	w.responseMessageBytes.Observe(float64(resp.Size()))
-	return w.stream.Write(ctx, resp)
+	return w.write(ctx, resp)
 }
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
@@ -271,12 +299,17 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryE
 		},
 	}
 
-	w.responseMessageBytes.Observe(float64(resp.Size()))
-	err := w.stream.Write(ctx, resp)
-
-	if err != nil {
+	if err := w.write(ctx, resp); err != nil {
 		level.Debug(w.logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
 	}
+}
+
+func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.QueryResultStreamRequest) error {
+	size := float64(resp.Size())
+	w.querierResponseMessageBytes.Observe(size)
+	w.serverResponseMessageBytes.Observe(size)
+
+	return w.stream.Write(ctx, resp)
 }
 
 type evaluationObserver struct {

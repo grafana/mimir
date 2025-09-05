@@ -334,7 +334,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
-	serv, err := server.New(t.Cfg.Server)
+	t.ServerMetrics = server.NewServerMetrics(t.Cfg.Server)
+	serv, err := server.NewWithMetrics(t.Cfg.Server, t.ServerMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -626,7 +627,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, util_log.Logger)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points

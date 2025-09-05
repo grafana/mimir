@@ -13,6 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -80,6 +82,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	testCases := map[string]struct {
 		req                      *prototypes.Any
+		dontSetTenantID          bool
 		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
 		expectedStatusCode       string
 	}{
@@ -104,12 +107,29 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: &prototypes.Any{
 				TypeUrl: "unknown",
 			},
+			dontSetTenantID: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
 						Error: &querierpb.Error{
 							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
 							Message: `malformed query request type "unknown": message type url "unknown" is invalid`,
+						},
+					},
+				},
+			},
+			expectedStatusCode: "ERROR_BAD_DATA",
+		},
+
+		"request without tenant ID": {
+			req:             createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
+			dontSetTenantID: true,
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_Error{
+						Error: &querierpb.Error{
+							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
+							Message: `no org id`,
 						},
 					},
 				},
@@ -480,18 +500,37 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			tenantID := ""
+
+			if !testCase.dontSetTenantID {
+				tenantID = "tenant-1"
+				ctx = user.InjectOrgID(ctx, tenantID)
+			}
+
 			route, err := prototypes.AnyMessageName(testCase.req)
 			if err != nil {
 				route = "<invalid>"
 			}
 
-			reg := prometheus.NewPedanticRegistry()
+			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
-			dispatcher := NewDispatcher(engine, storage, NewRequestMetrics(reg), opts.Logger)
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, opts.Logger)
 			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 
 			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_inflight_requests Current number of inflight requests.
+				# TYPE cortex_inflight_requests gauge
+				cortex_inflight_requests{method="gRPC",route="%[1]s"} 0
+
+				# HELP cortex_per_tenant_request_duration_seconds Time (in seconds) spent serving HTTP requests for a particular tenant.
+				# TYPE cortex_per_tenant_request_duration_seconds histogram
+				cortex_per_tenant_request_duration_seconds_count{method="gRPC",route="%[1]s",status_code="%[2]s",tenant="%[6]s",ws="false"} 1
+				# HELP cortex_per_tenant_request_total Total count of requests for a particular tenant.
+				# TYPE cortex_per_tenant_request_total counter
+				cortex_per_tenant_request_total{method="gRPC",route="%[1]s",status_code="%[2]s",tenant="%[6]s",ws="false"} 1
+
 				# HELP cortex_querier_inflight_requests Current number of inflight requests to the querier.
 				# TYPE cortex_querier_inflight_requests gauge
 				cortex_querier_inflight_requests{method="gRPC",route="%[1]s"} 0
@@ -506,8 +545,34 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				# TYPE cortex_querier_response_message_bytes histogram
 				cortex_querier_response_message_bytes_sum{method="gRPC",route="%[1]s"} %[4]v
 				cortex_querier_response_message_bytes_count{method="gRPC",route="%[1]s"} %[5]v
-			`, route, testCase.expectedStatusCode, len(testCase.req.Value), totalResponseBytes(testCase.expectedResponseMessages), len(testCase.expectedResponseMessages))
-			requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, "cortex_querier_request_duration_seconds", "cortex_querier_request_message_bytes", "cortex_querier_response_message_bytes", "cortex_querier_inflight_requests")
+
+				# HELP cortex_request_duration_seconds Time (in seconds) spent serving HTTP requests.
+				# TYPE cortex_request_duration_seconds histogram
+				cortex_request_duration_seconds_count{method="gRPC",route="%[1]s",status_code="%[2]s",ws="false"} 1
+				# HELP cortex_request_message_bytes Size (in bytes) of messages received in the request.
+				# TYPE cortex_request_message_bytes histogram
+				cortex_request_message_bytes_sum{method="gRPC",route="%[1]s"} %[3]v
+				cortex_request_message_bytes_count{method="gRPC",route="%[1]s"} 1
+				# HELP cortex_response_message_bytes Size (in bytes) of messages sent in response.
+				# TYPE cortex_response_message_bytes histogram
+				cortex_response_message_bytes_sum{method="gRPC",route="%[1]s"} %[4]v
+				cortex_response_message_bytes_count{method="gRPC",route="%[1]s"} %[5]v
+			`, route, testCase.expectedStatusCode, len(testCase.req.Value), totalResponseBytes(testCase.expectedResponseMessages), len(testCase.expectedResponseMessages), tenantID)
+
+			metricNames := []string{
+				"cortex_inflight_requests",
+				"cortex_per_tenant_request_duration_seconds",
+				"cortex_per_tenant_request_total",
+				"cortex_querier_request_duration_seconds",
+				"cortex_querier_request_message_bytes",
+				"cortex_querier_response_message_bytes",
+				"cortex_querier_inflight_requests",
+				"cortex_request_duration_seconds",
+				"cortex_request_message_bytes",
+				"cortex_response_message_bytes",
+			}
+
+			requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, metricNames...)
 		})
 	}
 }
@@ -544,22 +609,26 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 	expectedMetrics := fmt.Sprintf(`
 		# HELP cortex_querier_inflight_requests Current number of inflight requests to the querier.
 		# TYPE cortex_querier_inflight_requests gauge
-		cortex_querier_inflight_requests{method="gRPC", route="%s"} 1
+		cortex_querier_inflight_requests{method="gRPC", route="%[1]s"} 1
+		# HELP cortex_inflight_requests Current number of inflight requests.
+		# TYPE cortex_inflight_requests gauge
+		cortex_inflight_requests{method="gRPC", route="%[1]s"} 1
 	`, m.route)
-	require.NoError(m.t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_querier_inflight_requests"))
+	require.NoError(m.t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_querier_inflight_requests", "cortex_inflight_requests"))
 
 	return nil
 }
 
 func TestDispatcher_MQEDisabled(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	dispatcher := NewDispatcher(nil, nil, NewRequestMetrics(reg), log.NewNopLogger())
+	reg, requestMetrics, serverMetrics := newMetrics()
+	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, log.NewNopLogger())
 
 	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
 	require.NoError(t, err)
 
 	stream := &mockQueryResultStream{t: t, route: "querierpb.EvaluateQueryRequest", reg: reg}
-	dispatcher.HandleProtobuf(context.Background(), req, stream)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	dispatcher.HandleProtobuf(ctx, req, stream)
 
 	expected := []*frontendv2pb.QueryResultStreamRequest{
 		{
@@ -572,6 +641,16 @@ func TestDispatcher_MQEDisabled(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, stream.messages)
+}
+
+func newMetrics() (*prometheus.Registry, *RequestMetrics, *server.Metrics) {
+	reg := prometheus.NewPedanticRegistry()
+	serverConfig := server.Config{
+		Registerer:       reg,
+		MetricsNamespace: "cortex",
+	}
+
+	return reg, NewRequestMetrics(reg), server.NewServerMetrics(serverConfig)
 }
 
 func requireMetricsIgnoringHistogramBucketsAndDurationSums(t *testing.T, reg *prometheus.Registry, expected string, metricNames ...string) {
