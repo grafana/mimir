@@ -267,7 +267,6 @@ func (b *BlockBuilder) consumePartitionSection(
 			return
 		}
 
-		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", partition)).Observe(dur.Seconds())
 		level.Info(logger).Log("msg", "done consuming", "duration", dur, "partition", partition,
 			"start_offset", startOffset, "end_offset", endOffset,
 			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
