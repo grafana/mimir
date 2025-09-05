@@ -22,7 +22,7 @@ internal, development environment.
 
 ## Before you begin
 
-Meet all the follow prerequisites:
+Meet all the following prerequisites:
 
 - You are familiar with [Helm 3.x](https://helm.sh/docs/intro/quickstart/).
 
@@ -49,13 +49,13 @@ Meet all the follow prerequisites:
   [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
   {{% /admonition %}}
 
-- You have an external Apache Kafka or Kafka-compatible backend, that is different from the one
+- You have an external Apache Kafka or Kafka-compatible backend that is different from the one
   that `mimir-distributed` deploys. The Helm chart deploys a single-node Kafka cluster, which is intended for demo purposes and is not intended for production use.
 
-  The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled with Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with credentials of a production-grade Kafka cluster.
+  The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled using an Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with the credentials of a production-grade Kafka cluster.
 
   {{% admonition type="note" %}}
-  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart comes with a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with the ingest storage mode disabled.
+  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart includes a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with the ingest storage mode disabled.
   {{% /admonition %}}
 
 ## Plan capacity
@@ -67,7 +67,7 @@ The `mimir-distributed` Helm chart comes with two sizing plans:
 
 These sizing plans are estimated based on experience from operating Grafana
 Mimir at Grafana Labs. The ideal size for your cluster depends on your
-usage patterns. Therefore, use the sizing plans as starting
+usage patterns. Therefore, use the sizing plans as a starting
 point for sizing your Grafana Mimir cluster, rather than as strict guidelines.
 To get a better idea of how to plan capacity, refer to the YAML comments at
 the beginning of `small.yaml` and `large.yaml` files, which relate to read and write workloads.
@@ -225,7 +225,7 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
 
 2. Prepare the credentials for the Kafka cluster.
 
-3. Add the Kafka-related configuration to the Helm chart values. Nest the object storage configuration under
+3. Add the Kafka-related configuration to the Helm chart values. Nest the Kafka configuration under
    `mimir.structuredConfig`.
 
    ```yaml
@@ -239,7 +239,7 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
            sasl_username: "${KAFKA_SASL_USERNAME}" # This is a secret injected via an environment variable
            sasl_password: "${KAFKA_SASL_PASSWORD}" # This is a secret injected via an environment variable
            # Mimir will auto-create the topic on start up.
-           # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 1000 here arbitrary large to guarantee that.
+           # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 1000 here is arbitrarily large to guarantee that.
            topic: mimir-ingest
            auto_create_topic_enabled: true
            auto_create_topic_default_partitions: 1000
@@ -327,7 +327,7 @@ Metrics) server.
 
        metrics:
          remote:
-           url: "https://prometehus.prometheus.svc.cluster.local./api/v1/push"
+           url: "https://prometheus.prometheus.svc.cluster.local./api/v1/push"
            headers:
              X-Scope-OrgID: metamonitoring
    ```
