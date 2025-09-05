@@ -254,10 +254,6 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		jobs <- fetches
 	}
 	t.client.RemoveConsumePartitions(map[string][]int32{t.cfg.Kafka.Topic: startPartitions})
-	if err != nil {
-		level.Error(t.logger).Log("msg", "failed to discard buffered records", "err", err)
-		return err
-	}
 	level.Info(t.logger).Log("msg", "fetches for run complete, waiting for workers to finish processing", "count", numFetches)
 	close(jobs)
 	wg.Wait()
