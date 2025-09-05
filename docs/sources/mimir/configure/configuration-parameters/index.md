@@ -4873,8 +4873,8 @@ blocked_requests:
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
-# (experimental) Enable labels query optimizations. When enabled, the
-# query-frontend may rewrite labels queries to improve their performance.
+# (advanced) Enable labels query optimizations. When enabled, the query-frontend
+# may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
 [labels_query_optimizer_enabled: <boolean> | default = true]
 
