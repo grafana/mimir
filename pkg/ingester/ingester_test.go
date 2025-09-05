@@ -6065,13 +6065,6 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 func TestIngester_QueryStream(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
-
-	// Change stream type in runtime.
-	var streamType QueryStreamType
-	cfg.StreamTypeFn = func() QueryStreamType {
-		return streamType
-	}
-
 	registry := prometheus.NewRegistry()
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
@@ -6132,39 +6125,18 @@ func TestIngester_QueryStream(t *testing.T) {
 	defer c.Close()
 
 	tests := map[string]struct {
-		streamType         QueryStreamType
-		numShards          int
-		expectedStreamType QueryStreamType
+		numShards int
 	}{
-		"should query chunks by default": {
-			streamType:         QueryStreamDefault,
-			expectedStreamType: QueryStreamChunks,
-		},
-		"should query samples when configured with QueryStreamSamples": {
-			streamType:         QueryStreamSamples,
-			expectedStreamType: QueryStreamSamples,
-		},
-		"should query chunks when configured with QueryStreamChunks": {
-			streamType:         QueryStreamChunks,
-			expectedStreamType: QueryStreamChunks,
-		},
-		"should support sharding when returning samples": {
-			streamType:         QueryStreamSamples,
-			numShards:          16,
-			expectedStreamType: QueryStreamSamples,
+		"should return chunks": {
+			numShards: 0,
 		},
 		"should support sharding when returning chunks": {
-			streamType:         QueryStreamChunks,
-			numShards:          16,
-			expectedStreamType: QueryStreamChunks,
+			numShards: 16,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Configure the stream type.
-			streamType = testData.streamType
-
 			// Query all series.
 			var actualTimeseries []mimirpb.TimeSeries
 			var actualChunkseries []client.TimeSeriesChunk
@@ -6225,48 +6197,14 @@ func TestIngester_QueryStream(t *testing.T) {
 				assert.Greater(t, receivedSeries, 0)
 			}
 
-			// Ensure we received the expected data types in response.
-			if testData.expectedStreamType == QueryStreamSamples {
-				assert.Len(t, actualTimeseries, expectedNumSeries)
-				assert.Empty(t, actualChunkseries)
-			} else {
-				assert.Len(t, actualChunkseries, expectedNumSeries)
-				assert.Empty(t, actualTimeseries)
-			}
+			// Ensure we received the expected chunk series and no sample series in response.
+			assert.Len(t, actualChunkseries, expectedNumSeries)
+			assert.Empty(t, actualTimeseries)
 
 			// We expect that all series have been returned once per type.
 			actualSeriesIDs := map[string]map[int]struct{}{}
 			for _, typeLabel := range []string{"float", "histogram", "floathistogram"} {
 				actualSeriesIDs[typeLabel] = make(map[int]struct{})
-			}
-
-			for _, series := range actualTimeseries {
-				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				typeLabel := lbls.Get("type")
-
-				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
-				require.NoError(t, err)
-
-				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[typeLabel][seriesID]
-				assert.False(t, exists)
-				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
-
-				switch typeLabel {
-				case "float":
-					// We expect 1 sample with the same timestamp and value we've written.
-					require.Len(t, series.Samples, 1)
-					assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
-					assert.Equal(t, float64(seriesID), series.Samples[0].Value)
-				case "histogram":
-					require.Len(t, series.Histograms, 1)
-					require.Equal(t, mimirpb.FromHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestHistogram(seriesID)), series.Histograms[0])
-				case "floathistogram":
-					require.Len(t, series.Histograms, 1)
-					require.Equal(t, mimirpb.FromFloatHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestFloatHistogram(seriesID)), series.Histograms[0])
-				default:
-					require.Fail(t, "unexpected metric name")
-				}
 			}
 
 			for _, series := range actualChunkseries {
@@ -6351,97 +6289,6 @@ func TestIngester_QueryStream(t *testing.T) {
 	})
 }
 
-func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
-	// Create ingester.
-	cfg := defaultIngesterTestConfig(t)
-	cfg.StreamChunksWhenUsingBlocks = false
-
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-	// Wait until it's healthy.
-	test.Poll(t, 1*time.Second, 1, func() interface{} {
-		return i.lifecycler.HealthyInstancesCount()
-	})
-
-	// Push series.
-	ctx := user.InjectOrgID(context.Background(), userID)
-
-	const samplesCount = 100000
-	samples := generateSamples(samplesCount)
-
-	// 10k samples encode to around 140 KiB,
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:10000]))
-	require.NoError(t, err)
-
-	// 100k samples encode to around 1.4 MiB,
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "2"), samples))
-	require.NoError(t, err)
-
-	// 50k samples encode to around 716 KiB,
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "3"), samples[0:50000]))
-	require.NoError(t, err)
-
-	// Create a GRPC server used to query back the data.
-	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
-	defer serv.GracefulStop()
-	client.RegisterIngesterServer(serv, i)
-
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-
-	go func() {
-		require.NoError(t, serv.Serve(listener))
-	}()
-
-	// Query back the series using GRPC streaming.
-	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), nil)
-	require.NoError(t, err)
-	defer c.Close()
-
-	s, err := c.QueryStream(ctx, &client.QueryRequest{
-		StartTimestampMs: 0,
-		EndTimestampMs:   samplesCount + 1,
-
-		Matchers: []*client.LabelMatcher{{
-			Type:  client.EQUAL,
-			Name:  model.MetricNameLabel,
-			Value: "foo",
-		}},
-	})
-	require.NoError(t, err)
-
-	recvMsgs := 0
-	series := 0
-	totalSamples := 0
-
-	for {
-		resp, err := s.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-		require.True(t, len(resp.Timeseries) > 0) // No empty messages.
-
-		recvMsgs++
-		series += len(resp.Timeseries)
-
-		for _, ts := range resp.Timeseries {
-			totalSamples += len(ts.Samples)
-		}
-	}
-
-	// As ingester doesn't guarantee sorting of series, we can get 2 (10k + 50k in first, 100k in second)
-	// or 3 messages (small series first, 100k second, small series last).
-
-	require.True(t, 2 <= recvMsgs && recvMsgs <= 3)
-	require.Equal(t, 3, series)
-	require.Equal(t, 10000+50000+samplesCount, totalSamples)
-}
-
 func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg Config) client.HealthAndIngesterClient {
 	const sampleCount = 1_000_000
 
@@ -6509,7 +6356,6 @@ func generateSamples(sampleCount int) []mimirpb.Sample {
 func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
-	cfg.StreamChunksWhenUsingBlocks = true
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	c := setupQueryingManySamplesAsChunksTest(ctx, t, cfg)
@@ -7003,12 +6849,6 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
 
-	// Change stream type in runtime.
-	var streamType QueryStreamType
-	cfg.StreamTypeFn = func() QueryStreamType {
-		return streamType
-	}
-
 	// Create ingester.
 	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
 	require.NoError(b, err)
@@ -7082,21 +6922,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 		},
 	}
 
-	b.Run("query samples", func(b *testing.B) {
-		streamType = QueryStreamSamples
-
-		for _, timeRange := range ranges {
-			for _, queryShardingEnabled := range []bool{false, true} {
-				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
-					benchmarkIngesterQueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
-				})
-			}
-		}
-	})
-
 	b.Run("query chunks", func(b *testing.B) {
-		streamType = QueryStreamChunks
-
 		for _, timeRange := range ranges {
 			for _, queryShardingEnabled := range []bool{false, true} {
 				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
@@ -11533,15 +11359,13 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		},
 	}
 	for testName, testCfg := range tests {
-		for _, streamChunks := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/streamChunks=%v", testName, streamChunks), func(t *testing.T) {
-				testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, streamChunks)
-			})
-		}
+		t.Run(testName, func(t *testing.T) {
+			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
+		})
 	}
 }
 
-func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram, streamChunks bool) {
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = false
 
@@ -11568,7 +11392,6 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.StreamChunksWhenUsingBlocks = streamChunks
 		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", registry)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
