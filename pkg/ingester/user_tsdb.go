@@ -15,7 +15,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -150,9 +152,7 @@ type userTSDB struct {
 	postingsCache *tsdb.PostingsForMatchersCache
 
 	// Block statistics management
-	blockStatsMgr     *blockStatsManager
-	statsUpdateCtx    context.Context
-	statsUpdateCancel context.CancelFunc
+	blockStatsMgr *blockStatsManager
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -185,8 +185,12 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
-	u.stopStatsUpdateLoop()
-	return u.db.Close()
+	errs := multierror.MultiError{}
+	if u.blockStatsMgr != nil {
+		errs.Add(services.StopAndAwaitTerminated(context.Background(), u.blockStatsMgr))
+	}
+	errs.Add(u.db.Close())
+	return errs.Err()
 }
 
 func (u *userTSDB) Compact() error {
@@ -651,43 +655,13 @@ func (u *userTSDB) computeOwnedSeries() int {
 	return count
 }
 
-// startStatsUpdateLoop starts a background goroutine that periodically updates block statistics
-func (u *userTSDB) startStatsUpdateLoop() {
-	ctx, cancel := context.WithCancel(context.Background())
-	u.statsUpdateCtx = ctx
-	u.statsUpdateCancel = cancel
-
-	go u.statsUpdateLoop(ctx)
-}
-
-// statsUpdateLoop runs the periodic statistics update process
-func (u *userTSDB) statsUpdateLoop(ctx context.Context) {
-	// Update statistics every 5 minutes
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := u.blockStatsMgr.GatherStatistics(u.db); err != nil {
-				level.Warn(u.logger).Log("msg", "failed to update block statistics", "user", u.userID, "err", err)
-			}
-		}
-	}
-}
-
-// stopStatsUpdateLoop stops the background statistics update goroutine
-func (u *userTSDB) stopStatsUpdateLoop() {
-	if u.statsUpdateCancel != nil {
-		u.statsUpdateCancel()
-	}
-}
-
 // blockStatsManager manages per-block index statistics for a single user TSDB
 type blockStatsManager struct {
+	services.Service
+
+	userID string
 	logger log.Logger
+	db     *tsdb.DB
 
 	// Cache of block statistics by block ULID
 	blockStats map[ulid.ULID]index.Statistics
@@ -721,13 +695,19 @@ func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsM
 }
 
 // newBlockStatsManager creates a new manager for the given user
-func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Registerer) *blockStatsManager {
-	return &blockStatsManager{
+func newBlockStatsManager(userID string, logger log.Logger, db *tsdb.DB, reg prometheus.Registerer) *blockStatsManager {
+	m := &blockStatsManager{
 		userID:     userID,
 		logger:     logger,
+		db:         db,
 		blockStats: make(map[ulid.ULID]index.Statistics),
 		metrics:    newBlockStatsMetrics(reg, userID),
 	}
+
+	// Create timer service that runs statistics gathering every 5 minutes
+	m.Service = services.NewTimerService(5*time.Minute, nil, m.ticker, nil)
+
+	return m
 }
 
 // GetBlockStatistics returns cached statistics for the given block, or error if not found
@@ -758,10 +738,20 @@ func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) ([]tsdb.BlockReader, tsdb.
 	return blockReaders, head
 }
 
-// GatherStatistics generates statistics for all existing blocks in the TSDB.
+// ticker is called periodically by the dskit timer service
+func (m *blockStatsManager) ticker(ctx context.Context) error {
+	if err := m.gatherStatistics(); err != nil {
+		level.Warn(m.logger).Log("msg", "failed to update block statistics", "user", m.userID, "err", err)
+		// Don't return the error to avoid stopping the timer service
+		return nil
+	}
+	return nil
+}
+
+// gatherStatistics generates statistics for all existing blocks in the TSDB.
 // Only recomputes statistics for the head block, as disk block statistics are immutable once written.
-func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
-	diskBlocks, head := m.getAllBlocks(db)
+func (m *blockStatsManager) gatherStatistics() error {
+	diskBlocks, head := m.getAllBlocks(m.db)
 
 	// Create a new map to hold all the statistics so that we can discard blocks that have been deleted.
 	newBlockStats := make(map[ulid.ULID]index.Statistics, len(diskBlocks)+1)
@@ -780,7 +770,14 @@ func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 			newBlockStats[blockID] = existingStats
 		} else {
 			// Generate statistics for new disk block
-			stats, err := m.gatherStatistics(blockID, db)
+			indexReader, err := block.Index()
+			if err != nil {
+				level.Warn(m.logger).Log("msg", "failed to get index reader for disk block", "block", blockID.String(), "err", err)
+				continue
+			}
+
+			stats, err := m.generateStatisticsFromIndexReader(indexReader, blockID)
+			indexReader.Close()
 			if err != nil {
 				level.Warn(m.logger).Log("msg", "failed to generate statistics for disk block", "block", blockID.String(), "err", err)
 				continue
@@ -791,11 +788,17 @@ func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 
 	// Always recompute statistics for the head block since it changes
 	headID := head.Meta().ULID
-	headStats, err := m.gatherStatistics(headID, db)
+	headIndexReader, err := head.Index()
 	if err != nil {
-		level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", headID.String(), "err", err)
+		level.Warn(m.logger).Log("msg", "failed to get index reader for head block", "block", headID.String(), "err", err)
 	} else {
-		newBlockStats[headID] = headStats
+		headStats, err := m.generateStatisticsFromIndexReader(headIndexReader, headID)
+		headIndexReader.Close()
+		if err != nil {
+			level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", headID.String(), "err", err)
+		} else {
+			newBlockStats[headID] = headStats
+		}
 	}
 
 	// Replace the entire map atomically
@@ -807,41 +810,6 @@ func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
 }
 
 // gatherStatistics creates statistics for a specific block using its IndexReader
-func (m *blockStatsManager) gatherStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
-	defer func(start time.Time) {
-		m.metrics.generationTime.Observe(time.Since(start).Seconds())
-		m.metrics.generationTotal.Inc()
-	}(time.Now())
-	// Find the block in the TSDB
-	diskBlocks, head := m.getAllBlocks(db)
-	var targetBlock tsdb.BlockReader
-
-	// Check disk blocks
-	for _, block := range diskBlocks {
-		if block.Meta().ULID == blockID {
-			targetBlock = block
-			break
-		}
-	}
-
-	// Check head block if not found in disk blocks
-	if targetBlock == nil && head.Meta().ULID == blockID {
-		targetBlock = head
-	}
-
-	if targetBlock == nil {
-		return nil, fmt.Errorf("block %s not found in TSDB", blockID)
-	}
-
-	// Get the index reader for this block
-	indexReader, err := targetBlock.Index()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get index reader for block %s: %w", blockID, err)
-	}
-	defer indexReader.Close()
-
-	return m.generateStatisticsFromIndexReader(indexReader, blockID)
-}
 
 // countPostings counts the number of series in the given postings
 func countPostings(postings index.Postings) (uint64, error) {

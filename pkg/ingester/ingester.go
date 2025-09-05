@@ -983,24 +983,6 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
-// UserTSDBStatistics implements the lookupplan.UserTSDBStats interface for head statistics
-func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-
-	db := i.getTSDB(user)
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-
-	// For head statistics, we use the head's postings stats
-	// This returns statistics for the head block (latest data)
-	head := db.db.Head()
-	return head.PostingsStats(), nil
-}
-
 // blockStatsManagerAdapter adapts the blockStatsManager to work with the lookup planner.
 type blockStatsManagerAdapter struct {
 	manager *blockStatsManager
@@ -2773,23 +2755,21 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
 // which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, manager *blockStatsManager) tsdb.IndexLookupPlannerFunc {
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
 	metrics := lookupplan.NewMetrics(r)
 	return func(blockReader tsdb.BlockReader) index.LookupPlanner {
-		if blockReader == nil {
-			// This is the head block - use the original behavior with head statistics
-			return lookupplan.NewCostBasedPlanner(metrics, i)
+		userDB := i.getTSDB(userID)
+		if userDB == nil || userDB.blockStatsMgr == nil {
+			return lookupplan.NoopPlanner{}
 		}
 
-		// For disk blocks, use the block statistics manager
-		blockID := blockReader.Meta().ULID
 		return lookupplan.NewCostBasedPlanner(metrics, &blockStatsManagerAdapter{
-			manager: manager,
-			blockID: blockID,
+			manager: userDB.blockStatsMgr,
+			blockID: blockReader.Meta().ULID,
 		})
 	}
 }
@@ -2891,9 +2871,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		return userDB.blocksToDelete(blocks)
 	}
 
-	// Initialize block statistics manager for this user's TSDB
-	blockStatsMgr := newBlockStatsManager(userID, userLogger, tsdbPromReg)
-
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
@@ -2938,7 +2915,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, blockStatsMgr),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2965,16 +2942,18 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
-	// Assign the pre-created block statistics manager to this user's TSDB
-	userDB.blockStatsMgr = blockStatsMgr
+	// Create and start the block statistics manager service for this user's TSDB
+	userDB.blockStatsMgr = newBlockStatsManager(userID, userLogger, db, tsdbPromReg)
 
 	// Generate initial statistics for all existing blocks
-	if err := blockStatsMgr.GatherStatistics(db); err != nil {
+	if err := userDB.blockStatsMgr.gatherStatistics(); err != nil {
 		level.Warn(userLogger).Log("msg", "failed to generate initial block statistics", "err", err)
 	}
 
-	// Start the background goroutine for periodic statistics updates
-	userDB.startStatsUpdateLoop()
+	// Start the dskit timer service for periodic statistics updates
+	if err := services.StartAndAwaitRunning(context.Background(), userDB.blockStatsMgr); err != nil {
+		level.Warn(userLogger).Log("msg", "failed to start block statistics service", "err", err)
+	}
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
