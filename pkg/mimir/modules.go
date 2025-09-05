@@ -622,10 +622,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
@@ -639,6 +640,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
+		metrics,
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,

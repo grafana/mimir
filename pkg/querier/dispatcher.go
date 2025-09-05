@@ -12,11 +12,14 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel/attribute"
@@ -35,16 +38,18 @@ import (
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
 
 type Dispatcher struct {
-	engine    *streamingpromql.Engine
-	queryable storage.Queryable
-	logger    log.Logger
+	engine         *streamingpromql.Engine
+	queryable      storage.Queryable
+	logger         log.Logger
+	querierMetrics *RequestMetrics
 }
 
-func NewDispatcher(logger log.Logger, engine *streamingpromql.Engine, queryable storage.Queryable) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
-		engine:    engine,
-		queryable: queryable,
-		logger:    logger,
+		engine:         engine,
+		queryable:      queryable,
+		logger:         logger,
+		querierMetrics: querierMetrics,
 	}
 }
 
@@ -96,42 +101,27 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // and the querier/worker.RequestHandler interface that uses the verb "handle"
 // in its method name, so we've made the querier/worker.ProtobufRequestHandler interface use "handle" as well.
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+	writer := &queryResponseWriter{
+		stream:  stream,
+		metrics: d.querierMetrics,
+		logger:  d.logger,
+	}
+
 	messageName, err := prototypes.AnyMessageName(req)
+	writer.Start(messageName, len(req.Value)) // We deliberately call this before checking the error below, so that we still get stats for malformed requests.
+	defer writer.Finish()
+
 	if err != nil {
-		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err), d.logger)
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err))
 		return
 	}
 
 	switch messageName {
 	case evaluateQueryRequestMessageName:
-		writer := &queryResponseWriter{
-			stream: stream,
-			logger: d.logger,
-		}
-
 		d.evaluateQuery(ctx, req.Value, writer)
 
 	default:
-		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl), d.logger)
-	}
-}
-
-func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStream, t mimirpb.QueryErrorType, msg string, logger log.Logger) {
-	span := trace.SpanFromContext(ctx)
-	span.SetStatus(codes.Error, msg)
-	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", t.String()), attribute.String("msg", msg)))
-
-	err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
-				Type:    t,
-				Message: msg,
-			},
-		},
-	})
-
-	if err != nil {
-		level.Debug(logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl))
 	}
 }
 
@@ -215,20 +205,78 @@ func (s *httpResultStream) Write(ctx context.Context, r *frontendv2pb.QueryResul
 }
 
 type queryResponseWriter struct {
-	stream frontendv2pb.QueryResultStream
-	logger log.Logger
+	stream  frontendv2pb.QueryResultStream
+	metrics *RequestMetrics
+	logger  log.Logger
+
+	inflightRequests     prometheus.Gauge
+	responseMessageBytes prometheus.Observer
+	startTime            time.Time
+	routeName            string
+	status               string
+}
+
+// Start emits metrics at the start of request processing.
+// It should only be called once per instance.
+// It should not be called for HTTP requests, as the HTTP server records these metrics automatically.
+func (w *queryResponseWriter) Start(routeName string, payloadSize int) {
+	if routeName == "" {
+		routeName = "<invalid>"
+	}
+
+	w.routeName = routeName
+	w.status = "OK"
+	w.startTime = time.Now()
+
+	w.inflightRequests = w.metrics.InflightRequests.WithLabelValues("gRPC", routeName)
+	w.inflightRequests.Inc()
+
+	w.metrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
+	w.responseMessageBytes = w.metrics.SentMessageSize.WithLabelValues("gRPC", routeName)
+}
+
+// Finish emits metrics at the end of request processing.
+// It should only be called after Start is called, and should only be called once per instance.
+func (w *queryResponseWriter) Finish() {
+	duration := time.Since(w.startTime)
+	w.metrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+
+	w.inflightRequests.Dec()
 }
 
 func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQueryResponse) error {
-	return w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+	resp := &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &r,
 		},
-	})
+	}
+
+	w.responseMessageBytes.Observe(float64(resp.Size()))
+	return w.stream.Write(ctx, resp)
 }
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	writeErrorToStream(ctx, w.stream, typ, msg, w.logger)
+	span := trace.SpanFromContext(ctx)
+	span.SetStatus(codes.Error, msg)
+	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
+
+	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
+
+	resp := &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: msg,
+			},
+		},
+	}
+
+	w.responseMessageBytes.Observe(float64(resp.Size()))
+	err := w.stream.Write(ctx, resp)
+
+	if err != nil {
+		level.Debug(w.logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+	}
 }
 
 type evaluationObserver struct {

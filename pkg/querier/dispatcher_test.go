@@ -4,13 +4,19 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/regexp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -70,12 +76,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		return createQueryRequestForSpecificNode(expr, timeRange, -1)
 	}
 
-	dispatcher := NewDispatcher(opts.Logger, engine, storage)
 	startT := timestamp.Time(0)
 
 	testCases := map[string]struct {
 		req                      *prototypes.Any
 		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
+		expectedStatusCode       string
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
@@ -91,6 +97,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "ERROR_BAD_DATA",
 		},
 
 		"malformed payload type": {
@@ -107,6 +114,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "ERROR_BAD_DATA",
 		},
 
 		"query that returns an instant vector": {
@@ -173,6 +181,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "OK",
 		},
 
 		"query that returns a range vector": {
@@ -323,6 +332,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "OK",
 		},
 
 		"query that returns a scalar": {
@@ -354,6 +364,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "OK",
 		},
 
 		"query that returns a string": {
@@ -381,6 +392,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "OK",
 		},
 
 		"query that returns annotations": {
@@ -432,6 +444,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "OK",
 		},
 
 		"query that fails with an error": {
@@ -461,20 +474,58 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
+			expectedStatusCode: "ERROR_EXECUTION",
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			stream := &mockQueryResultStream{t: t}
+			route, err := prototypes.AnyMessageName(testCase.req)
+			if err != nil {
+				route = "<invalid>"
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
+			dispatcher := NewDispatcher(engine, storage, NewRequestMetrics(reg), opts.Logger)
 			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
+
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_querier_inflight_requests Current number of inflight requests to the querier.
+				# TYPE cortex_querier_inflight_requests gauge
+				cortex_querier_inflight_requests{method="gRPC",route="%[1]s"} 0
+				# HELP cortex_querier_request_duration_seconds Time (in seconds) spent serving HTTP requests to the querier.
+				# TYPE cortex_querier_request_duration_seconds histogram
+				cortex_querier_request_duration_seconds_count{method="gRPC",route="%[1]s",status_code="%[2]s",ws="false"} 1
+				# HELP cortex_querier_request_message_bytes Size (in bytes) of messages received in the request to the querier.
+				# TYPE cortex_querier_request_message_bytes histogram
+				cortex_querier_request_message_bytes_sum{method="gRPC",route="%[1]s"} %[3]v
+				cortex_querier_request_message_bytes_count{method="gRPC",route="%[1]s"} 1
+				# HELP cortex_querier_response_message_bytes Size (in bytes) of messages sent in response by the querier.
+				# TYPE cortex_querier_response_message_bytes histogram
+				cortex_querier_response_message_bytes_sum{method="gRPC",route="%[1]s"} %[4]v
+				cortex_querier_response_message_bytes_count{method="gRPC",route="%[1]s"} %[5]v
+			`, route, testCase.expectedStatusCode, len(testCase.req.Value), totalResponseBytes(testCase.expectedResponseMessages), len(testCase.expectedResponseMessages))
+			requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, "cortex_querier_request_duration_seconds", "cortex_querier_request_message_bytes", "cortex_querier_response_message_bytes", "cortex_querier_inflight_requests")
 		})
 	}
 }
 
+func totalResponseBytes(msgs []*frontendv2pb.QueryResultStreamRequest) int {
+	total := 0
+
+	for _, msg := range msgs {
+		total += msg.Size()
+	}
+
+	return total
+}
+
 type mockQueryResultStream struct {
 	t        testing.TB
+	route    string
+	reg      *prometheus.Registry
 	messages []*frontendv2pb.QueryResultStreamRequest
 }
 
@@ -488,16 +539,26 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 	require.NoError(m.t, err)
 
 	m.messages = append(m.messages, decoded)
+
+	// Ensure the inflight requests metric has been incremented.
+	expectedMetrics := fmt.Sprintf(`
+		# HELP cortex_querier_inflight_requests Current number of inflight requests to the querier.
+		# TYPE cortex_querier_inflight_requests gauge
+		cortex_querier_inflight_requests{method="gRPC", route="%s"} 1
+	`, m.route)
+	require.NoError(m.t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_querier_inflight_requests"))
+
 	return nil
 }
 
 func TestDispatcher_MQEDisabled(t *testing.T) {
-	dispatcher := NewDispatcher(log.NewNopLogger(), nil, nil)
+	reg := prometheus.NewPedanticRegistry()
+	dispatcher := NewDispatcher(nil, nil, NewRequestMetrics(reg), log.NewNopLogger())
 
 	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
 	require.NoError(t, err)
 
-	stream := &mockQueryResultStream{t: t}
+	stream := &mockQueryResultStream{t: t, route: "querierpb.EvaluateQueryRequest", reg: reg}
 	dispatcher.HandleProtobuf(context.Background(), req, stream)
 
 	expected := []*frontendv2pb.QueryResultStreamRequest{
@@ -511,4 +572,18 @@ func TestDispatcher_MQEDisabled(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, stream.messages)
+}
+
+func requireMetricsIgnoringHistogramBucketsAndDurationSums(t *testing.T, reg *prometheus.Registry, expected string, metricNames ...string) {
+	original, err := testutil.CollectAndFormat(reg, expfmt.TypeTextPlain, metricNames...)
+	require.NoError(t, err)
+
+	filter := regexp.MustCompile(`(?m)^[a-z_]+(_bucket|_duration_seconds_sum)[{ ].*$[[:space:]]+`)
+	filteredText := string(filter.ReplaceAll(original, nil))
+
+	// 'expected' is likely from a raw string and it may contain leading whitespace on each line, so remove it.
+	removeLeadingWhitespace := regexp.MustCompile(`(?m)^[ \t\n]+`)
+	expected = removeLeadingWhitespace.ReplaceAllString(expected, "")
+
+	require.Equal(t, expected, filteredText)
 }
