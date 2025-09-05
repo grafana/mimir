@@ -139,7 +139,7 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 ## Generate test metrics
 
-We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconfigured to scrap metrics from Grafana Mimir own pods, and write those metrics to the same Grafana Mimir instance.
+We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconfigured to scrap metrics from Grafana Mimir pods, and write those metrics to the same Grafana Mimir instance.
 
 1. Create a YAML file called `alloy-values.yaml` for Grafana Alloy Helm chart overrides:
 
