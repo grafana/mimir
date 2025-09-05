@@ -43,7 +43,16 @@ func (s *LabelValueLengthOverLimitStrategy) UnmarshalJSON(bytes []byte) error {
 }
 
 func (s LabelValueLengthOverLimitStrategy) String() string {
-	return string(s)
+	switch s {
+	case LabelValueLengthOverLimitStrategyError:
+		return "error"
+	case LabelValueLengthOverLimitStrategyTruncate:
+		return "truncate"
+	case LabelValueLengthOverLimitStrategyDrop:
+		return "drop"
+	default:
+		panic(fmt.Errorf("unrecognized LabelValueLengthOverLimitStrategy: %d", int(s)))
+	}
 }
 
 func (s *LabelValueLengthOverLimitStrategy) Set(text string) error {
