@@ -883,8 +883,7 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 		// Get all values for this label
 		values, err := r.LabelValues(ctx, labelName, nil)
 		if err != nil {
-			level.Warn(m.logger).Log("msg", "failed to get label values", "block", blockID, "label", labelName, "err", err)
-			continue
+			return nil, fmt.Errorf("failed to get label values for label %s in block %s: %w", labelName, blockID, err)
 		}
 
 		// Create count-min sketch for this label
@@ -899,15 +898,13 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 			// Get postings for this label name/value pair
 			postings, err := r.Postings(ctx, labelName, value)
 			if err != nil {
-				level.Warn(m.logger).Log("msg", "failed to get postings", "block", blockID, "label", labelName, "value", value, "err", err)
-				continue
+				return nil, fmt.Errorf("failed to get postings for label %s=%s in block %s: %w", labelName, value, blockID, err)
 			}
 
 			// Count the number of series for this value
 			seriesCountForValue, err := countPostings(postings)
 			if err != nil {
-				level.Warn(m.logger).Log("msg", "error iterating postings", "block", blockID, "label", labelName, "value", value, "err", err)
-				continue
+				return nil, fmt.Errorf("error counting postings for label %s=%s in block %s: %w", labelName, value, blockID, err)
 			}
 
 			// Add to the sketch
