@@ -241,10 +241,6 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
-func (b *BlockBuilder) shouldUseConcurrentFetchers() bool {
-	return b.cfg.Kafka.FetchConcurrencyMax > 0
-}
-
 type fetchPoller interface {
 	PollFetches(context.Context) kgo.Fetches
 }
