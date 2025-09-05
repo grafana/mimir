@@ -8,7 +8,6 @@ import (
 	tmplhtml "html/template"
 	"net/url"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 	tmpltext "text/template"
@@ -73,7 +72,7 @@ func ValidateKind(kind Kind) error {
 }
 
 const (
-	kindUnknown Kind = iota
+	_ Kind = iota
 	GrafanaKind
 	MimirKind
 )
@@ -142,53 +141,6 @@ type ExtendedData struct {
 
 	// Optional variables for templating, currently only used for webhook custom payloads.
 	Vars map[string]string `json:"-"`
-}
-
-var DefaultTemplateName = "__default__"
-
-// DefaultTemplate returns a new Template with all default templates parsed.
-func DefaultTemplate() (TemplateDefinition, error) {
-	// We cannot simply append the text of each default file together as there can be (and are) duplicate template
-	// names. Duplicate templates should override when parsed from separate files but will fail to parse if both are in
-	// the same file.
-	// So, instead we allow tmpltext to combine the templates and then convert it to a string afterwards.
-	// The underlying template is not accessible, so we capture it via template.Option.
-
-	// Call fromContent without any user-provided templates to get the combined default template.
-	tmpl, err := fromContent(defaultTemplatesPerKind(GrafanaKind), defaultOptionsPerKind(GrafanaKind, "grafana")...)
-	if err != nil {
-		return TemplateDefinition{}, err
-	}
-
-	var combinedTemplate strings.Builder
-	txt, err := tmpl.Text()
-	if err != nil {
-		return TemplateDefinition{}, err
-	}
-	tmpls := txt.Templates()
-	// Sort for a consistent order.
-	slices.SortFunc(tmpls, func(a, b *tmpltext.Template) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
-
-	// Recreate the "define" blocks for all templates. Would be nice to have a more direct way to do this.
-	for _, tmpl := range tmpls {
-		if tmpl.Name() != "" {
-			def := tmpl.Tree.Root.String()
-			if tmpl.Name() == "__text_values_list" {
-				// Temporary fix for https://github.com/golang/go/commit/6fea4094242fe4e7be8bd7ec0b55df9f6df3f025.
-				// TODO: Can remove with GO v1.24.
-				def = strings.Replace(def, "$first := false", "$first = false", 1)
-			}
-
-			combinedTemplate.WriteString(fmt.Sprintf("{{ define \"%s\" }}%s{{ end }}\n\n", tmpl.Name(), def))
-		}
-	}
-	return TemplateDefinition{
-		Name:     DefaultTemplateName,
-		Template: combinedTemplate.String(),
-		Kind:     GrafanaKind,
-	}, nil
 }
 
 // addFuncs is a template.Option that adds functions to the function map fo the given templates.
