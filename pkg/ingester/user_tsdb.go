@@ -650,7 +650,6 @@ func (u *userTSDB) computeOwnedSeries() int {
 
 // blockStatsManager manages per-block index statistics for a single user TSDB
 type blockStatsManager struct {
-	userID string
 	logger log.Logger
 
 	// Cache of block statistics by block ULID
@@ -690,7 +689,6 @@ func newBlockStatsMetrics(reg prometheus.Registerer, userID string) *blockStatsM
 // newBlockStatsManager creates a new manager for the given user
 func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Registerer) *blockStatsManager {
 	return &blockStatsManager{
-		userID:          userID,
 		logger:          logger,
 		blockStats:      make(map[ulid.ULID]index.Statistics),
 		lastKnownBlocks: make(map[ulid.ULID]bool),
