@@ -703,30 +703,49 @@ func newBlockStatsManager(userID string, logger log.Logger, reg prometheus.Regis
 	}
 }
 
-// GetBlockStatistics returns statistics for the given block, generating them if needed
-func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID, db *tsdb.DB) (index.Statistics, error) {
-	// Check if we already have cached statistics
+// GetBlockStatistics returns cached statistics for the given block, or error if not found
+func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statistics, error) {
+	// Check if we have cached statistics
 	m.mutex.RLock()
 	stats, exists := m.blockStats[blockID]
 	m.mutex.RUnlock()
 
-	if exists {
-		return stats, nil
+	if !exists {
+		return nil, fmt.Errorf("statistics not found for block %s", blockID.String())
 	}
-
-	// Generate statistics for this block
-	stats, err := m.generateBlockStatistics(blockID, db)
-	if err != nil {
-		return nil, err
-	}
-
-	// Cache the statistics
-	m.mutex.Lock()
-	m.blockStats[blockID] = stats
-	m.metrics.cachedStats.Set(float64(len(m.blockStats)))
-	m.mutex.Unlock()
 
 	return stats, nil
+}
+
+// GenerateInitialStatistics generates statistics for all existing blocks in the TSDB
+func (m *blockStatsManager) GenerateInitialStatistics(db *tsdb.DB) error {
+	blocks := db.Blocks()
+	for _, block := range blocks {
+		blockID := block.Meta().ULID
+
+		// Skip if we already have statistics for this block
+		m.mutex.RLock()
+		_, exists := m.blockStats[blockID]
+		m.mutex.RUnlock()
+		if exists {
+			continue
+		}
+
+		// Generate statistics for this block
+		stats, err := m.generateBlockStatistics(blockID, db)
+		if err != nil {
+			level.Warn(m.logger).Log("msg", "failed to generate initial statistics for block", "block", blockID.String(), "err", err)
+			continue
+		}
+
+		// Cache the statistics
+		m.mutex.Lock()
+		m.blockStats[blockID] = stats
+		m.metrics.cachedStats.Set(float64(len(m.blockStats)))
+		m.mutex.Unlock()
+	}
+
+	return nil
 }
 
 // generateBlockStatistics creates statistics for a specific block using its IndexReader

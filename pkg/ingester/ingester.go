@@ -1028,9 +1028,7 @@ type blockStatsManagerAdapter struct {
 }
 
 func (b *blockStatsManagerAdapter) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	// We need the TSDB instance to get block statistics, but we don't have direct access here.
-	// For now, let's return empty statistics - this will be improved in the next changes.
-	return &basicStatistics{}, nil
+	return b.manager.GetBlockStatistics(b.blockID)
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -2989,6 +2987,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Assign the pre-created block statistics manager to this user's TSDB
 	userDB.blockStatsMgr = blockStatsMgr
+
+	// Generate initial statistics for all existing blocks
+	if err := blockStatsMgr.GenerateInitialStatistics(db); err != nil {
+		level.Warn(userLogger).Log("msg", "failed to generate initial block statistics", "err", err)
+	}
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
