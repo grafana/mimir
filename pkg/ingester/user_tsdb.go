@@ -34,9 +34,6 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
-// headULID is the special ULID used to identify the head block in TSDB
-var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
-
 type tsdbState int
 
 const (
@@ -715,55 +712,58 @@ func (m *blockStatsManager) GetBlockStatistics(blockID ulid.ULID) (index.Statist
 	return stats, nil
 }
 
-// getAllBlocks returns all blocks (both disk blocks and head as BlockReader)
-func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) []tsdb.BlockReader {
+// getAllBlocks returns disk blocks and head block separately
+func (m *blockStatsManager) getAllBlocks(db *tsdb.DB) ([]tsdb.BlockReader, tsdb.BlockReader) {
 	diskBlocks := db.Blocks()
 	head := db.Head()
 
-	blocks := make([]tsdb.BlockReader, 0, len(diskBlocks)+1)
-
-	// Add disk blocks
-	for _, block := range diskBlocks {
-		blocks = append(blocks, block)
+	// Convert disk blocks to BlockReader slice
+	blockReaders := make([]tsdb.BlockReader, len(diskBlocks))
+	for i, block := range diskBlocks {
+		blockReaders[i] = block
 	}
 
-	// Add head as BlockReader
-	blocks = append(blocks, head)
-
-	return blocks
+	return blockReaders, head
 }
 
 // GatherStatistics generates statistics for all existing blocks in the TSDB.
-// Only recomputes statistics for the head block (identified by special headULID),
-// as disk block statistics are immutable once written.
+// Only recomputes statistics for the head block, as disk block statistics are immutable once written.
 func (m *blockStatsManager) GatherStatistics(db *tsdb.DB) error {
-	blocks := m.getAllBlocks(db)
+	diskBlocks, head := m.getAllBlocks(db)
 
-	// Create a new map to hold all the statistics
-	newBlockStats := make(map[ulid.ULID]index.Statistics, len(blocks))
+	// Create a new map to hold all the statistics so that we can discard blocks that have been deleted.
+	newBlockStats := make(map[ulid.ULID]index.Statistics, len(diskBlocks)+1)
 
-	for _, block := range blocks {
+	// Handle disk blocks - reuse existing statistics if available, otherwise generate
+	for _, block := range diskBlocks {
 		blockID := block.Meta().ULID
 
-		// Check if we already have statistics for this block
+		// Check if we already have statistics for this disk block
 		m.mutex.RLock()
 		existingStats, hasExisting := m.blockStats[blockID]
 		m.mutex.RUnlock()
 
-		// For disk blocks (non-head), reuse existing statistics if available
-		if blockID != headULID && hasExisting {
+		if hasExisting {
+			// Reuse existing statistics for immutable disk blocks
 			newBlockStats[blockID] = existingStats
-			continue
+		} else {
+			// Generate statistics for new disk block
+			stats, err := m.gatherStatistics(blockID, db)
+			if err != nil {
+				level.Warn(m.logger).Log("msg", "failed to generate statistics for disk block", "block", blockID.String(), "err", err)
+				continue
+			}
+			newBlockStats[blockID] = stats
 		}
+	}
 
-		// Generate new statistics for head block or missing disk blocks
-		stats, err := m.gatherStatistics(blockID, db)
-		if err != nil {
-			level.Warn(m.logger).Log("msg", "failed to generate statistics for block", "block", blockID.String(), "err", err)
-			continue
-		}
-
-		newBlockStats[blockID] = stats
+	// Always recompute statistics for the head block since it changes
+	headID := head.Meta().ULID
+	headStats, err := m.gatherStatistics(headID, db)
+	if err != nil {
+		level.Warn(m.logger).Log("msg", "failed to generate statistics for head block", "block", headID.String(), "err", err)
+	} else {
+		newBlockStats[headID] = headStats
 	}
 
 	// Replace the entire map atomically
@@ -781,13 +781,20 @@ func (m *blockStatsManager) gatherStatistics(blockID ulid.ULID, db *tsdb.DB) (in
 		m.metrics.generationTotal.Inc()
 	}(time.Now())
 	// Find the block in the TSDB
-	blocks := m.getAllBlocks(db)
+	diskBlocks, head := m.getAllBlocks(db)
 	var targetBlock tsdb.BlockReader
-	for _, block := range blocks {
+
+	// Check disk blocks
+	for _, block := range diskBlocks {
 		if block.Meta().ULID == blockID {
 			targetBlock = block
 			break
 		}
+	}
+
+	// Check head block if not found in disk blocks
+	if targetBlock == nil && head.Meta().ULID == blockID {
+		targetBlock = head
 	}
 
 	if targetBlock == nil {
