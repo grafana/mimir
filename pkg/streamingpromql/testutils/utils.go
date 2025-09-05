@@ -231,6 +231,20 @@ func LabelsToSeriesMetadata(lbls []labels.Labels) []types.SeriesMetadata {
 	return m
 }
 
+func LabelsToSeriesMetadataWithDropName(lbls []labels.Labels, dropName []bool) []types.SeriesMetadata {
+	m := LabelsToSeriesMetadata(lbls)
+
+	if dropName == nil {
+		return m
+	}
+
+	for i := range lbls {
+		m[i].DropName = dropName[i]
+	}
+
+	return m
+}
+
 func TrimIndent(s string) string {
 	lines := strings.Split(s, "\n")
 
