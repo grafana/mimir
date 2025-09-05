@@ -761,6 +761,15 @@ func (m *blockStatsManager) gatherStatistics(blockID ulid.ULID, db *tsdb.DB) (in
 	return m.generateStatisticsFromIndexReader(indexReader, blockID)
 }
 
+// countPostings counts the number of series in the given postings
+func countPostings(postings index.Postings) (uint64, error) {
+	var count uint64
+	for postings.Next() {
+		count++
+	}
+	return count, postings.Err()
+}
+
 // generateStatisticsFromIndexReader creates statistics using count-min sketches
 func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader, blockID ulid.ULID) (index.Statistics, error) {
 	ctx := context.Background()
@@ -773,11 +782,8 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 	}
 
 	// Count total series by expanding the postings
-	var seriesCount uint64
-	for allPostings.Next() {
-		seriesCount++
-	}
-	if err := allPostings.Err(); err != nil {
+	seriesCount, err := countPostings(allPostings)
+	if err != nil {
 		return nil, fmt.Errorf("error iterating postings for block %s: %w", blockID, err)
 	}
 
@@ -816,11 +822,8 @@ func (m *blockStatsManager) generateStatisticsFromIndexReader(r tsdb.IndexReader
 			}
 
 			// Count the number of series for this value
-			var seriesCountForValue uint64
-			for postings.Next() {
-				seriesCountForValue++
-			}
-			if err := postings.Err(); err != nil {
+			seriesCountForValue, err := countPostings(postings)
+			if err != nil {
 				level.Warn(m.logger).Log("msg", "error iterating postings", "block", blockID, "label", labelName, "value", value, "err", err)
 				continue
 			}
