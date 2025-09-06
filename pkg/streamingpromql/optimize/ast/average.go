@@ -20,10 +20,18 @@ func NewRewriteAverageMapper() *astmapper.ASTExprMapperWithState {
 
 type rewriteAverage struct {
 	changed bool
+
+	countAvg          int
+	countAvgOverTime  int
+	countHistogramAvg int
 }
 
 func (mapper *rewriteAverage) HasChanged() bool {
 	return mapper.changed
+}
+
+func (mapper *rewriteAverage) Stats() (int, int, int) {
+	return mapper.countAvg, mapper.countAvgOverTime, mapper.countHistogramAvg
 }
 
 func (mapper *rewriteAverage) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
@@ -86,6 +94,8 @@ func (mapper *rewriteAverage) handleAggregateExprs(lhs, rhs *parser.AggregateExp
 		return nil
 	}
 
+	mapper.countAvg++
+
 	return &parser.AggregateExpr{
 		Op:       parser.AVG,
 		Expr:     lhs.Expr,
@@ -128,6 +138,13 @@ func (mapper *rewriteAverage) handleFunctionCalls(lhs, rhs *parser.Call) parser.
 		if lhs.Args[i].String() != rhs.Args[i].String() {
 			return nil
 		}
+	}
+
+	switch newFuncName {
+	case "histogram_avg":
+		mapper.countHistogramAvg++
+	case "avg_over_time":
+		mapper.countAvgOverTime++
 	}
 
 	return &parser.Call{

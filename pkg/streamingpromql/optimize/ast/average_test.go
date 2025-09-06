@@ -4,6 +4,7 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -68,4 +69,19 @@ func TestRewriteAverageWithData(t *testing.T) {
 			foo_hist	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x<num samples>
 			bar_hist	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x<num samples>
 	`, testCasesRewriteAverage)
+}
+
+func TestCountRewriteAverage(t *testing.T) {
+	ctx := context.Background()
+	optimizer := ast.NewRewriteAverageMapper()
+
+	for input, _ := range testCasesRewriteAverage {
+		inputExpr, err := parser.ParseExpr(input)
+		require.NoError(t, err)
+		_, err = optimizer.Map(ctx, inputExpr)
+		require.NoError(t, err)
+	}
+
+	fmt.Printf("total count: %d\n", len(testCasesRewriteAverage))
+	fmt.Println(optimizer.Stats())
 }
