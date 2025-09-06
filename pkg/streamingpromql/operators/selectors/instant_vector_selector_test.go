@@ -202,7 +202,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			_, err := selector.SeriesMetadata(ctx)
+			_, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			series, err := selector.NextSeries(ctx)
@@ -248,7 +248,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			series, err := selector.SeriesMetadata(ctx)
+			series, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			expectedSeries := []types.SeriesMetadata{

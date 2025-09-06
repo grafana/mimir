@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -50,7 +51,8 @@ type SeriesOperator interface {
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
-	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
+	// TODO: Docs
+	SeriesMetadata(ctx context.Context, matchers Matchers) ([]SeriesMetadata, error)
 }
 
 // InstantVectorOperator represents all operators that produce instant vectors.
@@ -92,6 +94,23 @@ type StringOperator interface {
 
 	// GetValue returns the string
 	GetValue() string
+}
+
+type Matchers []*labels.Matcher
+
+// Merge appends other Matchers to this matcher if both are non-nil.
+// If this Matchers is nil, other is returned unchanged.
+// If other is nil, this Matchers is returned unchanged.
+func (s Matchers) Merge(other Matchers) Matchers {
+	if s == nil {
+		return other
+	}
+
+	if other == nil {
+		return s
+	}
+
+	return append(s, other...)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive,staticcheck

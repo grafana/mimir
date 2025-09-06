@@ -34,8 +34,8 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := d.Inner.SeriesMetadata(ctx, matchers)
 
 	if err != nil {
 		return nil, err

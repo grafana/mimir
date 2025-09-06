@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -12,7 +13,17 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 )
+
+func (h *BinaryExpressionHints) ToQueryHint() *binops.QueryHints {
+	if h == nil {
+		return nil
+	}
+	return &binops.QueryHints{
+		Include: slices.Clone(h.Include),
+	}
+}
 
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
 	return (*parser.VectorMatching)(v)

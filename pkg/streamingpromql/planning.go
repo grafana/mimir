@@ -70,6 +70,10 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
 	return planner, nil
 }
 

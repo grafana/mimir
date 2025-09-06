@@ -47,13 +47,13 @@ type Selector struct {
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	if s.EagerLoad {
-		return s.loadSeriesSet(ctx)
+		return s.loadSeriesSet(ctx, s.Matchers)
 	}
 
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
@@ -64,7 +64,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	if !s.EagerLoad {
-		if err := s.loadSeriesSet(ctx); err != nil {
+		if err := s.loadSeriesSet(ctx, matchers.Merge(s.Matchers)); err != nil {
 			return nil, err
 		}
 	}
@@ -89,7 +89,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	return metadata, s.seriesSet.Err()
 }
 
-func (s *Selector) loadSeriesSet(ctx context.Context) error {
+func (s *Selector) loadSeriesSet(ctx context.Context, matchers []*labels.Matcher) error {
 	if s.seriesSet != nil {
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
@@ -118,7 +118,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 		return err
 	}
 
-	s.seriesSet = s.querier.Select(ctx, true, hints, s.Matchers...)
+	s.seriesSet = s.querier.Select(ctx, true, hints, matchers...)
 	return nil
 }
 
