@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -225,7 +226,7 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{
+	ctx = promql.NewOriginContext(ctx, map[string]any{
 		"ruleGroup": map[string]string{
 			"file": g.File(),
 			"name": g.Name(),
@@ -494,9 +495,7 @@ func (g *Group) CopyState(from *Group) {
 			continue
 		}
 
-		for fp, a := range far.active {
-			ar.active[fp] = a
-		}
+		maps.Copy(ar.active, far.active)
 	}
 
 	// Handle deleted and unmatched duplicate rules.
