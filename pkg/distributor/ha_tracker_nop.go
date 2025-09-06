@@ -22,7 +22,7 @@ func newNopHaTracker() *nopHaTracker {
 	return tracker
 }
 
-func (n nopHaTracker) checkReplica(context.Context, string, string, string, time.Time) error {
+func (n nopHaTracker) checkReplica(context.Context, string, string, string, time.Time, time.Time) error {
 	return nil
 }
 
