@@ -123,6 +123,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.graphite.querier.terminationGracePeriodSeconds }}
+      {{- with .Values.graphite.querier.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

@@ -1,0 +1,85 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-dnsconfig-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-dnsconfig-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-dnsconfig-values
+  template:
+    metadata:
+      name: test-dnsconfig-values-minio
+      labels:
+        app: minio
+        release: test-dnsconfig-values
+      annotations:
+        checksum/secrets: abb25e9c4c8ee9c42d86e36d7cc179e1414183b3dc62941da3f088fdcfaf3abe
+        checksum/config: 6ea2dc5bc9b2e91007c74522640785e319a8db027e195362ab2912a51894e3be
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-dnsconfig-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-dnsconfig-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-dnsconfig-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-dnsconfig-values-minio
