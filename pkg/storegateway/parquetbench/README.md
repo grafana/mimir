@@ -42,3 +42,15 @@ go test -bench=BenchmarkBucketStores_Series -benchmark-store=tsdb -benchmark-tsd
 | `-benchmark-compression` | `true` | Enable compression for parquet data                                                                       |
 | `-benchmark-sort-by` | `""` | Comma-separated list of fields to sort by in parquet data                                                 |
 | `-benchmark-tsdb-dir` | `""` | Path to pre-generated TSDB blocks (optional) If set the above compression and sort-by options are ignored |
+
+## Block Generation
+
+The `blockgen` tool can generate realistic test data for benchmarking. When using TSDB storage, it automatically creates:
+
+- **TSDB blocks** with index files, chunks, and metadata
+- **Index-header files** for optimized queries
+- **Sparse-index-header files** for memory optimization and size modeling
+
+These files allow for accurate performance testing and size analysis of different storage formats.
+
+For detailed information about the block generation tool, see `blockgen/README.md`.

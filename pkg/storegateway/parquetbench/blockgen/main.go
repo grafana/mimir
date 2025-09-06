@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
@@ -153,6 +155,11 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 		if verbose {
 			log.Printf("Generated TSDB block: %s", blockID.String())
 		}
+
+		// Generate index-header for faster queries
+		if err := generateIndexHeaders(ctx, userBkt, blockID, outputDir, userID, verbose); err != nil {
+			return fmt.Errorf("failed to generate index headers: %w", err)
+		}
 	}
 
 	// Convert to Parquet if requested
@@ -168,6 +175,11 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 	// Create bucket index
 	if err := createBucketIndex(ctx, bkt, userID); err != nil {
 		return fmt.Errorf("failed to create bucket index: %w", err)
+	}
+
+	// Report file sizes
+	if err := reportFileSizes(outputDir, userID, blockID, storeType, verbose); err != nil {
+		log.Printf("Warning: failed to report file sizes: %v", err)
 	}
 
 	if verbose {
@@ -313,4 +325,170 @@ func createBucketIndex(ctx context.Context, bkt objstore.Bucket, userID string) 
 		return err
 	}
 	return bucketindex.WriteIndex(ctx, bkt, userID, nil, idx)
+}
+
+// generateIndexHeaders creates both index-header and sparse-index-header files for the block
+func generateIndexHeaders(ctx context.Context, userBkt objstore.InstrumentedBucket, blockID ulid.ULID, outputDir, userID string, verbose bool) error {
+	// Create index-header
+	indexHeaderPath := filepath.Join(outputDir, userID, blockID.String(), "index-header")
+	if err := indexheader.WriteBinary(ctx, userBkt, blockID, indexHeaderPath); err != nil {
+		return fmt.Errorf("failed to create index-header: %w", err)
+	}
+	
+	if verbose {
+		log.Printf("Generated index-header for block %s", blockID.String())
+	}
+
+	// Generate sparse-index-header for size modeling
+	if err := generateSparseIndexHeader(ctx, outputDir, userID, blockID, verbose); err != nil {
+		return fmt.Errorf("failed to create sparse-index-header: %w", err)
+	}
+	
+	return nil
+}
+
+// generateSparseIndexHeader creates a sparse-index-header from the full index-header for size modeling
+func generateSparseIndexHeader(ctx context.Context, outputDir, userID string, blockID ulid.ULID, verbose bool) error {
+	logger := kitlog.NewNopLogger()
+	if verbose {
+		w := kitlog.NewSyncWriter(os.Stderr)
+		logger = kitlog.NewLogfmtLogger(w)
+	}
+
+	// Create StreamBinaryReader with default metrics (nil registerer creates no-op metrics)
+	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
+	
+	blockDir := filepath.Join(outputDir, userID)
+	cfg := indexheader.Config{
+		MaxIdleFileHandles: 1,
+		VerifyOnLoad: false,
+	}
+	
+	// Create StreamBinaryReader - this will generate the sparse header automatically if it doesn't exist
+	reader, err := indexheader.NewStreamBinaryReader(ctx, logger, nil, blockDir, blockID, 32, metrics, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create stream binary reader: %w", err)
+	}
+	defer reader.Close()
+	
+	if verbose {
+		sparseHeaderPath := filepath.Join(blockDir, blockID.String(), "sparse-index-header")
+		if _, err := os.Stat(sparseHeaderPath); err == nil {
+			log.Printf("Generated sparse-index-header for block %s", blockID.String())
+		} else {
+			log.Printf("Warning: sparse-index-header was not created for block %s", blockID.String())
+		}
+	}
+	
+	return nil
+}
+
+// footerSize returns the size of the Parquet footer from the last 8 bytes of the file
+func footerSize(filename string) (uint32, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	fi, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	size := fi.Size()
+	if size < 8 {
+		return 0, fmt.Errorf("file too small to contain footer")
+	}
+
+	// Last 8 bytes of the file
+	buf := make([]byte, 8)
+	_, err = file.ReadAt(buf, size-8)
+	if err != nil {
+		return 0, err
+	}
+
+	footerLength := binary.LittleEndian.Uint32(buf[0:4])
+	return footerLength, nil
+}
+
+// reportFileSizes reports the sizes of generated files for size modeling
+func reportFileSizes(outputDir, userID string, blockID ulid.ULID, storeType string, verbose bool) error {
+	blockPath := filepath.Join(outputDir, userID, blockID.String())
+	
+	// Always report, but format differently for verbose vs non-verbose
+	if verbose {
+		log.Printf("=== File Size Report ===")
+	}
+	
+	var totalSize int64
+	filesReported := 0
+	
+	// Define files to check based on store type
+	filesToCheck := []struct {
+		name        string
+		path        string
+		description string
+		checkStore  string // "tsdb", "parquet", or "both"
+	}{
+		{"0.labels.parquet", filepath.Join(blockPath, "0.labels.parquet"), "Parquet labels file", "parquet"},
+		{"index", filepath.Join(blockPath, "index"), "TSDB index file", "tsdb"},
+		{"index-header", filepath.Join(blockPath, "index-header"), "Optimized index header", "tsdb"},
+		{"sparse-index-header", filepath.Join(blockPath, "sparse-index-header"), "Sparse index header", "tsdb"},
+	}
+	
+	for _, file := range filesToCheck {
+		// Skip files that don't match the store type
+		if file.checkStore != "both" && file.checkStore != storeType && storeType != "both" {
+			continue
+		}
+		
+		stat, err := os.Stat(file.path)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to stat %s: %w", file.name, err)
+			}
+			// File doesn't exist, which is fine for some cases
+			continue
+		}
+		
+		size := stat.Size()
+		totalSize += size
+		filesReported++
+		
+		if verbose {
+			log.Printf("  %-20s: %8d bytes (%s)", file.name, size, file.description)
+		} else {
+			log.Printf("%s: %d bytes", file.name, size)
+		}
+		
+		// For Parquet files, also report footer size
+		if file.name == "0.labels.parquet" {
+			footerLen, err := footerSize(file.path)
+			if err != nil {
+				if verbose {
+					log.Printf("  %-20s: %8s (%s)", "  - footer", "error", "Could not read footer size")
+				} else {
+					log.Printf("0.labels.parquet footer: error reading footer size")
+				}
+			} else {
+				if verbose {
+					log.Printf("  %-20s: %8d bytes (%s)", "  - footer", footerLen, "Parquet footer metadata")
+				} else {
+					log.Printf("0.labels.parquet footer: %d bytes", footerLen)
+				}
+			}
+		}
+	}
+	
+	if verbose && filesReported > 1 {
+		log.Printf("  %-20s: %8d bytes", "Total", totalSize)
+		log.Printf("========================")
+	}
+	
+	if filesReported == 0 {
+		log.Printf("No files found to report sizes for")
+	}
+	
+	return nil
 }

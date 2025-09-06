@@ -93,6 +93,8 @@ The tool creates:
   - `index` file with series index
   - `chunks/000001` file with actual sample data  
   - `meta.json` with block metadata
+  - `index-header` file for optimized queries (automatically generated)
+  - `sparse-index-header` file for memory optimization (automatically generated)
 - Parquet blocks (if `-store parquet` or `-store both`) 
   - `0.labels.parquet` with series labels
   - `0.chunks.parquet` with sample data
@@ -124,3 +126,16 @@ Each series gets multiple samples distributed evenly across the specified time r
 - Custom: `-samples 60 -time-range 6` = 60 samples over 6 hours = 1 sample every 6 minutes
 
 Sample values are random (0-100) unless `-sample-value` is specified.
+
+## Size Modeling
+
+When generating TSDB blocks, the tool automatically creates both `index-header` and `sparse-index-header` files. These files are important for:
+
+- **Performance**: Index headers optimize query performance by avoiding full index reads
+- **Memory usage**: Sparse headers further optimize memory consumption in the store-gateway
+- **Size analysis**: Compare file sizes to understand storage overhead of different optimization layers
+
+Example file sizes for a small test case (2 series, 10 samples each):
+- `index`: 585 bytes (full TSDB index)
+- `index-header`: 398 bytes (optimized header)
+- `sparse-index-header`: 209 bytes (sparse optimization)
