@@ -1444,7 +1444,7 @@ rules:
 
 			// Pre-condition check: the ruler should have run the initial rules sync but not done a sync
 			// based on API mutations.
-			verifySyncRulesMetric(t, reg, 1, 0)
+			verifySyncRulesMetrics(t, reg, 1, 0)
 
 			// POST
 			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
@@ -1463,7 +1463,7 @@ rules:
 				require.YAMLEq(t, tt.input, w.Body.String())
 
 				// Ensure it triggered a rules sync notification.
-				verifySyncRulesMetric(t, reg, 1, 1)
+				verifySyncRulesMetrics(t, reg, 1, 1)
 			} else {
 				require.Equal(t, tt.err.Error()+"\n", w.Body.String())
 			}
@@ -1513,7 +1513,7 @@ rules:
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
 
 	// Pre-condition check: the ruler should have run the initial rules sync.
-	verifySyncRulesMetric(t, reg, 1, 0)
+	verifySyncRulesMetrics(t, reg, 1, 0)
 
 	// Store the initial version of the rule group
 	req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace1", strings.NewReader(ruleGroupVersion1), "user1")
@@ -1524,7 +1524,7 @@ rules:
 	// Invalidation of exists and content
 	assert.Equal(t, 2, mockCache.CountDeleteCalls())
 
-	verifySyncRulesMetric(t, reg, 1, 1)
+	verifySyncRulesMetrics(t, reg, 1, 1)
 
 	// Fetch it back and ensure the content is what we expect even though content can be cached
 	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
@@ -1544,7 +1544,7 @@ rules:
 	// Invalidating exists and content again
 	assert.Equal(t, 4, mockCache.CountDeleteCalls())
 
-	verifySyncRulesMetric(t, reg, 1, 2)
+	verifySyncRulesMetrics(t, reg, 1, 2)
 
 	// Fetch it back and ensure content is updated to the new version meaning the cache was invalidated
 	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
@@ -1673,7 +1673,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
 
 	// Pre-condition check: the ruler should have run the initial rules sync.
-	verifySyncRulesMetric(t, reg, 1, 0)
+	verifySyncRulesMetrics(t, reg, 1, 0)
 
 	// Verify namespace1 rules are there.
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
@@ -1692,7 +1692,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 	require.Equal(t, "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}", w.Body.String())
 
 	// Ensure the namespace deletion triggered a rules sync notification.
-	verifySyncRulesMetric(t, reg, 1, 1)
+	verifySyncRulesMetrics(t, reg, 1, 1)
 
 	// On Partial failures
 	req = requestFor(t, http.MethodDelete, "https://localhost:8080/prometheus/config/v1/rules/namespace2", nil, "user1")
@@ -1729,7 +1729,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
 
 	// Pre-condition check: the ruler should have run the initial rules sync.
-	verifySyncRulesMetric(t, reg, 1, 0)
+	verifySyncRulesMetrics(t, reg, 1, 0)
 
 	// Pre-condition check: the tenant should have 2 rule groups.
 	test.Poll(t, time.Second, 2, func() interface{} {
@@ -1747,7 +1747,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	require.Equal(t, `{"status":"success","data":null,"errorType":"","error":""}`, w.Body.String())
 
 	// Ensure the namespace deletion triggered a rules sync notification.
-	verifySyncRulesMetric(t, reg, 1, 1)
+	verifySyncRulesMetrics(t, reg, 1, 1)
 
 	// Ensure the rule group has been deleted.
 	test.Poll(t, time.Second, 1, func() interface{} {

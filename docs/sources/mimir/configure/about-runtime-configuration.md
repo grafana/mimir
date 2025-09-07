@@ -91,20 +91,3 @@ distributor_limits:
   max_inflight_push_requests: 1500
   max_inflight_push_requests_bytes: 314572800
 ```
-
-## Runtime configuration of ingester streaming
-
-An advanced runtime configuration option controls if ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.
-
-The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
-A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
-
-{{< admonition type="note" >}}
-By default, `-ingester.stream-chunks-when-using-blocks` is `true` which enables transfer of encoded chunks.
-
-In runtime configuration, the parameter `ingester_stream_chunks_when_using_blocks` overrides the CLI flag `-ingester.stream-chunks-when-using-blocks`.
-
-It's strongly recommended that you keep the transfer of encoded chunks enabled, except in rare cases where you observe rules evaluation slowing down.
-
-Both the parameter and CLI flag are deprecated and will be removed in a future release.
-{{< /admonition >}}

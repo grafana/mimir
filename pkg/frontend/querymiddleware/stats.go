@@ -20,11 +20,12 @@ import (
 )
 
 type queryStatsMiddleware struct {
-	lookbackDelta               time.Duration
-	regexpMatcherCount          prometheus.Counter
-	regexpMatcherOptimizedCount prometheus.Counter
-	consistencyCounter          *prometheus.CounterVec
-	next                        MetricsQueryHandler
+	lookbackDelta                     time.Duration
+	regexpMatcherCount                prometheus.Counter
+	regexpMatcherOptimizedCount       prometheus.Counter
+	consistencyCounter                *prometheus.CounterVec
+	queryExpressionSizeBytesHistogram *prometheus.HistogramVec
+	next                              MetricsQueryHandler
 }
 
 func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
@@ -40,14 +41,22 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.Engine
 		Name: "cortex_query_frontend_queries_consistency_total",
 		Help: "Total number of queries that explicitly request a level of consistency.",
 	}, []string{"user", "consistency"})
+	queryExpressionSizeBytesHistogram := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_query_frontend_queries_expression_bytes",
+		Help:                            "Histogram of the length of query expressions requested.",
+		NativeHistogramBucketFactor:     1.4,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	}, []string{"user"})
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
-			lookbackDelta:               streamingpromql.DetermineLookbackDelta(engineOpts),
-			regexpMatcherCount:          regexpMatcherCount,
-			regexpMatcherOptimizedCount: regexpMatcherOptimizedCount,
-			consistencyCounter:          consistencyCounter,
-			next:                        next,
+			lookbackDelta:                     streamingpromql.DetermineLookbackDelta(engineOpts),
+			regexpMatcherCount:                regexpMatcherCount,
+			regexpMatcherOptimizedCount:       regexpMatcherOptimizedCount,
+			consistencyCounter:                consistencyCounter,
+			queryExpressionSizeBytesHistogram: queryExpressionSizeBytesHistogram,
+			next:                              next,
 		}
 	})
 }
@@ -55,6 +64,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.Engine
 func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	s.trackRegexpMatchers(req)
 	s.trackReadConsistency(ctx)
+	s.trackQueryExpressionSize(ctx, req)
 	s.populateQueryDetails(ctx, req)
 
 	return s.next.Do(ctx, req)
@@ -76,6 +86,19 @@ func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
 				s.regexpMatcherOptimizedCount.Inc()
 			}
 		}
+	}
+}
+
+func (s queryStatsMiddleware) trackQueryExpressionSize(ctx context.Context, req MetricsQueryRequest) {
+	queryExpressionLength := len(req.GetQuery())
+
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, tenantID := range tenantIDs {
+		s.queryExpressionSizeBytesHistogram.WithLabelValues(tenantID).Observe(float64(queryExpressionLength))
 	}
 }
 

@@ -13,9 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
@@ -103,17 +100,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
@@ -185,17 +174,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
 
-	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
@@ -350,17 +331,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	// Push samples spanning across multiple block ranges.
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
@@ -424,17 +397,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	// Push some samples.
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
@@ -515,17 +480,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+			ingester, ring, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-			})
-
-			// Wait until it's ACTIVE.
-			test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-				return ingester.lifecycler.GetState()
-			})
+			startAndWaitHealthy(t, ingester, ring)
 
 			// Keep track of the last timestamp written by each writer.
 			writerTimesMx := sync.Mutex{}

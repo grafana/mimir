@@ -4916,7 +4916,7 @@ cost_attribution_labels_structured:
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 10000]
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if

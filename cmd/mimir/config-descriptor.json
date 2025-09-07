@@ -5681,7 +5681,7 @@
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
-          "fieldDefaultValue": 10000,
+          "fieldDefaultValue": 2000,
           "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"

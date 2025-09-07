@@ -2285,7 +2285,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
@@ -2334,7 +2334,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
@@ -2344,6 +2344,66 @@
                      }
                   ],
                   "title": "Number of Queries Queued - query-scheduler",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 37,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "90th Percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Query Expression Length - query-frontend",
                   "type": "timeseries"
                }
             ],
@@ -2383,7 +2443,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2394,7 +2454,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -2432,7 +2492,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2443,7 +2503,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\", user=\"$user\"})",
@@ -2453,6 +2513,66 @@
                      }
                   ],
                   "title": "Number of Queries Queued - ruler-query-scheduler",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 40,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "90th Percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Query Expression Length - ruler-query-frontend",
                   "type": "timeseries"
                }
             ],
@@ -2493,7 +2613,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2542,7 +2662,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 42,
                   "links": [ ],
                   "options": {
                      "legend": {
