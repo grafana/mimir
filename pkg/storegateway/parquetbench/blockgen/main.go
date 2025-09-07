@@ -46,6 +46,7 @@ var (
 	sampleValue      = flag.Float64("sample-value", 0, "Fixed sample value (0 = random)")
 	samplesPerSeries = flag.Int("samples", 10, "Number of samples per series")
 	timeRangeHours   = flag.Int("time-range", 2, "Time range in hours for the generated block")
+	extraDimensions  = flag.Int("extra-dims", 0, "Number of extra dimensions to add to each series (extra_dim_1=1, extra_dim_2=2, etc.)")
 	verboseLogging   = flag.Bool("verbose", false, "Verbose logging")
 )
 
@@ -77,14 +78,14 @@ func main() {
 	}
 
 	if err := generateBlocks(*outputDir, *userID, dimensions, *compression, sortByLabels,
-		*storeType, *sampleValue, *samplesPerSeries, *timeRangeHours, *verboseLogging); err != nil {
+		*storeType, *sampleValue, *samplesPerSeries, *timeRangeHours, *extraDimensions, *verboseLogging); err != nil {
 		log.Fatalf("Failed to generate blocks: %v", err)
 	}
 }
 
 func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 	sortByLabels []string, storeType string, sampleValue float64,
-	samplesPerSeries, timeRangeHours int, verbose bool) error {
+	samplesPerSeries, timeRangeHours, extraDimensions int, verbose bool) error {
 
 	ctx := context.Background()
 
@@ -98,6 +99,9 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 		log.Printf("Store type: %s", storeType)
 		log.Printf("Samples per series: %d", samplesPerSeries)
 		log.Printf("Time range: %d hours", timeRangeHours)
+		if extraDimensions > 0 {
+			log.Printf("Extra dimensions: %d (extra_dim_1=1, extra_dim_2=2, ..., extra_dim_%d=%d)", extraDimensions, extraDimensions, extraDimensions)
+		}
 	}
 
 	// Create output directory
@@ -111,7 +115,7 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 
 	app := st.Appender(ctx)
 
-	if err := generateSeries(app, dims, sampleValue, samplesPerSeries, timeRangeHours, verbose); err != nil {
+	if err := generateSeries(app, dims, sampleValue, samplesPerSeries, timeRangeHours, extraDimensions, verbose); err != nil {
 		return fmt.Errorf("failed to generate series: %w", err)
 	}
 
@@ -191,7 +195,7 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 }
 
 func generateSeries(app storage.Appender, dims dimensions,
-	sampleValue float64, samplesPerSeries, timeRangeHours int, verbose bool) error {
+	sampleValue float64, samplesPerSeries, timeRangeHours, extraDimensions int, verbose bool) error {
 
 	if verbose {
 		log.Printf("Generating %d samples per series over %d hours", samplesPerSeries, timeRangeHours)
@@ -216,14 +220,25 @@ func generateSeries(app storage.Appender, dims dimensions,
 				for z := 0; z < dims.zones; z++ {
 					for s := 0; s < dims.services; s++ {
 						for e := 0; e < dims.environments; e++ {
-							lbls := labels.FromStrings(
+							// Create base label pairs
+							labelPairs := []string{
 								"__name__", fmt.Sprintf("test_metric_%d", m+1),
 								"instance", fmt.Sprintf("instance-%d", i+1),
 								"region", fmt.Sprintf("region-%d", r+1),
 								"zone", fmt.Sprintf("zone-%d", z+1),
 								"service", fmt.Sprintf("service-%d", s+1),
 								"environment", fmt.Sprintf("environment-%d", e+1),
-							)
+							}
+							
+							// Add extra dimensions if specified
+							for extraDim := 1; extraDim <= extraDimensions; extraDim++ {
+								labelPairs = append(labelPairs, 
+									fmt.Sprintf("extra_dim_%d", extraDim),
+									fmt.Sprintf("%d", extraDim),
+								)
+							}
+							
+							lbls := labels.FromStrings(labelPairs...)
 
 							// Generate multiple samples for this series
 							for sample := 0; sample < samplesPerSeries; sample++ {

@@ -26,6 +26,7 @@ go run main.go [flags]
 | `-sample-value` | `0` | Fixed sample value (0 = random) |
 | `-samples` | `10` | Number of samples per series |
 | `-time-range` | `2` | Time range in hours for the generated block |
+| `-extra-dims` | `0` | Number of extra dimensions to add to each series (extra_dim_1=1, extra_dim_2=2, etc.) |
 | `-verbose` | `false` | Verbose logging |
 
 ## Examples
@@ -78,6 +79,18 @@ go run main.go -sample-value 42.0 -verbose
 go run main.go -samples 100 -time-range 6 -verbose
 ```
 
+### Generate with extra dimensions
+```bash
+# Add 3 extra dimensions to each series (extra_dim_1=1, extra_dim_2=2, extra_dim_3=3)
+go run main.go -extra-dims 3 -verbose
+
+# High cardinality test with 10 extra dimensions per series
+go run main.go -extra-dims 10 -metrics 2 -instances 5 -verbose
+
+# Test label cardinality explosion
+go run main.go -extra-dims 20 -metrics 1 -instances 1 -verbose
+```
+
 ## Fixed Issues
 
 The tool now correctly generates blocks with:
@@ -126,6 +139,29 @@ Each series gets multiple samples distributed evenly across the specified time r
 - Custom: `-samples 60 -time-range 6` = 60 samples over 6 hours = 1 sample every 6 minutes
 
 Sample values are random (0-100) unless `-sample-value` is specified.
+
+## Extra Dimensions
+
+The `-extra-dims` flag allows you to add additional labels to every series for testing high-cardinality scenarios:
+
+**Pattern**: Each series gets labels `extra_dim_1=1`, `extra_dim_2=2`, ..., `extra_dim_N=N`
+
+**Use Cases**:
+- **Label cardinality testing**: Understand how additional labels affect storage and query performance
+- **High-cardinality simulation**: Simulate real-world scenarios with many labels per series
+- **Index efficiency testing**: Measure how sparse vs full index headers handle high cardinality
+- **Parquet compression analysis**: See how label compression works with repetitive patterns
+
+**Performance Impact**:
+- Index size grows with additional labels (symbols table expansion)
+- Parquet footer metadata increases with schema complexity  
+- Query performance may degrade with very high cardinality
+- Memory usage in store-gateway scales with label cardinality
+
+**Size Scaling Examples** (1 series with different extra dimensions):
+- 0 extra dims: ~1974 bytes labels.parquet
+- 3 extra dims: ~2646 bytes labels.parquet (+34%)
+- 10 extra dims: ~3986 bytes labels.parquet (+102%)
 
 ## Size Modeling
 
