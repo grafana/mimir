@@ -296,7 +296,6 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 		return nil, nil, err
 	}
 
-	// Read the whole body.
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
