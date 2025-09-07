@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -950,6 +951,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		errMessage                       string
 		expectedLogs                     []string
 		expectedRetryHeader              bool
+		expectedPartialSuccess           *colmetricpb.ExportMetricsPartialSuccess
 		promoteResourceAttributes        []string
 		expectedAttributePromotions      map[string]string
 		resourceAttributePromotionConfig OTelResourceAttributePromotionConfig
@@ -1293,7 +1295,6 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedRetryHeader:   false,
 		},
 		{
-			// this one needs a fix because the returned status has an unknown field
 			name:       "Unexpected soft ingesterPushError",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
@@ -1304,8 +1305,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode:          http.StatusOK,
 			responseContentType:   pbContentType,
 			responseContentLength: 29,
-			errMessage:            "unexpected ingester error",
 			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 0,
+				ErrorMessage:       "unexpected ingester error",
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -1346,9 +1350,18 @@ func TestHandlerOTLPPush(t *testing.T) {
 			assert.Equal(t, tt.responseCode, resp.Code)
 			assert.Equal(t, tt.responseContentType, resp.Header().Get("Content-Type"))
 			assert.Equal(t, strconv.Itoa(tt.responseContentLength), resp.Header().Get("Content-Length"))
-			if tt.errMessage != "" {
-				body, err := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			if tt.responseCode/100 == 2 {
+				var exportResp colmetricpb.ExportMetricsServiceResponse
+				if tt.responseContentType == jsonContentType {
+					err = json.Unmarshal(body, &exportResp)
+				} else {
+					err = proto.Unmarshal(body, &exportResp)
+				}
 				require.NoError(t, err)
+				assert.Equal(t, tt.expectedPartialSuccess, exportResp.PartialSuccess)
+			} else {
 				respStatus := &status.Status{}
 				if tt.responseContentType == jsonContentType {
 					err = json.Unmarshal(body, respStatus)
