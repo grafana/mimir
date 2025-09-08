@@ -223,10 +223,10 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
      enabled: false
    ```
 
-2. Prepare the credentials for the Kafka cluster.
+   The configuration disables deployment of the Apache Kafka cluster, that the Helm chart embeds. This single-node cluster is intended for demo purposes only, and isn't recommended for production use-cases.
 
-3. Add the Kafka-related configuration to the Helm chart values. Nest the Kafka configuration under
-   `mimir.structuredConfig`.
+2. Add the credentials and configuration for your production Apache Kafka or Kafka-compatible cluster
+   to the Helm chart values. Nest the configuration under the `mimir.structuredConfig`:
 
    ```yaml
    mimir:
