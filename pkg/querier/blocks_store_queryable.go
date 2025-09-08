@@ -935,13 +935,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// Store the result.
 			mtx.Lock()
 			if len(mySeries) > 0 {
-				// Create the series set
-				seriesSet := &blockQuerierSeriesSet{series: mySeries}
-				seriesSets = append(seriesSets, seriesSet)
+				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 
-				// Decrease memory consumption for labels from mySeries since they've been incorporated into the series set
-				for _, series := range mySeries {
-					ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				for _, s := range mySeries {
+					ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
 					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 				}
 			} else if len(myStreamingSeriesLabels) > 0 {
@@ -966,7 +963,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					streamReaders = append(streamReaders, streamReader)
 				}
 
-				// Decrease memory consumption for streaming series labels since they've been incorporated into the series set
 				for _, ls := range myStreamingSeriesLabels {
 					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 				}
@@ -1026,7 +1022,6 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 		ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
 
-		// Track memory consumption for labels received from store gateway
 		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 		}
@@ -1077,7 +1072,6 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			// Track memory consumption for labels received from store gateway
 			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
 				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 			}
