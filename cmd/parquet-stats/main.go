@@ -60,6 +60,8 @@ func main() {
 		"0.labels.parquet",
 	}
 
+	fmt.Println("\nFiles Sizes:")
+
 	for _, filename := range files {
 		filePath := filepath.Join(blockPath, filename)
 		size, err := getFileSize(filePath)
@@ -69,9 +71,9 @@ func main() {
 		}
 
 		if humanReadable {
-			fmt.Printf("%-25s: %s\n", filename, humanize.Bytes(uint64(size)))
+			fmt.Printf("* %-25s: %s\n", filename, humanize.Bytes(uint64(size)))
 		} else {
-			fmt.Printf("%-25s: %d\n", filename, size)
+			fmt.Printf("* %-25s: %d\n", filename, size)
 		}
 	}
 
@@ -79,40 +81,28 @@ func main() {
 	parquetPath := filepath.Join(blockPath, "0.labels.parquet")
 	footerSize, err := getParquetFooterSize(parquetPath)
 	if err != nil {
-		fmt.Printf("%-25s: %s\n", "0.labels.parquet footer", err.Error())
+		fmt.Printf("%-25s: %s\n", "0.labels.parquet metadata", err.Error())
 	} else {
 		if humanReadable {
-			fmt.Printf("%-25s: %s\n", "0.labels.parquet footer", humanize.Bytes(uint64(footerSize)))
+			fmt.Printf("    %-25s: %s\n", "metadata", humanize.Bytes(uint64(footerSize)))
 		} else {
-			fmt.Printf("%-25s: %d\n", "0.labels.parquet footer", footerSize)
+			fmt.Printf("    %-25s: %d\n", "metadata", footerSize)
 		}
 	}
 
-	fmt.Println("\nIn-Memory Sizes:")
+	fmt.Println("\nApproximate In-Memory Sizes:")
 
-	// Calculate sparse index header in-memory size
+	// Calculate sparse index header memory sizes with breakdown
 	sparseHeaderPath := filepath.Join(blockPath, "sparse-index-header")
-	sparseMemSize, err := getSparseIndexHeaderMemorySize(sparseHeaderPath)
+	err = displaySparseHeaderBreakdown(sparseHeaderPath, humanReadable)
 	if err != nil {
-		fmt.Printf("%-25s: %s\n", "sparse-index-header mem", err.Error())
-	} else {
-		if humanReadable {
-			fmt.Printf("%-25s: %s\n", "sparse-index-header mem", humanize.Bytes(uint64(sparseMemSize)))
-		} else {
-			fmt.Printf("%-25s: %d\n", "sparse-index-header mem", sparseMemSize)
-		}
+		fmt.Printf("%-25s: %s\n", "sparse-index-header", err.Error())
 	}
 
-	// Calculate parquet footer in-memory size
-	parquetMemSize, err := getParquetFooterMemorySize(parquetPath)
+	// Calculate parquet footer in-memory size with breakdown
+	err = displayParquetMemoryBreakdown(parquetPath, humanReadable)
 	if err != nil {
-		fmt.Printf("%-25s: %s\n", "parquet footer mem", err.Error())
-	} else {
-		if humanReadable {
-			fmt.Printf("%-25s: %s\n", "parquet footer mem", humanize.Bytes(uint64(parquetMemSize)))
-		} else {
-			fmt.Printf("%-25s: %d\n", "parquet footer mem", parquetMemSize)
-		}
+		fmt.Printf("%-25s: %s\n", "parquet metadata+indexes", err.Error())
 	}
 }
 
@@ -207,68 +197,92 @@ func displayBlockMetadata(blockPath string, humanReadable bool) error {
 	return nil
 }
 
-func getSparseIndexHeaderMemorySize(filePath string) (int64, error) {
+func displaySparseHeaderBreakdown(filePath string, humanReadable bool) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read file")
+		return fmt.Errorf("failed to read file")
 	}
 
-	// Decompress the sparse index header (it's gzip-compressed)
+	// Decompress the sparse index header
 	gzipReader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return 0, fmt.Errorf("failed to create gzip reader")
+		return fmt.Errorf("failed to create gzip reader")
 	}
 	defer gzipReader.Close()
 
 	decompressed, err := io.ReadAll(gzipReader)
 	if err != nil {
-		return 0, fmt.Errorf("failed to decompress")
+		return fmt.Errorf("failed to decompress")
 	}
 
 	// Parse the protobuf structure
 	sparseHeader := &indexheaderpb.Sparse{}
 	if err := proto.Unmarshal(decompressed, sparseHeader); err != nil {
-		return 0, fmt.Errorf("failed to parse sparse header protobuf")
+		return fmt.Errorf("failed to parse sparse header protobuf")
 	}
 
-	// Calculate deep memory size of the parsed structure
-	return calculateStructSize(reflect.ValueOf(sparseHeader).Elem()), nil
+	// Calculate sizes
+	// decompressedSize := int64(len(decompressed))
+	parsedSize := calculateStructSize(reflect.ValueOf(sparseHeader).Elem())
+
+	// Display breakdown
+	if humanReadable {
+		fmt.Printf("* %-25s: %s\n", "sparse-index-header", humanize.Bytes(uint64(parsedSize)))
+		// fmt.Printf("  %-23s: %s\n", "uncompressed buffer", humanize.Bytes(uint64(decompressedSize)))
+		// fmt.Printf("  %-23s: %s\n", "parsed struct", humanize.Bytes(uint64(parsedSize)))
+	} else {
+		fmt.Printf("* %-25s: %d\n", "sparse-index-header", parsedSize)
+		// fmt.Printf("  %-23s: %d\n", "uncompressed buffer", decompressedSize)
+		// fmt.Printf("  %-23s: %d\n", "parsed struct", parsedSize)
+	}
+
+	return nil
 }
 
-func getParquetFooterMemorySize(filePath string) (int64, error) {
+func displayParquetMemoryBreakdown(filePath string, humanReadable bool) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to open file")
+		return fmt.Errorf("failed to open file")
 	}
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get file info")
+		return fmt.Errorf("failed to get file info")
 	}
 
-	// Open the parquet file and parse metadata (this also loads column/offset indexes by default)
+	// Open the parquet file and parse metadata
 	parquetFile, err := parquet.OpenFile(file, fileInfo.Size())
 	if err != nil {
-		return 0, fmt.Errorf("failed to open parquet file")
+		return fmt.Errorf("failed to open parquet file")
 	}
 
-	// Calculate total memory size including metadata, column indexes, and offset indexes
-	totalSize := int64(0)
-	
-	// Get the metadata structure
+	// Calculate sizes for each component
 	metadata := parquetFile.Metadata()
-	totalSize += calculateStructSize(reflect.ValueOf(metadata).Elem())
-	
-	// Add column indexes
+	metadataSize := calculateStructSize(reflect.ValueOf(metadata).Elem())
+
 	columnIndexes := parquetFile.ColumnIndexes()
-	totalSize += calculateStructSize(reflect.ValueOf(columnIndexes))
-	
-	// Add offset indexes  
+	columnIndexSize := calculateStructSize(reflect.ValueOf(columnIndexes))
+
 	offsetIndexes := parquetFile.OffsetIndexes()
-	totalSize += calculateStructSize(reflect.ValueOf(offsetIndexes))
-	
-	return totalSize, nil
+	offsetIndexSize := calculateStructSize(reflect.ValueOf(offsetIndexes))
+
+	totalSize := metadataSize + columnIndexSize + offsetIndexSize
+
+	// Display total
+	if humanReadable {
+		fmt.Printf("* %-25s: %s\n", "parquet metadata+indexes", humanize.Bytes(uint64(totalSize)))
+		fmt.Printf("     %-23s: %s\n", "metadata", humanize.Bytes(uint64(metadataSize)))
+		fmt.Printf("     %-23s: %s\n", "column indexes", humanize.Bytes(uint64(columnIndexSize)))
+		fmt.Printf("     %-23s: %s\n", "offset indexes", humanize.Bytes(uint64(offsetIndexSize)))
+	} else {
+		fmt.Printf("* %-25s: %d\n", "parquet metadata+indexes", totalSize)
+		fmt.Printf("     %-23s: %d\n", "metadata", metadataSize)
+		fmt.Printf("     %-23s: %d\n", "column indexes", columnIndexSize)
+		fmt.Printf("     %-23s: %d\n", "offset indexes", offsetIndexSize)
+	}
+
+	return nil
 }
 
 func calculateStructSize(v reflect.Value) int64 {
@@ -308,8 +322,8 @@ func calculateStructSize(v reflect.Value) int64 {
 	case reflect.Chan, reflect.Func:
 		// These are pointers, size already accounted for in v.Type().Size()
 	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		 reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		 reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
 		// These are basic types, size already accounted for in v.Type().Size()
 	}
 
