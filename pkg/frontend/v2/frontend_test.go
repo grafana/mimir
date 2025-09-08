@@ -160,10 +160,12 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -316,10 +318,12 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
 				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 				// It first needs to be told that enqueuing has succeeded.
-				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
-					Code: 200,
-					Body: []byte(body),
-				})
+				go func() {
+					_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
+						Code: 200,
+						Body: []byte(body),
+					})
+				}()
 			},
 			makeRequest: func(t *testing.T, f *Frontend) {
 				req := &httpgrpc.HTTPRequest{
@@ -400,10 +404,12 @@ func TestFrontend_HTTPGRPC_RetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
