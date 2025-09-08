@@ -49,8 +49,7 @@ Meet all the following prerequisites:
   [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
   {{% /admonition %}}
 
-- You have an external Apache Kafka or Kafka-compatible backend that is different from the one
-  that `mimir-distributed` deploys. The Helm chart deploys a single-node Kafka cluster, which is intended for demo purposes and is not intended for production use.
+- You have an external Apache Kafka or Kafka-compatible backend for production use. The Helm chart deploys a single-node Kafka cluster for demo purposes only and is not suitable for production.
 
   The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled using an Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with the credentials of a production-grade Kafka cluster.
 
