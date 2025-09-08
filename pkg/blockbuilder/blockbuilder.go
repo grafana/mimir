@@ -168,15 +168,16 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 // running learns about the jobs from a block-builder-scheduler, and consumes one job at a time.
 func (b *BlockBuilder) running(ctx context.Context) error {
-	// We control our own context here. We'll stop processing jobs when the
-	// service context is cancelled, but let any in-flight jobs complete.
 
-	// Kick off the scheduler's run loop. To support jobs running during
-	// graceful shutdown, we replace the given context's cancellation signal
-	// with one that cancels when this function exits.
-	schedCtx, schedCancel := context.WithCancel(context.WithoutCancel(ctx))
-	defer schedCancel()
-	go b.schedulerClient.Run(schedCtx)
+	// Block-builder attempts to complete the current job when a shutdown
+	// request is received.
+	// To enable this, we create a child context whose cancellation signal is
+	// replaced with one that cancels when this function exits. Ongoing job
+	// progress and the scheduler client's runloop use this.
+
+	graceCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	go b.schedulerClient.Run(graceCtx)
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -196,7 +197,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		}
 
 		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
-		if _, err := b.consumeJob(context.WithoutCancel(ctx), key, spec); err != nil {
+		if _, err := b.consumeJob(graceCtx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 
 			if err := b.schedulerClient.FailJob(key); err != nil {
