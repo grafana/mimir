@@ -120,7 +120,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.130.1
+    image: otel/opentelemetry-collector-contrib:0.134.1
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
     profiles:
       - otel-collector-remote-write
@@ -136,7 +136,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.130.1
+    image: otel/opentelemetry-collector-contrib:0.134.1
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
     profiles:
       - otel-collector-otlp-push
