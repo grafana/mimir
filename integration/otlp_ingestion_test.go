@@ -134,7 +134,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, model.LabelNames{"__name__", "foo"}, labelNames)
+	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
 	rangeResult, err := c.QueryRange(metricQuery, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)

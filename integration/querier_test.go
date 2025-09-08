@@ -607,7 +607,7 @@ func testMetadataQueriesWithBlocksStorage(
 
 		labelValuesTests []labelValuesTest
 
-		labelNames model.LabelNames
+		labelNames []string
 	}{
 		"query metadata entirely inside the head range": {
 			from: firstSeriesInIngesterHeadTs,
@@ -640,7 +640,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
-			labelNames: model.LabelNames{labels.MetricName, model.LabelName(firstSeriesInIngesterHeadName)},
+			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
 			from: lastSeriesInIngesterBlocksTs,
@@ -673,7 +673,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInIngesterBlocksName)},
+			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
 		},
 		"query metadata partially inside the ingester range": {
 			from: lastSeriesInStorageTs.Add(-blockRangePeriod),
@@ -712,7 +712,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
-			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInStorageName), model.LabelName(lastSeriesInIngesterBlocksName), model.LabelName(firstSeriesInIngesterHeadName)},
+			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
@@ -746,7 +746,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: model.LabelNames{labels.MetricName, model.LabelName(lastSeriesInStorageName)},
+			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
 		},
 	}
 

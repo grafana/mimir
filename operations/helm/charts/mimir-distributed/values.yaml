@@ -3087,7 +3087,7 @@ kafka:
     # -- The container image repository
     repository: apache/kafka-native
     # -- The container image tag
-    tag: 4.0.0
+    tag: 4.1.0
     # -- The container image pull policy
     pullPolicy: IfNotPresent
 
