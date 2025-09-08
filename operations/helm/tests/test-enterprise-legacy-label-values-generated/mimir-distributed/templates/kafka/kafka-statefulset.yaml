@@ -39,7 +39,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: kafka
-          image: "apache/kafka-native:4.0.0"
+          image: "apache/kafka-native:4.1.0"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9092
