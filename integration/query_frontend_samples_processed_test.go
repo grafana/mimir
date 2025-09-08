@@ -341,7 +341,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomInQueryRange(t *t
 	})
 
 	// Setup series for this test case.
-	// It's end is not within maxCacheFreshness interval to simplify test logic.
+	// Its end is not within maxCacheFreshness interval to simplify test logic.
 	pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_series")
 
 	query := "test_series{}"
@@ -379,8 +379,8 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomInQueryRange(t *t
 	require.NoError(t, err)
 	sampleProcessedExcludingCacheThird := e2e.SumValues(values)
 	// subtract second metric value from third to get number only for the third query
-	expectedSamplesProcesedCacheAdjustedThird := sampleProcessedCacheAdjustedThird - sampleProcessedCacheAdjustedSecond
-	require.Equal(t, sampleProcessedCacheAdjustedFirst, expectedSamplesProcesedCacheAdjustedThird, "second query in same range should report same amount of samples as first query")
+	expectedSamplesProcessedCacheAdjustedThird := sampleProcessedCacheAdjustedThird - sampleProcessedCacheAdjustedSecond
+	require.Equal(t, sampleProcessedCacheAdjustedFirst, expectedSamplesProcessedCacheAdjustedThird, "second query in same range should report same amount of samples as first query")
 	require.Equal(t, sampleProcessedExcludingCacheFirst, sampleProcessedExcludingCacheThird, "second query in same range should hit only cache")
 }
 
@@ -393,7 +393,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomOutQueryRange(t *
 	})
 
 	// Setup series for this test case.
-	// It's end is not within maxCacheFreshness to simplify test logic.
+	// Its end is not within maxCacheFreshness to simplify test logic.
 	pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_series")
 
 	query := "test_series{}"
@@ -435,8 +435,8 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomOutQueryRange(t *
 	require.NoError(t, err)
 	sampleProcessedExcludingCacheThird := e2e.SumValues(values)
 	// subtract second metric value from third to get number only for the third query
-	expectedSamplesProcesedCacheAdjustedThird := sampleProcessedCacheAdjustedThird - sampleProcessedCacheAdjustedSecond
-	require.Equal(t, sampleProcessedCacheAdjustedFirst, expectedSamplesProcesedCacheAdjustedThird, "third query in original small range should report same amount of samples as first query")
+	expectedSamplesProcessedCacheAdjustedThird := sampleProcessedCacheAdjustedThird - sampleProcessedCacheAdjustedSecond
+	require.Equal(t, sampleProcessedCacheAdjustedFirst, expectedSamplesProcessedCacheAdjustedThird, "third query in original small range should report same amount of samples as first query")
 	require.Equal(t, sampleProcessedExcludingCacheSecond, sampleProcessedExcludingCacheThird, "third query should hit only cache")
 }
 
