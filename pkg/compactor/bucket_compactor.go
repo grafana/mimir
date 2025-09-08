@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -351,12 +352,14 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToCompactDirs := make([]string, len(toCompact))
+	var totalBlockSize int64
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
+		totalBlockSize += meta.BlockBytes()
 	}
 
 	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "total_size_bytes", totalBlockSize, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	compactionBegin := time.Now()
 
@@ -460,6 +463,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	// upload all blocks
 	c.metrics.blockUploadsStarted.Add(float64(uploadBlocksCount))
+	var totalUploadedSize atomic.Int64
 	err = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
@@ -481,7 +485,46 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		elapsed := time.Since(begin)
 		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
+
+		blockSize := int64(0)
+		seriesCount := uint64(0)
+		sampleCount := uint64(0)
+		compactionLevel := 0
+
+		// Upload doesn't write the file stats to the local meta file, so we need to calculate the block size manually here.
+		files, err := block.GatherFileStats(bdir)
+		if err == nil {
+			for _, f := range files {
+				if f.SizeBytes > 0 {
+					blockSize += f.SizeBytes
+				}
+			}
+			// Use atomic to avoid race conditions in concurrent execution
+			totalUploadedSize.Add(blockSize)
+		} else {
+			level.Warn(jobLogger).Log("msg", "failed to gather local file stats after upload", "block", blockToUpload.ulid, "err", err)
+		}
+
+		// Read info from local meta file
+		blockMeta, err := block.ReadMetaFromDir(bdir)
+		if err == nil {
+			seriesCount = blockMeta.Stats.NumSeries
+			sampleCount = blockMeta.Stats.NumSamples
+			compactionLevel = blockMeta.Compaction.Level
+		} else {
+			level.Warn(jobLogger).Log("msg", "failed to read local block metadata after upload", "block", blockToUpload.ulid, "err", err)
+		}
+
+		level.Info(jobLogger).Log(
+			"msg", "uploaded block",
+			"result_block", blockToUpload.ulid,
+			"size_bytes", blockSize,
+			"series_count", seriesCount,
+			"sample_count", sampleCount,
+			"compaction_level", compactionLevel,
+			"duration", elapsed,
+			"duration_ms", elapsed.Milliseconds(),
+			"external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
 	if err != nil {
@@ -489,7 +532,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(uploadBegin)
-	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "total_size_bytes", totalUploadedSize.Load(), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
