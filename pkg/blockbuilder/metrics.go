@@ -11,7 +11,6 @@ import (
 
 type blockBuilderMetrics struct {
 	consumeJobDuration       *prometheus.HistogramVec
-	processPartitionDuration *prometheus.HistogramVec
 	fetchErrors              *prometheus.CounterVec
 	blockCounts              *prometheus.CounterVec
 	invalidClusterValidation *prometheus.CounterVec
@@ -26,13 +25,6 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"success"})
-
-	m.processPartitionDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name: "cortex_blockbuilder_process_partition_duration_seconds",
-		Help: "Time spent processing one partition.",
-
-		NativeHistogramBucketFactor: 1.1,
-	}, []string{"partition"})
 
 	m.fetchErrors = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_fetch_errors_total",
