@@ -12,8 +12,9 @@ func TestPriorityAssigner(t *testing.T) {
 	cfg := PriorityConfig{Enabled: true}
 	assigner := NewPriorityAssigner(cfg, log.NewNopLogger())
 
-	t.Run("ruler queries get highest priority", func(t *testing.T) {
-		headers := map[string]string{"X-Mimir-Component": "ruler"}
+
+	t.Run("ruler queries via User-Agent get highest priority", func(t *testing.T) {
+		headers := map[string]string{"User-Agent": "mimir-ruler/2.11.0"}
 		ctx := assigner.AssignPriorityLevel(context.Background(), "GET", "/api/v1/query", headers)
 		level := GetPriorityLevel(ctx)
 		assert.GreaterOrEqual(t, level, 400) // VeryHigh priority
@@ -31,7 +32,7 @@ func TestPriorityAssigner(t *testing.T) {
 	t.Run("disabled config returns original context", func(t *testing.T) {
 		cfg := PriorityConfig{Enabled: false}
 		assigner := NewPriorityAssigner(cfg, log.NewNopLogger())
-		
+
 		originalCtx := context.Background()
 		ctx := assigner.AssignPriorityLevel(originalCtx, "GET", "/api/v1/query", nil)
 		assert.Equal(t, originalCtx, ctx)
@@ -47,7 +48,7 @@ func TestQuerySourceDetection(t *testing.T) {
 		headers  map[string]string
 		expected string
 	}{
-		{"ruler header", map[string]string{"X-Mimir-Component": "ruler"}, QuerySourceRuler},
+		{"ruler user agent", map[string]string{"User-Agent": "mimir-ruler/2.11.0"}, QuerySourceRuler},
 		{"grafana user agent", map[string]string{"User-Agent": "Grafana/8.0.0"}, QuerySourceDashboard},
 		{"prometheus user agent", map[string]string{"User-Agent": "prometheus/2.0"}, QuerySourceBackground},
 		{"api user agent", map[string]string{"User-Agent": "curl/7.0"}, QuerySourceAPI},

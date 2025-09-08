@@ -89,13 +89,8 @@ func (p *PriorityAssigner) AssignPriorityLevel(ctx context.Context, method strin
 func (p *PriorityAssigner) detectQuerySource(method string, url string, headers map[string]string) string {
 	userAgent := headers["User-Agent"]
 
-	// Check for explicit ruler identification (external ruler mode)
-	if headers["X-Mimir-Component"] == "ruler" {
-		return QuerySourceRuler
-	}
-
-	// Detect ruler queries by User-Agent patterns (internal ruler mode)
-	if userAgent == "" || strings.Contains(userAgent, "mimir-ruler") {
+	// Detect ruler queries by User-Agent pattern
+	if strings.Contains(userAgent, "mimir-ruler") {
 		return QuerySourceRuler
 	}
 
