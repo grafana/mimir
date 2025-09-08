@@ -1847,8 +1847,6 @@ Usage of ./cmd/mimir/mimir:
     	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming. (default true)
   -ingester.ring.zone-awareness-enabled
     	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.
-  -ingester.stream-chunks-when-using-blocks
-    	[deprecated] Stream chunks from ingesters to queriers. (default true)
   -ingester.track-ingester-owned-series
     	[experimental] This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.
   -ingester.tsdb-config-update-period duration
@@ -2324,7 +2322,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.labels-query-optimizer-enabled
-    	[experimental] Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.
+    	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
@@ -3283,6 +3281,16 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.ingest-storage-record.consumer-group string
+    	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
+  -tests.ingest-storage-record.enabled
+    	Whether the test for ingest-storage record correctness is enabled.
+  -tests.ingest-storage-record.max-jump-size int
+    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 100000000)
+  -tests.ingest-storage-record.max-records-per-run int
+    	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
+  -tests.ingest-storage-record.records-processed-percent int
+    	The approximate percent of records to actually fetch and compare. (default 5)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
@@ -3914,7 +3922,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-cost-attribution-cardinality int
-    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 2000)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

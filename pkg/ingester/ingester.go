@@ -44,10 +44,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
@@ -167,15 +167,6 @@ type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
 }
 
-// QueryStreamType defines type of function to use when doing query-stream operation.
-type QueryStreamType int
-
-const (
-	QueryStreamDefault QueryStreamType = iota // Use default configured value.
-	QueryStreamSamples                        // Stream individual samples.
-	QueryStreamChunks                         // Stream entire chunks.
-)
-
 type requestWithUsersAndCallback struct {
 	users    *util.AllowList // if nil, all tenants are allowed.
 	callback chan<- struct{} // when compaction/shipping is finished, this channel is closed
@@ -195,10 +186,7 @@ type Config struct {
 
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
-	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
-	// Runtime-override for type of streaming query to use (chunks or samples).
-	StreamTypeFn func() QueryStreamType `yaml:"-"`
+	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"`
 
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
@@ -245,7 +233,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
-	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update the per-tenant TSDB configuration.")
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
@@ -2293,35 +2280,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSamples := 0
 	numSeries := 0
 
-	streamType := QueryStreamSamples
-	if i.cfg.StreamChunksWhenUsingBlocks {
-		streamType = QueryStreamChunks
-	}
-
-	if i.cfg.StreamTypeFn != nil {
-		runtimeType := i.cfg.StreamTypeFn()
-		switch runtimeType {
-		case QueryStreamChunks:
-			streamType = QueryStreamChunks
-		case QueryStreamSamples:
-			streamType = QueryStreamSamples
-		default:
-			// no change from config value.
-		}
-	}
-
-	if streamType == QueryStreamChunks {
-		if req.StreamingChunksBatchSize > 0 {
-			spanlog.DebugLog("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
-		} else {
-			spanlog.DebugLog("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
-		}
+	if req.StreamingChunksBatchSize > 0 {
+		spanlog.DebugLog("msg", "using executeStreamingQuery")
+		numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 	} else {
-		spanlog.DebugLog("msg", "using executeSamplesQuery")
-		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		spanlog.DebugLog("msg", "using executeChunksQuery")
+		numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
+
 	if err != nil {
 		return err
 	}
@@ -2330,96 +2296,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(from, through)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer q.Close()
-
-	var hints *storage.SelectHints
-	if shard != nil {
-		hints = configSelectHintsWithShard(initSelectHints(from, through), shard)
-	}
-
-	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(ctx, false, hints, matchers...)
-	if ss.Err() != nil {
-		return 0, 0, ss.Err()
-	}
-
-	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
-	batchSizeBytes := 0
-	var it chunkenc.Iterator
-	for ss.Next() {
-		series := ss.At()
-
-		// convert labels to LabelAdapter
-		ts := mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-		}
-
-		it = series.Iterator(it)
-		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			switch valType {
-			case chunkenc.ValFloat:
-				t, v := it.At()
-				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
-			case chunkenc.ValHistogram:
-				t, v := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
-			case chunkenc.ValFloatHistogram:
-				t, v := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
-			default:
-				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
-			}
-		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
-		numSamples += len(ts.Samples) + len(ts.Histograms)
-		numSeries++
-		tsSize := ts.Size()
-
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(timeseries) >= queryStreamBatchSize {
-			// Adding this series to the batch would make it too big,
-			// flush the data and add it to new batch instead.
-			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Timeseries: timeseries,
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-
-			batchSizeBytes = 0
-			timeseries = timeseries[:0]
-		}
-
-		timeseries = append(timeseries, ts)
-		batchSizeBytes += tsSize
-	}
-
-	// Ensure no error occurred while iterating the series set.
-	if err := ss.Err(); err != nil {
-		return 0, 0, err
-	}
-
-	// Finally flush any existing metrics
-	if batchSizeBytes != 0 {
-		err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Timeseries: timeseries,
-		})
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
-	return numSeries, numSamples, nil
 }
 
 // executeChunksQuery streams metrics from a TSDB. This implements the client.IngesterServer interface
@@ -2974,11 +2850,47 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
+// disabledPlanningChunkQuerier wraps a storage.ChunkQuerier and disables lookup planning for all operations
+type disabledPlanningChunkQuerier struct {
+	delegate storage.ChunkQuerier
+}
+
+func (q *disabledPlanningChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
+	return q.delegate.LabelValues(ctxWithoutPlanning, name, hints, matchers...)
+}
+
+func (q *disabledPlanningChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
+	return q.delegate.LabelNames(ctxWithoutPlanning, hints, matchers...)
+}
+
+func (q *disabledPlanningChunkQuerier) Close() error {
+	return q.delegate.Close()
+}
+
+func (q *disabledPlanningChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
+	return q.delegate.Select(ctxWithoutPlanning, sortSeries, hints, matchers...)
+}
+
 // createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
+	}
+
+	blockMeta := b.Meta()
+
+	// Check if block is older than 3 hours.
+	// 1h in memory + 2h for compaction - only use stats for very recent (mostly in-memory) blocks
+	threeHoursAgo := time.Now().Add(-3 * time.Hour).UnixMilli()
+	if blockMeta.MaxTime < threeHoursAgo {
+		// For old blocks, use a querier with disabled lookup planning to avoid using outdated statistics
+		return &disabledPlanningChunkQuerier{
+			delegate: defaultQuerier,
+		}, nil
 	}
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
@@ -2989,7 +2901,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
-		b.Meta(),
+		blockMeta,
 		i.logger,
 		defaultQuerier,
 	)

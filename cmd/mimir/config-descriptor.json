@@ -5571,10 +5571,10 @@
           "required": false,
           "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5681,7 +5681,7 @@
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
-          "fieldDefaultValue": 10000,
+          "fieldDefaultValue": 2000,
           "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"

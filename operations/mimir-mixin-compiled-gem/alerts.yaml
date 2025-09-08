@@ -1323,36 +1323,15 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirBlockBuilderLagging
+        - alert: MimirBlockBuilderSchedulerPendingJobs
           annotations:
-            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports {{ printf "%.2f" $value }} pending jobs.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderschedulerpendingjobs
           expr: |
-            max by(cluster, namespace, pod) (
-            max_over_time(
-            (
-            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-            -
-            cortex_blockbuilder_scheduler_partition_committed_offset
-            )[10m:])) > 4e6
-          for: 75m
+            sum by (cluster, namespace, pod) (cortex_blockbuilder_scheduler_pending_jobs) > 0
+          for: 40m
           labels:
             severity: warning
-        - alert: MimirBlockBuilderLagging
-          annotations:
-            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
-          expr: |
-            max by(cluster, namespace, pod) (
-            max_over_time(
-            (
-            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-            -
-            cortex_blockbuilder_scheduler_partition_committed_offset
-            )[10m:])) > 4e6
-          for: 140m
-          labels:
-            severity: critical
         - alert: MimirBlockBuilderCompactAndUploadFailed
           annotations:
             message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.

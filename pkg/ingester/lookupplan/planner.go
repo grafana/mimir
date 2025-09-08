@@ -77,8 +77,9 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	// Select the cheapest plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.
-	for _, p := range allPlans {
+	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
+			allPlans = allPlans[i:]
 			return p, nil
 		}
 	}

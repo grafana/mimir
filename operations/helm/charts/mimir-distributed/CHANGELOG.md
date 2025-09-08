@@ -44,6 +44,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for `revisionhistorylimit` for all deployments. #12323
 * [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
+* [ENHANCEMENT] Upgrade rollout-operator to [0.33.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591
 
 ## 5.8.0
 

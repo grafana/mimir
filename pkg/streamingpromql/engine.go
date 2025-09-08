@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -40,7 +41,7 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -89,7 +90,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
-		logger: logger,
+		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
@@ -161,11 +162,11 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	if interval <= 0 {
-		return nil, fmt.Errorf("%v is not a valid interval for a range query, must be greater than 0", interval)
+		return nil, apierror.Newf(apierror.TypeBadData, "%v is not a valid interval for a range query, must be greater than 0", interval)
 	}
 
 	if end.Before(start) {
-		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
+		return nil, apierror.Newf(apierror.TypeBadData, "range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
 	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))

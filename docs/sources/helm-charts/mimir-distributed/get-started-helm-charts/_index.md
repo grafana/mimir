@@ -111,63 +111,144 @@ Using a custom namespace solves problems later on because you do not have to ove
    The results look similar to this:
 
    ```bash
-   NAME                                        READY   STATUS      RESTARTS   AGE
-   mimir-minio-7bd89b757d-q5hp6                1/1     Running     0          2m44s
-   mimir-rollout-operator-76c67c7d56-v6xtl     1/1     Running     0          2m44s
-   mimir-nginx-858455979c-hjvhx                1/1     Running     0          2m44s
-   mimir-make-minio-buckets-svgvd              0/1     Completed   1          2m44s
-   mimir-ruler-64b9d59b94-tvj7z                1/1     Running     0          2m44s
-   mimir-query-frontend-c444b56f9-jrmwl        1/1     Running     0          2m44s
-   mimir-overrides-exporter-86c4d54645-zktkm   1/1     Running     0          2m44s
-   mimir-querier-5d9c55d6d9-l6fdc              1/1     Running     0          2m44s
-   mimir-distributor-7796db494f-rsvdx          1/1     Running     0          2m44s
-   mimir-query-scheduler-d5dccfff7-5c5rw       1/1     Running     0          2m44s
-   mimir-querier-5d9c55d6d9-xghl6              1/1     Running     0          2m44s
-   mimir-query-scheduler-d5dccfff7-vz4vf       1/1     Running     0          2m44s
-   mimir-alertmanager-0                        1/1     Running     0          2m44s
-   mimir-store-gateway-zone-b-0                1/1     Running     0          2m44s
-   mimir-store-gateway-zone-c-0                1/1     Running     0          2m43s
-   mimir-ingester-zone-b-0                     1/1     Running     0          2m43s
-   mimir-compactor-0                           1/1     Running     0          2m44s
-   mimir-ingester-zone-a-0                     1/1     Running     0          2m43s
-   mimir-store-gateway-zone-a-0                1/1     Running     0          2m44s
-   mimir-ingester-zone-c-0                     1/1     Running     0          2m44s
+   NAME                                       READY   STATUS      RESTARTS       AGE
+   mimir-alertmanager-0                       1/1     Running     0              2m25s
+   mimir-compactor-0                          1/1     Running     0              2m25s
+   mimir-distributor-5c8f54fcf-t7f9m          1/1     Running     2 (2m1s ago)   2m25s
+   mimir-ingester-zone-a-0                    1/1     Running     2 (117s ago)   2m25s
+   mimir-ingester-zone-b-0                    1/1     Running     2 (118s ago)   2m25s
+   mimir-ingester-zone-c-0                    1/1     Running     2 (112s ago)   2m25s
+   mimir-kafka-0                              1/1     Running     0              2m25s
+   mimir-make-minio-buckets-5.4.0-d556m       0/1     Completed   0              2m25s
+   mimir-minio-5477c4c7b4-dwvsv               1/1     Running     0              2m25s
+   mimir-nginx-5ddc75564-lcqlv                1/1     Running     0              2m25s
+   mimir-overrides-exporter-6db7cfd7c-c4ljk   1/1     Running     0              2m25s
+   mimir-querier-7fb9d8c875-x9jkd             1/1     Running     2 (119s ago)   2m25s
+   mimir-querier-7fb9d8c875-xf9hd             1/1     Running     2 (117s ago)   2m25s
+   mimir-query-frontend-6f56dc997f-lgd4j      1/1     Running     0              2m25s
+   mimir-query-scheduler-bf95f647-rm9cf       1/1     Running     0              2m25s
+   mimir-query-scheduler-bf95f647-swlzs       1/1     Running     0              2m25s
+   mimir-rollout-operator-569576c88c-xs2wz    1/1     Running     0              2m25s
+   mimir-ruler-67548666f-bmmn2                1/1     Running     2 (2m ago)     2m25s
+   mimir-store-gateway-zone-a-0               1/1     Running     0              2m25s
+   mimir-store-gateway-zone-b-0               1/1     Running     0              2m25s
+   mimir-store-gateway-zone-c-0               1/1     Running     0              2m25s
    ```
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
 ## Generate test metrics
 
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconfigured to scrap metrics from Grafana Mimir pods, and write those metrics to the same Grafana Mimir instance.
 
-The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
-In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
-
-1. Deploy the Grafana Agent Operator Custom Resource Definitions (CRDs). For more information, refer to [Deploy the Agent Operator Custom Resource Definitions (CRDs)](https://grafana.com/docs/agent/latest/operator/getting-started/#deploy-the-agent-operator-custom-resource-definitions-crds) in the Grafana Agent documentation.
-
-1. Create a YAML file called `custom.yaml` for your Helm values overrides.
-   Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
+1. Create a YAML file called `alloy-values.yaml` for Grafana Alloy Helm chart overrides:
 
    ```yaml
-   metaMonitoring:
-     serviceMonitor:
-       enabled: true
-     grafanaAgent:
-       enabled: true
-       installOperator: true
-       metrics:
-         additionalRemoteWriteConfigs:
-           - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
+   alloy:
+     clustering:
+       enabled: false
+
+     resources:
+       requests:
+         cpu: 100m
+         memory: 128Mi
+       limits:
+         memory: 512Mi
+
+     serviceAccount:
+       create: true
+       name: ""
+     rbac:
+       create: true
+
+     configMap:
+       content: |
+         // Kubernetes service discovery for pods in test-mimir namespace
+         discovery.kubernetes "pods" {
+           role = "pod"
+           namespaces {
+             names = ["mimir-test"]
+           }
+         }
+         // Relabel pods to extract metrics endpoints
+         discovery.relabel "pod_relabel" {
+           targets = discovery.kubernetes.pods.targets
+           rule {
+             source_labels = ["__meta_kubernetes_pod_label_name"]
+             regex = ""
+             action = "drop"
+           }
+           rule {
+               source_labels = ["__meta_kubernetes_pod_container_port_name"]
+               regex = ".*-metrics"
+               action = "keep"
+           }
+           rule {
+             source_labels = ["__meta_kubernetes_pod_phase"]
+             regex = "Succeeded|Failed"
+             action = "drop"
+           }
+           // Add pod metadata as labels
+           rule {
+             source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_label_name"]
+             replacement = "$1"
+             separator = "/"
+             action = "replace"
+             target_label = "job"
+           }
+           rule {
+             source_labels = ["__meta_kubernetes_namespace"]
+             action        = "replace"
+             target_label  = "namespace"
+           }
+           rule {
+             source_labels = ["__meta_kubernetes_pod_name"]
+             action        = "replace"
+             target_label  = "pod"
+           }
+           rule {
+             source_labels = ["__meta_kubernetes_pod_container_name"]
+             action        = "replace"
+             target_label  = "container"
+           }
+         }
+         // Scrape metrics from discovered targets
+         prometheus.scrape "kubernetes_pods" {
+           targets    = discovery.relabel.pod_relabel.output
+           forward_to = [prometheus.remote_write.test_mimir.receiver]
+           scrape_interval = "15s"
+           scrape_timeout  = "10s"
+         }
+         // Remote write to Mimir
+         prometheus.remote_write "test_mimir" {
+           endpoint {
+             url = "http://mimir-nginx.mimir-test.svc.cluster.local/api/v1/push"
+             send_native_histograms = true
+           }
+         }
+     securityContext:
+       runAsNonRoot: true
+       runAsUser: 472
+       fsGroup: 472
+
+     podSecurityContext:
+       runAsNonRoot: true
+       runAsUser: 472
+       fsGroup: 472
+
+   # Disable ServiceMonitor for monitoring Alloy itself
+   serviceMonitor:
+   enabled: false
    ```
 
    {{< admonition type="note" >}}
-   In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   In a production environment the `url` parameter in the `prometheus.remote_write` stanza would point to an external system, independent of your Grafana Mimir instance. For example, this could be an instance of Grafana Cloud Metrics.
    {{< /admonition >}}
 
-1. Upgrade Grafana Mimir by using the `helm` command:
+2. Install Grafana Alloy from the Helm chart, passing the overrides file:
 
-   ```bash
-   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
+   ```
+   helm install alloy grafana/alloy --namespace alloy-test --create-namespace -f alloy-values.yaml
    ```
 
 ## Start Grafana in Kubernetes and query metrics

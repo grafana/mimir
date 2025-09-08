@@ -88,13 +88,13 @@ func TestFlagParsing(t *testing.T) {
 
 		"user visible module listing": {
 			arguments:      []string{"-modules"},
-			stdoutMessage:  "ingester (in: all, write)\n",
+			stdoutMessage:  "ingester (in: all)\n",
 			stderrExcluded: "ingester\n",
 		},
 
 		"user visible module listing flag take precedence over target flag": {
 			arguments:      []string{"-modules", "-target=blah"},
-			stdoutMessage:  "ingester (in: all, write)\n",
+			stdoutMessage:  "ingester (in: all)\n",
 			stderrExcluded: "ingester\n",
 		},
 
