@@ -3,6 +3,7 @@
 package continuoustest
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -369,4 +370,65 @@ func TestDropExactDuplicatesPreservesOrder(t *testing.T) {
 	assert.Equal(t, "metric2", result[1].MetricFamilyName)
 	assert.Equal(t, "metric3", result[2].MetricFamilyName)
 	assert.Equal(t, 3, len(result))
+}
+
+func TestExemplarEqual(t *testing.T) {
+	t.Run("equal", func(t *testing.T) {
+		exemplar1 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "abc123"},
+				{Name: "span_id", Value: "def456"},
+			},
+			Value:       42.5,
+			TimestampMs: 1234567890,
+		}
+		exemplar2 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "abc123"},
+				{Name: "span_id", Value: "def456"},
+			},
+			Value:       42.5,
+			TimestampMs: 1234567890,
+		}
+
+		require.True(t, ExemplarEqual(exemplar1, exemplar2))
+	})
+
+	t.Run("not equal", func(t *testing.T) {
+		exemplar1 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "abc123"},
+			},
+			Value:       42.5,
+			TimestampMs: 1234567890,
+		}
+		exemplar2 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "xyz789"},
+			},
+			Value:       42.5,
+			TimestampMs: 1234567890,
+		}
+
+		require.False(t, ExemplarEqual(exemplar1, exemplar2))
+	})
+
+	t.Run("equal with NaN values", func(t *testing.T) {
+		exemplar1 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "abc123"},
+			},
+			Value:       math.NaN(),
+			TimestampMs: 1234567890,
+		}
+		exemplar2 := &mimirpb.Exemplar{
+			Labels: []mimirpb.UnsafeMutableLabel{
+				{Name: "trace_id", Value: "abc123"},
+			},
+			Value:       math.NaN(),
+			TimestampMs: 1234567890,
+		}
+
+		require.True(t, ExemplarEqual(exemplar1, exemplar2))
+	})
 }

@@ -478,7 +478,7 @@ metaLoop:
 	return result
 }
 
-// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
+// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual and ExemplarEqual instead.
 func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -521,7 +521,7 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 		return false
 	}
 	for i := range this.Exemplars {
-		if !this.Exemplars[i].Equal(&that1.Exemplars[i]) {
+		if !ExemplarEqual(&this.Exemplars[i], &that1.Exemplars[i]) {
 			return false
 		}
 	}
@@ -563,6 +563,45 @@ func SampleEqual(this *mimirpb.Sample, that interface{}) bool {
 		return true
 	}
 	if this.Value != that1.Value {
+		return false
+	}
+	return true
+}
+
+// ExemplarEqual is a copy of mimirpb.Exemplar.Equal but equates NaN values.
+func ExemplarEqual(this *mimirpb.Exemplar, that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*mimirpb.Exemplar)
+	if !ok {
+		that2, ok := that.(mimirpb.Exemplar)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	if this.Value != that1.Value {
+		if !math.IsNaN(this.Value) || !math.IsNaN(that1.Value) {
+			return false
+		}
+	}
+	if this.TimestampMs != that1.TimestampMs {
 		return false
 	}
 	return true
