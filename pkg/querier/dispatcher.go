@@ -40,6 +40,7 @@ import (
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
+var timeNow = time.Now
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -145,6 +146,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
+	startTime := timeNow()
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
 
@@ -181,7 +183,14 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	defer e.Close()
 
-	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
+	observer := &evaluationObserver{
+		w:                  resp,
+		nodeIndex:          evaluationNode.NodeIndex,
+		startTime:          startTime,
+		originalExpression: req.Plan.OriginalExpression,
+	}
+
+	if err := e.Evaluate(ctx, observer); err != nil {
 		resp.WriteError(ctx, errorTypeForError(err), err.Error())
 		return
 	}
@@ -320,6 +329,7 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 type evaluationObserver struct {
 	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
+	startTime time.Time
 
 	originalExpression string
 }
@@ -495,6 +505,8 @@ func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *strea
 
 		querierStats.AddSamplesProcessedPerStep(stepStats)
 	}
+
+	querierStats.AddWallTime(timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
 	// stats after we return them for serialization.

@@ -85,6 +85,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 
 	startT := timestamp.Time(0)
+	expectedQueryWallTime := 2 * time.Second
 
 	testCases := map[string]struct {
 		req                      *prototypes.Any
@@ -201,6 +202,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 									Stats: stats.Stats{
 										SamplesProcessed:   6,
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -357,6 +359,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 									Stats: stats.Stats{
 										SamplesProcessed:   10,
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -396,6 +399,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 									Stats: stats.Stats{
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -431,6 +435,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 									Stats: stats.Stats{
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -487,6 +492,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 									Stats: stats.Stats{
 										SamplesProcessed:   3,
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -563,6 +569,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 											{Timestamp: 20000, Value: 2},
 										},
 										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
 										FetchedChunksCount: 456,
 										FetchedChunkBytes:  789,
@@ -609,6 +616,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			replaceTimeNow(t, timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
 			stats, ctx := stats.ContextWithEmptyStats(context.Background())
 
 			// This value should be set by the querier's scheduler processor (ie. the thing that calls Dispatcher.HandleProtobuf).
@@ -784,4 +792,17 @@ func requireMetricsIgnoringHistogramBucketsAndDurationSums(t *testing.T, reg *pr
 	expected = removeLeadingWhitespace.ReplaceAllString(expected, "")
 
 	require.Equal(t, expected, filteredText)
+}
+
+func replaceTimeNow(t *testing.T, times ...time.Time) {
+	oldTimeNow := timeNow
+	t.Cleanup(func() {
+		timeNow = oldTimeNow
+	})
+
+	timeNow = func() time.Time {
+		t := times[0]
+		times = times[1:]
+		return t
+	}
 }
