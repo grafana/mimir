@@ -172,11 +172,14 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	// Block-builder attempts to complete the current job when a shutdown
 	// request is received.
 	// To enable this, we create a child context whose cancellation signal is
-	// replaced with one that cancels when this function exits. Ongoing job
-	// progress and the scheduler client's runloop use this.
+	// replaced with one that cancels when this function exits. Operations
+	// related to an ongoing job use this modified context, whereas the parent
+	// context is used to avoid taking on more jobs, and to exit running().
 
 	graceCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
+
+	// Kick off the scheduler client's runloop.
 	go b.schedulerClient.Run(graceCtx)
 
 	for {
