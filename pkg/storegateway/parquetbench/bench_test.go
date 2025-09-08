@@ -120,17 +120,28 @@ var benchmarkCases = []struct {
 	// 		labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
 	// 	},
 	// },
+	// {
+	// 	name: "SpecificZoneWithMetricName",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	// 		labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+	// 	},
+	// },
+	// {
+	// 	name: "SpecificZoneNoMetricName",
+	// 	matchers: []*labels.Matcher{
+	// 		labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+	// 	},
+	// },
+
 	{
-		name: "SpecificZoneWithMetricName",
+		name: "SpecificOpsQueryLokiSeries",
 		matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
-		},
-	},
-	{
-		name: "SpecificZoneNoMetricName",
-		matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "loki_loki_pattern_ingester_aggregated_metrics_payload_bytes_bucket"),
+			labels.MustNewMatcher(labels.MatchEqual, "cluster", "prod-eu-west-0"),
+			labels.MustNewMatcher(labels.MatchEqual, "pod", "pattern-ingester-0"),
+			labels.MustNewMatcher(labels.MatchEqual, "service_name", "worker"),
+			labels.MustNewMatcher(labels.MatchEqual, "tenant_id", "208466"),
 		},
 	},
 	// TODO find out why it fails
@@ -178,6 +189,7 @@ func BenchmarkBucketStores_Series(b *testing.B) {
 				mockServer := newMockSeriesServer(ctx)
 				err := store.Series(req, mockServer)
 				require.NoError(tb, err)
+				b.Logf("Received %d series and %d chunks", mockServer.seriesCount, mockServer.chunksCount)
 				require.Greater(b, mockServer.seriesCount, 0, "Expected at least one series in response, tc: %s", tc.name)
 				require.Greater(b, mockServer.chunksCount, 0, "Expected at least one chunk in response, tc: %s", tc.name)
 			})
@@ -305,6 +317,7 @@ func loadBenchmarkRequests(filePath string) (*BenchmarkRequests, error) {
 func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
+	limits.MaxChunksPerQuery = 200_000_000
 	return limits
 }
 
