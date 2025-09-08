@@ -171,8 +171,12 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	// We control our own context here. We'll stop processing jobs when the
 	// service context is cancelled, but let any in-flight jobs complete.
 
-	// Kick off the scheduler's run loop.
-	go b.schedulerClient.Run(ctx)
+	// Kick off the scheduler's run loop. To support jobs running during
+	// graceful shutdown, we replace the given context's cancellation signal
+	// with one that cancels when this function exits.
+	schedCtx, schedCancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer schedCancel()
+	go b.schedulerClient.Run(schedCtx)
 
 	for {
 		if err := ctx.Err(); err != nil {
