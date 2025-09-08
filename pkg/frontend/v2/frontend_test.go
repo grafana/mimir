@@ -977,6 +977,29 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID))
 }
 
+func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
+	queryID := atomic.NewUint64(0)
+	errChan := make(chan error)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			queryID.Store(msg.QueryID)
+			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	errSentToQuerier := <-errChan
+	require.EqualError(t, errSentToQuerier, fmt.Sprintf(`got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
+}
+
 func TestFrontendStreamingResponse(t *testing.T) {
 	const (
 		userID = "test"
