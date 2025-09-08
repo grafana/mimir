@@ -90,33 +90,6 @@ type distributorQuerier struct {
 	streamReaders    []*client.SeriesChunksStreamReader
 }
 
-// distributorSeriesSetWithCleanup wraps a SeriesSet with cleanup functionality
-type distributorSeriesSetWithCleanup struct {
-	storage.SeriesSet
-	labelsToDecrease []labels.Labels
-	memoryTracker    *limiter.MemoryConsumptionTracker
-	cleanupOnce      sync.Once
-}
-
-func (s *distributorSeriesSetWithCleanup) Next() bool {
-	hasNext := s.SeriesSet.Next()
-	if !hasNext {
-		// When iteration is complete, clean up all tracked labels
-		s.cleanup()
-	}
-	return hasNext
-}
-
-func (s *distributorSeriesSetWithCleanup) cleanup() {
-	s.cleanupOnce.Do(func() {
-		if s.memoryTracker != nil {
-			for _, ls := range s.labelsToDecrease {
-				s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-		}
-	})
-}
-
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -171,20 +144,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		chunkInfo.LogSelect("ingester", minT, maxT)
 	}
 
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-	var labelsToCleanup []labels.Labels
-
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
 	for i, result := range results.Chunkseries {
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
-
-		// Track memory consumption for labels received from ingester
-		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-
-		// Track labels for cleanup when series set is consumed
-		labelsToCleanup = append(labelsToCleanup, ls)
 
 		if chunkInfo != nil {
 			chunkInfo.StartSeries(ls)
@@ -209,16 +171,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		seriesSet := series.NewConcreteSeriesSetFromUnsortedSeries(serieses)
-		// Wrap with cleanup functionality if we have labels to track
-		if len(labelsToCleanup) > 0 {
-			seriesSet = &distributorSeriesSetWithCleanup{
-				SeriesSet:        seriesSet,
-				labelsToDecrease: labelsToCleanup,
-				memoryTracker:    memoryTracker,
-			}
-		}
-		sets = append(sets, seriesSet)
+		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
 	}
 
 	if len(results.StreamingSeries) > 0 {
@@ -369,30 +322,11 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 		return nil, err
 	}
 
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-	var labelsToDecrease []labels.Labels
-
-	// Set up cleanup for all tracked labels when function returns
-	defer func() {
-		for _, ls := range labelsToDecrease {
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-	}()
-
 	var numExemplars int
 	var e exemplar.QueryResult
 	ret := make([]exemplar.QueryResult, len(allResults.Timeseries))
 	for i, ts := range allResults.Timeseries {
 		e.SeriesLabels = mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-
-		// Track memory consumption for labels received from ingester
-		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(e.SeriesLabels); err != nil {
-			return nil, err
-		}
-
-		// Track labels for cleanup
-		labelsToDecrease = append(labelsToDecrease, e.SeriesLabels)
-
 		e.Exemplars = mimirpb.FromExemplarProtosToExemplars(ts.Exemplars)
 		ret[i] = e
 
