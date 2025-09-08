@@ -926,11 +926,18 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	wg.Add(2)
 	responseSucceeded := atomic.NewBool(false)
 	responseError := atomic.NewError(nil)
-	queryIDChan := make(chan uint64)
+	queryID := atomic.NewUint64(0)
+	queryIDReceived := make(chan struct{})
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		queryIDChan <- msg.QueryID
-		close(queryIDChan)
+		if msg.Type != schedulerpb.ENQUEUE {
+			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
+			// notification to the scheduler, which we should ignore.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
+
+		queryID.Store(msg.QueryID)
+		close(queryIDReceived)
 
 		for range 2 {
 			go func() {
@@ -959,12 +966,11 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Close()
 
-	queryID := <-queryIDChan
+	<-queryIDReceived
 	firstMessage := newStringMessage("first message")
-	firstMessage.QueryID = queryID
+	firstMessage.QueryID = queryID.Load()
 	secondMessage := newStringMessage("second message")
-	secondMessage.QueryID = queryID
-
+	secondMessage.QueryID = queryID.Load()
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
 	require.Equal(t, firstMessage, msg)
