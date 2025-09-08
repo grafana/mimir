@@ -119,6 +119,7 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
+	inflightRequestCount    prometheus.Gauge
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -200,18 +201,15 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
+		inflightRequestCount: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_query_frontend_queries_in_progress",
+			Help: "Number of queries in progress handled by this frontend.",
+		}),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
-
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_query_frontend_queries_in_progress",
-		Help: "Number of queries in progress handled by this frontend.",
-	}, func() float64 {
-		return float64(f.requests.count())
-	})
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_frontend_connected_schedulers",
@@ -287,11 +285,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	freq.httpResponse = make(chan queryResultWithBody, 1)
 
 	f.requests.put(freq)
+	f.inflightRequestCount.Inc()
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
 	cleanup := func() {
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
+		f.inflightRequestCount.Dec()
 	}
 	cleanupInDefer := true
 	defer func() {
@@ -367,12 +367,14 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 	}
 
 	f.requests.put(freq)
+	f.inflightRequestCount.Inc()
 
 	go func() {
 		defer func() {
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)
 			logger.Finish()
+			f.inflightRequestCount.Dec()
 		}()
 
 		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
@@ -592,23 +594,29 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	req := f.requests.get(qrReq.QueryID)
+	req := f.requests.getAndDelete(qrReq.QueryID)
 	// It is possible that some old response belonging to different user was received, if frontend has restarted.
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
-	if req != nil && req.userID == userID {
-		if req.httpResponse == nil {
-			return nil, errUnexpectedHTTPResponse
-		}
+	if req == nil {
+		return nil, fmt.Errorf("query %d not found or response already received", qrReq.QueryID)
+	}
 
-		select {
-		case req.httpResponse <- queryResultWithBody{
-			queryResult: qrReq,
-		}:
-			// Should always be possible, unless QueryResult is called multiple times with the same queryID.
-		default:
-			level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", qrReq.QueryID, "user", userID)
-		}
+	if req.userID != userID {
+		return nil, fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
+	}
+
+	if req.httpResponse == nil {
+		return nil, errUnexpectedHTTPResponse
+	}
+
+	select {
+	case req.httpResponse <- queryResultWithBody{
+		queryResult: qrReq,
+	}:
+		// Should always be possible, unless QueryResult is called multiple times with the same queryID.
+	default:
+		level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", qrReq.QueryID, "user", userID)
 	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
@@ -636,10 +644,10 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		return errors.New("received EOF at start of stream")
 	}
 
-	req := f.requests.get(firstMessage.QueryID)
+	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return fmt.Errorf("query %d not found", firstMessage.QueryID)
+		return fmt.Errorf("query %d not found or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {
@@ -789,13 +797,6 @@ func newRequestsInProgress() *requestsInProgress {
 	}
 }
 
-func (r *requestsInProgress) count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return len(r.requests)
-}
-
 func (r *requestsInProgress) put(req *frontendRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -810,9 +811,11 @@ func (r *requestsInProgress) delete(queryID uint64) {
 	delete(r.requests, queryID)
 }
 
-func (r *requestsInProgress) get(queryID uint64) *frontendRequest {
+func (r *requestsInProgress) getAndDelete(queryID uint64) *frontendRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return r.requests[queryID]
+	req := r.requests[queryID]
+	delete(r.requests, queryID)
+	return req
 }
