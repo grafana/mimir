@@ -446,6 +446,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		1 + // Range vector query
 		1 // Subquery spin-off query
 
+	if !cfg.remoteExecutionEnabled {
+		// If remote execution is enabled, then the time() query will be evaluated in the query-frontend, otherwise it will be sent to queriers.
+		expectedMinimumQuerierQueryCount++
+	}
+
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
 	// +1 because the spun off subquery ends up as additional ingester queries.
@@ -457,7 +462,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		expectedIngesterQueriesCount++
 	}
 
-	expectedMaximumQuerierQueryCount := expectedMinimumQuerierQueryCount + 2 // Depending on what time of day it is, the long-range query and spun-off subquery can be split into another interval.
+	expectedMaximumQuerierQueryCount := expectedMinimumQuerierQueryCount + 2 // Depending on what time of day it is, the long-range query and spun-off subquery can both be split into another interval.
 
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"))
 
