@@ -74,6 +74,19 @@ func (b *BinaryExpression) Describe() string {
 
 	builder.WriteString(" RHS")
 
+	if b.Hints != nil {
+		builder.WriteString(", hints (")
+		for i, l := range b.Hints.Include {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(l)
+		}
+
+		builder.WriteByte(')')
+	}
+
 	return builder.String()
 }
 

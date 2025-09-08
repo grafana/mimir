@@ -63,8 +63,7 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
-		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets &&
-		v.DisableEagerLoad == otherVectorSelector.DisableEagerLoad
+		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -83,7 +82,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Offset:                   v.Offset.Milliseconds(),
 		LookbackDelta:            params.LookbackDelta,
 		Matchers:                 matchers,
-		EagerLoad:                !v.DisableEagerLoad && params.EagerLoadSelectors,
+		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,

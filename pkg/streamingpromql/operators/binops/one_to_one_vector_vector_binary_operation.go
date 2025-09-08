@@ -152,6 +152,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
+		logger:             logger,
 	}
 
 	return b, nil
@@ -195,14 +196,14 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// on the LHS, we can use the series and their values for those labels to reduce the amount
 	// of data fetched on the RHS.
 	if b.hints != nil {
-		hintMatchers := BuildMatchers(b.leftMetadata, b.hints)
-		matchers = matchers.Merge(hintMatchers)
+		hintedMatchers := BuildMatchers(b.leftMetadata, b.hints)
+		matchers = matchers.Merge(hintedMatchers)
 
 		sl := spanlogger.FromContext(ctx, b.logger)
 		sl.DebugLog(
 			"msg", "binary operator passing additional matchers to RHS",
 			"fields", b.hints.Include,
-			"hint_matchers", len(hintMatchers),
+			"hinted_matchers", len(hintedMatchers),
 			"total_matchers", len(matchers),
 		)
 	}

@@ -139,7 +139,6 @@ message VectorSelectorDetails {
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
-  bool disableEagerLoad = 7;
 }
 
 message MatrixSelectorDetails {
@@ -155,7 +154,6 @@ message MatrixSelectorDetails {
   ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
   bool skipHistogramBuckets = 6;
-  bool disableEagerLoad = 7;
 }
 
 message SubqueryDetails {
