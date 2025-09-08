@@ -654,11 +654,11 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 
 		return f.receiveResultForHTTPRequest(req, firstMessage, d, stream)
 	default:
-		if req.protobufResponseStream != nil {
-			return f.receiveResultForProtobufRequest(req, firstMessage, stream)
+		if req.protobufResponseStream == nil {
+			return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
 		}
 
-		return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
+		return f.receiveResultForProtobufRequest(req, firstMessage, stream)
 	}
 }
 
