@@ -478,7 +478,7 @@ metaLoop:
 	return result
 }
 
-// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual and ExemplarEqual instead.
+// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual, ExemplarEqual, and HistogramEqual instead.
 func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 	if that == nil {
 		return this == nil
