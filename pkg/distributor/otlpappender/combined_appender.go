@@ -80,7 +80,7 @@ func (c *CombinedAppender) AppendSample(ls labels.Labels, meta otlpappender.Meta
 		c.createNewSeries(&idx, hash, ls, ct)
 	}
 
-	c.series[idx.idx].TimeSeries.Samples = append(c.series[idx.idx].TimeSeries.Samples, mimirpb.Sample{TimestampMs: t, Value: v})
+	c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
 	c.appendExemplars(idx.idx, es)
 	c.appendMetadata(meta.MetricFamilyName, meta.Metadata)
 
@@ -96,7 +96,7 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.M
 		c.createNewSeries(&idx, hash, ls, ct)
 	}
 
-	c.series[idx.idx].TimeSeries.Histograms = append(c.series[idx.idx].TimeSeries.Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+	c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 	c.appendExemplars(idx.idx, es)
 	c.appendMetadata(meta.MetricFamilyName, meta.Metadata)
 
@@ -154,7 +154,7 @@ func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar
 	if len(es) == 0 {
 		return
 	}
-	c.series[seriesIdx].TimeSeries.Exemplars = append(c.series[seriesIdx].TimeSeries.Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
+	c.series[seriesIdx].Exemplars = append(c.series[seriesIdx].Exemplars, mimirpb.FromExemplarsToExemplarProtos(es)...)
 }
 
 // appendMetadata appends metadata to the time series at the given index.
