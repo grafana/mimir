@@ -58,6 +58,7 @@
 * [BUGFIX] Block-builder: Fix a bug where a consumption error can cause a job to stay assigned to a worker for the remainder of its lifetime. #12522
 * [BUGFIX] Querier: Fix possible panic when evaluating a nested subquery where the parent has no steps. #12524
 * [BUGFIX] Ingester: Fix a bug where prepare-instance-ring-downscale endpoint would return an error while compacting and not read-only. #12548
+* [BUGFIX] Block-builder: Fix a bug where lease renewals would cease during graceful shutdown, leading to an elevated rate of job reassignments. #12643
 
 ### Mixin
 
