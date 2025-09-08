@@ -2735,7 +2735,7 @@ mimir_query_engine:
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
-  [enable_narrow_binary_selectors: <boolean> | default = true]
+  [enable_narrow_binary_selectors: <boolean> | default = false]
 ```
 
 ### frontend

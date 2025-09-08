@@ -110,6 +110,7 @@ func (s Matchers) Merge(other Matchers) Matchers {
 		return s
 	}
 
+	// TODO: Need to deduplicate
 	return append(s, other...)
 }
 

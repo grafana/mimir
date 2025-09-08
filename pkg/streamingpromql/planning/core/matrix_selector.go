@@ -57,8 +57,7 @@ func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
-		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets &&
-		m.DisableEagerLoad == otherMatrixSelector.DisableEagerLoad
+		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
@@ -78,7 +77,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Offset:                   m.Offset.Milliseconds(),
 		Range:                    m.Range,
 		Matchers:                 matchers,
-		EagerLoad:                !m.DisableEagerLoad && params.EagerLoadSelectors,
+		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,

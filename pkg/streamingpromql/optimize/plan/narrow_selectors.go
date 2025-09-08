@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -31,6 +32,14 @@ func (n *NarrowSelectorsOptimizationPass) Name() string {
 }
 
 func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+	// If this query plan doesn't contain any selectors for us to apply hints for or if the
+	// query has been rewritten to be sharded or spun off, don't attempt to generate any query
+	// hints since there are no selectors that we understand and can add matchers to.
+	res := optimize.Inspect(plan.Root)
+	if !res.HasSelectors || res.IsRewritten {
+		return plan, nil
+	}
+
 	if err := n.applyToNode(ctx, plan.Root); err != nil {
 		return nil, err
 	}
@@ -39,10 +48,6 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 }
 
 func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	switch e := node.(type) {
 	case *core.BinaryExpression:
 		// Set hints for a binary expression based on the expression itself and any
@@ -51,11 +56,6 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 		// (binary expressions or aggregations).
 		e.Hints = n.hintsFromNode(ctx, e)
 		if e.Hints != nil {
-			// If we find labels we can use as hints for this binary expression, disable eager
-			// loading on the right side since we always use the left side to build extra matchers
-			// from hints.
-			n.disableEagerLoad(ctx, e.RHS)
-
 			sl := spanlogger.FromContext(ctx, n.logger)
 			sl.DebugLog("msg", "setting query hint on binary expression", "fields", e.Hints.GetInclude())
 		}
@@ -80,8 +80,9 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 			}
 		}
 
-		// If this is a binary expression with no matching, try to find a suitable query hint
-		// from the left side (such as an aggregation), don't bother checking the right side.
+		// If this is a binary expression with no matching, try to find a suitable query hint from
+		// the left side (such as an aggregation), don't bother checking the right side since we use
+		// the left side to generate extra matchers for the right side in the operator.
 		return n.hintsFromNode(ctx, e.LHS)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {
@@ -100,21 +101,4 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 	}
 
 	return nil
-}
-
-func (n *NarrowSelectorsOptimizationPass) disableEagerLoad(ctx context.Context, node planning.Node) {
-	switch e := node.(type) {
-	case *core.MatrixSelector:
-		sl := spanlogger.FromContext(ctx, n.logger)
-		sl.DebugLog("msg", "disabled eager load for matrix selector", "node", e.Describe())
-		e.DisableEagerLoad = true
-	case *core.VectorSelector:
-		sl := spanlogger.FromContext(ctx, n.logger)
-		sl.DebugLog("msg", "disabled eager load for vector selector", "node", e.Describe())
-		e.DisableEagerLoad = true
-	}
-
-	for _, child := range node.Children() {
-		n.disableEagerLoad(ctx, child)
-	}
 }

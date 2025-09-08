@@ -754,37 +754,49 @@ type QueryHints struct {
 	Include []string
 }
 
+const (
+	maxHintMatcherValues = 64
+)
+
 func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) types.Matchers {
 	var matchers []*labels.Matcher
 
 	for _, field := range hints.Include {
-		values := make(map[string]struct{})
+		values := getUniqueFieldValues(metadata, field, maxHintMatcherValues)
 
-		for _, series := range metadata {
-			val := series.Labels.Get(field)
-			if val != "" {
-				values[regexp.QuoteMeta(val)] = struct{}{}
-			}
-		}
-
-		// TODO: Skip using this particular field if there are more than N values. Note
-		//  that since we're building a regex, we need to not include it at all if we exceed
-		//  the max number of values rather than include only a few matchers.
-
-		if len(values) != 0 {
-			ordered := make([]string, 0, len(values))
+		if len(values) > 0 {
+			collected := make([]string, 0, len(values))
 			for k := range maps.Keys(values) {
-				ordered = append(ordered, k)
+				collected = append(collected, regexp.QuoteMeta(k))
 			}
 
-			slices.Sort(ordered)
 			matchers = append(matchers, &labels.Matcher{
 				Type:  labels.MatchRegexp,
 				Name:  field,
-				Value: strings.Join(ordered, "|"),
+				Value: strings.Join(collected, "|"),
 			})
 		}
 	}
 
 	return matchers
+}
+
+func getUniqueFieldValues(metadata []types.SeriesMetadata, field string, maxValues int) map[string]struct{} {
+	values := make(map[string]struct{})
+
+	for _, series := range metadata {
+		// Stop getting values from each series if we're past the max number of
+		// values that we'll include in a matcher. In this case, we can't use the
+		// values collected so far to build a matcher.
+		if len(values) >= maxValues {
+			return map[string]struct{}{}
+		}
+
+		val := series.Labels.Get(field)
+		if val != "" {
+			values[val] = struct{}{}
+		}
+	}
+
+	return values
 }

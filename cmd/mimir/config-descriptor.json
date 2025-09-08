@@ -2754,7 +2754,7 @@
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "querier.mimir-query-engine.enable-narrow-binary-selectors",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
