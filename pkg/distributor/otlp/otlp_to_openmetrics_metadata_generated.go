@@ -19,42 +19,41 @@
 package otlp
 
 import (
+	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
+func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) model.MetricType {
 	switch otelMetric.Type() {
 	case pmetric.MetricTypeGauge:
-		return mimirpb.GAUGE
+		return model.MetricTypeGauge
 	case pmetric.MetricTypeSum:
-		metricType := mimirpb.GAUGE
+		metricType := model.MetricTypeGauge
 		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.COUNTER
+			metricType = model.MetricTypeCounter
 		}
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
 		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = mimirpb.UNKNOWN
+			metricType = model.MetricTypeUnknown
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
 		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return mimirpb.UNKNOWN
+			return model.MetricTypeUnknown
 		}
-		return mimirpb.HISTOGRAM
+		return model.MetricTypeHistogram
 	case pmetric.MetricTypeSummary:
-		return mimirpb.SUMMARY
+		return model.MetricTypeSummary
 	case pmetric.MetricTypeExponentialHistogram:
 		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
 			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			return mimirpb.UNKNOWN
+			return model.MetricTypeUnknown
 		}
-		return mimirpb.HISTOGRAM
+		return model.MetricTypeHistogram
 	}
-	return mimirpb.UNKNOWN
+	return model.MetricTypeUnknown
 }

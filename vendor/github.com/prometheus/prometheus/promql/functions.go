@@ -230,10 +230,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
-	minSchema := prev.Schema
-	if last.Schema < minSchema {
-		minSchema = last.Schema
-	}
+	minSchema := min(last.Schema, prev.Schema)
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
@@ -254,7 +251,10 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h := last.CopyToSchema(minSchema)
-	_, counterResetCollision, err := h.Sub(prev)
+	// This subtraction may deliberately include conflicting counter resets.
+	// Counter resets are treated explicitly in this function, so the
+	// information about conflicting counter resets is ignored here.
+	_, _, err := h.Sub(prev)
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
@@ -263,25 +263,19 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		}
 	}
 
-	if counterResetCollision {
-		annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub))
-	}
-
 	if isCounter {
 		// Second iteration to deal with counter resets.
 		for _, currPoint := range points[1:] {
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
-				_, counterResetCollision, err := h.Add(prev)
+				// Counter reset conflict ignored here for the same reason as above.
+				_, _, err := h.Add(prev)
 				if err != nil {
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 						return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 					}
-				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd))
 				}
 			}
 			prev = curr
@@ -396,14 +390,15 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
 		}
 		if !isRate || !ss[1].H.DetectReset(ss[0].H) {
-			_, counterResetCollision, err := resultSample.H.Sub(ss[0].H)
+			// This subtraction may deliberately include conflicting
+			// counter resets. Counter resets are treated explicitly
+			// in this function, so the information about
+			// conflicting counter resets is ignored here.
+			_, _, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
 			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
-			}
-			if counterResetCollision {
-				annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args.PositionRange(), annotations.HistogramSub))
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
@@ -783,6 +778,34 @@ func funcCountOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh 
 	}), nil
 }
 
+// === first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
+
+	var f FPoint
+	if len(el.Floats) > 0 {
+		f = el.Floats[0]
+	}
+
+	var h HPoint
+	if len(el.Histograms) > 0 {
+		h = el.Histograms[0]
+	}
+
+	// If a float data point exists and is older than any histogram data
+	// points, return it.
+	if h.H == nil || (len(el.Floats) > 0 && f.T < h.T) {
+		return append(enh.Out, Sample{
+			Metric: el.Metric,
+			F:      f.F,
+		}), nil
+	}
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		H:      h.H.Copy(),
+	}), nil
+}
+
 // === last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	el := matrixVal[0]
@@ -832,6 +855,26 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		}
 		return quantile(0.5, values)
 	}), annos
+}
+
+// === ts_of_first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
+
+	var tf int64 = math.MaxInt64
+	if len(el.Floats) > 0 {
+		tf = el.Floats[0].T
+	}
+
+	var th int64 = math.MaxInt64
+	if len(el.Histograms) > 0 {
+		th = el.Histograms[0].T
+	}
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		F:      float64(min(tf, th)) / 1000,
+	}), nil
 }
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
@@ -1804,6 +1847,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
 	"exp":                          funcExp,
+	"first_over_time":              funcFirstOverTime,
 	"floor":                        funcFloor,
 	"histogram_avg":                funcHistogramAvg,
 	"histogram_count":              funcHistogramCount,
@@ -1827,6 +1871,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
+	"ts_of_first_over_time":        funcTsOfFirstOverTime,
 	"ts_of_last_over_time":         funcTsOfLastOverTime,
 	"ts_of_max_over_time":          funcTsOfMaxOverTime,
 	"ts_of_min_over_time":          funcTsOfMinOverTime,
@@ -1893,11 +1938,11 @@ func (s vectorByValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByValueHeap) Push(x interface{}) {
+func (s *vectorByValueHeap) Push(x any) {
 	*s = append(*s, *(x.(*Sample)))
 }
 
-func (s *vectorByValueHeap) Pop() interface{} {
+func (s *vectorByValueHeap) Pop() any {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1923,11 +1968,11 @@ func (s vectorByReverseValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByReverseValueHeap) Push(x interface{}) {
+func (s *vectorByReverseValueHeap) Push(x any) {
 	*s = append(*s, *(x.(*Sample)))
 }
 
-func (s *vectorByReverseValueHeap) Pop() interface{} {
+func (s *vectorByReverseValueHeap) Pop() any {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1975,7 +2020,7 @@ func stringFromArg(e parser.Expr) string {
 
 func stringSliceFromArgs(args parser.Expressions) []string {
 	tmp := make([]string, len(args))
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		tmp[i] = stringFromArg(args[i])
 	}
 	return tmp
