@@ -98,6 +98,40 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		`)))
 	})
 
+	t.Run("Priority-based rejection should work correctly", func(t *testing.T) {
+		lim, _, _ := setup(t, 0.5, gigabyte, false)
+
+		// Test rejection rate progression
+		testCases := []struct {
+			rejectionRate     float64
+			veryHighRejected  bool
+			highRejected      bool 
+			mediumRejected    bool
+			lowRejected       bool
+			veryLowRejected   bool
+		}{
+			{0.0, false, false, false, false, false},   // No rejection
+			{0.3, false, false, false, false, true},    // Only VeryLow rejected (0.3 > 0.20)
+			{0.5, false, false, false, true, true},     // Low and VeryLow rejected (0.5 > 0.40)
+			{0.7, false, false, true, true, true},      // Medium, Low, VeryLow rejected (0.7 > 0.60)
+			{0.9, false, true, true, true, true},       // High, Medium, Low, VeryLow rejected (0.9 > 0.80)
+			{0.99, true, true, true, true, true},       // All rejected (0.99 > 0.95)
+		}
+
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("rejection_rate_%.2f", tc.rejectionRate), func(t *testing.T) {
+				// Set the rejection rate directly
+				lim.rejectionRate.Store(tc.rejectionRate)
+
+				assert.Equal(t, tc.veryHighRejected, lim.ShouldRejectRequest(450), "VeryHigh priority (450)")
+				assert.Equal(t, tc.highRejected, lim.ShouldRejectRequest(350), "High priority (350)")
+				assert.Equal(t, tc.mediumRejected, lim.ShouldRejectRequest(250), "Medium priority (250)")
+				assert.Equal(t, tc.lowRejected, lim.ShouldRejectRequest(150), "Low priority (150)")
+				assert.Equal(t, tc.veryLowRejected, lim.ShouldRejectRequest(50), "VeryLow priority (50)")
+			})
+		}
+	})
+
 	t.Run("memory based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
 		lim, fakeScanner, reg := setup(t, 0.11, gigabyte, true)
 

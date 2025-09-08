@@ -96,3 +96,31 @@ func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
 }
+
+// AcquirePermitWithPriority adapts int priority to Priority enum for BlockingLimiter interface
+func (l *priorityLimiter) AcquirePermitWithPriority(ctx context.Context, priority int) (Permit, error) {
+	priorityEnum := convertIntToPriority(priority)
+	return l.AcquirePermit(ctx, priorityEnum)
+}
+
+// CanAcquirePermitWithPriority adapts int priority to Priority enum for BlockingLimiter interface  
+func (l *priorityLimiter) CanAcquirePermitWithPriority(priority int) bool {
+	priorityEnum := convertIntToPriority(priority)
+	return l.CanAcquirePermit(priorityEnum)
+}
+
+// convertIntToPriority converts int priority (0-499) to Priority enum
+func convertIntToPriority(priority int) Priority {
+	switch {
+	case priority >= 400:
+		return PriorityVeryHigh
+	case priority >= 300:
+		return PriorityHigh
+	case priority >= 200:
+		return PriorityMedium
+	case priority >= 100:
+		return PriorityLow
+	default:
+		return PriorityVeryLow
+	}
+}

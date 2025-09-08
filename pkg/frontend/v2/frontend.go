@@ -66,6 +66,9 @@ type Config struct {
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
 	QueryStoreAfter         time.Duration             `yaml:"-"`
+
+	// Add priority configuration
+	Priority querymiddleware.PriorityConfig `yaml:"priority"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -81,6 +84,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
+
+	f.BoolVar(&cfg.Priority.Enabled, "query-frontend.priority-levels.enabled", false, "Enable priority level assignment and propagation")
 }
 
 func (cfg *Config) Validate() error {
@@ -116,6 +121,9 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
+
+	// Add priority assigner
+	priorityAssigner *querymiddleware.PriorityAssigner
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -180,6 +188,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
+		priorityAssigner:        querymiddleware.NewPriorityAssigner(cfg.Priority, log),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -235,6 +244,17 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		return nil, nil, err
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
+
+	// Convert httpgrpc headers to map for priority assignment
+	headers := make(map[string]string)
+	for _, header := range httpRequest.Headers {
+		if len(header.Values) > 0 {
+			headers[header.Key] = header.Values[0]
+		}
+	}
+
+	// Assign priority level to context
+	ctx = f.priorityAssigner.AssignPriorityLevel(ctx, httpRequest.Method, httpRequest.Url, headers)
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)

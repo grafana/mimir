@@ -42,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
@@ -782,4 +783,61 @@ type limits struct {
 
 func (l limits) QueryIngestersWithin(string) time.Duration {
 	return l.queryIngestersWithin
+}
+
+func TestFrontendPriorityIntegration(t *testing.T) {
+	cfg := Config{
+		Priority: querymiddleware.PriorityConfig{Enabled: true},
+	}
+
+	frontend := &Frontend{
+		cfg:              cfg,
+		log:              log.NewNopLogger(),
+		priorityAssigner: querymiddleware.NewPriorityAssigner(cfg.Priority, log.NewNopLogger()),
+	}
+
+	t.Run("ruler requests get high priority", func(t *testing.T) {
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "X-Mimir-Component", Values: []string{"ruler"}},
+			},
+		}
+
+		// Convert headers
+		headers := make(map[string]string)
+		for _, header := range req.Headers {
+			if len(header.Values) > 0 {
+				headers[header.Key] = header.Values[0]
+			}
+		}
+
+		ctx := frontend.priorityAssigner.AssignPriorityLevel(context.Background(), req.Method, req.Url, headers)
+		level := grpcutil.GetPriorityLevel(ctx)
+		assert.GreaterOrEqual(t, level, 400)
+		assert.Less(t, level, 500)
+	})
+
+	t.Run("dashboard requests get medium priority", func(t *testing.T) {
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"Grafana/8.0.0"}},
+			},
+		}
+
+		headers := make(map[string]string)
+		for _, header := range req.Headers {
+			if len(header.Values) > 0 {
+				headers[header.Key] = header.Values[0]
+			}
+		}
+
+		ctx := frontend.priorityAssigner.AssignPriorityLevel(context.Background(), req.Method, req.Url, headers)
+		level := grpcutil.GetPriorityLevel(ctx)
+		assert.GreaterOrEqual(t, level, 300)
+		assert.Less(t, level, 400)
+	})
 }

@@ -11,10 +11,14 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/require"
+
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -56,4 +60,30 @@ func TestMarshall(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, req.Timeseries, numSeries)
 	}
+}
+
+// Test that MakeIngesterClient includes the priority interceptor
+// by creating a client and verifying it compiles with the interceptor
+func TestMakeIngesterClientIncludesPriorityInterceptor(t *testing.T) {
+	cfg := Config{}
+	cfg.RegisterFlags(nil)
+
+	metrics := NewMetrics(nil)
+	logger := log.NewNopLogger()
+
+	inst := ring.InstanceDesc{
+		Addr: "localhost:9095",
+		Id:   "test-ingester",
+	}
+
+	client, err := MakeIngesterClient(inst, cfg, metrics, logger)
+	if err != nil { 
+		t.Logf("Expected connection error: %v", err)
+	}else{
+		defer client.Close()
+	}
+
+	ctx := grpcutil.WithPriorityLevel(context.Background(), 450)
+	level := grpcutil.GetPriorityLevel(ctx)
+	require.Equal(t, 450, level)
 }

@@ -70,6 +70,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -11820,6 +11821,14 @@ func (l *fakeUtilizationBasedLimiter) LimitingReason() string {
 	return l.limitingReason
 }
 
+func (l *fakeUtilizationBasedLimiter) GetRejectionRate() float64 {
+	return 1.0 // Always reject to trigger limiting behavior
+}
+
+func (l *fakeUtilizationBasedLimiter) ShouldRejectRequest(priority int) bool {
+	return true // Always reject to trigger limiting behavior  
+}
+
 func verifyUtilizationLimitedRequestsMetric(t *testing.T, reg *prometheus.Registry) {
 	t.Helper()
 
@@ -12263,4 +12272,244 @@ var ingesterSampleTypeScenarios = map[string]struct {
 			}}
 		},
 	},
+}
+
+
+// fakeUtilizationLimiterWithPriority supports priority-based rejection testing
+type fakeUtilizationLimiterWithPriority struct {
+	services.BasicService
+	limitingReason string
+	rejectionRate  float64
+	shouldReject   map[int]bool
+}
+
+func (l *fakeUtilizationLimiterWithPriority) LimitingReason() string {
+	return l.limitingReason
+}
+
+func (l *fakeUtilizationLimiterWithPriority) GetRejectionRate() float64 {
+	return l.rejectionRate
+}
+
+func (l *fakeUtilizationLimiterWithPriority) ShouldRejectRequest(priority int) bool {
+	if shouldReject, exists := l.shouldReject[priority]; exists {
+		return shouldReject
+	}
+	
+	// Use the same priority thresholds as the actual implementation
+	var priorityThreshold float64
+	switch {
+	case priority >= 400: // VeryHigh (ruler)
+		priorityThreshold = 0.95
+	case priority >= 300: // High (dashboard)
+		priorityThreshold = 0.80
+	case priority >= 200: // Medium (API)
+		priorityThreshold = 0.60
+	case priority >= 100: // Low (background)
+		priorityThreshold = 0.40
+	default: // VeryLow (unknown)
+		priorityThreshold = 0.20
+	}
+	
+	return l.rejectionRate > priorityThreshold
+}
+
+func newFakeUtilizationLimiter(rejectionRate float64) *fakeUtilizationLimiterWithPriority {
+	return &fakeUtilizationLimiterWithPriority{
+		limitingReason: "cpu",
+		rejectionRate:  rejectionRate,
+		shouldReject:   make(map[int]bool),
+	}
+}
+
+// fakeUtilizationLimiterTracker tracks priority calls for testing context extraction
+type fakeUtilizationLimiterTracker struct {
+	services.BasicService
+	lastPriority int
+	callCount    int
+}
+
+func (l *fakeUtilizationLimiterTracker) LimitingReason() string {
+	return "cpu"
+}
+
+func (l *fakeUtilizationLimiterTracker) GetRejectionRate() float64 {
+	return 0.0 // Never reject
+}
+
+func (l *fakeUtilizationLimiterTracker) ShouldRejectRequest(priority int) bool {
+	l.lastPriority = priority
+	l.callCount++
+	return false // Never reject
+}
+
+// Test the priority-based checkReadOverloaded functionality
+func TestIngester_CheckReadOverloaded_Priority(t *testing.T) {
+	
+	testCases := []struct {
+		name            string
+		rejectionRate   float64
+		priority        int
+		expectedErr     bool
+		expectedMetric  string
+	}{
+		{
+			name:          "VeryHigh priority (450) should not be rejected at 90% rejection rate",
+			rejectionRate: 0.90,
+			priority:      450,
+			expectedErr:   false,
+		},
+		{
+			name:           "VeryHigh priority (450) should be rejected at 96% rejection rate",
+			rejectionRate:  0.96,
+			priority:       450,
+			expectedErr:    true,
+			expectedMetric: `cortex_ingester_utilization_limited_read_requests_total{priority="very_high",reason="cpu"} 1`,
+		},
+		{
+			name:          "High priority (350) should not be rejected at 75% rejection rate",
+			rejectionRate: 0.75,
+			priority:      350,
+			expectedErr:   false,
+		},
+		{
+			name:           "High priority (350) should be rejected at 85% rejection rate",
+			rejectionRate:  0.85,
+			priority:       350,
+			expectedErr:    true,
+			expectedMetric: `cortex_ingester_utilization_limited_read_requests_total{priority="high",reason="cpu"} 1`,
+		},
+		{
+			name:          "Medium priority (250) should not be rejected at 55% rejection rate",
+			rejectionRate: 0.55,
+			priority:      250,
+			expectedErr:   false,
+		},
+		{
+			name:           "Medium priority (250) should be rejected at 65% rejection rate",
+			rejectionRate:  0.65,
+			priority:       250,
+			expectedErr:    true,
+			expectedMetric: `cortex_ingester_utilization_limited_read_requests_total{priority="medium",reason="cpu"} 1`,
+		},
+		{
+			name:          "Low priority (150) should not be rejected at 35% rejection rate",
+			rejectionRate: 0.35,
+			priority:      150,
+			expectedErr:   false,
+		},
+		{
+			name:           "Low priority (150) should be rejected at 45% rejection rate",
+			rejectionRate:  0.45,
+			priority:       150,
+			expectedErr:    true,
+			expectedMetric: `cortex_ingester_utilization_limited_read_requests_total{priority="low",reason="cpu"} 1`,
+		},
+		{
+			name:          "VeryLow priority (50) should not be rejected at 15% rejection rate",
+			rejectionRate: 0.15,
+			priority:      50,
+			expectedErr:   false,
+		},
+		{
+			name:           "VeryLow priority (50) should be rejected at 25% rejection rate",
+			rejectionRate:  0.25,
+			priority:       50,
+			expectedErr:    true,
+			expectedMetric: `cortex_ingester_utilization_limited_read_requests_total{priority="very_low",reason="cpu"} 1`,
+		},
+		{
+			name:          "No rejection when rate is 0",
+			rejectionRate: 0.0,
+			priority:      50, // Even VeryLow should pass
+			expectedErr:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create ingester with fake utilization limiter
+			cfg := defaultIngesterTestConfig(t)
+			registry := prometheus.NewRegistry()
+			i, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+			require.NoError(t, err)
+			
+			// Replace with our fake limiter
+			i.utilizationBasedLimiter = newFakeUtilizationLimiter(tc.rejectionRate)
+			
+			// Create context with priority
+			ctx := user.InjectOrgID(context.Background(), "test-user")
+			ctx = context.WithValue(ctx, utilgrpcutil.PriorityLevelKey, tc.priority)
+			
+			// Test checkReadOverloaded
+			err = i.checkReadOverloaded(ctx)
+			
+			if tc.expectedErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, errTooBusy)
+				
+				// Verify metric is incremented with correct labels
+				if tc.expectedMetric != "" {
+					const metricTemplate = `
+						# HELP cortex_ingester_utilization_limited_read_requests_total Total number of times read requests have been rejected due to utilization based limiting.
+						# TYPE cortex_ingester_utilization_limited_read_requests_total counter
+						%s
+						`
+					expectedMetrics := fmt.Sprintf(metricTemplate, tc.expectedMetric)
+					assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics),
+						"cortex_ingester_utilization_limited_read_requests_total"))
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Test that checkReadOverloaded extracts priority from context properly
+func TestIngester_CheckReadOverloaded_PriorityExtraction(t *testing.T) {
+	limiter := &fakeUtilizationLimiterTracker{}
+	
+	// Create ingester
+	cfg := defaultIngesterTestConfig(t)
+	registry := prometheus.NewRegistry()
+	i, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+	require.NoError(t, err)
+	i.utilizationBasedLimiter = limiter
+	
+	testCases := []struct {
+		name             string
+		contextSetup     func() context.Context
+		expectedPriority int
+	}{
+		{
+			name: "priority from context",
+			contextSetup: func() context.Context {
+				ctx := user.InjectOrgID(context.Background(), "test-user")
+				return context.WithValue(ctx, utilgrpcutil.PriorityLevelKey, 350)
+			},
+			expectedPriority: 350,
+		},
+		{
+			name: "default priority when not in context",
+			contextSetup: func() context.Context {
+				return user.InjectOrgID(context.Background(), "test-user")
+			},
+			expectedPriority: 0, // Default priority
+		},
+	}
+	
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			limiter.callCount = 0
+			limiter.lastPriority = -1
+			
+			ctx := tc.contextSetup()
+			err := i.checkReadOverloaded(ctx)
+			
+			require.NoError(t, err)
+			require.Equal(t, 1, limiter.callCount)
+			require.Equal(t, tc.expectedPriority, limiter.lastPriority)
+		})
+	}
 }
