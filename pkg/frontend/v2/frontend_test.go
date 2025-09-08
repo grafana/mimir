@@ -801,7 +801,7 @@ func TestFrontendPriorityIntegration(t *testing.T) {
 			Method: "GET",
 			Url:    "/api/v1/query?query=up",
 			Headers: []*httpgrpc.Header{
-				{Key: "X-Mimir-Component", Values: []string{"ruler"}},
+				{Key: "User-Agent", Values: []string{"mimir-ruler/2.11.0"}},
 			},
 		}
 

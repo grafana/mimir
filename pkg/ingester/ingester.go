@@ -1049,8 +1049,7 @@ func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error)
 		priority := utilgrpcutil.GetPriorityFromContext(ctx)
 		permit, err := i.reactiveLimiter.push.AcquirePermitWithPriority(ctx, priority)
 		if err != nil {
-			priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests, priorityLabel).Inc()
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return nil, newReactiveLimiterExceededError(err)
 		}
 		return func(err error) {
@@ -1112,8 +1111,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	if i.reactiveLimiter.push != nil {
 		priority := utilgrpcutil.GetPriorityFromContext(ctx)
 		if !i.reactiveLimiter.push.CanAcquirePermitWithPriority(priority) {
-			priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests, priorityLabel).Inc()
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 		}
 	}
@@ -1149,17 +1147,13 @@ func (i *Ingester) checkInstanceLimits(ctx context.Context, inflight int64, infl
 		return nil
 	}
 	if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
-		priority := utilgrpcutil.GetPriorityFromContext(ctx)
-		priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests, priorityLabel).Inc()
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 		return errMaxInflightRequestsReached
 	}
 
 	if il.MaxInflightPushRequestsBytes > 0 {
 		if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
-			priority := utilgrpcutil.GetPriorityFromContext(ctx)
-			priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes, priorityLabel).Inc()
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
 			return errMaxInflightRequestsBytesReached
 		}
 	}
@@ -1779,8 +1773,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		if i.reactiveLimiter.read != nil {
 			priority := utilgrpcutil.GetPriorityFromContext(ctx)
 			if !i.reactiveLimiter.read.CanAcquirePermitWithPriority(priority) {
-				priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests, priorityLabel).Inc()
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 				return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 			}
 		}
@@ -1813,8 +1806,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		priority := utilgrpcutil.GetPriorityFromContext(ctx)
 		permit, err := i.reactiveLimiter.read.AcquirePermitWithPriority(ctx, priority)
 		if err != nil {
-			priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests, priorityLabel).Inc()
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 			return nil, newReactiveLimiterExceededError(err)
 		}
 		return func(err error) {

@@ -380,7 +380,7 @@ func newIngesterMetrics(
 		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_instance_rejected_requests_total",
 			Help: "Requests rejected for hitting per-instance limits",
-		}, []string{"reason", "priority"}),
+		}, []string{"reason"}),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
@@ -396,9 +396,7 @@ func newIngesterMetrics(
 		}, []string{"outcome", "user"}),
 	}
 
-	// Initialize expected rejected request labels
-	// Initialize rejected metric with all combinations of reason and priority labels
-	priorities := []string{"very_high", "high", "medium", "low", "very_low"}
+	// Initialize expected rejected request labels 
 	reasons := []string{
 		reasonIngesterMaxIngestionRate,
 		reasonIngesterMaxTenants, 
@@ -408,9 +406,7 @@ func newIngesterMetrics(
 		reasonIngesterMaxInflightReadRequests,
 	}
 	for _, reason := range reasons {
-		for _, priority := range priorities {
-			m.rejected.WithLabelValues(reason, priority)
-		}
+		m.rejected.WithLabelValues(reason)
 	}
 
 	return m

@@ -959,12 +959,8 @@ func TestIngesterMetricsPriorityLabels(t *testing.T) {
 	// Create ingester metrics
 	m := newIngesterMetrics(reg, true, instanceLimitsFn, ingestionRate, inflightRequests, inflightRequestsBytes)
 	
-	// Test that we can record metrics with priority labels
-	m.rejected.WithLabelValues("max_inflight_push_requests", "very_high").Inc()
-	m.rejected.WithLabelValues("max_inflight_push_requests", "high").Inc()
-	m.rejected.WithLabelValues("max_inflight_push_requests", "medium").Inc()
-	m.rejected.WithLabelValues("max_inflight_push_requests", "low").Inc()
-	m.rejected.WithLabelValues("max_inflight_push_requests", "very_low").Inc()
+	// Test that we can record metrics with simple rejected metric
+	m.rejected.WithLabelValues("max_inflight_push_requests").Inc()
 	
 	// Verify that the metrics are recorded with correct priority labels
 	// Instead of comparing the entire output, let's verify specific metrics exist
@@ -981,37 +977,19 @@ func TestIngesterMetricsPriorityLabels(t *testing.T) {
 	}
 	require.NotNil(t, rejectedMetric, "Should find rejected requests metric")
 	
-	// Verify we have metrics with the correct priority labels and values
-	expectedCombinations := map[string]int{
-		"high_max_inflight_push_requests":      1,
-		"low_max_inflight_push_requests":       1,
-		"medium_max_inflight_push_requests":    1,
-		"very_high_max_inflight_push_requests": 1,
-		"very_low_max_inflight_push_requests":  1,
-	}
-	
-	foundCombinations := make(map[string]int)
+	// Verify we have the expected metric with correct value
+	found := false
 	for _, metric := range rejectedMetric.GetMetric() {
-		var priority, reason string
+		labels := make(map[string]string)
 		for _, label := range metric.GetLabel() {
-			if label.GetName() == "priority" {
-				priority = label.GetValue()
-			}
-			if label.GetName() == "reason" {
-				reason = label.GetValue()
-			}
+			labels[label.GetName()] = label.GetValue()
 		}
 		
-		if reason == "max_inflight_push_requests" {
-			key := fmt.Sprintf("%s_%s", priority, reason)
-			foundCombinations[key] = int(metric.GetCounter().GetValue())
+		if labels["reason"] == "max_inflight_push_requests" {
+			require.Equal(t, 1.0, metric.GetCounter().GetValue())
+			found = true
+			break
 		}
 	}
-	
-	// Verify all expected combinations were found with correct values
-	for expectedKey, expectedValue := range expectedCombinations {
-		actualValue, found := foundCombinations[expectedKey]
-		require.True(t, found, "Should find metric for %s", expectedKey)
-		require.Equal(t, expectedValue, actualValue, "Metric %s should have value %d", expectedKey, expectedValue)
-	}
+	require.True(t, found, "Should find max_inflight_push_requests metric")
 }

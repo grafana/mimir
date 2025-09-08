@@ -11835,7 +11835,7 @@ func verifyUtilizationLimitedRequestsMetric(t *testing.T, reg *prometheus.Regist
 	const expMetrics = `
 				# HELP cortex_ingester_utilization_limited_read_requests_total Total number of times read requests have been rejected due to utilization based limiting.
 				# TYPE cortex_ingester_utilization_limited_read_requests_total counter
-				cortex_ingester_utilization_limited_read_requests_total{reason="cpu"} 1
+				cortex_ingester_utilization_limited_read_requests_total{priority="very_low",reason="cpu"} 1
 				`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expMetrics),
 		"cortex_ingester_utilization_limited_read_requests_total"))

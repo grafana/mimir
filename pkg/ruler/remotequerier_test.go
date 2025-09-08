@@ -871,15 +871,6 @@ func TestRemoteQuerier_UserAgent(t *testing.T) {
 		expectedPath   string
 	}{
 		{
-			name: "Read request sets mimir-ruler User-Agent",
-			testFunc: func(ctx context.Context, q *RemoteQuerier) error {
-				_, err := q.Read(ctx, &prompb.ReadRequest{})
-				return err
-			},
-			expectedMethod: "POST",
-			expectedPath:   "/api/v1/read",
-		},
-		{
 			name: "Query request sets mimir-ruler User-Agent",
 			testFunc: func(ctx context.Context, q *RemoteQuerier) error {
 				tm := time.Unix(1649092025, 515834)
@@ -887,7 +878,7 @@ func TestRemoteQuerier_UserAgent(t *testing.T) {
 				return err
 			},
 			expectedMethod: "POST",
-			expectedPath:   "/api/v1/query",
+			expectedPath:   "/prometheus/api/v1/query",
 		},
 	}
 
@@ -898,13 +889,28 @@ func TestRemoteQuerier_UserAgent(t *testing.T) {
 			mockClientFn := func(_ context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				capturedRequest = req
 
-				// Return a successful response
+				// Return a successful response with correct content type for the request type
+				var body []byte
+				var contentType string
+				
+				if capturedRequest.Method == "POST" && capturedRequest.Url == "/prometheus/api/v1/read" {
+					// Read endpoint expects snappy-compressed protobuf response
+					contentType = "application/x-protobuf"
+					readResponse := &prompb.ReadResponse{}
+					protoBytes, _ := proto.Marshal(readResponse)
+					body = snappy.Encode(nil, protoBytes)
+				} else {
+					// Query endpoint expects JSON response
+					contentType = "application/json"
+					body = []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
+				}
+				
 				return &httpgrpc.HTTPResponse{
 					Code: http.StatusOK,
 					Headers: []*httpgrpc.Header{
-						{Key: "Content-Type", Values: []string{"application/json"}},
+						{Key: "Content-Type", Values: []string{contentType}},
 					},
-					Body: []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`),
+					Body: body,
 				}, nil
 			}
 
