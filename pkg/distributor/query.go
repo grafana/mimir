@@ -359,24 +359,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			res.streamingSeries.StreamReader.StartBuffering()
 			streamReaderCount++
 		}
-
-		// Decrease memory consumption for labels from processed timeseriesBatches and chunkseriesBatches
-		// as they have been consolidated into the final response structures
-		for _, batch := range res.timeseriesBatches {
-			for _, series := range batch {
-				ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-		}
-		for _, batch := range res.chunkseriesBatches {
-			for _, series := range batch {
-				ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-		}
-
-		// For streamingSeries labels, they will be decreased when the StreamReader is closed
-		// The streamingSeries.Series labels are still needed for the mergeSeriesChunkStreams call below
 	}
 
 	// Now turn the accumulated maps into slices.
@@ -385,13 +367,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
 		StreamReaders:   make([]*ingester_client.SeriesChunksStreamReader, 0, streamReaderCount),
-	}
-
-	// Decrease memory consumption for streamingSeries labels after they've been processed by mergeSeriesChunkStreams
-	for _, res := range results {
-		for _, ls := range res.streamingSeries.Series {
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -404,6 +379,30 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			resp.StreamReaders = append(resp.StreamReaders, res.streamingSeries.StreamReader)
 		}
 	}
+
+	// Decrease memory consumption for all labels possible usage before returning the response.
+	defer func() {
+		for _, res := range results {
+			for _, batch := range res.timeseriesBatches {
+				for _, series := range batch {
+					ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+				}
+			}
+
+			for _, batch := range res.chunkseriesBatches {
+				for _, series := range batch {
+					ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+				}
+			}
+
+			for _, ls := range res.streamingSeries.Series {
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+			}
+		}
+
+	}()
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
 
@@ -430,7 +429,6 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, series := range resp.Timeseries {
 			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
 
-			// Track memory consumption for labels received from ingester
 			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
 				return nil, false, err
 			}
@@ -457,7 +455,6 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, series := range resp.Chunkseries {
 			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
 
-			// Track memory consumption for labels received from ingester
 			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
 				return nil, false, err
 			}
@@ -478,14 +475,13 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 		for _, s := range resp.StreamingSeries {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			// Track memory consumption for labels received from ingester
-			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
 				return nil, false, err
 			}
 
-			if err := queryLimiter.AddSeries(l); err != nil {
+			if err := queryLimiter.AddSeries(ls); err != nil {
 				return nil, false, err
 			}
 
@@ -498,7 +494,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 				return nil, false, err
 			}
 
-			labelsBatch = append(labelsBatch, l)
+			labelsBatch = append(labelsBatch, ls)
 		}
 
 		return labelsBatch, resp.IsEndOfSeriesStream, nil
