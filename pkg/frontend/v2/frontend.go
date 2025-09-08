@@ -362,7 +362,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		spanLogger: freq.spanLogger,
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
-		c:            make(chan protobufResponseMessage, 1),
+		messages:     make(chan protobufResponseMessage, 1),
 		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
 	}
 
@@ -410,7 +410,7 @@ type ProtobufResponseStream struct {
 	// Why do we have two channels here?
 	// Different goroutines write to each, and each needs to close its corresponding channel when finished.
 	// There's no guarantee which order the goroutines finish in, and one may never be called at all.
-	c            chan protobufResponseMessage
+	messages     chan protobufResponseMessage
 	enqueueError chan error
 	cancel       context.CancelCauseFunc
 
@@ -437,7 +437,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 	}
 
 	select {
-	case s.c <- protobufResponseMessage{msg: msg, err: err}:
+	case s.messages <- protobufResponseMessage{msg: msg, err: err}:
 		return nil
 	case <-s.ctx.Done():
 		return context.Cause(s.ctx)
@@ -466,7 +466,7 @@ func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 // undefined behaviour.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	select {
-	case resp := <-s.c:
+	case resp := <-s.messages:
 		if resp.err != nil {
 			return nil, resp.err
 		}
@@ -733,7 +733,7 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 
 func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMessage *frontendv2pb.QueryResultStreamRequest, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
 	defer func() {
-		close(req.protobufResponseStream.c)
+		close(req.protobufResponseStream.messages)
 		close(req.protobufResponseDone)
 	}()
 
