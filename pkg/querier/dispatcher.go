@@ -305,9 +305,11 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryE
 }
 
 func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.QueryResultStreamRequest) error {
-	size := float64(resp.Size())
-	w.querierResponseMessageBytes.Observe(size)
-	w.serverResponseMessageBytes.Observe(size)
+	if w.querierResponseMessageBytes != nil {
+		size := float64(resp.Size())
+		w.querierResponseMessageBytes.Observe(size)
+		w.serverResponseMessageBytes.Observe(size)
+	}
 
 	return w.stream.Write(ctx, resp)
 }
