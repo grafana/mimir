@@ -32,7 +32,7 @@ func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.Pre
 	r.QueryStats = params.QueryStats
 
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker)
+	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats)
 	return err
 }
 

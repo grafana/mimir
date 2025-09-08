@@ -234,6 +234,10 @@ func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringO
 	return observer.StringEvaluated(ctx, e, v)
 }
 
+func (e *Evaluator) GetQueryTimeRange() types.QueryTimeRange {
+	return e.timeRange
+}
+
 func (e *Evaluator) Cancel() {
 	if e.cancel != nil {
 		e.cancel(errQueryCancelled)

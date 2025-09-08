@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel/attribute"
@@ -32,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -170,7 +172,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, nil, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
+	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
 		return
@@ -454,7 +457,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
 	var annos querierpb.Annotations
 
 	if annotations != nil {
@@ -465,11 +468,35 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats: querierpb.QueryStats{
-					TotalSamples:        stats.TotalSamples,
-					TotalSamplesPerStep: stats.TotalSamplesPerStep,
-				},
+				Stats:       o.populateStats(ctx, evaluator, evaluationStats),
 			},
 		},
 	})
+}
+
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *streamingpromql.Evaluator, evaluationStats *types.QueryStats) querier_stats.Stats {
+	querierStats := querier_stats.FromContext(ctx)
+	if querierStats == nil {
+		return querier_stats.Stats{}
+	}
+
+	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
+
+	if evaluationStats.EnablePerStepStats {
+		stepStats := make([]querier_stats.StepStat, 0, len(evaluationStats.TotalSamplesPerStep))
+		timeRange := evaluator.GetQueryTimeRange()
+
+		for i, count := range evaluationStats.TotalSamplesPerStep {
+			stepStats = append(stepStats, querier_stats.StepStat{
+				Timestamp: timeRange.IndexTime(int64(i)),
+				Value:     count,
+			})
+		}
+
+		querierStats.AddSamplesProcessedPerStep(stepStats)
+	}
+
+	// Return a copy of the stats to avoid race conditions if anything is still modifying the
+	// stats after we return them for serialization.
+	return querierStats.Copy().Stats
 }

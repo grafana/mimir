@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -28,8 +29,8 @@ func NewRemoteExecutor(frontend *Frontend) *RemoteExecutor {
 	return &RemoteExecutor{frontend: frontend}
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
+func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +38,8 @@ func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *pla
 	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
+func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +47,8 @@ func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPl
 	return &instantVectorExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange)
+func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +56,7 @@ func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan
 	return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange) (responseStream, error) {
+func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, enablePerStepStats bool) (responseStream, error) {
 	subsetPlan := &planning.QueryPlan{
 		TimeRange:          timeRange,
 		Root:               node,
@@ -74,6 +75,7 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 		Nodes: []querierpb.EvaluationNode{
 			{NodeIndex: encodedPlan.RootNode, TimeRange: encodedPlan.TimeRange},
 		},
+		EnablePerStepStats: enablePerStepStats,
 	}
 
 	stream, err := r.frontend.DoProtobufRequest(ctx, req)
@@ -117,7 +119,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 	return v, nil
 }
 
-func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
+func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -161,7 +163,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	return mqeData, nil
 }
 
-func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
+func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -244,7 +246,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	return r.stepData, nil
 }
 
-func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error) {
+func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	return readEvaluationCompleted(ctx, r.stream)
 }
 
@@ -294,12 +296,12 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 	return mqeSeries, nil
 }
 
-func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, int64, error) {
+func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, stats.Stats, error) {
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
 		resp, err := readNextEvaluateQueryResponse(ctx, stream)
 		if err != nil {
-			return nil, 0, err
+			return nil, stats.Stats{}, err
 		}
 
 		completion := resp.GetEvaluationCompleted()
@@ -307,12 +309,12 @@ func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annot
 			continue // Try the next message.
 		}
 
-		annos, totalSamples := decodeEvaluationCompletedMessage(completion)
-		return annos, totalSamples, nil
+		annos, stats := decodeEvaluationCompletedMessage(completion)
+		return annos, stats, nil
 	}
 }
 
-func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, int64) {
+func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats) {
 	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
 
 	annos := make(annotations.Annotations, count)
@@ -324,7 +326,7 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 		annos.Add(newRemoteWarning(a))
 	}
 
-	return &annos, msg.Stats.TotalSamples
+	return &annos, msg.Stats
 }
 
 // Prometheus' annotations.Annotations type stores Golang error types and checks if they
