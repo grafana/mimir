@@ -272,7 +272,7 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 	return freq, ctx, cancel, nil
 }
 
-// RoundTripGRPC round trips a proto (instead of an HTTP request).
+// RoundTripGRPC round trips a httpgrpc request.
 func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	freq, ctx, cancel, err := f.createNewRequest(ctx)
 	if err != nil {
@@ -343,7 +343,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 // If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
 func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
-	logger, ctx := spanlogger.New(ctx, f.log, tracer, "DoProtobufRequest")
+	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
 	freq, ctx, cancel, err := f.createNewRequest(ctx)
