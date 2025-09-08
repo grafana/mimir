@@ -139,9 +139,11 @@ type frontendRequest struct {
 
 	enqueue chan enqueueResult
 
+	// If this is a httpgrpc request, then these fields will be populated:
 	httpRequest  *httpgrpc.HTTPRequest
 	httpResponse chan queryResultWithBody
 
+	// If this is a Protobuf request, then these fields will be populated:
 	protobufRequest        proto.Message
 	protobufResponseStream *ProtobufResponseStream
 	protobufResponseDone   chan struct{} // Used to signal when the response has been completely read (but possibly not yet consumed) and we can stop monitoring the request context for cancellation.
