@@ -78,9 +78,7 @@ func (bqss *blockQuerierSeriesSet) Next() bool {
 		bqss.next++
 	}
 
-	ls := mimirpb.FromLabelAdaptersToLabels(currLabels)
-
-	bqss.currSeries = newBlockQuerierSeries(ls, currChunks)
+	bqss.currSeries = newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), currChunks)
 	return true
 }
 
