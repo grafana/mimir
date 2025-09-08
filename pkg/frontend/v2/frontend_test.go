@@ -128,7 +128,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	})
 }
 
-func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -143,7 +143,7 @@ func sendStreamingResponseOnSignal(t *testing.T, f *Frontend, userID string, que
 	if err != nil {
 		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
 		// So just log it but don't fail the test.
-		t.Logf("sendStreamingResponseOnSignal: QueryResultStream returned %v", err)
+		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -218,7 +218,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// Send the entire response, and wait until it has been received by the test below.
-		sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+		sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		select {
 		case <-responseRead:
@@ -261,7 +261,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -282,7 +282,7 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
-		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, errorMessage)
+		go sendStreamingResponse(t, f, userID, msg.QueryID, errorMessage)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -329,7 +329,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 		},
 		"Protobuf": {
 			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
-				go sendStreamingResponseOnSignal(t, f, userID, queryID, newStringMessage("the message"))
+				go sendStreamingResponse(t, f, userID, queryID, newStringMessage("the message"))
 			},
 			makeRequest: func(t *testing.T, f *Frontend) {
 				ctx := user.InjectOrgID(context.Background(), userID)
@@ -425,7 +425,7 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -467,7 +467,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go sendStreamingResponseOnSignal(t, f, userID, msg.QueryID, expectedMessages...)
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
