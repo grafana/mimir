@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -122,10 +123,16 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return q.streamingSelect(ctx, minT, maxT, matchers)
+	set := q.streamingSelect(ctx, minT, maxT, matchers)
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	for set.Next() {
+		memoryTracker.DecreaseMemoryConsumptionForLabels(set.At().Labels())
+	}
+	return set
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -133,6 +140,12 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	sets := []storage.SeriesSet(nil)
 	if len(results.Timeseries) > 0 {
+		for _, s := range results.Timeseries {
+			ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return storage.ErrSeriesSet(err)
+			}
+		}
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
@@ -146,6 +159,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
 	for i, result := range results.Chunkseries {
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+			return storage.ErrSeriesSet(err)
+		}
 
 		if chunkInfo != nil {
 			chunkInfo.StartSeries(ls)
@@ -185,6 +201,10 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 
 		for i, s := range results.StreamingSeries {
+			err := memoryTracker.IncreaseMemoryConsumptionForLabels(s.Labels)
+			if err != nil {
+				return storage.ErrSeriesSet(err)
+			}
 			streamingSeries = append(streamingSeries, &streamingChunkSeries{
 				labels:    s.Labels,
 				sources:   s.Sources,
