@@ -178,8 +178,18 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 // running learns about the jobs from a block-builder-scheduler, and consumes one job at a time.
 func (b *BlockBuilder) running(ctx context.Context) error {
-	// Kick off the scheduler client's run loop.
-	go b.schedulerClient.Run(ctx)
+	// Block-builder attempts to complete the current job when a shutdown
+	// request is received.
+	// To enable this, we create a child context whose cancellation signal is
+	// replaced with one that cancels when this function exits. Operations
+	// related to an ongoing job use this modified context, whereas the parent
+	// context is used to avoid taking on more jobs, and to exit running().
+
+	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cancel(context.Canceled)
+
+	// Kick off the scheduler client's runloop.
+	go b.schedulerClient.Run(graceCtx)
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -199,7 +209,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		}
 
 		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
-		if err := b.consumeJob(context.WithoutCancel(ctx), key, spec); err != nil {
+		if err := b.consumeJob(graceCtx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 
 			if err := b.schedulerClient.FailJob(key); err != nil {
@@ -327,7 +337,6 @@ func (b *BlockBuilder) consumePartitionSection(
 			return
 		}
 
-		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", partition)).Observe(dur.Seconds())
 		level.Info(logger).Log("msg", "done consuming", "duration", dur, "partition", partition,
 			"start_offset", startOffset, "end_offset", endOffset,
 			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
