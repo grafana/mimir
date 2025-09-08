@@ -20,20 +20,17 @@ package otlp
 
 import (
 	"context"
-	"log/slog"
 	"math"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/prometheus/prometheus/model/value"
 )
 
 func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata mimirpb.MetricMetadata, scope scope,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -41,42 +38,42 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 		}
 
 		pt := dataPoints.At(x)
-		labels, err := createAttributes(
+		labels, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
-			metadata,
+			meta,
 			model.MetricNameLabel,
-			metadata.MetricFamilyName,
+			meta.MetricFamilyName,
 		)
 		if err != nil {
 			return err
 		}
-		sample := &mimirpb.Sample{
-			// convert ns to ms
-			TimestampMs: convertTimeStamp(pt.Timestamp()),
-		}
+		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
-			sample.Value = float64(pt.IntValue())
+			val = float64(pt.IntValue())
 		case pmetric.NumberDataPointValueTypeDouble:
-			sample.Value = pt.DoubleValue()
+			val = pt.DoubleValue()
 		}
 		if pt.Flags().NoRecordedValue() {
-			sample.Value = math.Float64frombits(value.StaleNaN)
+			val = math.Float64frombits(value.StaleNaN)
 		}
-
-		c.addSample(sample, labels)
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		if err := c.appender.AppendSample(labels, meta, ct, ts, val, nil); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, metadata mimirpb.MetricMetadata, scope scope, logger *slog.Logger,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -84,51 +81,39 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 
 		pt := dataPoints.At(x)
-		timestamp := convertTimeStamp(pt.Timestamp())
-		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		lbls, err := createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
-			metadata,
+			meta,
 			model.MetricNameLabel,
-			metadata.MetricFamilyName,
+			meta.MetricFamilyName,
 		)
+		if err != nil {
+			return nil
+		}
+		var val float64
+		switch pt.ValueType() {
+		case pmetric.NumberDataPointValueTypeInt:
+			val = float64(pt.IntValue())
+		case pmetric.NumberDataPointValueTypeDouble:
+			val = pt.DoubleValue()
+		}
+		if pt.Flags().NoRecordedValue() {
+			val = math.Float64frombits(value.StaleNaN)
+		}
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
 		}
-		sample := &mimirpb.Sample{
-			// convert ns to ms
-			TimestampMs: timestamp,
+		if err := c.appender.AppendSample(lbls, meta, ct, ts, val, exemplars); err != nil {
+			return err
 		}
-		switch pt.ValueType() {
-		case pmetric.NumberDataPointValueTypeInt:
-			sample.Value = float64(pt.IntValue())
-		case pmetric.NumberDataPointValueTypeDouble:
-			sample.Value = pt.DoubleValue()
-		}
-		if pt.Flags().NoRecordedValue() {
-			sample.Value = math.Float64frombits(value.StaleNaN)
-		}
-
-		isMonotonic := metric.Sum().IsMonotonic()
-		if isMonotonic {
-			c.handleStartTime(startTimestampMs, timestamp, lbls, settings, "sum", sample.Value, logger)
-		}
-
-		ts := c.addSample(sample, lbls)
-		if ts != nil {
-			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
-			if err != nil {
-				return err
-			}
-			ts.Exemplars = append(ts.Exemplars, exemplars...)
-		}
-
-		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil
