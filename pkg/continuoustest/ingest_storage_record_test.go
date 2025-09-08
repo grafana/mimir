@@ -432,3 +432,241 @@ func TestExemplarEqual(t *testing.T) {
 		require.True(t, ExemplarEqual(exemplar1, exemplar2))
 	})
 }
+
+func TestHistogramEqual(t *testing.T) {
+	t.Run("equal", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			Schema:        0,
+			ZeroThreshold: 0.001,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 5},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 2},
+			},
+			NegativeDeltas: []int64{1, 2},
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 3},
+			},
+			PositiveDeltas: []int64{3, 4, 5},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      1234567890,
+			CustomValues:   []float64{1.1, 2.2},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			Schema:        0,
+			ZeroThreshold: 0.001,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 5},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 2},
+			},
+			NegativeDeltas: []int64{1, 2},
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 3},
+			},
+			PositiveDeltas: []int64{3, 4, 5},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      1234567890,
+			CustomValues:   []float64{1.1, 2.2},
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			Schema:        0,
+			ZeroThreshold: 0.001,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 5},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 2},
+			},
+			NegativeDeltas: []int64{1, 2},
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 3},
+			},
+			PositiveDeltas: []int64{3, 4, 5},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      1234567890,
+			CustomValues:   []float64{1.1, 2.2},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 200}, // Different count
+			Sum:           42.5,
+			Schema:        0,
+			ZeroThreshold: 0.001,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 5},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 2},
+			},
+			NegativeDeltas: []int64{1, 2},
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 3},
+			},
+			PositiveDeltas: []int64{3, 4, 5},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      1234567890,
+			CustomValues:   []float64{1.1, 2.2},
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("equal with NaN Sum", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:   math.NaN(),
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:   math.NaN(),
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("equal with NaN ZeroThreshold", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			ZeroThreshold: math.NaN(),
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			ZeroThreshold: math.NaN(),
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("equal with NaN in NegativeCounts", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1.0, math.NaN()},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1.0, math.NaN()},
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("equal with NaN in PositiveCounts", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{math.NaN(), 2.0},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{math.NaN(), 2.0},
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("equal with NaN in CustomValues", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:        &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:          42.5,
+			CustomValues: []float64{1.1, math.NaN(), 3.3},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:        &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:          42.5,
+			CustomValues: []float64{1.1, math.NaN(), 3.3},
+		}
+
+		require.True(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when one Sum is NaN and other is not", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:   math.NaN(),
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:   42.5,
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when one ZeroThreshold is NaN and other is not", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			ZeroThreshold: math.NaN(),
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:           42.5,
+			ZeroThreshold: 0.001,
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when one NegativeCounts has NaN and other does not", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1.0, math.NaN()},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1.0, 2.0},
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when one PositiveCounts has NaN and other does not", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{math.NaN(), 2.0},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{1.0, 2.0},
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when one CustomValues has NaN and other does not", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:        &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:          42.5,
+			CustomValues: []float64{1.1, math.NaN(), 3.3},
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:        &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:          42.5,
+			CustomValues: []float64{1.1, 2.2, 3.3},
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+}
