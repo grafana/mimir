@@ -176,8 +176,8 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	// related to an ongoing job use this modified context, whereas the parent
 	// context is used to avoid taking on more jobs, and to exit running().
 
-	graceCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancel()
+	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cancel(context.Canceled)
 
 	// Kick off the scheduler client's runloop.
 	go b.schedulerClient.Run(graceCtx)
