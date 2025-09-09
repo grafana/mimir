@@ -138,9 +138,11 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 }
 
 func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
-	ts := mimirpb.TimeseriesFromPool()
-	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
-	ts.CreatedTimestamp = ct
+	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool
+	ts := &mimirpb.TimeSeries{
+		Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
+		CreatedTimestamp: ct,
+	}
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
 	c.refs[hash] = *idx
