@@ -74,7 +74,6 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
-	enableStartTimeQuietZero bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -95,7 +94,7 @@ func OTLPHandler(
 		appender := otlpappender.NewCombinedAppender()
 		otlpConverter := newOTLPMimirConverter(appender)
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -183,7 +182,6 @@ func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	otlpConverter *otlpMimirConverter,
-	enableStartTimeQuietZero bool,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 ) parserFunc {
@@ -306,7 +304,6 @@ func newOTLPParser(
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
 			enableCTZeroIngestion:             enableCTZeroIngestion,
-			enableStartTimeQuietZero:          false,
 			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
 			convertHistogramsToNHCB:           convertHistogramsToNHCB,
 			promoteScopeMetadata:              promoteScopeMetadata,
@@ -497,7 +494,6 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
-	enableStartTimeQuietZero          bool
 	keepIdentifyingResourceAttributes bool
 	convertHistogramsToNHCB           bool
 	promoteScopeMetadata              bool
