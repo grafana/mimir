@@ -196,7 +196,7 @@ jobs:
               
               cc @charleskorn @56quarters @lamida @zenador
               
-              Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+              Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
