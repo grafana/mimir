@@ -79,11 +79,12 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.WorkerConcurrency = concurrency
 	cfg.Addr = h
 	cfg.Port = grpcPort
+	cfg.QueryStoreAfter = 12 * time.Hour
 
 	logger := log.NewLogfmtLogger(os.Stdout)
 	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
-	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
+	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -183,7 +184,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		require.Equal(t, []string{ingesterAndStoreGatewayQueryComponent}, msg.AdditionalQueueDimensions)
+		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
 
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
@@ -192,7 +193,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-24*time.Hour), time.Now())
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
