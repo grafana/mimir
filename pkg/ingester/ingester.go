@@ -2637,9 +2637,9 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		planner := lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
-		return func(tsdb.BlockReader) index.LookupPlanner { return planner }
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return planner }
 	}
-	return func(tsdb.BlockReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
+	return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 }
 
 // List all users for which we have a TSDB. We do it here in order
