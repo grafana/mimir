@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -161,18 +161,15 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-func (p plan) logSpanEvent(logger *spanlogger.SpanLogger, planName string) {
-	logger.LogFields(
-		log.String("plan_name", planName),
-		log.Float64("total_cost", p.totalCost()),
-		log.Float64("index_lookup_cost", p.indexLookupCost()),
-		log.Float64("filter_cost", p.filterCost()),
-		log.Float64("intersection_cost", p.intersectionCost()),
-		log.Uint64("cardinality", p.cardinality()),
-		log.Lazy(func(fv log.Encoder) {
-			// Avoid marshalling the matchers if the trace isn't sampled.
-			fv.EmitString("index_matchers", util.MatchersStringer(p.IndexMatchers()).String())
-			fv.EmitString("scan_matchers", util.MatchersStringer(p.ScanMatchers()).String())
-		}),
-	)
+func (p plan) addSpanEvent(span trace.Span, planName string) {
+	span.AddEvent("lookup plan", trace.WithAttributes(
+		attribute.String("plan_name", planName),
+		attribute.Float64("total_cost", p.totalCost()),
+		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.String("index_matchers", util.MatchersStringer(p.IndexMatchers()).String()),
+		attribute.String("scan_matchers", util.MatchersStringer(p.ScanMatchers()).String()),
+	))
 }
