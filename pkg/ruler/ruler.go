@@ -257,9 +257,12 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 		rulerSyncDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ruler_sync_rules_duration_seconds",
-			Help:    "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
-			Buckets: []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			Name:                            "cortex_ruler_sync_rules_duration_seconds",
+			Help:                            "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
+			Buckets:                         []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
 		}),
 	}
 
