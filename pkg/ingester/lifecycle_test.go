@@ -70,7 +70,7 @@ func TestIngesterRestart(t *testing.T) {
 	config.IngesterRing.UnregisterOnShutdown = false
 
 	{
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
+		ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -85,7 +85,7 @@ func TestIngesterRestart(t *testing.T) {
 	})
 
 	{
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
+		ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -109,16 +109,9 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			config.IngesterRing.UnregisterOnShutdown = unregister
 
-			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
+			ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 			require.NoError(t, err)
-			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-
-			// Make sure the ingester has been added to the ring.
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
-			})
+			startAndWaitHealthy(t, ing, r)
 
 			recorder := httptest.NewRecorder()
 			ing.ShutdownHandler(recorder, nil)

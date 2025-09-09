@@ -1,0 +1,23 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-kafka
+  labels:
+    app: enterprise-metrics-kafka
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9092
+      protocol: TCP
+      name: kafka
+      targetPort: kafka
+  selector:
+    app: enterprise-metrics-kafka
+    release: test-enterprise-legacy-label-values

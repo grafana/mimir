@@ -73,6 +73,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
 	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
+	cfg.MimirQueryEngine.Logger = logger
 
 	return commonOpts, cfg.MimirQueryEngine
 }

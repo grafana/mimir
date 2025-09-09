@@ -1,0 +1,29 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-kafka-headless
+  labels:
+    app: enterprise-metrics-kafka
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 9092
+      protocol: TCP
+      name: kafka
+      targetPort: kafka
+    - port: 9093
+      protocol: TCP
+      name: controller
+      targetPort: controller
+  selector:
+    app: enterprise-metrics-kafka
+    release: test-enterprise-legacy-label-values

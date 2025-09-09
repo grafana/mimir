@@ -381,39 +381,39 @@ func (c *Config) isAnyModuleExplicitlyTargeted(modules ...string) bool {
 }
 
 func (c *Config) isIngesterEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, Ingester, Write)
+	return c.isAnyModuleExplicitlyTargeted(All, Ingester)
 }
 
 func (c *Config) isAlertManagerEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(AlertManager, Backend)
+	return c.isAnyModuleExplicitlyTargeted(AlertManager)
 }
 
 func (c *Config) isRulerEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, Ruler, Backend)
+	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
 }
 
 func (c *Config) isStoreGatewayEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway, Backend)
+	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway)
 }
 
 func (c *Config) isCompactorEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, Compactor, Backend)
+	return c.isAnyModuleExplicitlyTargeted(All, Compactor)
 }
 
 func (c *Config) isQueryFrontendEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, QueryFrontend, Read)
+	return c.isAnyModuleExplicitlyTargeted(All, QueryFrontend)
 }
 
 func (c *Config) isQuerySchedulerEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, QueryScheduler, Backend)
+	return c.isAnyModuleExplicitlyTargeted(All, QueryScheduler)
 }
 
 func (c *Config) isQuerierEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, Querier, Read)
+	return c.isAnyModuleExplicitlyTargeted(All, Querier)
 }
 
 func (c *Config) isDistributorEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(All, Distributor, Write)
+	return c.isAnyModuleExplicitlyTargeted(All, Distributor)
 }
 
 func (c *Config) isUsageTrackerEnabled() bool {

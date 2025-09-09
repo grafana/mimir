@@ -3267,8 +3267,9 @@ ring:
 [query_stats_enabled: <boolean> | default = false]
 
 query_frontend:
-  # GRPC listen address of the query-frontend(s). Must be a DNS address
-  # (prefixed with dns:///) to enable client side load balancing.
+  # Can be either the GRPC listen address of the query-frontend(s) or the
+  # HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address
+  # (prefixed with dns:///) to enable GRPC client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
@@ -3277,6 +3278,13 @@ query_frontend:
   # The CLI flags prefix for this block configuration is:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
+
+  # Configures the HTTP client used to communicate between the rulers and
+  # query-frontends.
+  http_client_config:
+    # (advanced) Timeout for establishing a connection to the query-frontend.
+    # CLI flag: -ruler.query-frontend.http-client-config.connect-timeout
+    [connect_timeout: <duration> | default = 30s]
 
   # Format to use when retrieving query results from query-frontends. Supported
   # values: json, protobuf
@@ -4865,10 +4873,10 @@ blocked_requests:
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
-# (experimental) Enable labels query optimizations. When enabled, the
-# query-frontend may rewrite labels queries to improve their performance.
+# (advanced) Enable labels query optimizations. When enabled, the query-frontend
+# may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
-[labels_query_optimizer_enabled: <boolean> | default = false]
+[labels_query_optimizer_enabled: <boolean> | default = true]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4908,7 +4916,7 @@ cost_attribution_labels_structured:
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 10000]
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if

@@ -40,7 +40,7 @@ var (
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
-	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
+	GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Add(item *memcache.Item) error
 	Delete(key string) error
@@ -644,14 +644,7 @@ func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
-	select {
-	case <-ctx.Done():
-		// Make sure our context hasn't been canceled before fetching cache items using
-		// cache client backend.
-		return nil, ctx.Err()
-	default:
-		items, err = c.client.GetMulti(keys, opts...)
-	}
+	items, err = c.client.GetMulti(ctx, keys, opts...)
 
 	if err != nil {
 		level.Debug(c.logger).Log("msg", "failed to get multiple items from memcached", "err", err)
