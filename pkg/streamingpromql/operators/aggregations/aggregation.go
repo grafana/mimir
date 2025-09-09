@@ -314,3 +314,7 @@ func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
 }
+
+func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
