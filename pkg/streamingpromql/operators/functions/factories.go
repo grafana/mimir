@@ -696,6 +696,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_IRATE, "irate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("irate", Irate)))
 	must(RegisterFunction(FUNCTION_LABEL_JOIN, "label_join", parser.ValueTypeVector, LabelJoinFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_LABEL_REPLACE, "label_replace", parser.ValueTypeVector, LabelReplaceFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_FIRST_OVER_TIME, "first_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("first_over_time", FirstOverTime)))
 	must(RegisterFunction(FUNCTION_LAST_OVER_TIME, "last_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("last_over_time", LastOverTime)))
 	must(RegisterFunction(FUNCTION_LN, "ln", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("ln", Ln)))
 	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
