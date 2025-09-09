@@ -175,5 +175,5 @@ message LabelMatcher {
 }
 
 message DeduplicateAndMergeDetails {
-  // No fields needed - this operator just wraps another node
+  bool runDelayedNameRemoval = 1;
 }
