@@ -22,10 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/prometheus/otlptranslator"
@@ -33,9 +30,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -49,7 +46,6 @@ type Settings struct {
 	ExternalLabels                    map[string]string
 	DisableTargetInfo                 bool
 	AddMetricSuffixes                 bool
-	SendMetadata                      bool
 	AllowUTF8                         bool
 	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
@@ -60,31 +56,21 @@ type Settings struct {
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata    bool
 	EnableTypeAndUnitLabels bool
-
-	// Mimir specifics.
-	EnableCreatedTimestampZeroIngestion        bool
-	EnableStartTimeQuietZero                   bool
-	ValidIntervalCreatedTimestampZeroIngestion time.Duration
-}
-
-type StartTsAndTs struct {
-	Labels  []mimirpb.LabelAdapter
-	StartTs int64
-	Ts      int64
 }
 
 // MimirConverter converts from OTel write format to Mimir remote write format.
 type MimirConverter struct {
-	unique    map[uint64]*mimirpb.TimeSeries
-	conflicts map[uint64][]*mimirpb.TimeSeries
-	everyN    everyNTimes
-	metadata  []mimirpb.MetricMetadata
+	everyN         everyNTimes
+	scratchBuilder labels.ScratchBuilder
+	builder        *labels.Builder
+	appender       CombinedAppender
 }
 
-func NewMimirConverter() *MimirConverter {
+func NewMimirConverter(appender CombinedAppender) *MimirConverter {
 	return &MimirConverter{
-		unique:    map[uint64]*mimirpb.TimeSeries{},
-		conflicts: map[uint64][]*mimirpb.TimeSeries{},
+		scratchBuilder: labels.NewScratchBuilder(0),
+		builder:        labels.NewBuilder(labels.EmptyLabels()),
+		appender:       appender,
 	}
 }
 
@@ -131,12 +117,13 @@ func newScopeFromScopeMetrics(scopeMetrics pmetric.ScopeMetrics) scope {
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
-func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
+func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	namer := otlptranslator.MetricNamer{
 		Namespace:          settings.Namespace,
 		WithMetricSuffixes: settings.AddMetricSuffixes,
 		UTF8Allowed:        settings.AllowUTF8,
 	}
+	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -147,7 +134,6 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
 		}
 	}
-	c.metadata = make([]mimirpb.MetricMetadata, 0, numMetrics)
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -192,13 +178,14 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					errs = multierr.Append(errs, err)
 					continue
 				}
-				metadata := mimirpb.MetricMetadata{
-					Type:             otelMetricTypeToPromMetricType(metric),
+				meta := Metadata{
+					Metadata: metadata.Metadata{
+						Type: otelMetricTypeToPromMetricType(metric),
+						Unit: unitNamer.Build(metric.Unit()),
+						Help: metric.Description(),
+					},
 					MetricFamilyName: promName,
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
 				}
-				c.metadata = append(c.metadata, metadata)
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -209,7 +196,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, metadata, scope); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -221,7 +208,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, metadata, scope, logger); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -235,7 +222,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, resource, settings, metadata, temporality, scope,
+							ctx, dataPoints, resource, settings, temporality, scope, meta,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -245,7 +232,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -263,9 +250,9 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						dataPoints,
 						resource,
 						settings,
-						metadata,
 						temporality,
 						scope,
+						meta,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -280,7 +267,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, metadata, scope, logger); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -294,72 +281,13 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
-			err := addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
-			if err != nil {
+			if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
 				errs = multierr.Append(errs, err)
 			}
 		}
 	}
 
-	return annots, errs
-}
-
-func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb.LabelAdapter) bool {
-	if len(ts.Labels) != len(lbls) {
-		return false
-	}
-	for i, l := range ts.Labels {
-		if l.Name != ts.Labels[i].Name || l.Value != ts.Labels[i].Value {
-			return false
-		}
-	}
-	return true
-}
-
-// addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
-// the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
-func (c *MimirConverter) addExemplars(ctx context.Context, dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) error {
-	if len(bucketBounds) == 0 {
-		return nil
-	}
-
-	exemplars, err := getPromExemplars(ctx, &c.everyN, dataPoint)
-	if err != nil {
-		return err
-	}
-	if len(exemplars) == 0 {
-		return nil
-	}
-
-	sort.Sort(byBucketBoundsData(bucketBounds))
-	for _, exemplar := range exemplars {
-		for _, bound := range bucketBounds {
-			if err := c.everyN.checkContext(ctx); err != nil {
-				return err
-			}
-			if len(bound.ts.Samples) > 0 && exemplar.Value <= bound.bound {
-				bound.ts.Exemplars = append(bound.ts.Exemplars, exemplar)
-				break
-			}
-		}
-	}
-
-	return nil
-}
-
-// addSample finds a TimeSeries that corresponds to lbls, and adds sample to it.
-// If there is no corresponding TimeSeries already, it's created.
-// The corresponding TimeSeries is returned.
-// If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelAdapter) *mimirpb.TimeSeries {
-	if sample == nil || len(lbls) == 0 {
-		// This shouldn't happen
-		return nil
-	}
-
-	ts, _ := c.getOrCreateTimeSeries(lbls)
-	ts.Samples = append(ts.Samples, *sample)
-	return ts
+	return
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
@@ -377,45 +305,43 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 	}
 }
 
-// promotedAttributes returns labels for promoted resourceAttributes.
-func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []mimirpb.LabelAdapter {
+// addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) error {
 	if s == nil {
 		return nil
 	}
 
-	var promotedAttrs []mimirpb.LabelAdapter
+	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
 	if s.promoteAll {
-		promotedAttrs = make([]mimirpb.LabelAdapter, 0, resourceAttributes.Len())
+		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+				var normalized string
+				normalized, err = labelNamer.Build(name)
+				if err != nil {
+					return false
+				}
+				if builder.Get(normalized) == "" {
+					builder.Set(normalized, value.AsString())
+				}
 			}
 			return true
 		})
-	} else {
-		promotedAttrs = make([]mimirpb.LabelAdapter, 0, len(s.attrs))
-		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
-			if _, exists := s.attrs[name]; exists {
-				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
-			}
-			return true
-		})
+		return err
 	}
-	sort.Stable(ByLabelName(promotedAttrs))
-	return promotedAttrs
-}
-
-type labelsStringer []mimirpb.LabelAdapter
-
-func (ls labelsStringer) String() string {
-	var seriesBuilder strings.Builder
-	seriesBuilder.WriteString("{")
-	for i, l := range ls {
-		if i > 0 {
-			seriesBuilder.WriteString(",")
+	var err error
+	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+		if _, exists := s.attrs[name]; exists {
+			var normalized string
+			normalized, err = labelNamer.Build(name)
+			if err != nil {
+				return false
+			}
+			if builder.Get(normalized) == "" {
+				builder.Set(normalized, value.AsString())
+			}
 		}
-		seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
-	}
-	seriesBuilder.WriteString("}")
-	return seriesBuilder.String()
+		return true
+	})
+	return err
 }
