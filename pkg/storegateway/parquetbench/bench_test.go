@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/common"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -39,7 +40,16 @@ var (
 	benchmarkCompression = flag.Bool("benchmark-compression", true, "Enable compression for parquet data")
 	benchmarkSortBy      = flag.String("benchmark-sort-by", "", "Comma-separated list of fields to sort by in parquet data")
 	benchmarkTSDBDir     = flag.String("benchmark-tsdb-dir", "", "Path to directory containing pre-generated TSDB blocks (if not set, generates data on the fly)")
+	benchmarkUser        = flag.String("benchmark-user", "benchmark-user", "User ID for benchmark data (tenant ID)")
+	benchmarkBucketConfig = bucket.Config{}
+	benchmarkMinTime     = flag.Int64("benchmark-min-time", 0, "Override min time for benchmark blocks (Unix milliseconds, 0 = auto-discover)")
+	benchmarkMaxTime     = flag.Int64("benchmark-max-time", 0, "Override max time for benchmark blocks (Unix milliseconds, 0 = auto-discover)")
 )
+
+func init() {
+	// Register bucket configuration flags with standard Mimir prefix
+	benchmarkBucketConfig.RegisterFlags(flag.CommandLine)
+}
 
 var benchmarkCases = []struct {
 	name     string
@@ -156,7 +166,7 @@ var benchmarkCases = []struct {
 
 func BenchmarkBucketStores_Series(b *testing.B) {
 	flag.Parse()
-	const user = "benchmark-user"
+	user := *benchmarkUser
 	var sortByFields []string
 	if *benchmarkSortBy != "" {
 		fields := strings.Split(*benchmarkSortBy, ",")
@@ -167,7 +177,7 @@ func BenchmarkBucketStores_Series(b *testing.B) {
 		}
 	}
 
-	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression, sortByFields, *benchmarkTSDBDir)
+	bkt, mint, maxt := setupBenchmarkData(b, user, *benchmarkCompression, sortByFields, *benchmarkTSDBDir, benchmarkBucketConfig, *benchmarkMinTime, *benchmarkMaxTime)
 
 	ctx := grpc_metadata.NewIncomingContext(b.Context(), grpc_metadata.MD{
 		storegateway.GrpcContextMetadataTenantID: []string{user},

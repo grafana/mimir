@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
@@ -26,10 +27,20 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util/listblocks"
 )
 
-func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string, tsdbDir string) (bkt objstore.Bucket, mint, maxt int64) {
+func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabels []string, tsdbDir string, bucketConfig bucket.Config, minTimeOverride, maxTimeOverride int64) (bkt objstore.Bucket, mint, maxt int64) {
 	ctx := context.Background()
+
+	// Priority order:
+	// 1. Configured bucket (if backend is not filesystem or has explicit S3/cloud configuration)
+	// 2. Local TSDB directory (if tsdbDir provided)  
+	// 3. Generate on-the-fly (default)
+	
+	if isConfiguredBucket(bucketConfig) {
+		return setupFromConfiguredBucket(b, ctx, user, bucketConfig, minTimeOverride, maxTimeOverride)
+	}
 
 	// If tsdbDir is provided, use existing blocks
 	if tsdbDir != "" {
@@ -204,4 +215,81 @@ func setupFromExistingBlocks(b *testing.B, user, tsdbDir string) (bkt objstore.B
 	b.Logf("Found block time range: %d - %d", mint, maxt)
 
 	return bkt, mint, maxt
+}
+
+// isConfiguredBucket checks if the bucket config represents a non-default configuration
+func isConfiguredBucket(cfg bucket.Config) bool {
+	// Check if backend is explicitly set to something other than filesystem
+	if cfg.Backend != "" && cfg.Backend != bucket.Filesystem {
+		return true
+	}
+	
+	// Check if S3 configuration is provided (even with filesystem backend)
+	if cfg.S3.BucketName != "" {
+		return true
+	}
+	
+	// Check other backends
+	if cfg.GCS.BucketName != "" || cfg.Azure.ContainerName != "" || cfg.Swift.ContainerName != "" {
+		return true
+	}
+	
+	return false
+}
+
+// setupFromConfiguredBucket sets up benchmark data from a configured bucket (S3, GCS, Azure, etc.)
+func setupFromConfiguredBucket(b *testing.B, ctx context.Context, user string, bucketConfig bucket.Config, minTimeOverride, maxTimeOverride int64) (bkt objstore.Bucket, mint, maxt int64) {
+	logger := log.NewNopLogger()
+	
+	// Create the bucket client using the standard Mimir infrastructure
+	bkt, err := bucket.NewClient(ctx, bucketConfig, "benchmark", logger, nil)
+	require.NoError(b, err, "error creating bucket client")
+	b.Cleanup(func() { _ = bkt.Close() })
+
+	// Use time overrides if provided
+	if minTimeOverride > 0 && maxTimeOverride > 0 {
+		b.Logf("Using configured bucket with time override: %d - %d", minTimeOverride, maxTimeOverride)
+		return bkt, minTimeOverride, maxTimeOverride
+	}
+
+	// Auto-discover time range from blocks in the bucket
+	mint, maxt, err = discoverTimeRangeFromBucket(ctx, bkt, user)
+	require.NoError(b, err, "error discovering time range from configured bucket")
+
+	b.Logf("Using configured bucket (%s) with discovered time range: %d - %d", bucketConfig.Backend, mint, maxt)
+	return bkt, mint, maxt
+}
+
+// discoverTimeRangeFromBucket discovers the time range by reading block metadata from the bucket
+func discoverTimeRangeFromBucket(ctx context.Context, bkt objstore.Bucket, user string) (mint, maxt int64, err error) {
+	// Load block metadata using the listblocks utility
+	metas, _, _, err := listblocks.LoadMetaFilesAndMarkers(ctx, bkt, user, false, time.Time{})
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to load block metadata: %w", err)
+	}
+
+	if len(metas) == 0 {
+		return 0, 0, fmt.Errorf("no blocks found for user %s in configured bucket", user)
+	}
+
+	// Find the overall time range across all blocks
+	mint = int64(^uint64(0) >> 1) // max int64
+	maxt = int64(-1 << 63)        // min int64
+	
+	blockCount := 0
+	for _, meta := range metas {
+		if meta.MinTime < mint {
+			mint = meta.MinTime
+		}
+		if meta.MaxTime > maxt {
+			maxt = meta.MaxTime
+		}
+		blockCount++
+	}
+
+	if blockCount == 0 {
+		return 0, 0, fmt.Errorf("no valid blocks found for user %s", user)
+	}
+
+	return mint, maxt, nil
 }
