@@ -898,7 +898,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.API.RegisterQueryFrontend2(frontend)
 
 	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
-		executor := v2.NewRemoteExecutor(frontend)
+		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
 
 		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
 			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)

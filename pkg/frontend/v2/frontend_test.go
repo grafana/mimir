@@ -183,6 +183,8 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		require.Equal(t, []string{ingesterAndStoreGatewayQueryComponent}, msg.AdditionalQueueDimensions)
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -190,7 +192,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-24*time.Hour), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -233,7 +235,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -269,7 +271,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 
 	msg, err := resp.Next(ctx)
@@ -290,7 +292,7 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -335,7 +337,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			makeRequest: func(t *testing.T, f *Frontend) {
 				ctx := user.InjectOrgID(context.Background(), userID)
 				req := &querierpb.EvaluateQueryRequest{}
-				resp, err := f.DoProtobufRequest(ctx, req)
+				resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 				require.NoError(t, err)
 				t.Cleanup(resp.Close)
 			},
@@ -433,7 +435,7 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -449,7 +451,7 @@ func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -475,7 +477,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -530,7 +532,7 @@ func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -568,7 +570,7 @@ func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -646,7 +648,7 @@ func TestFrontendCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -699,7 +701,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -768,7 +770,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -826,7 +828,7 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -852,7 +854,7 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	})
 
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 

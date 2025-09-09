@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
@@ -348,9 +349,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 }
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
+//
 // If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
-func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
+//
+// minT and maxT should be the start and end time of the queried data.
+// These timestamps should consider the lookback delta (ie. are not necessarily the time range provided in the query request).
+func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
 	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
@@ -360,6 +365,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		return nil, err
 	}
 
+	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
 	freq.protobufResponseDone = make(chan struct{})
 	freq.protobufResponseStream = &ProtobufResponseStream{
