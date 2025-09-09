@@ -518,7 +518,6 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_IDELTA,
 		functions.FUNCTION_INCREASE,
 		functions.FUNCTION_IRATE,
-		functions.FUNCTION_LAST_OVER_TIME,
 		functions.FUNCTION_MAX_OVER_TIME,
 		functions.FUNCTION_MIN_OVER_TIME,
 		functions.FUNCTION_PRESENT_OVER_TIME,
@@ -579,6 +578,8 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 	case
 		functions.FUNCTION_ABSENT,
 		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_LAST_OVER_TIME,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
 		functions.FUNCTION_SORT,

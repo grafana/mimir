@@ -56,6 +56,37 @@ func lastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types
 	return 0, false, lastHistogram.H.Copy(), nil
 }
 
+var FirstOverTime = FunctionOverRangeVectorDefinition{
+	// We want to use the input series as-is, so no need to set SeriesMetadataFunction.
+	StepFunc: firstOverTime,
+}
+
+func firstOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	floatAvailable := step.Floats.Any()
+	histogramAvailable := step.Histograms.Any()
+
+	if !floatAvailable && !histogramAvailable {
+		return 0, false, nil, nil
+	}
+
+	var firstFloat promql.FPoint
+	if floatAvailable {
+		firstFloat = step.Floats.First()
+	}
+
+	var firstHistogram promql.HPoint
+	if histogramAvailable {
+		firstHistogram = step.Histograms.First()
+	}
+
+	if floatAvailable && (!histogramAvailable || firstFloat.T < firstHistogram.T) {
+		return firstFloat.F, true, nil, nil
+	}
+
+	// We must make a copy of the histogram before returning it, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	return 0, false, firstHistogram.H.Copy(), nil
+}
+
 var PresentOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               presentOverTime,
