@@ -127,36 +127,30 @@ func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool
 }
 
 func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
-	span, _, sampled := tracing.SpanFromContext(ctx)
+	span, _, _ := tracing.SpanFromContext(ctx)
 
 	var outcome string
 	switch {
 	case abortedEarly:
 		outcome = "aborted_due_to_too_many_matchers"
-		if sampled {
-			span.AddEvent("aborted creating lookup plan because there are too many matchers")
-		}
+		span.AddEvent("aborted creating lookup plan because there are too many matchers")
 	case retErr != nil:
 		outcome = "error"
-		if sampled {
-			span.AddEvent("failed to create lookup plan", trace.WithAttributes(
-				attribute.String("error", retErr.Error()),
-			))
-		}
+		span.AddEvent("failed to create lookup plan", trace.WithAttributes(
+			attribute.String("error", retErr.Error()),
+		))
 	default:
 		outcome = "success"
-		if sampled {
-			span.AddEvent("selected lookup plan", trace.WithAttributes(
-				attribute.String("duration", time.Since(start).String()),
-			))
-			const topKPlans = 2
-			for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-				planName := "selected_plan"
-				if i > 0 {
-					planName = strconv.Itoa(i + 1)
-				}
-				plan.addSpanEvent(span, planName)
+		span.AddEvent("selected lookup plan", trace.WithAttributes(
+			attribute.String("duration", time.Since(start).String()),
+		))
+		const topKPlans = 2
+		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+			planName := "selected_plan"
+			if i > 0 {
+				planName = strconv.Itoa(i + 1)
 			}
+			plan.addSpanEvent(span, planName)
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
