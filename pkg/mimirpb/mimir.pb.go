@@ -11650,11 +11650,11 @@ func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 }
 func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string, skipNormalizeMetricName bool) error {
 	var (
-		err error
-		help string
-		metricType MetadataRW2_MetricType
+		err                  error
+		help                 string
+		metricType           MetadataRW2_MetricType
 		normalizedMetricName string
-		unit string
+		unit                 string
 	)
 	l := len(dAtA)
 	iNdEx := 0
