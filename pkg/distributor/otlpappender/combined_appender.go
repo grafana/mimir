@@ -51,6 +51,7 @@ func NewCombinedAppender() *CombinedAppender {
 		options: CombinedAppenderOptions{
 			ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		},
+		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
 		refs:           make(map[uint64]labelsIdx),
 		metricFamilies: make(map[string]metadata.Metadata),
 	}
@@ -137,13 +138,10 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 }
 
 func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
-	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool()
-	c.series = append(c.series, mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
-			CreatedTimestamp: ct,
-		},
-	})
+	ts := mimirpb.TimeseriesFromPool()
+	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
+	ts.CreatedTimestamp = ct
+	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
 	c.refs[hash] = *idx
 }
