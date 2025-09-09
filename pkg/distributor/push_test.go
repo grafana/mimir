@@ -1341,9 +1341,9 @@ func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
 	uncompBytesMetrics := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 101
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="push",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="push",user="test"} 101
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="push",user="test"} 1
 `
 
 	cases := map[string]struct {
@@ -1446,7 +1446,7 @@ func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
 	}
 
 	var samples []prompb.Sample
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
 		samples = append(samples, prompb.Sample{
 			Value:     1,
@@ -1488,17 +1488,17 @@ func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
 	okMetrics := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 163
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="otlp",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 163
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",user="test"} 1
 `
 
 	okMetricsProto := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 376
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="otlp",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 376
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",user="test"} 1
 `
 
 	cases := map[string]struct {

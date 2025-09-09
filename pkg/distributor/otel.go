@@ -318,7 +318,7 @@ func newOTLPParser(
 		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
