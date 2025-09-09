@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/prometheus/common/model"
 
@@ -55,9 +56,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 		}
 		*a = Annotations{}
 	}
-	for key, val := range aa {
-		(*a)[key] = val
-	}
+	maps.Copy((*a), aa)
 	return *a
 }
 
@@ -363,13 +362,14 @@ type HistogramOperation string
 const (
 	HistogramAdd HistogramOperation = "addition"
 	HistogramSub HistogramOperation = "subtraction"
+	HistogramAgg HistogramOperation = "aggregation"
 )
 
 // NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
 // a CounterReset hint and the other has NotCounterReset.
 func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
 	switch operation {
-	case HistogramAdd, HistogramSub:
+	case HistogramAdd, HistogramSub, HistogramAgg:
 	default:
 		operation = "unknown operation"
 	}
