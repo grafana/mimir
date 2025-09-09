@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 
@@ -132,21 +134,29 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	switch {
 	case abortedEarly:
 		outcome = "aborted_due_to_too_many_matchers"
-		logger.DebugLog("msg", "aborted creating lookup plan because there are too many matchers")
+		logger.LogFields(
+			otlog.String("msg", "aborted creating lookup plan because there are too many matchers"),
+		)
 	case retErr != nil:
 		outcome = "error"
-		logger.DebugLog("msg", "failed to create lookup plan", "err", retErr)
+		logger.LogFields(
+			otlog.String("msg", "failed to create lookup plan"),
+			otlog.Error(retErr),
+		)
 	default:
 		outcome = "success"
-		logKvs := make([]any, 0, 2 /* msg */ +2 /* duration */ +traceEventTopKPlans*2 /* key+value */ *(5 /* cost */ +1 /* index matchers */ +1 /* scan matchers */))
-		logKvs = append(logKvs,
-			"msg", "selected lookup plan",
-			"duration", time.Since(start).String(),
+		logger.LogFields(
+			otlog.String("msg", "selected lookup plan"),
+			otlog.String("duration", time.Since(start).String()),
 		)
-		for i, plan := range allPlans[:min(traceEventTopKPlans, len(allPlans))] {
-			logKvs = plan.appendLogKVs(logKvs, i)
+		const topKPlans = 2
+		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+			planName := "selected_plan"
+			if i > 0 {
+				planName = strconv.Itoa(i + 1)
+			}
+			plan.logSpanEvent(logger, planName)
 		}
-		logger.DebugLog(logKvs...)
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
 }

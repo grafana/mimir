@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -159,42 +161,18 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-const traceEventTopKPlans = 2
-
-// traceEventFieldNames contains pre-allocated field names to avoid allocations during logging.
-var traceEventFieldNames = [traceEventTopKPlans][]string{}
-
-func init() {
-	for i := 0; i < traceEventTopKPlans; i++ {
-		prefix := "selected_plan"
-		if i > 0 {
-			prefix = fmt.Sprintf("plan_%d", i+1)
-		}
-		traceEventFieldNames[i] = []string{
-			fmt.Sprintf("%s_total_cost", prefix),
-			fmt.Sprintf("%s_index_lookup_cost", prefix),
-			fmt.Sprintf("%s_filter_cost", prefix),
-			fmt.Sprintf("%s_intersection_cost", prefix),
-			fmt.Sprintf("%s_cardinality", prefix),
-			fmt.Sprintf("%s_index_matchers", prefix),
-			fmt.Sprintf("%s_scan_matchers", prefix),
-		}
-	}
-}
-
-func (p plan) appendLogKVs(keyVals []any, planIdx int) []any {
-	indexMatchers := p.IndexMatchers()
-	scanMatchers := p.ScanMatchers()
-
-	keyVals = append(keyVals,
-		traceEventFieldNames[planIdx][0], p.totalCost(),
-		traceEventFieldNames[planIdx][1], p.indexLookupCost(),
-		traceEventFieldNames[planIdx][2], p.filterCost(),
-		traceEventFieldNames[planIdx][3], p.intersectionCost(),
-		traceEventFieldNames[planIdx][4], p.cardinality(),
-		traceEventFieldNames[planIdx][5], util.MatchersStringer(indexMatchers).String(),
-		traceEventFieldNames[planIdx][6], util.MatchersStringer(scanMatchers).String(),
+func (p plan) logSpanEvent(logger *spanlogger.SpanLogger, planName string) {
+	logger.LogFields(
+		log.String("plan_name", planName),
+		log.Float64("total_cost", p.totalCost()),
+		log.Float64("index_lookup_cost", p.indexLookupCost()),
+		log.Float64("filter_cost", p.filterCost()),
+		log.Float64("intersection_cost", p.intersectionCost()),
+		log.Uint64("cardinality", p.cardinality()),
+		log.Lazy(func(fv log.Encoder) {
+			// Avoid marshalling the matchers if the trace isn't sampled.
+			fv.EmitString("index_matchers", util.MatchersStringer(p.IndexMatchers()).String())
+			fv.EmitString("scan_matchers", util.MatchersStringer(p.ScanMatchers()).String())
+		}),
 	)
-
-	return keyVals
 }
