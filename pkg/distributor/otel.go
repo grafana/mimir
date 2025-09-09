@@ -159,7 +159,13 @@ func OTLPHandler(
 				httpCode = http.StatusServiceUnavailable
 			}
 		} else {
-			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+			var isSoft bool
+			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
+			if isSoft {
+				handlePartialOTLPPush(pushErr, w, r, req, logger)
+				return
+			}
+
 			errorMsg = pushErr.Error()
 		}
 		if httpCode != 202 {
@@ -175,6 +181,19 @@ func OTLPHandler(
 		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
 		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
+}
+
+func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
+	// Respond as per spec:
+	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+	expResp := colmetricpb.ExportMetricsServiceResponse{
+		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+			RejectedDataPoints: 0,
+			ErrorMessage:       pushErr.Error(),
+		},
+	}
+	addSuccessHeaders(w, req.artificialDelay)
+	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
 func newOTLPParser(
@@ -385,16 +404,15 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
+func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 	var distributorErr Error
 	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
-		return codes.Internal, http.StatusServiceUnavailable
+		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
 	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
 	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
-	otlpHTTPStatusCode := httpRetryableToOTLPRetryable(httpStatusCode)
-	return grpcStatusCode, otlpHTTPStatusCode
+	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
@@ -710,8 +728,8 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				if i == 0 {
 					for _, tsEx := range ts.Exemplars {
 						ex := datapoint.Exemplars().AppendEmpty()
-						ex.SetDoubleValue(histogram.Sum / 10.0) // Doesn't really matter, just a placeholder
-						ex.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
 						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
 						for _, label := range tsEx.Labels {
 							ex.FilteredAttributes().PutStr(label.Name, label.Value)
