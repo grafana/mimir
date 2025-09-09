@@ -30,7 +30,7 @@ func TestCombinedAppender(t *testing.T) {
 			appends: func(_ *testing.T, _ *CombinedAppender) {
 				// No appends to test.
 			},
-			expectTimeseries: nil,
+			expectTimeseries: []mimirpb.PreallocTimeseries{}, // Initialized from pool.
 			expectMetadata:   nil,
 		},
 		"single float sample": {
