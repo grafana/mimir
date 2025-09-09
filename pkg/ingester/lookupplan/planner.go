@@ -138,22 +138,13 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		logger.DebugLog("msg", "failed to create lookup plan", "err", retErr)
 	default:
 		outcome = "success"
-		const topKPlans = 3
-		numPredicates := 0
-		if len(allPlans) > 0 {
-			numPredicates = len(allPlans[0].predicates)
-		}
-		logKvs := make([]any, 0, 2 /* msg */ +2 /* duration */ +topKPlans*2 /* key+value */ *(5 /* cost */ +numPredicates /* matchers */))
+		logKvs := make([]any, 0, 2 /* msg */ +2 /* duration */ +traceEventTopKPlans*2 /* key+value */ *(5 /* cost */ +1 /* index matchers */ +1 /* scan matchers */))
 		logKvs = append(logKvs,
 			"msg", "selected lookup plan",
 			"duration", time.Since(start).String(),
 		)
-		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planFieldPrefix := "selected_plan"
-			if i > 0 {
-				planFieldPrefix = fmt.Sprintf("plan_%d", i+1)
-			}
-			logKvs = plan.appendLogKVs(logKvs, planFieldPrefix)
+		for i, plan := range allPlans[:min(traceEventTopKPlans, len(allPlans))] {
+			logKvs = plan.appendLogKVs(logKvs, i)
 		}
 		logger.DebugLog(logKvs...)
 	}

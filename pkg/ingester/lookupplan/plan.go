@@ -9,6 +9,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -157,23 +159,42 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-func (p plan) appendLogKVs(keyVals []any, fieldPrefix string) []any {
+const traceEventTopKPlans = 2
+
+// traceEventFieldNames contains pre-allocated field names to avoid allocations during logging.
+var traceEventFieldNames = [traceEventTopKPlans][]string{}
+
+func init() {
+	for i := 0; i < traceEventTopKPlans; i++ {
+		prefix := "selected_plan"
+		if i > 0 {
+			prefix = fmt.Sprintf("plan_%d", i+1)
+		}
+		traceEventFieldNames[i] = []string{
+			fmt.Sprintf("%s_total_cost", prefix),
+			fmt.Sprintf("%s_index_lookup_cost", prefix),
+			fmt.Sprintf("%s_filter_cost", prefix),
+			fmt.Sprintf("%s_intersection_cost", prefix),
+			fmt.Sprintf("%s_cardinality", prefix),
+			fmt.Sprintf("%s_index_matchers", prefix),
+			fmt.Sprintf("%s_scan_matchers", prefix),
+		}
+	}
+}
+
+func (p plan) appendLogKVs(keyVals []any, planIdx int) []any {
 	indexMatchers := p.IndexMatchers()
 	scanMatchers := p.ScanMatchers()
 
 	keyVals = append(keyVals,
-		fmt.Sprintf("%s_total_cost", fieldPrefix), p.totalCost(),
-		fmt.Sprintf("%s_index_lookup_cost", fieldPrefix), p.indexLookupCost(),
-		fmt.Sprintf("%s_filter_cost", fieldPrefix), p.filterCost(),
-		fmt.Sprintf("%s_intersection_cost", fieldPrefix), p.intersectionCost(),
-		fmt.Sprintf("%s_cardinality", fieldPrefix), p.cardinality(),
+		traceEventFieldNames[planIdx][0], p.totalCost(),
+		traceEventFieldNames[planIdx][1], p.indexLookupCost(),
+		traceEventFieldNames[planIdx][2], p.filterCost(),
+		traceEventFieldNames[planIdx][3], p.intersectionCost(),
+		traceEventFieldNames[planIdx][4], p.cardinality(),
+		traceEventFieldNames[planIdx][5], util.MatchersStringer(indexMatchers).String(),
+		traceEventFieldNames[planIdx][6], util.MatchersStringer(scanMatchers).String(),
 	)
 
-	for i, m := range indexMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_index_%d", fieldPrefix, i), m.String())
-	}
-	for i, m := range scanMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_scan_%d", fieldPrefix, i), m.String())
-	}
 	return keyVals
 }
