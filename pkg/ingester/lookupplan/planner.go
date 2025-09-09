@@ -133,24 +133,30 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	switch {
 	case abortedEarly:
 		outcome = "aborted_due_to_too_many_matchers"
-		span.AddEvent("aborted creating lookup plan because there are too many matchers")
+		if span != nil {
+			span.AddEvent("aborted creating lookup plan because there are too many matchers")
+		}
 	case retErr != nil:
 		outcome = "error"
-		span.AddEvent("failed to create lookup plan", trace.WithAttributes(
-			attribute.String("error", retErr.Error()),
-		))
+		if span != nil {
+			span.AddEvent("failed to create lookup plan", trace.WithAttributes(
+				attribute.String("error", retErr.Error()),
+			))
+		}
 	default:
 		outcome = "success"
-		span.AddEvent("selected lookup plan", trace.WithAttributes(
-			attribute.String("duration", time.Since(start).String()),
-		))
-		const topKPlans = 2
-		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planName := "selected_plan"
-			if i > 0 {
-				planName = strconv.Itoa(i + 1)
+		if span != nil {
+			span.AddEvent("selected lookup plan", trace.WithAttributes(
+				attribute.String("duration", time.Since(start).String()),
+			))
+			const topKPlans = 2
+			for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+				planName := "selected_plan"
+				if i > 0 {
+					planName = strconv.Itoa(i + 1)
+				}
+				plan.addSpanEvent(span, planName)
 			}
-			plan.addSpanEvent(span, planName)
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
