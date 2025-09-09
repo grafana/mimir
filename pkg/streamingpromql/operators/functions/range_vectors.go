@@ -219,20 +219,28 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	head = head[1:]
 
 	for _, p := range head {
-		if _, _, err := sum.Add(p.H); err != nil {
+		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		} else if counterResetCollision {
+			emitAnnotation(newAdditionCounterResetCollisionWarning)
 		}
 	}
 
 	for _, p := range tail {
-		if _, _, err := sum.Add(p.H); err != nil {
+		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		} else if counterResetCollision {
+			emitAnnotation(newAdditionCounterResetCollisionWarning)
 		}
 	}
 
 	return sum, nil
+}
+
+func newAdditionCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAdd)
 }
 
 var AvgOverTime = FunctionOverRangeVectorDefinition{
