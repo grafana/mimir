@@ -49,7 +49,6 @@ const (
 	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
 	LabelValueLengthOverLimitStrategyFlag     = "validation.label-value-length-over-limit-strategy"
-	LabelValueLengthOverLimitHashSuffixFlag   = "validation.label-value-length-over-limit-hash-suffix"
 	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag             = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
@@ -83,7 +82,10 @@ var (
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 )
 
-const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+const (
+	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash would exceed max label value length of %d"
+)
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -138,7 +140,6 @@ type Limits struct {
 	MaxLabelNameLength                          int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
 	LabelValueLengthOverLimitStrategy           LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"advanced" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '<original label name><label_value_length_over_limit_hash_suffix>'."`
-	LabelValueLengthOverLimitHashSuffix         string                            `yaml:"label_value_length_over_limit_hash_suffix" json:"label_value_length_over_limit_hash_suffix" category:"advanced" doc:"description=When label_value_length_over_limit_hash_suffix is 'truncate' or 'drop', for label values over the length limit, what suffix to use for the label name that is added with the hash of the full label value."`
 	MaxLabelNamesPerSeries                      int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries                  int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                           int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -336,7 +337,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '<original label name><label_value_length_over_limit_hash_suffix>'.")
-	f.StringVar(&l.LabelValueLengthOverLimitHashSuffix, LabelValueLengthOverLimitHashSuffixFlag, "_hash", "When "+LabelValueLengthOverLimitStrategyFlag+", is 'truncate' or 'drop', for label values over the length limit, what suffix to use for the label name that is added with the hash of the full label value.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -655,8 +655,20 @@ func (l *Limits) Validate() error {
 		}
 	}
 
+	switch l.LabelValueLengthOverLimitStrategy {
+	case LabelValueLengthOverLimitStrategyTruncate, LabelValueLengthOverLimitStrategyDrop:
+		if l.MaxLabelValueLength < LabelValueHashLen {
+			return fmt.Errorf(errLabelValueHashExceedsLimit, l.LabelValueLengthOverLimitStrategy, l.MaxLabelValueLength)
+		}
+	}
+
 	return nil
 }
+
+// LabelValueHashLen is the length of the hash portion that replaces part of all
+// of a label value when it exceeds [Limits.MaxLabelValueLength] and [Limits.LabelValueLengthOverLimitStrategy]
+// is [Limits.LabelValueLengthOverLimitStrategyTruncate] or  [Limits.LabelValueLengthOverLimitStrategyDrop].
+const LabelValueHashLen = len("(hash:)") + 64/8*2
 
 func (l *Limits) canonicalizeQueries() {
 	for i, q := range l.BlockedQueries {
@@ -798,12 +810,6 @@ func (o *Overrides) MaxLabelValueLength(userID string) int {
 // the maximum length of a metric name.
 func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueLengthOverLimitStrategy {
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
-}
-
-// LabelValueLengthOverLimitHashSuffix returns maximum length a label value can be. This also is
-// the maximum length of a metric name.
-func (o *Overrides) LabelValueLengthOverLimitHashSuffix(userID string) string {
-	return o.getOverridesForUser(userID).LabelValueLengthOverLimitHashSuffix
 }
 
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.

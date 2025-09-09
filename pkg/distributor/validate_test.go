@@ -44,13 +44,12 @@ import (
 )
 
 type validateLabelsCfg struct {
-	maxLabelNamesPerSeries              int
-	maxLabelNamesPerInfoSeries          int
-	maxLabelNameLength                  int
-	maxLabelValueLength                 int
-	validationScheme                    model.ValidationScheme
-	labelValueLengthOverLimitStrategy   validation.LabelValueLengthOverLimitStrategy
-	labelValueLengthOverLimitHashSuffix string
+	maxLabelNamesPerSeries            int
+	maxLabelNamesPerInfoSeries        int
+	maxLabelNameLength                int
+	maxLabelValueLength               int
+	validationScheme                  model.ValidationScheme
+	labelValueLengthOverLimitStrategy validation.LabelValueLengthOverLimitStrategy
 }
 
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
@@ -75,10 +74,6 @@ func (v validateLabelsCfg) NameValidationScheme(_ string) model.ValidationScheme
 
 func (v validateLabelsCfg) LabelValueLengthOverLimitStrategy(_ string) validation.LabelValueLengthOverLimitStrategy {
 	return v.labelValueLengthOverLimitStrategy
-}
-
-func (v validateLabelsCfg) LabelValueLengthOverLimitHashSuffix(_ string) string {
-	return v.labelValueLengthOverLimitHashSuffix
 }
 
 type validateMetadataCfg struct {
@@ -120,12 +115,10 @@ func TestValidateLabels(t *testing.T) {
 	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
-	perTenant[truncatingUserID].LabelValueLengthOverLimitHashSuffix = "_test_truncating_hash"
 	perTenant[truncatingUserID].MaxLabelNamesPerSeries = 5
 	perTenant[truncatingUserID].MaxLabelNameLength = 40
 
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
-	perTenant[droppingUserID].LabelValueLengthOverLimitHashSuffix = "_test_dropping_hash"
 	perTenant[droppingUserID].MaxLabelNameLength = 40
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
@@ -276,11 +269,10 @@ func TestValidateLabels(t *testing.T) {
 			skipLabelCountValidation: false,
 			customUserID:             truncatingUserID,
 			wantLabels: map[model.LabelName]model.LabelValue{
-				model.MetricNameLabel:                    "badLabelValue",
-				"much_shorter_name":                      model.LabelValue("test_value_please_ignore_no_really_nothing_to_see_here"[:limits.MaxLabelValueLength]),
-				"team":                                   "biz",
-				"group":                                  "custom label",
-				"much_shorter_name_test_truncating_hash": hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here"),
+				model.MetricNameLabel: "badLabelValue",
+				"team":                "biz",
+				"group":               "custom label",
+				"much_shorter_name":   model.LabelValue(fmt.Sprintf("test_value_please_ignore_no_rea(hash:%016x)", hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here"))),
 			},
 		},
 		{
@@ -290,30 +282,11 @@ func TestValidateLabels(t *testing.T) {
 			skipLabelCountValidation: false,
 			customUserID:             droppingUserID,
 			wantLabels: map[model.LabelName]model.LabelValue{
-				model.MetricNameLabel:                  "badLabelValue",
-				"team":                                 "biz",
-				"group":                                "custom label",
-				"much_shorter_name_test_dropping_hash": hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here_2"),
+				model.MetricNameLabel: "badLabelValue",
+				"team":                "biz",
+				"group":               "custom label",
+				"much_shorter_name":   model.LabelValue(fmt.Sprintf("(hash:%016x)", hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here_2"))),
 			},
-		},
-		{
-			name:                     "label value too long gets dropped, hash label name is too long",
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "name_that_is_almost_too_long": "test_value_please_ignore_no_really_nothing_to_see_here_3", "team": "biz"},
-			skipLabelNameValidation:  false,
-			skipLabelCountValidation: false,
-			customUserID:             droppingUserID,
-			wantErr: alwaysErr(fmt.Errorf(
-				labelNameTooLongMsgFormat,
-				"name_that_is_almost_too_long_test_dropping_hash",
-				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
-						{Name: "group", Value: "custom label"},
-						{Name: "team", Value: "biz"},
-						{Name: model.MetricNameLabel, Value: "badLabelValue"},
-						{Name: "name_that_is_almost_too_long_test_dropping_hash", Value: mimirpb.UnsafeMutableString(hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here_3"))},
-					},
-				),
-			)),
 		},
 		{
 			name:                     "too many labels",
@@ -568,7 +541,7 @@ func TestValidateLabels(t *testing.T) {
 						},
 					}
 					for name, value := range c.metric {
-						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
+						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: strings.Clone(string(value))})
 					}
 
 					var wg sync.WaitGroup
@@ -810,11 +783,10 @@ func TestValidateLabelDuplication(t *testing.T) {
 	cfg.validationScheme = model.LegacyValidation
 
 	userID := "testUser"
-	newLabels, actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false, false, nil, ts)
-	assert.Nil(t, newLabels)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -827,12 +799,11 @@ func TestValidateLabelDuplication(t *testing.T) {
 	)
 	assert.Equal(t, expected, actual)
 
-	newLabels, actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
 	}, false, false, nil, ts)
-	assert.Nil(t, newLabels)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -875,8 +846,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
-	newLabels, err := validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
-	require.Nil(t, newLabels)
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
 	var lengthErr labelValueTooLongError
 	require.ErrorAs(t, err, &lengthErr)
 
@@ -1246,8 +1216,8 @@ func TestValidUTF8Message(t *testing.T) {
 	}
 }
 
-func hashLabelValue(value mimirpb.UnsafeMutableString) model.LabelValue {
-	var b strings.Builder
-	hashLabelValueInto(&b, value)
-	return model.LabelValue(b.String())
+func TestLabelValueHashLen(t *testing.T) {
+	x := strings.Repeat("x", 100)
+	x = hashLabelValueInto(x, x)
+	require.Len(t, x, validation.LabelValueHashLen)
 }

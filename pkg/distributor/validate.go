@@ -9,12 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -397,7 +396,6 @@ type labelValidationConfig interface {
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
 	LabelValueLengthOverLimitStrategy(userID string) validation.LabelValueLengthOverLimitStrategy
-	LabelValueLengthOverLimitHashSuffix(userID string) string
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
@@ -422,14 +420,13 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-// If newLabels is not nil, instead of outright rejected, the labels ought to be replaced by newLabels. newLabels is guaranteed to pass validations.
-// As an optimization, newLabels will mutate ls in-place instead of allocating a new underlying array, if it has enough capacity.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) (newLabels []mimirpb.UnsafeMutableLabel, _ error) {
+// It may mutate ls and the underlying UnsafeMutableLabel/Strings.
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
-		return nil, errors.New(noMetricNameMsgFormat)
+		return errors.New(noMetricNameMsgFormat)
 	}
 
 	validationScheme := cfg.NameValidationScheme(userID)
@@ -437,7 +434,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	if !validationScheme.IsValidMetricName(unsafeMetricName) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return nil, fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
+		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
 
 	if !skipLabelCountValidation && len(ls) > cfg.MaxLabelNamesPerSeries(userID) {
@@ -446,119 +443,83 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 				m.maxLabelNamesPerInfoSeries.WithLabelValues(userID, group).Inc()
 				cat.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerInfoSeries, ts)
 				metric, ellipsis := getMetricAndEllipsis(ls)
-				return nil, fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerInfoSeries(userID), metric, ellipsis)
+				return fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerInfoSeries(userID), metric, ellipsis)
 			}
 		} else {
 			m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerSeries, ts)
 			metric, ellipsis := getMetricAndEllipsis(ls)
-			return nil, fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
+			return fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
 		}
 	}
 
 	maxLabelNameLength := cfg.MaxLabelNameLength(userID)
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	labelValueLengthOverLimitStrategy := cfg.LabelValueLengthOverLimitStrategy(userID)
-	labelHashes := labelHashBuilder{nameSuffix: cfg.LabelValueLengthOverLimitHashSuffix(userID)}
+
 	lastLabelName := ""
-	for i := 0; i < len(ls); i++ {
+	for i := range ls {
 		l := ls[i]
 		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
-			return nil, fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Name) > maxLabelNameLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelNameTooLong, ts)
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
-			return nil, fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabelValue, ts)
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
-			return nil, fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
 			switch labelValueLengthOverLimitStrategy {
 			case validation.LabelValueLengthOverLimitStrategyError:
 				cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 				m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-				return nil, labelValueTooLongError{
+				return labelValueTooLongError{
 					Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
 					Series: mimirpb.FromLabelAdaptersToString(ls),
 					Limit:  maxLabelValueLength,
 				}
-			case validation.LabelValueLengthOverLimitStrategyTruncate,
-				validation.LabelValueLengthOverLimitStrategyDrop:
-				labelHashes.AddHashOf(l)
-
-				if labelValueLengthOverLimitStrategy == validation.LabelValueLengthOverLimitStrategyDrop {
-					ls = slices.Delete(ls, i, i+1)
-					i-- // We've removed an element, so now the next element is on i; decrease to compensate the for's i++
-				} else {
-					ls[i].Value = ls[i].Value[:maxLabelValueLength]
-				}
+			case validation.LabelValueLengthOverLimitStrategyTruncate:
+				_ = hashLabelValueInto(l.Value[len(l.Value)-validation.LabelValueHashLen:], l.Value)
+			case validation.LabelValueLengthOverLimitStrategyDrop:
+				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))
 			}
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
-			return nil, fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		}
 
 		lastLabelName = l.Name
 	}
 
-	if hashesLen := labelHashes.Len(); hashesLen > 0 {
-		labelHashes.AppendHashLabels(&ls)
-		// Validate the newly added labels.
-		if _, err := validateLabels(m, cfg, userID, group, ls, skipLabelValidation, skipLabelCountValidation, cat, ts); err != nil {
-			return nil, err
-		}
-		return ls, nil
-	}
-	return nil, nil
+	return nil
 }
 
-// labelHashBuilder optimizes adding hashes of labels to a labels list by
-// writing all the strings into a single strings.Builder.
-type labelHashBuilder struct {
-	nameSuffix string
-
-	s           strings.Builder
-	nameLengths []int
-}
-
-func (b *labelHashBuilder) Len() int {
-	return len(b.nameLengths)
-}
-
-func (b *labelHashBuilder) AddHashOf(label mimirpb.UnsafeMutableLabel) {
-	b.s.WriteString(label.Name)
-	b.s.WriteString(b.nameSuffix)
-
-	hashLabelValueInto(&b.s, label.Value)
-
-	b.nameLengths = append(b.nameLengths, len(label.Name)+len(b.nameSuffix))
-}
-
-func hashLabelValueInto(w io.Writer, value mimirpb.UnsafeMutableString) {
+func hashLabelValue(src mimirpb.UnsafeMutableString) uint64 {
 	h := fnv.New64a()
-	_, _ = io.Copy(h, strings.NewReader(value))
-	fmt.Fprintf(w, "%016x", h.Sum64())
+	_, _ = h.Write(unsafeMutableStringToBytes(src))
+	return h.Sum64()
 }
 
-func (b *labelHashBuilder) AppendHashLabels(to *[]mimirpb.UnsafeMutableLabel) {
-	const hexHashLen = 64 / 8 * 2
-	s := b.s.String()
-	*to = slices.Grow(*to, len(b.nameLengths))
-	offset := 0
-	for _, length := range b.nameLengths {
-		var label mimirpb.UnsafeMutableLabel
-		label.Name = s[offset : offset+length]
-		offset += length
-		label.Value = s[offset : offset+hexHashLen]
-		offset += hexHashLen
-		*to = append(*to, label)
+func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
+	hash := hashLabelValue(src)
+	buf := unsafeMutableStringToBytes(dst)
+	copy(buf, "(hash:")
+	for i := range 16 {
+		buf[6+i] = "0123456789abcdef"[(hash>>(60-4*i))&0xf]
 	}
+	buf[22] = ')'
+	return dst[:validation.LabelValueHashLen]
+}
+
+func unsafeMutableStringToBytes(s mimirpb.UnsafeMutableString) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // metadataValidationMetrics is a collection of metrics used by metadata validation.
