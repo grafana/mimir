@@ -8,9 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -87,8 +91,15 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 }
 
 func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
-	ctx := context.Background()
+	defer otel.SetTracerProvider(otel.GetTracerProvider()) // Restore original provider after the test
+	// Set a tracer provider with in memory span exporter so we can benchmark with tracing overhead.
+	otel.SetTracerProvider(
+		tracesdk.NewTracerProvider(
+			tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(tracetest.NewInMemoryExporter())),
+		),
+	)
 
+	_, ctx := tracing.StartSpanFromContext(context.Background(), "BenchmarkCostBasedPlannerPlanIndexLookup")
 	data := newCSVTestData(
 		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
