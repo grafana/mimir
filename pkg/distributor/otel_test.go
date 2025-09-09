@@ -38,6 +38,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -395,9 +396,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				md,
@@ -470,8 +470,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter()
-		mimirTS, dropped, err := otelMetricsToTimeseries(
+		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
 			md,
@@ -663,7 +663,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						Sum:           30,
 						Schema:        -53,
 						ZeroThreshold: 0,
-						ZeroCount:     nil,
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						PositiveSpans: []mimirpb.BucketSpan{
 							{
 								Length: 3,
@@ -681,8 +681,8 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				tc.input,
@@ -702,6 +702,65 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				require.Equal(t, 0, dropped)
 				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
 			}
+		})
+	}
+}
+
+// Write a test that check that when conversionOptions.enableCTZeroIngestion is true,
+// the otel start time is turned into the created timestamp of the resulting time series.
+func TestOTelCTZeroIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name         string
+		enableCTZero bool
+		input        pmetric.Metrics
+		expected     mimirpb.TimeSeries
+	}{
+		{
+			name:         "enable CT zero ingestion",
+			enableCTZero: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+				context.Background(),
+				converter,
+				tc.input,
+				conversionOptions{
+					addSuffixes:             true,
+					enableCTZeroIngestion:   tc.enableCTZero,
+					convertHistogramsToNHCB: true,
+				},
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			require.Len(t, mimirTS, 1)
+			require.Equal(t, 0, dropped)
+			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
 		})
 	}
 }

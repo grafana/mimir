@@ -53,6 +53,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -129,10 +130,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-
-			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
-			})
+			}, log.NewNopLogger())
 			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
