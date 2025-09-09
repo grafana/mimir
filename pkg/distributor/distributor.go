@@ -352,7 +352,7 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
-		}, []string{"user"}),
+		}, []string{"user", "handler"}),
 	}
 }
 
@@ -374,9 +374,9 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 	}
 }
 
-func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
+func (m *PushMetrics) ObserveUncompressedBodySize(user string, handler string, size float64) {
 	if m != nil {
-		m.uncompressedBodySize.WithLabelValues(user).Observe(size)
+		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(size)
 	}
 }
 
