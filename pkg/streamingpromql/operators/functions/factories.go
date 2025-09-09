@@ -682,6 +682,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_DERIV, "deriv", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("deriv", Deriv)))
 	must(RegisterFunction(FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING, "double_exponential_smoothing", parser.ValueTypeVector, DoubleExponentialSmoothingFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_EXP, "exp", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("exp", Exp)))
+	must(RegisterFunction(FUNCTION_FIRST_OVER_TIME, "first_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("first_over_time", FirstOverTime)))
 	must(RegisterFunction(FUNCTION_FLOOR, "floor", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("floor", Floor)))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_AVG, "histogram_avg", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_avg", HistogramAvg)))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_COUNT, "histogram_count", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount)))

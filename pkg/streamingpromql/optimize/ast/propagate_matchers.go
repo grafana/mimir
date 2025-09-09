@@ -198,7 +198,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	case "histogram_fraction":
 		return 2, nil
 	// Aggregation over time
-	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_last_over_time":
+	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "first_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_first_over_time", "ts_of_last_over_time":
 		return 0, nil
 	case "quantile_over_time":
 		return 1, nil

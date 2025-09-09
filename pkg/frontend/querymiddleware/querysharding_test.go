@@ -1025,11 +1025,13 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "resets", rangeQuery: true},
 		{fn: "sort_by_label", allowedErr: compat.NotSupportedError{}},
 		{fn: "sort_by_label_desc", allowedErr: compat.NotSupportedError{}},
+		{fn: "first_over_time", rangeQuery: true},
 		{fn: "last_over_time", rangeQuery: true},
 		{fn: "present_over_time", rangeQuery: true},
 		{fn: "timestamp"},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
+		{fn: "ts_of_first_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
 		{fn: "ts_of_last_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
 	}
 	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
