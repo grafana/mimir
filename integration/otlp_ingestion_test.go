@@ -473,7 +473,6 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.otel-created-timestamp-zero-ingestion-enabled": strconv.FormatBool(enableCTzero),
-			"-distributor.otel-start-time-quiet-zero":                    strconv.FormatBool(enableCTzero),
 		},
 	)
 
