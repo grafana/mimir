@@ -298,7 +298,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		logger: l,
 		opts:   opts,
 		memChunkPool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &memChunk{}
 			},
 		},
@@ -793,8 +793,7 @@ func (h *Head) Init(minValidTime int64) error {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
 				h.logger.Info("Chunk snapshot loading time", "duration", chunkSnapshotLoadDuration.String())
-			}
-			if err != nil {
+			} else {
 				snapIdx, snapOffset = -1, 0
 				refSeries = make(map[chunks.HeadSeriesRef]*memSeries)
 
@@ -1511,6 +1510,7 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
 // It runs GC on the Head and truncates the ChunkDiskMapper accordingly.
 func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
+	h.logger.Info("Head GC started", "caller", caller)
 	start := time.Now()
 	headMaxt := h.MaxTime()
 	actualMint, minOOOTime, minMmapFile := h.gc()

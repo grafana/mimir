@@ -67,6 +67,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"deriv":                        `deriv({__name__=~"float.*"}[1m])`,
 		"double_exponential_smoothing": `double_exponential_smoothing({__name__=~"float.*"}[1m], 0.01, 0.1)`,
 		"exp":                          `exp({__name__=~"float.*"})`,
+		"first_over_time":              `<skip>`, // first_over_time() doesn't drop the metric name, so this test doesn't apply.
 		"floor":                        `floor({__name__=~"float.*"})`,
 		"histogram_avg":                `histogram_avg({__name__=~"histogram.*"})`,
 		"histogram_count":              `histogram_count({__name__=~"histogram.*"})`,

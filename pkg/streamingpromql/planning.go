@@ -39,6 +39,7 @@ var timeSince = time.Since
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
@@ -89,6 +90,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, e
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
 			Help:                        "Latency of each stage of the query planning process.",
@@ -174,6 +176,25 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			return nil, err
 		}
 
+		if p.enableDelayedNameRemoval {
+			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+				dedupAndMerge.RunDelayedNameRemoval = true
+			} else {
+				// Don't run delayed name removal or deduplicate and merge where there are no
+				// vector selectors.
+				shouldWrap, err := shouldWrapInDedupAndMerge(root)
+				if err != nil {
+					return nil, err
+				}
+				if shouldWrap {
+					root = &core.DeduplicateAndMerge{
+						Inner:                      root,
+						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+					}
+				}
+			}
+		}
+
 		plan := &planning.QueryPlan{
 			TimeRange: timeRange,
 			Root:      root,
@@ -201,6 +222,34 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	return plan, err
+}
+
+func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
+	switch node := root.(type) {
+	case *core.NumberLiteral, *core.StringLiteral:
+		return false, nil
+	case *core.BinaryExpression:
+		resL, err := node.LHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resL != parser.ValueTypeScalar {
+			break
+		}
+		resR, err := node.RHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resR == parser.ValueTypeScalar {
+			return false, nil
+		}
+	case *core.FunctionCall:
+		res, err := root.ResultType()
+		if err == nil && res == parser.ValueTypeScalar {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {
@@ -518,7 +567,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_IDELTA,
 		functions.FUNCTION_INCREASE,
 		functions.FUNCTION_IRATE,
-		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_MAD_OVER_TIME,
 		functions.FUNCTION_MAX_OVER_TIME,
 		functions.FUNCTION_MIN_OVER_TIME,
 		functions.FUNCTION_PRESENT_OVER_TIME,
@@ -528,6 +577,10 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_STDDEV_OVER_TIME,
 		functions.FUNCTION_STDVAR_OVER_TIME,
 		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME,
 		// Instant vector transformations
 		functions.FUNCTION_ABS,
 		functions.FUNCTION_ACOS,
@@ -579,6 +632,11 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 	case
 		functions.FUNCTION_ABSENT,
 		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_INFO,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_LIMITK,
+		functions.FUNCTION_LIMIT_RATIO,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
 		functions.FUNCTION_SORT,

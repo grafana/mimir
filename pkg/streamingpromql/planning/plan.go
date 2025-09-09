@@ -146,6 +146,7 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
+	EnableDelayedNameRemoval bool
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
