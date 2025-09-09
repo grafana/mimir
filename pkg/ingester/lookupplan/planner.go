@@ -147,7 +147,7 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		outcome = "success"
 		if span != nil {
 			span.AddEvent("selected lookup plan", trace.WithAttributes(
-				attribute.String("duration", time.Since(start).String()),
+				attribute.Stringer("duration", time.Since(start)),
 			))
 			const topKPlans = 2
 			for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
