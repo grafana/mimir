@@ -61,7 +61,7 @@
 * [ENHANCEMENT] Query-frontend, querier: Add support for experimental `first_over_time` PromQL function. #12662
 * [ENHANCEMENT] OTLP: native support for OpenTelemetry metric start time to Prometheus metric created timestamp conversion, instead of converting to QuietZeroNaNs introduced in #10238. The configuration parameter `-distributor.otel-start-time-quiet-zero` is therefore deprecated and will be removed. Now supports start time for exponential histograms. This is a major rewrite of the endpoint in upstream Prometheus and Mimir. #12652
 * [ENHANCEMENT] Distributor: Support zstd decompression of OTLP messages. #12229
-* [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #XXXXX
+* [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #12663
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
