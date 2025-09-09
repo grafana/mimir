@@ -510,6 +510,7 @@ func hashLabelValue(src mimirpb.UnsafeMutableString) uint64 {
 func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
 	hash := hashLabelValue(src)
 	buf := unsafeMutableStringToBytes(dst)
+	// Encode as hex inline instead of fmt.Sprintf to avoid allocations due to interface values.
 	copy(buf, "(hash:")
 	for i := range 16 {
 		buf[6+i] = "0123456789abcdef"[(hash>>(60-4*i))&0xf]

@@ -3912,7 +3912,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.label-value-length-over-limit-strategy value
-    	What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '<original label name><label_value_length_over_limit_hash_suffix>'.
+    	What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-cost-attribution-cardinality int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
   -validation.max-label-names-per-info-series int
