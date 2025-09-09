@@ -31,8 +31,9 @@ type FunctionOverInstantVector struct {
 	// These are returned the pool at Close().
 	scalarArgsData []types.ScalarData
 
-	expressionPosition posrange.PositionRange
-	timeRange          types.QueryTimeRange
+	expressionPosition       posrange.PositionRange
+	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 }
 
 var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
@@ -44,6 +45,7 @@ func NewFunctionOverInstantVector(
 	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
@@ -51,8 +53,9 @@ func NewFunctionOverInstantVector(
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
 
-		expressionPosition: expressionPosition,
-		timeRange:          timeRange,
+		expressionPosition:       expressionPosition,
+		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -90,7 +93,7 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
 
 	return metadata, nil
