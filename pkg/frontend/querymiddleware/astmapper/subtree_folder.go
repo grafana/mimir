@@ -26,7 +26,7 @@ func newSubtreeFolder(squasher Squasher) ASTMapper {
 
 // MapExpr implements ExprMapper.
 func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
+	hasEmbeddedQueries, err := anyNode(expr, f.squasher.ContainsSquashedExpression)
 	if err != nil {
 		return nil, true, err
 	}
@@ -43,24 +43,13 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 
 	// Change the expr if it contains vector selectors, as only those need to be embedded.
 	if hasVectorSelector {
-		expr, err := f.squasher(NewEmbeddedQuery(expr, nil))
+		expr, err := f.squasher.Squash(NewEmbeddedQuery(expr, nil))
 		return expr, true, err
 	}
 	return expr, false, nil
 }
 
-// hasEmbeddedQueries returns whether the expr has embedded queries.
-func hasEmbeddedQueries(node parser.Node) (bool, error) {
-	switch n := node.(type) {
-	case *parser.VectorSelector:
-		if n.Name == EmbeddedQueriesMetricName {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// hasEmbeddedQueries returns whether the expr is a vector selector.
+// isVectorSelector returns whether the expr is a vector selector.
 func isVectorSelector(n parser.Node) (bool, error) {
 	_, ok := n.(*parser.VectorSelector)
 	return ok, nil

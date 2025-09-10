@@ -277,7 +277,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	squasher := astmapper.VectorSquasher
+	squasher := astmapper.EmbeddedQueriesSquasher
 	summer, err := astmapper.NewQueryShardSummer(totalShards, squasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err

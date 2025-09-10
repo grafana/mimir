@@ -26,7 +26,10 @@ func NewSharding(shardSummer ASTMapper, squasher Squasher) ASTMapper {
 	)
 }
 
-type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
+type Squasher interface {
+	Squash(...EmbeddedQuery) (parser.Expr, error)
+	ContainsSquashedExpression(node parser.Node) (bool, error)
+}
 
 type ShardLabeller interface {
 	GetLabelMatcher(shard int) (*labels.Matcher, error)
@@ -66,7 +69,7 @@ func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger
 type shardSummer struct {
 	shards       int
 	currentShard *int
-	squash       Squasher
+	squasher     Squasher
 	logger       log.Logger
 	stats        *MapperStats
 
@@ -82,7 +85,7 @@ func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *Map
 
 	return &shardSummer{
 		shards:       shards,
-		squash:       squasher,
+		squasher:     squasher,
 		currentShard: nil,
 		logger:       logger,
 		stats:        stats,
@@ -279,7 +282,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 
 	// Update stats.
 	summer.stats.AddShardedQueries(summer.shards)
-	squashed, err := summer.squash(children...)
+	squashed, err := summer.squasher.Squash(children...)
 	if err != nil {
 		return nil, true, err
 	}
@@ -493,7 +496,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 	// Update stats.
 	summer.stats.AddShardedQueries(summer.shards)
 
-	return summer.squash(children...)
+	return summer.squasher.Squash(children...)
 }
 
 // shardBinOp attempts to shard the given binary operation expression.
@@ -547,7 +550,7 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 	// Update stats.
 	summer.stats.AddShardedQueries(summer.shards)
 
-	return summer.squash(children...)
+	return summer.squasher.Squash(children...)
 }
 
 func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
