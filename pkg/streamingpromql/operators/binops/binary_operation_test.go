@@ -86,11 +86,12 @@ func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {
 
 	for i := range num {
 		var container string
-		if i%3 == 0 {
+		switch i % 3 {
+		case 0:
 			container = "querier"
-		} else if i%3 == 1 {
+		case 1:
 			container = "query-frontend"
-		} else {
+		case 2:
 			container = "store-gateway"
 		}
 
