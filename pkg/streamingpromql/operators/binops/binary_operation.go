@@ -750,6 +750,8 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
+// QueryHints are hints that can be applied to binary operations to avoid doing
+// unnecessary work.
 type QueryHints struct {
 	Include []string
 }
@@ -758,22 +760,30 @@ const (
 	maxHintMatcherValues = 64
 )
 
+// BuildMatchers builds matchers to limit the data selected on one side of binary operation
+// based on the series returned by the other side and QueryHints as determined by the query
+// planner. If there are more than a hard-coded maximum number of values for the hinted labels
+// matchers for that label are skipped.
 func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) types.Matchers {
-	var matchers []*labels.Matcher
+	var matchers []types.Matcher
 
-	for _, field := range hints.Include {
-		values := getUniqueFieldValues(metadata, field, maxHintMatcherValues)
+	for _, label := range hints.Include {
+		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
-			collected := make([]string, 0, len(values))
+			ordered := make([]string, 0, len(values))
 			for k := range maps.Keys(values) {
-				collected = append(collected, regexp.QuoteMeta(k))
+				ordered = append(ordered, regexp.QuoteMeta(k))
 			}
 
-			matchers = append(matchers, &labels.Matcher{
+			// It's important that the values we're matching against for each matcher are in the
+			// same order because we deduplicate matchers before passing them to a queryable.
+			slices.Sort(ordered)
+
+			matchers = append(matchers, types.Matcher{
 				Type:  labels.MatchRegexp,
-				Name:  field,
-				Value: strings.Join(collected, "|"),
+				Name:  label,
+				Value: strings.Join(ordered, "|"),
 			})
 		}
 	}
@@ -781,7 +791,7 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) types.Mat
 	return matchers
 }
 
-func getUniqueFieldValues(metadata []types.SeriesMetadata, field string, maxValues int) map[string]struct{} {
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
 	values := make(map[string]struct{})
 
 	for _, series := range metadata {
@@ -792,7 +802,7 @@ func getUniqueFieldValues(metadata []types.SeriesMetadata, field string, maxValu
 			return map[string]struct{}{}
 		}
 
-		val := series.Labels.Get(field)
+		val := series.Labels.Get(label)
 		if val != "" {
 			values[val] = struct{}{}
 		}

@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package binops
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
+)
+
+func TestBuildMatchers(t *testing.T) {
+	t.Run("single series single hint", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 1)
+		hints := &QueryHints{Include: []string{"container"}}
+		expected := types.Matchers([]types.Matcher{{
+			Type:  labels.MatchRegexp,
+			Name:  "container",
+			Value: "querier",
+		}})
+
+		res := BuildMatchers(series, hints)
+		require.Equal(t, expected, res)
+	})
+
+	t.Run("multiple series single hint", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 3)
+		hints := &QueryHints{Include: []string{"container"}}
+		expected := types.Matchers([]types.Matcher{{
+			Type:  labels.MatchRegexp,
+			Name:  "container",
+			Value: "querier|query-frontend|store-gateway",
+		}})
+
+		res := BuildMatchers(series, hints)
+		require.Equal(t, expected, res)
+	})
+
+	t.Run("multiple series multiple hints", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 3)
+		hints := &QueryHints{Include: []string{"container", "region"}}
+		expected := types.Matchers([]types.Matcher{
+			{
+				Type:  labels.MatchRegexp,
+				Name:  "container",
+				Value: "querier|query-frontend|store-gateway",
+			},
+			{
+				Type:  labels.MatchRegexp,
+				Name:  "region",
+				Value: "prod-test-1|prod-test-2|prod-test-3",
+			},
+		})
+
+		res := BuildMatchers(series, hints)
+		require.Equal(t, expected, res)
+	})
+
+	t.Run("too many values single hint", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 128)
+		hints := &QueryHints{Include: []string{"pod"}}
+
+		res := BuildMatchers(series, hints)
+		require.Empty(t, res)
+	})
+
+	t.Run("too many values multiple hints", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 128)
+		hints := &QueryHints{Include: []string{"pod", "container"}}
+		expected := types.Matchers([]types.Matcher{{
+			Type:  labels.MatchRegexp,
+			Name:  "container",
+			Value: "querier|query-frontend|store-gateway",
+		}})
+
+		res := BuildMatchers(series, hints)
+		require.Equal(t, expected, res)
+	})
+}
+
+func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {
+	var out []types.SeriesMetadata
+
+	for i := range num {
+		var container string
+		if i%3 == 0 {
+			container = "querier"
+		} else if i%3 == 1 {
+			container = "query-frontend"
+		} else {
+			container = "store-gateway"
+		}
+
+		out = append(out, types.SeriesMetadata{
+			Labels: labels.FromMap(map[string]string{
+				"__name__":  name,
+				"container": container,
+				"pod":       fmt.Sprintf("%s-%d", container, i),
+				"region":    fmt.Sprintf("prod-test-%d", i%3+1),
+			}),
+		})
+	}
+
+	return out
+}
