@@ -100,12 +100,13 @@ func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 
 // processLabelsAndMetadata figures out if we have already seen this
 // exact label set and whether we need to update the metadata.
-// The returned collisionIdx is 0 is there's no hash collision and
-// index+1 into the collisions otherwise.
+// The returned collisionIdx is -1 if there's no hash collision and
+// the index into the collisions otherwise.
 // krajorama: I could not make this inline.
 func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, collisionIdx int, seenSeries bool) {
 	hash = ls.Hash()
 	idx, ok := c.refs[hash]
+	collisionIdx = -1
 	if !ok {
 		// No match at all.
 		idx.lbls = ls
@@ -127,7 +128,7 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 			if labels.Equal(collision.lbls, ls) {
 				// Found a stored collision.
 				idx.idx = collision.idx
-				collisionIdx = i + 1
+				collisionIdx = i
 				seenSeries = true
 				return
 			}
@@ -135,7 +136,7 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 	}
 	// No matching collision, make space for it.
 	c.collisionRefs[hash] = append(c.collisionRefs[hash], idx)
-	collisionIdx = len(c.collisionRefs[hash])
+	collisionIdx = len(c.collisionRefs[hash]) - 1
 
 	return
 }
@@ -149,11 +150,11 @@ func (c *CombinedAppender) createNewSeries(idx *labelsIdx, collisionIdx int, has
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
 
-	if collisionIdx == 0 {
+	if collisionIdx == -1 {
 		c.refs[hash] = *idx
 		return
 	}
-	c.collisionRefs[hash][collisionIdx-1] = *idx
+	c.collisionRefs[hash][collisionIdx] = *idx
 }
 
 // appendExemplars appends exemplars to the time series at the given index.
