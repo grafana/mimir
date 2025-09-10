@@ -1008,7 +1008,19 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 	}
-	defer resp.FreeBuffer()
+	defer func() {
+		if ss := resp.GetSeries(); ss != nil {
+			ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
+			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+		}
+		if sss := resp.GetStreamingSeries(); sss != nil {
+			for _, ss := range sss.Series {
+				ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+			}
+		}
+		resp.FreeBuffer()
+	}()
 
 	// Response may either contain series, streaming series, warning or hints.
 	if s := resp.GetSeries(); s != nil {
