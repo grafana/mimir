@@ -57,22 +57,14 @@ func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb
 }
 
 func (c *CombinedAppender) AppendSample(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
-	ct = c.recalcCreatedTimestamp(t, ct)
-
-	hash, idx, seenSeries := c.processLabelsAndMetadata(ls)
-
-	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, hash, ls, ct)
-	}
-
-	c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
-	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(meta.MetricFamilyName, meta.Metadata)
-
-	return nil
+	return c.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
 }
 
 func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+	return c.appendFloatOrHistogram(ls, meta, ct, t, 0, h, es)
+}
+
+func (c *CombinedAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
 	hash, idx, seenSeries := c.processLabelsAndMetadata(ls)
@@ -81,7 +73,11 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.M
 		c.createNewSeries(&idx, hash, ls, ct)
 	}
 
-	c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+	if h != nil {
+		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+	} else {
+		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
+	}
 	c.appendExemplars(idx.idx, es)
 	c.appendMetadata(meta.MetricFamilyName, meta.Metadata)
 
