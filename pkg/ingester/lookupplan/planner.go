@@ -127,7 +127,7 @@ func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool
 }
 
 func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
-	span, _, _ := tracing.SpanFromContext(ctx)
+	span, _, traceSampled := tracing.SpanFromContext(ctx)
 
 	var outcome string
 	switch {
@@ -145,18 +145,20 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		}
 	default:
 		outcome = "success"
-		if span != nil {
-			span.AddEvent("selected lookup plan", trace.WithAttributes(
-				attribute.Stringer("duration", time.Since(start)),
-			))
-			const topKPlans = 2
-			for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-				planName := "selected_plan"
-				if i > 0 {
-					planName = strconv.Itoa(i + 1)
-				}
-				plan.addSpanEvent(span, planName)
+		if !traceSampled {
+			// Avoid logging overhead if the events aren't going to make it into a span.
+			break
+		}
+		span.AddEvent("selected lookup plan", trace.WithAttributes(
+			attribute.Stringer("duration", time.Since(start)),
+		))
+		const topKPlans = 2
+		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+			planName := "selected_plan"
+			if i > 0 {
+				planName = strconv.Itoa(i + 1)
 			}
+			plan.addSpanEvent(span, planName)
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
