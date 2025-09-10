@@ -709,6 +709,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 // TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
 // the otel start time is turned into the created timestamp of the resulting time series.
+// Also check what happens if the option is off.
 func TestOTelCTZeroIngestion(t *testing.T) {
 	ts := time.Unix(100, 0)
 
@@ -740,6 +741,30 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
 				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+			},
+		},
+		{
+			name:         "disable CT zero ingestion",
+			enableCTZero: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: 0,
 			},
 		},
 	}
