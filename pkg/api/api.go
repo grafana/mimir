@@ -464,10 +464,6 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
 }
 
-func (a *API) RegisterEvaluationAPI(handler http.Handler) {
-	a.RegisterRoute("/api/v1/evaluate", handler, true, true, "POST")
-}
-
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
 }

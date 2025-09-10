@@ -636,7 +636,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.Cfg.Querier,
-		dispatcher,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,
@@ -647,11 +646,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		util_log.Logger,
 		t.Overrides,
 	)
-
-	if dispatcher != nil {
-		// If MQE is enabled, register the evaluation API with the external HTTP server.
-		t.API.RegisterEvaluationAPI(internalQuerierRouter)
-	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
