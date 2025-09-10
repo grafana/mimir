@@ -177,7 +177,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
-	spanLogger.DebugLog("msg", "AST optimisation passes complete", "expression", expr)
+	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := p.nodeFromExpr(expr)
