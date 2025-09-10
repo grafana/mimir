@@ -32,9 +32,8 @@ type CombinedAppender struct {
 	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
 	// multiple times, we keep track of the appended time series.
-	// TODO(krajorama): add overflow for handling hash collisions.
-	// Do we really need this? The code will just create a new series.
-	refs map[uint64]labelsIdx
+	refs          map[uint64]labelsIdx
+	collisionRefs map[uint64][]labelsIdx
 
 	// metricFamilies is used to store metadata for each metric family.
 	// This is needed to not send metadata duplicates all the time.
@@ -47,6 +46,7 @@ func NewCombinedAppender() *CombinedAppender {
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
 		refs:           make(map[uint64]labelsIdx),
+		collisionRefs:  make(map[uint64][]labelsIdx),
 		metricFamilies: make(map[string]metadata.Metadata),
 	}
 }
@@ -67,10 +67,10 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.M
 func (c *CombinedAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
-	hash, idx, seenSeries := c.processLabelsAndMetadata(ls)
+	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, hash, ls, ct)
+		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
 	}
 
 	if h != nil {
@@ -100,19 +100,47 @@ func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 
 // processLabelsAndMetadata figures out if we have already seen this
 // exact label set and whether we need to update the metadata.
+// The returned collisionIdx is 0 is there's no hash collision and
+// index+1 into the collisions otherwise.
 // krajorama: I could not make this inline.
-func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, seenSeries bool) {
+func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, collisionIdx int, seenSeries bool) {
 	hash = ls.Hash()
 	idx, ok := c.refs[hash]
-	if ok && labels.Equal(idx.lbls, ls) {
-		seenSeries = true
-	} else {
+	if !ok {
+		// No match at all.
 		idx.lbls = ls
+		return
 	}
+
+	if labels.Equal(idx.lbls, ls) {
+		// Exact match right away.
+		seenSeries = true
+		return
+	}
+
+	// Match but collision of hash, assume no match and set labels.
+	idx.lbls = ls
+
+	// Check if we already stored the colliding labels.
+	if collisions, ok := c.collisionRefs[hash]; ok {
+		for i, collision := range collisions {
+			if labels.Equal(collision.lbls, ls) {
+				// Found a stored collision.
+				idx.idx = collision.idx
+				collisionIdx = i + 1
+				seenSeries = true
+				return
+			}
+		}
+	}
+	// No matching collision, make space for it.
+	c.collisionRefs[hash] = append(c.collisionRefs[hash], idx)
+	collisionIdx = len(c.collisionRefs[hash])
+
 	return
 }
 
-func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls labels.Labels, ct int64) {
+func (c *CombinedAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
 	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool
 	ts := &mimirpb.TimeSeries{
 		Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
@@ -120,7 +148,12 @@ func (c *CombinedAppender) createNewSeries(idx *labelsIdx, hash uint64, ls label
 	}
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
-	c.refs[hash] = *idx
+
+	if collisionIdx == 0 {
+		c.refs[hash] = *idx
+		return
+	}
+	c.collisionRefs[hash][collisionIdx-1] = *idx
 }
 
 // appendExemplars appends exemplars to the time series at the given index.

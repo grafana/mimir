@@ -18,12 +18,15 @@ import (
 )
 
 func TestCombinedAppender(t *testing.T) {
+	collidingLabels1, collidingLabels2 := labelsWithHashCollision()
+
 	testCases := map[string]struct {
 		validIntervalCreatedTimestampZeroIngestion int64
 		appends                                    func(*testing.T, *CombinedAppender)
 		expectTimeseries                           []mimirpb.PreallocTimeseries
 		expectTimeseriesNoCT                       []mimirpb.PreallocTimeseries // Same as expectTimeseries if nil.
 		expectMetadata                             []*mimirpb.MetricMetadata
+		expectCollisions                           bool
 	}{
 		"no appends": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
@@ -484,6 +487,69 @@ func TestCombinedAppender(t *testing.T) {
 				},
 			},
 		},
+		"colliding labels are tracked": {
+			appends: func(t *testing.T, ca *CombinedAppender) {
+				require.NoError(t, ca.AppendSample(
+					collidingLabels1,
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+						MetricFamilyName: "spam",
+					},
+					0, 1000, 42.0, nil))
+				require.NoError(t, ca.AppendSample(
+					collidingLabels2,
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+						MetricFamilyName: "spam",
+					},
+					0, 2000, 44.0, nil))
+				require.NoError(t, ca.AppendSample(
+					collidingLabels1,
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+						MetricFamilyName: "spam",
+					},
+					0, 3000, 46.0, nil))
+				require.NoError(t, ca.AppendSample(
+					collidingLabels2,
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+						MetricFamilyName: "spam",
+					},
+					0, 4000, 48.0, nil))
+			},
+			expectTimeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: mimirpb.FromLabelsToLabelAdapters(collidingLabels1),
+						Samples: []mimirpb.Sample{
+							{TimestampMs: 1000, Value: 42.0},
+							{TimestampMs: 3000, Value: 46.0},
+						},
+						CreatedTimestamp: 0,
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: mimirpb.FromLabelsToLabelAdapters(collidingLabels2),
+						Samples: []mimirpb.Sample{
+							{TimestampMs: 2000, Value: 44.0},
+							{TimestampMs: 4000, Value: 48.0},
+						},
+						CreatedTimestamp: 0,
+					},
+				},
+			},
+			expectMetadata: []*mimirpb.MetricMetadata{
+				{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: "spam",
+					Help:             "help!",
+					Unit:             "bytes",
+				},
+			},
+			expectCollisions: true,
+		},
 	}
 
 	for name, tc := range testCases {
@@ -513,8 +579,32 @@ func TestCombinedAppender(t *testing.T) {
 					series, metadata := appender.GetResult()
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)
+					if tc.expectCollisions {
+						require.Len(t, appender.collisionRefs, 1)
+					} else {
+						require.Empty(t, appender.collisionRefs)
+					}
 				})
 			}
 		})
 	}
+}
+
+// adapted from pkg/distributor/distributor_test.go
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
 }
