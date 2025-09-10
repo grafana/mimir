@@ -107,7 +107,7 @@ func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
 	}
 
 	out := make([]types.Matcher, 0, len(unique))
-	for m, _ := range unique {
+	for m := range unique {
 		out = append(out, m)
 	}
 
