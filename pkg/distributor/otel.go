@@ -91,8 +91,7 @@ func OTLPHandler(
 			}
 		}
 
-		appender := otlpappender.NewCombinedAppender()
-		otlpConverter := newOTLPMimirConverter(appender)
+		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError)
 
@@ -330,7 +329,6 @@ func newOTLPParser(
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
 		}
-
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
 			otlpConverter,
@@ -338,7 +336,6 @@ func newOTLPParser(
 			convOpts,
 			spanLogger,
 		)
-
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -369,7 +366,6 @@ func newOTLPParser(
 
 		req.Timeseries = metrics
 		req.Metadata = metadata
-
 		return nil
 	}
 }

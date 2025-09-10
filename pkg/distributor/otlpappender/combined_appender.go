@@ -106,11 +106,6 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.M
 
 func (c *CombinedAppender) recalcCreatedTimestamp(t, ct int64) int64 {
 	if !c.options.EnableCreatedTimestampZeroIngestion || ct < 0 || ct > t || (c.options.ValidIntervalCreatedTimestampZeroIngestion > 0 && t-ct > c.options.ValidIntervalCreatedTimestampZeroIngestion) {
-		// Ignore created timestamps if the feature is disabled.
-		// Or if the created timestamp is negative, which is invalid.
-		// Or if the created timestamp is greater than the sample timestamp,
-		// which does not make sense.
-		// Or if the created timestamp is too far in the past compared to the sample timestamp.
 		return 0
 	}
 

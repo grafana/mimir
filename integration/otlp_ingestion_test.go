@@ -412,7 +412,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
 }
 
-// TestStartTimeHandling implements E2E test for OTEL start time to
+// TestStartTimeHandling implements E2E test for OTel start time to
 // zero sample ingestion.
 func TestStartTimeHandling(t *testing.T) {
 	t.Run("enableCTzero=false", func(t *testing.T) {

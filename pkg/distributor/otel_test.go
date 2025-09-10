@@ -707,7 +707,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 	}
 }
 
-// Write a test that check that when conversionOptions.enableCTZeroIngestion is true,
+// TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
 // the otel start time is turned into the created timestamp of the resulting time series.
 func TestOTelCTZeroIngestion(t *testing.T) {
 	ts := time.Unix(100, 0)
