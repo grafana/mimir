@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
@@ -20,6 +22,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -111,7 +114,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 		},
 	}
 
-	res, err := c.PushOTLP(series, metadata)
+	res, _, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -173,7 +176,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series.histogram", now)
-	res, err = c.PushOTLP(series, metadata)
+	res, _, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -347,7 +350,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	protoPayload, err := proto.Marshal(req)
 	require.NoError(t, err)
 
-	res, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
+	res, _, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -527,7 +530,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 			protoPayload, err := proto.Marshal(req)
 			require.NoError(t, err)
 
-			res, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
+			res, _, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
 			require.NoError(t, err)
 			require.Equal(t, 200, res.StatusCode)
 
@@ -552,4 +555,78 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 		})
 		count++
 	}
+}
+
+// This test validates that the responses from Mimir's OTLP ingestion endpoint adhere to spec:
+// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+
+	// Start Mimir in single binary mode, reading the config from file and overwriting
+	// the backend config to make it work with Minio.
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+		map[string]string{
+			"-ingester.max-global-exemplars-per-user": "1000",
+		},
+	)
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	now := time.Now()
+
+	t.Run("should return 200 on partial success due to out of order exemplars", func(t *testing.T) {
+		// Send a first request with an exemplar.
+		req1, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now)
+		req1[0].Exemplars = []prompb.Exemplar{
+			{
+				Labels:    []prompb.Label{{Name: "trace_id", Value: "xxx"}},
+				Value:     1,
+				Timestamp: now.UnixMilli(),
+			},
+		}
+
+		res, body, err := c.PushOTLP(req1, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		require.Empty(t, body)
+		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
+
+		// Send a second request with an out of order exemplar. The response should be 200 but the exemplar should not be ingested.
+		req2, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now.Add(time.Second))
+		req2[0].Exemplars = []prompb.Exemplar{
+			{
+				Labels:    []prompb.Label{{Name: "trace_id", Value: "xxx"}},
+				Value:     2,
+				Timestamp: now.Add(-time.Second).UnixMilli(),
+			},
+		}
+
+		res, body, err = c.PushOTLP(req2, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		assert.Equal(t, "application/x-protobuf", res.Header.Get("Content-Type"))
+		assert.Equal(t, strconv.Itoa(len(body)), res.Header.Get("Content-Length"))
+		var expResp colmetricpb.ExportMetricsServiceResponse
+		require.NoError(t, proto.Unmarshal(body, &expResp))
+		assert.Equal(t, int64(0), expResp.PartialSuccess.RejectedDataPoints)
+		assert.Regexp(t, regexp.MustCompile(`failed pushing to ingester mimir-1: user=user-1: err: out of order exemplar. timestamp=[^,]+, series=series_with_out_of_order_exemplars, exemplar=\{trace_id="xxx"\}`), expResp.PartialSuccess.ErrorMessage)
+		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
+	})
 }
