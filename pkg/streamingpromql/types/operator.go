@@ -96,12 +96,44 @@ type StringOperator interface {
 	GetValue() string
 }
 
-type Matchers []*labels.Matcher
+// Matcher is a value type version of the Prometheus labels.Matcher type.
+// It exists so that we can use matchers as map keys and compare them with
+// equals operators (this is not possible with labels.Matcher types because
+// they include a pointer to a regular expression).
+type Matcher struct {
+	Type  labels.MatchType
+	Name  string
+	Value string
+}
 
-// Merge appends other Matchers to this matcher if both are non-nil.
+func (m Matcher) ToPrometheusType() (*labels.Matcher, error) {
+	return labels.NewMatcher(m.Type, m.Name, m.Value)
+}
+
+type Matchers []Matcher
+
+func (s Matchers) ToPrometheusType() ([]*labels.Matcher, error) {
+	if len(s) == 0 {
+		return []*labels.Matcher{}, nil
+	}
+
+	out := make([]*labels.Matcher, 0, len(s))
+	for _, m := range s {
+		prom, err := m.ToPrometheusType()
+		if err != nil {
+			return nil, err
+		}
+
+		out = append(out, prom)
+	}
+
+	return out, nil
+}
+
+// Append appends other Matchers to this matcher if both are non-nil.
 // If this Matchers is nil, other is returned unchanged.
 // If other is nil, this Matchers is returned unchanged.
-func (s Matchers) Merge(other Matchers) Matchers {
+func (s Matchers) Append(other Matchers) Matchers {
 	if s == nil {
 		return other
 	}
@@ -110,7 +142,6 @@ func (s Matchers) Merge(other Matchers) Matchers {
 		return s
 	}
 
-	// TODO: Need to deduplicate
 	return append(s, other...)
 }
 
