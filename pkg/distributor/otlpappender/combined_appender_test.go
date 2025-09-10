@@ -500,14 +500,12 @@ func TestCombinedAppender(t *testing.T) {
 					if !enableCreatedTimestampZeroIngestion {
 						if tc.expectTimeseriesNoCT != nil {
 							expectedTimeseries = tc.expectTimeseriesNoCT
-						} else {
-							if tc.expectTimeseries != nil {
-								expectedTimeseries = make([]mimirpb.PreallocTimeseries, len(tc.expectTimeseries))
-								for i, ts := range tc.expectTimeseries {
-									innerTs := *ts.TimeSeries    // Shallow copy to modify CreatedTimestamp.
-									innerTs.CreatedTimestamp = 0 // Set CreatedTimestamp to 0 if the feature is disabled.
-									expectedTimeseries[i].TimeSeries = &innerTs
-								}
+						} else if tc.expectTimeseries != nil {
+							expectedTimeseries = make([]mimirpb.PreallocTimeseries, len(tc.expectTimeseries))
+							for i, ts := range tc.expectTimeseries {
+								innerTs := *ts.TimeSeries    // Shallow copy to modify CreatedTimestamp.
+								innerTs.CreatedTimestamp = 0 // Set CreatedTimestamp to 0 if the feature is disabled.
+								expectedTimeseries[i].TimeSeries = &innerTs
 							}
 						}
 					}
