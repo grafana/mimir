@@ -37,15 +37,45 @@ type EmbeddedQueries struct {
 }
 
 type EmbeddedQuery struct {
-	Expr   string            `json:"Expr"`
-	Params map[string]string `json:"Params,omitempty"`
+	Expr   parser.Expr
+	Params map[string]string
 }
 
-func NewEmbeddedQuery(expr string, params map[string]string) EmbeddedQuery {
+func NewEmbeddedQuery(expr parser.Expr, params map[string]string) EmbeddedQuery {
 	return EmbeddedQuery{
 		Expr:   expr,
 		Params: params,
 	}
+}
+
+type jsonEmbeddedQuery struct {
+	Expr   string            `json:"Expr"`
+	Params map[string]string `json:"Params,omitempty"`
+}
+
+func (e *EmbeddedQuery) MarshalJSON() ([]byte, error) {
+	v := jsonEmbeddedQuery{
+		Expr:   e.Expr.String(),
+		Params: e.Params,
+	}
+
+	return json.Marshal(v)
+}
+
+func (e *EmbeddedQuery) UnmarshalJSON(b []byte) error {
+	var v jsonEmbeddedQuery
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	expr, err := parser.ParseExpr(v.Expr)
+	if err != nil {
+		return err
+	}
+
+	e.Expr = expr
+	e.Params = v.Params
+	return nil
 }
 
 // JSONCodec is a Codec that uses JSON representations of EmbeddedQueries structs

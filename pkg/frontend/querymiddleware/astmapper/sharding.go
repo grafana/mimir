@@ -274,7 +274,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 			}
 		}
 
-		children = append(children, NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(clonedCall, summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -487,7 +487,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 			Grouping: expr.Grouping,
 			Without:  expr.Without,
 		}
-		children = append(children, NewEmbeddedQuery(aggExpr.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(aggExpr, summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -541,7 +541,7 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
 		}
-		children = append(children, NewEmbeddedQuery(binExpr.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(binExpr, summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.

@@ -544,7 +544,11 @@ func concatShards(shards int, queryTemplate string) string {
 	queries := make([]EmbeddedQuery, shards)
 	for shard := range queries {
 		queryStr := strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
-		queries[shard] = NewEmbeddedQuery(queryStr, nil)
+		expr, err := parser.ParseExpr(queryStr)
+		if err != nil {
+			panic(err)
+		}
+		queries[shard] = NewEmbeddedQuery(expr, nil)
 	}
 	return concatInner(queries...)
 }
@@ -552,21 +556,17 @@ func concatShards(shards int, queryTemplate string) string {
 func concat(queryStrs ...string) string {
 	queries := make([]EmbeddedQuery, len(queryStrs))
 	for i, query := range queryStrs {
-		queries[i] = NewEmbeddedQuery(query, nil)
+		expr, err := parser.ParseExpr(query)
+		if err != nil {
+			panic(err)
+		}
+		queries[i] = NewEmbeddedQuery(expr, nil)
 	}
 	return concatInner(queries...)
 }
 
 func concatInner(rawQueries ...EmbeddedQuery) string {
-	queries := make([]EmbeddedQuery, len(rawQueries))
-	for i, q := range rawQueries {
-		n, err := parser.ParseExpr(q.Expr)
-		if err != nil {
-			panic(err)
-		}
-		queries[i] = NewEmbeddedQuery(n.String(), q.Params)
-	}
-	mapped, err := VectorSquasher(queries...)
+	mapped, err := VectorSquasher(rawQueries...)
 	if err != nil {
 		panic(err)
 	}

@@ -116,7 +116,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 }
 
 func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, Response, error) {
-	query, err := query.WithQuery(queryExpr.Expr)
+	query, err := query.WithExpr(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
 	}

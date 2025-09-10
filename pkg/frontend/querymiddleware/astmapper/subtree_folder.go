@@ -41,7 +41,7 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 
 	// Change the expr if it contains vector selectors, as only those need to be embedded.
 	if hasVectorSelector {
-		expr, err := VectorSquasher(NewEmbeddedQuery(expr.String(), nil))
+		expr, err := VectorSquasher(NewEmbeddedQuery(expr, nil))
 		return expr, true, err
 	}
 	return expr, false, nil
