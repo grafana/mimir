@@ -925,6 +925,9 @@ distributor:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
+
 
   resources:
     requests:
@@ -1025,6 +1028,9 @@ ingester:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    # Note: This service is only used for admin endpoints like TSDB statistics, not for write or read path traffic.
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1879,6 +1885,8 @@ querier:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -1999,6 +2007,8 @@ query_frontend:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -2091,6 +2101,8 @@ query_scheduler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -2187,6 +2199,9 @@ store_gateway:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    # Note: This service is not responsible for read path traffic.
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -3676,6 +3691,9 @@ gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
+
 
   ingress:
     enabled: false
