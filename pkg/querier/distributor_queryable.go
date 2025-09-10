@@ -124,11 +124,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 	}
 
 	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-	set := q.streamingSelect(ctx, minT, maxT, matchers, memoryTracker)
-	for set.Next() {
-		memoryTracker.DecreaseMemoryConsumptionForLabels(set.At().Labels())
-	}
-	return set
+	return q.streamingSelect(ctx, minT, maxT, matchers, memoryTracker)
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher, memoryTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
