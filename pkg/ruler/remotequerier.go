@@ -177,7 +177,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 		textproto.CanonicalMIMEHeaderKey("Content-Encoding"):                 []string{"snappy"},
 		textproto.CanonicalMIMEHeaderKey("Accept-Encoding"):                  []string{"snappy"},
 		textproto.CanonicalMIMEHeaderKey("Content-Type"):                     []string{"application/x-protobuf"},
-		textproto.CanonicalMIMEHeaderKey("User-Agent"):                       []string{version.UserAgent()},
+		textproto.CanonicalMIMEHeaderKey("User-Agent"):                       []string{fmt.Sprintf("mimir-ruler/%s", version.Version)},
 		textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"): []string{"0.1.0"},
 	})
 
@@ -297,7 +297,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		return nil, err
 	}
 	req.Header = injectHTTPReadConsistencyHeader(ctx, http.Header{
-		textproto.CanonicalMIMEHeaderKey("User-Agent"):     []string{version.UserAgent()},
+		textproto.CanonicalMIMEHeaderKey("User-Agent"):     []string{fmt.Sprintf("mimir-ruler/%s", version.Version)},
 		textproto.CanonicalMIMEHeaderKey("Content-Type"):   []string{mimeTypeFormPost},
 		textproto.CanonicalMIMEHeaderKey("Content-Length"): []string{strconv.Itoa(len(body))},
 		textproto.CanonicalMIMEHeaderKey("Accept"):         []string{acceptHeader},

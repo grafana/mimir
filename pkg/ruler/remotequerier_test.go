@@ -862,3 +862,75 @@ func getGrpcHeader(headers []*httpgrpc.Header, name string) string {
 func newGrpcRoundTripper(client httpgrpc.HTTPClient) http.RoundTripper {
 	return httpgrpcutil.AdaptHTTPGrpcClientToHTTPRoundTripper(client)
 }
+
+func TestRemoteQuerier_UserAgent(t *testing.T) {
+	testCases := []struct {
+		name           string
+		testFunc       func(context.Context, *RemoteQuerier) error
+		expectedMethod string
+		expectedPath   string
+	}{
+		{
+			name: "Query request sets mimir-ruler User-Agent",
+			testFunc: func(ctx context.Context, q *RemoteQuerier) error {
+				tm := time.Unix(1649092025, 515834)
+				_, err := q.Query(ctx, "up", tm)
+				return err
+			},
+			expectedMethod: "POST",
+			expectedPath:   "/prometheus/api/v1/query",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedRequest *httpgrpc.HTTPRequest
+
+			mockClientFn := func(_ context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				capturedRequest = req
+
+				// Return a successful response with correct content type for the request type
+				var body []byte
+				var contentType string
+				
+				if capturedRequest.Method == "POST" && capturedRequest.Url == "/prometheus/api/v1/read" {
+					// Read endpoint expects snappy-compressed protobuf response
+					contentType = "application/x-protobuf"
+					readResponse := &prompb.ReadResponse{}
+					protoBytes, _ := proto.Marshal(readResponse)
+					body = snappy.Encode(nil, protoBytes)
+				} else {
+					// Query endpoint expects JSON response
+					contentType = "application/json"
+					body = []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
+				}
+				
+				return &httpgrpc.HTTPResponse{
+					Code: http.StatusOK,
+					Headers: []*httpgrpc.Header{
+						{Key: "Content-Type", Values: []string{contentType}},
+					},
+					Body: body,
+				}, nil
+			}
+
+			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
+
+			// Execute the test function
+			err := tc.testFunc(context.Background(), q)
+			require.NoError(t, err)
+
+			// Verify the request was captured
+			require.NotNil(t, capturedRequest)
+			require.Equal(t, tc.expectedMethod, capturedRequest.Method)
+			require.Equal(t, tc.expectedPath, capturedRequest.Url)
+
+			// Verify User-Agent header is set correctly
+			userAgent := getGrpcHeader(capturedRequest.Headers, "User-Agent")
+			require.Contains(t, userAgent, "mimir-ruler/")
+
+			// Verify it follows the expected pattern mimir-ruler/version
+			require.Regexp(t, `^mimir-ruler/[\w\.\-]+$`, userAgent)
+		})
+	}
+}

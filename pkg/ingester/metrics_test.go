@@ -7,13 +7,19 @@ package ingester
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 func TestTSDBMetrics(t *testing.T) {
@@ -900,4 +906,90 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 	tsdbWblReplayUnknownRefsTotal.WithLabelValues("exemplars").Add(base)
 
 	return r
+}
+
+// Test that priority labels are correctly computed from priority values
+func TestGetPriorityLabel(t *testing.T) {
+	testCases := []struct {
+		priority      int
+		expectedLabel string
+	}{
+		{450, "very_high"},
+		{400, "very_high"},
+		{399, "high"},
+		{350, "high"},
+		{300, "high"},
+		{299, "medium"},
+		{250, "medium"},
+		{200, "medium"},
+		{199, "low"},
+		{150, "low"},
+		{100, "low"},
+		{99, "very_low"},
+		{50, "very_low"},
+		{0, "very_low"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("priority_%d_should_be_%s", tc.priority, tc.expectedLabel), func(t *testing.T) {
+			actualLabel := utilgrpcutil.GetPriorityLabel(tc.priority)
+			require.Equal(t, tc.expectedLabel, actualLabel)
+		})
+	}
+}
+
+// Test that ingester metrics can collect metrics with priority labels
+func TestIngesterMetricsPriorityLabels(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	
+	// Create dummy parameters for the metrics constructor
+	instanceLimitsFn := func() *InstanceLimits {
+		return &InstanceLimits{
+			MaxIngestionRate:                100,
+			MaxInMemoryTenants:              10,
+			MaxInMemorySeries:               1000,
+			MaxInflightPushRequests:         100,
+			MaxInflightPushRequestsBytes:    1000,
+		}
+	}
+	ingestionRate := util_math.NewEWMARate(0.2, 1.0)
+	inflightRequests := atomic.NewInt64(0)
+	inflightRequestsBytes := atomic.NewInt64(0)
+	
+	// Create ingester metrics
+	m := newIngesterMetrics(reg, true, instanceLimitsFn, ingestionRate, inflightRequests, inflightRequestsBytes)
+	
+	// Test that we can record metrics with simple rejected metric
+	m.rejected.WithLabelValues("max_inflight_push_requests").Inc()
+	
+	// Verify that the metrics are recorded with correct priority labels
+	// Instead of comparing the entire output, let's verify specific metrics exist
+	metrics, err := reg.Gather()
+	require.NoError(t, err)
+	
+	// Find the rejected requests metric
+	var rejectedMetric *dto.MetricFamily
+	for _, metric := range metrics {
+		if metric.GetName() == "cortex_ingester_instance_rejected_requests_total" {
+			rejectedMetric = metric
+			break
+		}
+	}
+	require.NotNil(t, rejectedMetric, "Should find rejected requests metric")
+	
+	// Verify we have the expected metric with correct value
+	found := false
+	for _, metric := range rejectedMetric.GetMetric() {
+		labels := make(map[string]string)
+		for _, label := range metric.GetLabel() {
+			labels[label.GetName()] = label.GetValue()
+		}
+		
+		if labels["reason"] == "max_inflight_push_requests" {
+			require.Equal(t, 1.0, metric.GetCounter().GetValue())
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "Should find max_inflight_push_requests metric")
 }

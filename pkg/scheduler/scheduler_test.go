@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/promtest"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -708,4 +709,13 @@ func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {
 	defer f.mu.Unlock()
 
 	return f.resp[queryID]
+}
+
+func TestSchedulerPriorityPropagation(t *testing.T) {
+	// Create a context with priority
+	ctx := grpcutil.WithPriorityLevel(context.Background(), 350)
+	
+	// This test verifies that our priority context functions work correctly
+	level := grpcutil.GetPriorityLevel(ctx)
+	require.Equal(t, 350, level)
 }

@@ -7,7 +7,10 @@ package ruler
 
 import (
 	"context"
+	"crypto/md5"
 	"errors"
+	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/go-kit/log"
@@ -31,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -221,9 +225,31 @@ type RulesLimits interface {
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
+// setRulerPriorityContext adds ruler priority context for internal queries
+func setRulerPriorityContext(ctx context.Context) context.Context {
+	// Generate request ID for ruler queries and calculate level consistently
+	requestID := fmt.Sprintf("ruler-%d-%d", time.Now().UnixNano(), rand.Int63())
+	
+	// Calculate level for ruler priority (base 400 + hash % 100)
+	hasher := md5.New()
+	hasher.Write([]byte(requestID))
+	hashBytes := hasher.Sum(nil)
+	hashInt := int(hashBytes[0]) | int(hashBytes[1])<<8 | int(hashBytes[2])<<16 | int(hashBytes[3])<<24
+	if hashInt < 0 {
+		hashInt = -hashInt
+	}
+	
+	level := 400 + (hashInt % 100) // PriorityVeryHigh base + hash
+	
+	return grpcutil.WithPriorityLevel(ctx, level)
+}
+
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		queries.WithLabelValues(userID).Inc()
+
+		// Set ruler priority context for internal ruler queries
+		ctx = setRulerPriorityContext(ctx)
 
 		result, err := qf(ctx, qs, t)
 		if err == nil {

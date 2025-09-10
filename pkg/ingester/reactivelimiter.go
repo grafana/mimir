@@ -124,6 +124,34 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context) (reactivelimiter.Pe
 	return l.PriorityLimiter.AcquirePermit(ctx, l.priority)
 }
 
+func (l *priorityLimiter) AcquirePermitWithPriority(ctx context.Context, priority int) (reactivelimiter.Permit, error) {
+	// Convert int priority to Priority enum and use the standard AcquirePermit method
+	priorityEnum := convertIntToPriority(priority)
+	return l.PriorityLimiter.AcquirePermit(ctx, priorityEnum)
+}
+
+func (l *priorityLimiter) CanAcquirePermitWithPriority(priority int) bool {
+	// Convert int priority to Priority enum and use the standard CanAcquirePermit method
+	priorityEnum := convertIntToPriority(priority)
+	return l.PriorityLimiter.CanAcquirePermit(priorityEnum)
+}
+
+// convertIntToPriority converts int priority (0-499) to Priority enum
+func convertIntToPriority(priority int) reactivelimiter.Priority {
+	switch {
+	case priority >= 400:
+		return reactivelimiter.PriorityVeryHigh
+	case priority >= 300:
+		return reactivelimiter.PriorityHigh
+	case priority >= 200:
+		return reactivelimiter.PriorityMedium
+	case priority >= 100:
+		return reactivelimiter.PriorityLow
+	default:
+		return reactivelimiter.PriorityVeryLow
+	}
+}
+
 func registerReactiveLimiterMetrics(limiterMetrics reactivelimiter.Metrics, requestType string, r prometheus.Registerer) {
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_reactive_limiter_inflight_limit",

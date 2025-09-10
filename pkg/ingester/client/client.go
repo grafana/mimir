@@ -20,6 +20,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 )
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
@@ -39,7 +40,7 @@ type closableHealthAndIngesterClient struct {
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
-	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor, OnlyReplicaClientUnaryInterceptor)
+	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor, OnlyReplicaClientUnaryInterceptor, utilgrpcutil.PriorityClientInterceptor(logger))
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor, OnlyReplicaClientStreamInterceptor)
 
 	opts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))

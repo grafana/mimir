@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 )
 
 type Config struct {
@@ -381,6 +382,9 @@ func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.Clie
 	if err != nil {
 		return nil, err
 	}
+
+	// Add priority interceptor
+	opts = append(opts, grpc.WithUnaryInterceptor(utilgrpcutil.PriorityClientInterceptor(w.log)))
 
 	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(ctx, address, opts...)
