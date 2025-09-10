@@ -138,10 +138,11 @@ func containsAggregateExpr(e parser.Expr) bool {
 func countVectorSelectors(e parser.Expr) int {
 	count := 0
 
-	visitNode(e, func(node parser.Node) {
+	anyNode(e, func(node parser.Node) bool {
 		if ok := isVectorSelector(node); ok {
 			count++
 		}
+		return false
 	})
 
 	return count
