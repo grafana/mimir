@@ -24,13 +24,9 @@ type labelsIdx struct {
 // minute for delays.
 const defaultIntervalForStartTimestamps = int64(300_000)
 
-type CombinedAppenderOptions struct {
+type CombinedAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
-}
-
-type CombinedAppender struct {
-	options CombinedAppenderOptions
 
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
@@ -48,23 +44,11 @@ type CombinedAppender struct {
 
 func NewCombinedAppender() *CombinedAppender {
 	return &CombinedAppender{
-		options: CombinedAppenderOptions{
-			ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-		},
+		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
 		refs:           make(map[uint64]labelsIdx),
 		metricFamilies: make(map[string]metadata.Metadata),
 	}
-}
-
-func (c *CombinedAppender) WithOptions(options CombinedAppenderOptions) *CombinedAppender {
-	c.options.EnableCreatedTimestampZeroIngestion = options.EnableCreatedTimestampZeroIngestion
-	if options.ValidIntervalCreatedTimestampZeroIngestion > 0 {
-		c.options.ValidIntervalCreatedTimestampZeroIngestion = options.ValidIntervalCreatedTimestampZeroIngestion
-	} else {
-		c.options.ValidIntervalCreatedTimestampZeroIngestion = defaultIntervalForStartTimestamps
-	}
-	return c
 }
 
 // GetResult returns the created timeseries and metadata.
@@ -105,7 +89,7 @@ func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.M
 }
 
 func (c *CombinedAppender) recalcCreatedTimestamp(t, ct int64) int64 {
-	if !c.options.EnableCreatedTimestampZeroIngestion || ct < 0 || ct > t || (c.options.ValidIntervalCreatedTimestampZeroIngestion > 0 && t-ct > c.options.ValidIntervalCreatedTimestampZeroIngestion) {
+	if !c.EnableCreatedTimestampZeroIngestion || ct < 0 || ct > t || (c.ValidIntervalCreatedTimestampZeroIngestion > 0 && t-ct > c.ValidIntervalCreatedTimestampZeroIngestion) {
 		return 0
 	}
 

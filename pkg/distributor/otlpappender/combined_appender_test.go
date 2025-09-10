@@ -490,11 +490,9 @@ func TestCombinedAppender(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, enableCreatedTimestampZeroIngestion := range []bool{false, true} {
 				t.Run(fmt.Sprintf("enableCreatedTimestampZeroIngestion=%v", enableCreatedTimestampZeroIngestion), func(t *testing.T) {
-					options := CombinedAppenderOptions{
-						EnableCreatedTimestampZeroIngestion:        enableCreatedTimestampZeroIngestion,
-						ValidIntervalCreatedTimestampZeroIngestion: tc.validIntervalCreatedTimestampZeroIngestion,
-					}
-					appender := NewCombinedAppender().WithOptions(options)
+					appender := NewCombinedAppender()
+					appender.EnableCreatedTimestampZeroIngestion = enableCreatedTimestampZeroIngestion
+					appender.ValidIntervalCreatedTimestampZeroIngestion = tc.validIntervalCreatedTimestampZeroIngestion
 					tc.appends(t, appender)
 
 					expectedTimeseries := tc.expectTimeseries

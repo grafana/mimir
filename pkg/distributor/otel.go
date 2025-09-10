@@ -532,9 +532,7 @@ func otelMetricsToSeriesAndMetadata(
 		AllowDeltaTemporality:             opts.allowDeltaTemporality,
 		AllowUTF8:                         opts.allowUTF8,
 	}
-	converter.appender.WithOptions(otlpappender.CombinedAppenderOptions{
-		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
-	})
+	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
