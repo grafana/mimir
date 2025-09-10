@@ -277,11 +277,12 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	summer, err := astmapper.NewQueryShardSummer(totalShards, astmapper.VectorSquasher, s.logger, stats)
+	squasher := astmapper.VectorSquasher
+	summer, err := astmapper.NewQueryShardSummer(totalShards, squasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
-	mapper := astmapper.NewSharding(summer)
+	mapper := astmapper.NewSharding(summer, squasher)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
 	// each time before passing it to the mapper.

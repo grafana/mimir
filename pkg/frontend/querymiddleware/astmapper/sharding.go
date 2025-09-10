@@ -18,8 +18,8 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(shardSummer ASTMapper) ASTMapper {
-	subtreeFolder := newSubtreeFolder()
+func NewSharding(shardSummer ASTMapper, squasher Squasher) ASTMapper {
+	subtreeFolder := newSubtreeFolder(squasher)
 	return NewMultiMapper(
 		shardSummer,
 		subtreeFolder,

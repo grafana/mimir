@@ -97,7 +97,7 @@ func TestSubtreeFolder(t *testing.T) {
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			mapper := newSubtreeFolder()
+			mapper := newSubtreeFolder(VectorSquasher)
 			ctx := context.Background()
 
 			expr, err := parser.ParseExpr(tc.input)

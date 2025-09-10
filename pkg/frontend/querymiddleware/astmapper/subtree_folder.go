@@ -14,12 +14,14 @@ import (
 // subtreeFolder is a ExprMapper which embeds an entire parser.Expr in an embedded query,
 // if it does not contain any previously embedded queries. This allows the query-frontend
 // to "zip up" entire subtrees of an AST that have not already been parallelized.
-type subtreeFolder struct{}
+type subtreeFolder struct {
+	squasher Squasher
+}
 
 // newSubtreeFolder creates a subtreeFolder which can reduce an AST
 // to one embedded query if it contains no embedded queries yet.
-func newSubtreeFolder() ASTMapper {
-	return NewASTExprMapper(&subtreeFolder{})
+func newSubtreeFolder(squasher Squasher) ASTMapper {
+	return NewASTExprMapper(&subtreeFolder{squasher: squasher})
 }
 
 // MapExpr implements ExprMapper.
@@ -41,7 +43,7 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 
 	// Change the expr if it contains vector selectors, as only those need to be embedded.
 	if hasVectorSelector {
-		expr, err := VectorSquasher(NewEmbeddedQuery(expr, nil))
+		expr, err := f.squasher(NewEmbeddedQuery(expr, nil))
 		return expr, true, err
 	}
 	return expr, false, nil

@@ -526,7 +526,7 @@ func TestShardSummer(t *testing.T) {
 			summer, err := NewQueryShardSummer(3, VectorSquasher, log.NewNopLogger(), stats)
 			ctx := context.Background()
 			require.NoError(t, err)
-			mapper := NewSharding(summer)
+			mapper := NewSharding(summer, VectorSquasher)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
