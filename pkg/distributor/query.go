@@ -380,30 +380,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		}
 	}
 
-	// Decrease memory consumption for all labels possible usage before returning the response.
-	defer func() {
-		for _, res := range results {
-			for _, batch := range res.timeseriesBatches {
-				for _, series := range batch {
-					ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-				}
-			}
-
-			for _, batch := range res.chunkseriesBatches {
-				for _, series := range batch {
-					ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-				}
-			}
-
-			for _, ls := range res.streamingSeries.Series {
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-		}
-
-	}()
-
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
 
 	// Stats for streaming series are handled in streamingChunkSeries.
