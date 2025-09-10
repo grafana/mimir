@@ -194,7 +194,7 @@ jobs:
               ${{ env.FAILED_PACKAGES }}
               \`\`\`
               
-              cc @charleskorn @56quarters @lamida @zenador
+              cc @charleskorn @56quarters @lamida @zenador @Konstantinov-Innokentii 
               
               Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
           fi
