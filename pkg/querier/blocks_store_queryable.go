@@ -936,11 +936,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			mtx.Lock()
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
-
-				for _, s := range mySeries {
-					ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
-					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-				}
 			} else if len(myStreamingSeriesLabels) > 0 {
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
