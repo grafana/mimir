@@ -357,14 +357,17 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 
 	warnings, infos := res.Warnings.AsStrings(r.GetQuery(), 0, 0)
 
-	resp := &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     data,
+	resp := &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     data,
+			},
+			Warnings: warnings,
+			Infos:    infos,
 		},
-		Warnings: warnings,
-		Infos:    infos,
+		finalizer: q.Close,
 	}
 
 	return resp, nil

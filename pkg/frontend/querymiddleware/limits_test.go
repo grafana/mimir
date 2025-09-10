@@ -1266,7 +1266,18 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			response, err := handler.Do(context.Background(), testCase.req)
 			require.Equal(t, testCase.expectedErr, err)
-			require.Equal(t, testCase.expectedResponse, response)
+
+			if testCase.expectedErr != nil {
+				require.Nil(t, response)
+				return
+			}
+
+			responseWithFinalizer, ok := response.(*PrometheusResponseWithFinalizer)
+			require.True(t, ok)
+			require.Equal(t, testCase.expectedResponse, responseWithFinalizer.PrometheusResponse)
+			require.NotNil(t, responseWithFinalizer.finalizer, "expected response to have a finalizer")
+
+			responseWithFinalizer.Close()
 		})
 	}
 }
