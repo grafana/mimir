@@ -24,23 +24,13 @@ func newSubtreeFolder() ASTMapper {
 
 // MapExpr implements ExprMapper.
 func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
-	if err != nil {
-		return nil, true, err
-	}
-
 	// Don't change the expr if it already contains embedded queries.
-	if hasEmbeddedQueries {
+	if anyNode(expr, hasEmbeddedQueries) {
 		return expr, false, nil
 	}
 
-	hasVectorSelector, err := anyNode(expr, isVectorSelector)
-	if err != nil {
-		return nil, true, err
-	}
-
 	// Change the expr if it contains vector selectors, as only those need to be embedded.
-	if hasVectorSelector {
+	if anyNode(expr, isVectorSelector) {
 		expr, err := VectorSquasher(NewEmbeddedQuery(expr.String(), nil))
 		return expr, true, err
 	}
@@ -48,37 +38,35 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 }
 
 // hasEmbeddedQueries returns whether the expr has embedded queries.
-func hasEmbeddedQueries(node parser.Node) (bool, error) {
+func hasEmbeddedQueries(node parser.Node) bool {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
 		if n.Name == EmbeddedQueriesMetricName {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // hasEmbeddedQueries returns whether the expr is a vector selector.
-func isVectorSelector(n parser.Node) (bool, error) {
+func isVectorSelector(n parser.Node) bool {
 	_, ok := n.(*parser.VectorSelector)
-	return ok, nil
+	return ok
 }
 
 // anyNode is a helper which walks the input node and returns true if any node in the subtree
-// returns true for the specified predicate function. If fn returns an error, return that.
-func anyNode(node parser.Node, fn predicate) (bool, error) {
-	result, err := fn(node)
-	if result || err != nil {
-		return result, err
+// returns true for the specified predicate function.
+func anyNode(node parser.Node, fn predicate) bool {
+	if fn(node) {
+		return true
 	}
 
 	for node := range parser.ChildrenIter(node) {
-		result, err := anyNode(node, fn)
-		if result || err != nil {
-			return result, err
+		if anyNode(node, fn) {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // visitNode recursively traverse the node's subtree and call fn for each node encountered.
@@ -89,4 +77,4 @@ func visitNode(node parser.Node, fn func(node parser.Node)) {
 	}
 }
 
-type predicate = func(parser.Node) (bool, error)
+type predicate = func(parser.Node) bool
