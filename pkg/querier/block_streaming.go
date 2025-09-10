@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -150,6 +149,8 @@ type memoryConsumptionTracker interface {
 	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
 	IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error
 	DecreaseMemoryConsumptionForLabels(lbls labels.Labels)
+	IncreaseMemoryConsumptionForLabels2(lbls labels.Labels) error
+	DecreaseMemoryConsumptionForLabels2(lbls labels.Labels)
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
@@ -201,22 +202,8 @@ func (s *storeGatewayStreamReader) Close() {
 func (s *storeGatewayStreamReader) FreeBuffer() {
 	if s.lastMessage != nil {
 		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()), limiter.StoreGatewayChunks)
-		s.decreaseMemoryConsumtionForLabels()
 		s.lastMessage.FreeBuffer()
 		s.lastMessage = nil
-	}
-}
-
-func (s *storeGatewayStreamReader) decreaseMemoryConsumtionForLabels() {
-	if ss := s.lastMessage.GetSeries(); ss != nil {
-		ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-		s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-	}
-	if sss := s.lastMessage.GetStreamingSeries(); sss != nil {
-		for _, ss := range sss.Series {
-			ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-			s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
 	}
 }
 

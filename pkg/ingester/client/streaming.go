@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
 
@@ -40,6 +39,8 @@ type memoryConsumptionTracker interface {
 	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
 	IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error
 	DecreaseMemoryConsumptionForLabels(lbls labels.Labels)
+	IncreaseMemoryConsumptionForLabels2(lbls labels.Labels) error
+	DecreaseMemoryConsumptionForLabels2(lbls labels.Labels)
 }
 
 func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
@@ -98,24 +99,8 @@ func (s *SeriesChunksStreamReader) Close() {
 func (s *SeriesChunksStreamReader) FreeBuffer() {
 	if s.lastMessage != nil {
 		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()), limiter.IngesterChunks)
-		s.decreaseMemoryConsumptionForLabels()
 		s.lastMessage.FreeBuffer()
 		s.lastMessage = nil
-	}
-}
-
-func (s *SeriesChunksStreamReader) decreaseMemoryConsumptionForLabels() {
-	for _, ss := range s.lastMessage.Timeseries {
-		ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-		s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-	}
-	for _, ss := range s.lastMessage.Chunkseries {
-		ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-		s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-	}
-	for _, ss := range s.lastMessage.StreamingSeries {
-		ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-		s.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 	}
 }
 
