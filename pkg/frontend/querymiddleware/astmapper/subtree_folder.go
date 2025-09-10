@@ -60,12 +60,4 @@ func anyNode(node parser.Node, fn predicate) bool {
 	return false
 }
 
-// visitNode recursively traverse the node's subtree and call fn for each node encountered.
-func visitNode(node parser.Node, fn func(node parser.Node)) {
-	fn(node)
-	for e := range parser.ChildrenIter(node) {
-		visitNode(e, fn)
-	}
-}
-
 type predicate = func(parser.Node) bool
