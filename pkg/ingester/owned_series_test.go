@@ -71,7 +71,7 @@ func (c *ownedSeriesTestContextBase) checkTestedIngesterOwnedSeriesState(t *test
 }
 
 func (c *ownedSeriesTestContextBase) checkActiveSeriesCount(t *testing.T, expected int) {
-	totalSeries, _, _ := c.db.activeSeries.Active()
+	totalSeries, _, _, _ := c.db.activeSeries.Active()
 	require.Equal(t, expected, totalSeries, "total active series")
 }
 
