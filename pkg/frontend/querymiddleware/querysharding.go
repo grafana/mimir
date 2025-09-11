@@ -289,7 +289,12 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	totalShards := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
+	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
+	if err != nil {
+		log.DebugLog("msg", "calculating the number of shards for the query failed", "err", err)
+		return nil, err
+	}
+
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return nil, nil
@@ -340,11 +345,11 @@ func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) int {
+func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) (int, error) {
 	// Check the default number of shards configured for the given tenant.
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
-		return 1
+		return 1, nil
 	}
 
 	// Ensure there's no regexp matcher longer than the configured limit.
@@ -357,7 +362,7 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 				"limit bytes", maxRegexpSizeBytes,
 			)
 
-			return 1
+			return 1, nil
 		}
 	}
 
@@ -398,6 +403,9 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		//
 		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
 		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1)
+		if err != nil {
+			return 0, err
+		}
 		numShardableLegs := 1
 		if err == nil && shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()
@@ -452,7 +460,7 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
-	return totalShards
+	return totalShards, nil
 }
 
 // promqlResultToSamples transforms a promql query result into a samplestream
