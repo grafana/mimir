@@ -616,7 +616,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}:
 		// Should always be possible, unless QueryResult is called multiple times with the same queryID.
 	default:
-		level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", qrReq.QueryID, "user", userID)
+		level.Warn(f.log).Log("msg", "failed to receive query result, a result for the same query has likely already been received", "queryID", qrReq.QueryID, "user", userID)
 	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
