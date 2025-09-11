@@ -66,7 +66,7 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 }
 
-type OtlpPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
+type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
@@ -76,7 +76,7 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
-	otlpPushMiddlewares []OtlpPushMiddleware,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -96,7 +96,7 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, otlpPushMiddlewares)
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -205,7 +205,7 @@ func newOTLPParser(
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
-	otlpPushMiddlewares []OtlpPushMiddleware,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -304,7 +304,7 @@ func newOTLPParser(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
-		for _, middleware := range otlpPushMiddlewares {
+		for _, middleware := range OTLPPushMiddlewares {
 			err := middleware(ctx, &otlpReq)
 			if err != nil {
 				return err

@@ -265,8 +265,8 @@ const (
 	jsonContentType = "application/json"
 )
 
-func (rp *parser) decodeOTLPRequest(req *http.Request, body []byte) (*otlpPushRequest, bool) {
-	res := &otlpPushRequest{}
+func (rp *parser) decodeOTLPRequest(req *http.Request, body []byte) (*OTLPPushRequest, bool) {
+	res := &OTLPPushRequest{}
 
 	var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
