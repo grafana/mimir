@@ -159,28 +159,27 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return nil
 	})
 
-	if err := eg.Wait(); err != nil {
-		return cleanUp(logger, bkt, id, err)
-	}
-
-	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
-	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
 	hasSparseHeaderInfo := false
-    for _, f := range meta.Thanos.Files {
-        if f.RelPath == SparseIndexHeaderFilename {
-            hasSparseHeaderInfo = true
-            break
-        }
-    }
-
-	// upload sparse header info if GatherFileStats returned an entry for it, otherwise skip
-	if hasSparseHeaderInfo{
-		if err:=objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
-			return cleanUp(logger, bkt, id, &UploadError{err, FileTypeSparseIndexHeader})
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == SparseIndexHeaderFilename {
+			hasSparseHeaderInfo = true
+			break
 		}
 	}
-	else{
-		level.Debug(logger).Log("msg","sparse index header entry not found, skipping upload", "block", id.String())
+
+	if hasSparseHeaderInfo {
+		eg.Go(func() (err error) {
+			if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, SparseIndexHeaderFilename), path.Join(id.String(), SparseIndexHeaderFilename)); err != nil {
+				return &UploadError{err, FileTypeSparseIndexHeader}
+			}
+			return nil
+		})
+	} else {
+		level.Debug(logger).Log("msg", "sparse index header entry not found, skipping upload", "block", id.String())
+	}
+
+	if err := eg.Wait(); err != nil {
+		return cleanUp(logger, bkt, id, err)
 	}
 
 	// Meta.json always need to be uploaded as a last item. This will allow to assume block directories without meta file to be pending uploads.
@@ -382,7 +381,7 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SparseIndexHeaderFilename))
 		}
 	} else {
-		res = append(res, File{RelPath: sparseInfo.Name(), SizeBytes: sparseInfo.Size()})
+		res = append(res, File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
 	}
 
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
