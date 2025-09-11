@@ -62,7 +62,7 @@ type pushRequest struct {
 	Error string `json:"error,omitempty"`
 }
 
-type OTLPPushRequest struct {
+type otlpPushRequest struct {
 	pmetricotlp.ExportRequest
 	Error string `json:"error,omitempty"`
 }
