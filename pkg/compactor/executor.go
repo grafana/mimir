@@ -188,12 +188,6 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
-	// TODO: Consider retry logic for status update failures. We currently only log a warning if the scheduler is unreachable.
-	// First and intermediate status updates will be retried when ticker.C fires, what if scheduler is down for final status update?
-	if err := e.updateJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.IN_PROGRESS); err != nil {
-		level.Warn(e.logger).Log("msg", "failed to mark job as in progress", "job_id", jobID, "err", err)
-	}
-
 	statusCtx := context.WithoutCancel(ctx)
 	statusChan := make(chan schedulerpb.UpdateType, 1)
 
@@ -206,7 +200,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		status, err = e.executeCompactionJob(ctx, c, resp.Spec)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			statusChan <- schedulerpb.ABANDON
+			statusChan <- schedulerpb.REASSIGN
 			return true, err
 		}
 		statusChan <- status
@@ -216,13 +210,13 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
-			statusChan <- schedulerpb.ABANDON
+			statusChan <- schedulerpb.REASSIGN
 			return true, planErr
 		}
 
-		if err := e.sendPlannedJobs(ctx, resp.Spec, plannedJobs); err != nil {
+		if err := e.sendPlannedJobs(ctx, resp.Spec, resp.Key, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
-			statusChan <- schedulerpb.ABANDON
+			statusChan <- schedulerpb.REASSIGN
 			return true, err
 		}
 	}
@@ -265,12 +259,10 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, key *schedulerpb.JobKey, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
+
 	req := &schedulerpb.PlannedJobsRequest{
-		Key: &schedulerpb.JobKey{
-			Id:    fmt.Sprintf("debug-planned-%s", spec.Tenant),
-			Epoch: 0,
-		},
+		Key:  key,
 		Jobs: plannedJobs,
 	}
 

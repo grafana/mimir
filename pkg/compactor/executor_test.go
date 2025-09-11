@@ -197,9 +197,8 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "planning jobs should only send IN_PROGRESS status")
 				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetLastUpdate().String(), "planning jobs should not send final status update")
 			} else {
-				// Compaction job: should have at least two status updates
-				require.GreaterOrEqual(t, mockSchedulerClient.GetUpdateJobCallCount(), 2, "compaction jobs should have at least two status updates")
-				assert.Equal(t, schedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "first job status should be IN_PROGRESS")
+				// Compaction job: should have at least one status update
+				require.GreaterOrEqual(t, mockSchedulerClient.GetUpdateJobCallCount(), 1, "compaction jobs should have at least one status update")
 				assert.Equal(t, tc.expectedFinalStatus.String(), mockSchedulerClient.GetLastUpdate().String(), "final job status should match expected")
 				assert.False(t, mockSchedulerClient.ReceivedPlannedRequest(), "compaction jobs should not send PlannedJobs message")
 			}
@@ -242,7 +241,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				}
 			},
 			expectedLeaseCalls:  3,
-			expectedUpdateCalls: 6,
+			expectedUpdateCalls: 3, // Only final COMPLETE status updates, no immediate IN_PROGRESS
 		},
 		"successful_planning_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -265,7 +264,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				}
 			},
 			expectedLeaseCalls:  3,
-			expectedUpdateCalls: 3, // Only initial IN_PROGRESS updates, no final status for planning jobs
+			expectedUpdateCalls: 0, // Planning jobs no longer send initial IN_PROGRESS updates, only periodic ones from ticker
 		},
 	}
 
