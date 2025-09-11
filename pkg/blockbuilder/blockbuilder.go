@@ -52,6 +52,7 @@ type BlockBuilder struct {
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
 	readerMetrics         *ingest.ReaderMetrics
+	readerMetricsSource   swappableReaderMetricsSource
 	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
@@ -75,9 +76,12 @@ func newWithSchedulerClient(
 ) (*BlockBuilder, error) {
 	kpm := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", reg)
 
+	var readerMetricsSource swappableReaderMetricsSource
+	readerMetricsSource.set(&zeroReaderMetricsSource{})
+
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
-		m := ingest.NewReaderMetrics(reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic, kpm)
+		m := ingest.NewReaderMetrics(reg, readerMetricsSource, cfg.Kafka.Topic, kpm)
 		readerMetrics = &m
 	}
 
@@ -89,6 +93,7 @@ func newWithSchedulerClient(
 		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
 		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
 		readerMetrics:         readerMetrics,
+		readerMetricsSource:   readerMetricsSource,
 		kpromMetrics:          kpm,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
 	}
@@ -263,6 +268,22 @@ func (f *fetchWrapper) PollFetches(ctx context.Context) kgo.Fetches {
 
 var _ fetchPoller = (*fetchWrapper)(nil)
 
+// swappableReaderMetricsSource is a ReaderMetricsSource that can be swapped out at runtime.
+type swappableReaderMetricsSource struct {
+	ingest.ReaderMetricsSource
+}
+
+func (s *swappableReaderMetricsSource) set(metricsSource ingest.ReaderMetricsSource) {
+	s.ReaderMetricsSource = metricsSource
+}
+
+// zeroReaderMetricsSource implements ReaderMetricsSource with all methods returning zero
+type zeroReaderMetricsSource struct{}
+
+func (z *zeroReaderMetricsSource) BufferedBytes() int64           { return 0 }
+func (z *zeroReaderMetricsSource) BufferedRecords() int64         { return 0 }
+func (z *zeroReaderMetricsSource) EstimatedBytesPerRecord() int64 { return 0 }
+
 // newFetchers creates a new concurrent fetcher, retrying until it succeeds or the context is cancelled.
 // The returned error is the last error encountered.
 func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, partition int32, startOffset int64) (*ingest.ConcurrentFetchers, error) {
@@ -360,6 +381,8 @@ func (b *BlockBuilder) consumePartitionSection(
 		if ferr != nil {
 			return fmt.Errorf("creating concurrent fetcher: %w", ferr)
 		}
+
+		b.readerMetricsSource.set(f)
 
 		f.Start(ctx)
 		defer f.Stop()

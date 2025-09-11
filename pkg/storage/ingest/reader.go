@@ -974,20 +974,6 @@ type ReaderMetricsSource interface {
 	EstimatedBytesPerRecord() int64
 }
 
-type NoOpReaderMetricsSource struct{}
-
-func (n *NoOpReaderMetricsSource) BufferedBytes() int64 {
-	return 0
-}
-
-func (n *NoOpReaderMetricsSource) BufferedRecords() int64 {
-	return 0
-}
-
-func (n *NoOpReaderMetricsSource) EstimatedBytesPerRecord() int64 {
-	return 0
-}
-
 func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
 	const component = "partition-reader"
 
