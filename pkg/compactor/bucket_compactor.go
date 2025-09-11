@@ -473,7 +473,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
 		}
 
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
+		uploadedMeta, err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...)
+		if err != nil {
 			var uploadErr *block.UploadError
 			if errors.As(err, &uploadErr) {
 				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
@@ -491,28 +492,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		sampleCount := uint64(0)
 		compactionLevel := 0
 
-		// Upload doesn't write the file stats to the local meta file, so we need to calculate the block size manually here.
-		files, err := block.GatherFileStats(bdir)
-		if err == nil {
-			for _, f := range files {
-				if f.SizeBytes > 0 {
-					blockSize += f.SizeBytes
-				}
-			}
-			// Use atomic to avoid race conditions in concurrent execution
+		if uploadedMeta != nil {
+			seriesCount = uploadedMeta.Stats.NumSeries
+			sampleCount = uploadedMeta.Stats.NumSamples
+			compactionLevel = uploadedMeta.Compaction.Level
+			blockSize = uploadedMeta.BlockBytes()
 			totalUploadedSize.Add(blockSize)
-		} else {
-			level.Warn(jobLogger).Log("msg", "failed to gather local file stats after upload", "block", blockToUpload.ulid, "err", err)
-		}
-
-		// Read info from local meta file
-		blockMeta, err := block.ReadMetaFromDir(bdir)
-		if err == nil {
-			seriesCount = blockMeta.Stats.NumSeries
-			sampleCount = blockMeta.Stats.NumSamples
-			compactionLevel = blockMeta.Compaction.Level
-		} else {
-			level.Warn(jobLogger).Log("msg", "failed to read local block metadata after upload", "block", blockToUpload.ulid, "err", err)
 		}
 
 		level.Info(jobLogger).Log(
@@ -729,7 +714,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
-	if err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
+	if _, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
 		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 
