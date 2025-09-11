@@ -268,6 +268,10 @@ var _ fetchPoller = (*fetchWrapper)(nil)
 // newFetchers creates a new concurrent fetcher, retrying until it succeeds or the context is cancelled.
 // The returned error is the last error encountered.
 func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, partition int32, startOffset int64) (*ingest.ConcurrentFetchers, error) {
+	if b.readerMetrics == nil {
+		panic("readerMetrics should be non-nil when concurrent fetchers are used")
+	}
+
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
@@ -353,10 +357,6 @@ func (b *BlockBuilder) consumePartitionSection(
 	var fetchPoller fetchPoller = b.kafkaClient
 
 	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
-		if b.readerMetrics == nil {
-			panic("readerMetrics should be non-nil when concurrent fetchers are used")
-		}
-
 		f, ferr := b.newFetchers(ctx, logger, partition, startOffset)
 		if ferr != nil {
 			return fmt.Errorf("creating concurrent fetcher: %w", ferr)
