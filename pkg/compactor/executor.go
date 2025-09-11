@@ -272,8 +272,6 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	default:
 		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
 	}
-
-	return true, nil
 }
 
 func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, updType schedulerpb.UpdateType) error {
