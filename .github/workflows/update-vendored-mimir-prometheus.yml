@@ -143,8 +143,6 @@ jobs:
           
           echo "Dependencies updated successfully"
 
-      - name: Regenerate OTLP files
-        run: make generate-otlp
 
       - name: Create Pull Request
         id: create_pull_request
