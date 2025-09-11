@@ -2626,25 +2626,13 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 	}
 
 	metrics := lookupplan.NewMetrics(r)
+	statsGenerator := lookupplan.NewStatisticsGenerator(log.With(i.logger, "user", userID))
+
 	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
-		userDB := i.getTSDB(userID)
-		if userDB == nil {
-			return lookupplan.NoopPlanner{}
-		}
-
-		var stats index.Statistics
-
-		if meta.ULID == userDB.Head().Meta().ULID {
-			// Fall back to the stats in mimir-prometheus until we've moved head block stats generation to mimir.
-			stats = userDB.Head().PostingsStats()
-		} else {
-			// For disk blocks, generate statistics on-demand.
-			var err error
-			stats, err = lookupplan.GenerateStatistics(reader)
-			if err != nil {
-				level.Warn(i.logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "user", userID, "block", meta.ULID.String(), "err", err)
-				stats = nil
-			}
+		stats, err := statsGenerator.Stats(meta, reader)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "user", userID, "block", meta.ULID.String(), "err", err)
+			stats = nil
 		}
 
 		if stats == nil {
