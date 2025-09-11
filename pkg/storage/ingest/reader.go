@@ -113,7 +113,9 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = NewReaderMetrics(partitionID, reg, r, kafkaCfg.Topic, nil)
+	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
+	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
+	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -611,7 +613,7 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 		rec := partition.Records[len(partition.Records)-1]
 		r.consumedOffsetWatcher.Notify(rec.Offset)
 
-		r.metrics.lastConsumedOffset.Set(float64(rec.Offset))
+		r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(r.partitionID))).Set(float64(rec.Offset))
 	})
 }
 
@@ -960,7 +962,7 @@ type ReaderMetrics struct {
 	fetchMaxBytes                    prometheus.Histogram
 	fetchedDiscardedRecordBytes      prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
-	lastConsumedOffset               prometheus.Gauge
+	lastConsumedOffset               *prometheus.GaugeVec
 	consumeLatency                   prometheus.Histogram
 	kprom                            *kprom.Metrics
 	missedRecords                    prometheus.Counter
@@ -986,7 +988,7 @@ func (n *NoOpReaderMetricsSource) EstimatedBytesPerRecord() int64 {
 	return 0
 }
 
-func NewReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
+func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -999,14 +1001,10 @@ func NewReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
 	}, []string{"phase"})
 
-	lastConsumedOffset := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name:        "cortex_ingest_storage_reader_last_consumed_offset",
-		Help:        "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
-		ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
-	})
-
-	// Initialise the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
-	lastConsumedOffset.Set(-1)
+	lastConsumedOffset := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_ingest_storage_reader_last_consumed_offset",
+		Help: "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
+	}, []string{"partition"})
 
 	kpm := kpromMetrics
 	if kpm == nil {

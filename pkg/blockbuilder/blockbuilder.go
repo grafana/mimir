@@ -77,9 +77,7 @@ func newWithSchedulerClient(
 
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
-		// Reader metrics tracks some per-partition things, but block-builder
-		// will always be dealing with different partitions. So we pass -1.
-		m := ingest.NewReaderMetrics(-1, reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic, kpm)
+		m := ingest.NewReaderMetrics(reg, &ingest.NoOpReaderMetricsSource{}, cfg.Kafka.Topic, kpm)
 		readerMetrics = &m
 	}
 
