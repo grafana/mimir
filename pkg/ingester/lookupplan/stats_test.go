@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -238,7 +239,8 @@ func TestLabelsValuesSketches_LabelName(t *testing.T) {
 			for seriesRef, ls := range tt.seriesRefToLabels {
 				p.add(seriesRef, ls)
 			}
-			sketches, err := GenerateStatistics(p)
+			gen := NewStatisticsGenerator(log.NewNopLogger())
+			sketches, err := gen.Stats(p.Meta(), p)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -319,7 +321,8 @@ func TestLabelsValuesSketches_LabelValue(t *testing.T) {
 			for seriesRef, ls := range tt.seriesRefToLabels {
 				p.add(seriesRef, ls)
 			}
-			sketches, err := GenerateStatistics(p)
+			gen := NewStatisticsGenerator(log.NewNopLogger())
+			sketches, err := gen.Stats(p.Meta(), p)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -345,7 +348,8 @@ func TestLabelName_ManySeries(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	s, err := GenerateStatistics(p)
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+	s, err := gen.Stats(p.Meta(), p)
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(numLabelValues), s.LabelValuesCount(ctx, labelName))
@@ -387,7 +391,8 @@ func TestLabelName_NonUniformValueDistribution(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	s, err := GenerateStatistics(p)
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+	s, err := gen.Stats(p.Meta(), p)
 	require.NoError(t, err)
 
 	lowValCard := s.LabelValuesCardinality(ctx, labelName, lowCardValue)

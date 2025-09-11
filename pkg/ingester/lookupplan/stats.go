@@ -5,8 +5,12 @@ package lookupplan
 import (
 	"context"
 	"fmt"
+	"time"
 	"unsafe"
 
+	"github.com/DmitriyVTitov/size"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/tylertreat/BoomFilters"
@@ -21,9 +25,29 @@ func countPostings(postings index.Postings) (uint64, error) {
 	return count, postings.Err()
 }
 
-// GenerateStatistics creates statistics using count-min sketches
-func GenerateStatistics(r tsdb.IndexReader) (index.Statistics, error) {
+type StatisticsGenerator struct {
+	logger log.Logger
+}
+
+func NewStatisticsGenerator(l log.Logger) *StatisticsGenerator {
+	return &StatisticsGenerator{
+		logger: l,
+	}
+}
+
+// Stats creates statistics using count-min sketches
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (retStats index.Statistics, retErr error) {
 	ctx := context.Background()
+
+	defer func(startTime time.Time) {
+		l := log.With(g.logger, "block", meta.ULID.String())
+		l = level.Info(l)
+		if retErr != nil {
+			l = level.Error(l)
+			l = log.With(l, "err", retErr)
+		}
+		l.Log("msg", "generated statistics for block", "duration", time.Since(startTime).String(), "total_series", retStats.TotalSeries(), "total_size_bytes", size.Of(retStats))
+	}(time.Now())
 
 	// Use the "all series" postings to count total series
 	allPostingsName, allPostingsValue := index.AllPostingsKey()

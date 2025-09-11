@@ -2624,7 +2624,6 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-
 	metrics := lookupplan.NewMetrics(r)
 	statsGenerator := lookupplan.NewStatisticsGenerator(log.With(i.logger, "user", userID))
 
