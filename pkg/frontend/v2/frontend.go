@@ -818,7 +818,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		return []string{ingesterQueryComponent}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL.String())
+		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL)
 		return nil, nil
 	}
 }
