@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
@@ -17,10 +19,32 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+// PlannedJobsRetryPolicy is a retry policy that does not set WithMaxAttempts,
+// will retry forever until it can communicate w. the scheduler
+var PlannedJobsRetryPolicy = retrypolicy.
+	Builder[*schedulerpb.PlannedJobsResponse]().
+	HandleIf(func(r *schedulerpb.PlannedJobsResponse, err error) bool {
+		if err == nil {
+			return false
+		}
+		st, _ := status.FromError(err)
+		switch code := st.Code(); code {
+		case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
+			return true
+		default:
+			return false
+		}
+	}).
+	WithBackoffFactor(1*time.Second, 32*time.Second, 2.0).
+	WithJitter(500 * time.Millisecond).
+	Build()
 
 // compactionExecutor defines how compaction work is executed.
 type compactionExecutor interface {
@@ -195,12 +219,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
-	// Create cancellable context for keep-alive updater
-	keepAliveCtx, cancelKeepAlive := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancelKeepAlive() // Ensure keep-alive is cancelled when job finishes
-
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
-	go e.startJobStatusUpdater(keepAliveCtx, resp.Key, resp.Spec)
+	go e.startJobStatusUpdater(context.WithoutCancel(ctx), resp.Key, resp.Spec)
 
 	if jobType == schedulerpb.COMPACTION {
 		status, err := e.executeCompactionJob(ctx, c, resp.Spec)
@@ -266,18 +286,18 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	return []*schedulerpb.PlannedCompactionJob{plannedJob}, nil
 }
 
-// sendPlannedJobs sends the planned compaction jobs back to the scheduler.
+// sendPlannedJobs sends the planned compaction jobs back to the scheduler with aggressive retries.
+// This is a critical operation that preserves completed planning work, so it retries indefinitely
+// with exponential backoff up to 5 minutes between attempts.
 func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, key *schedulerpb.JobKey, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
-
 	req := &schedulerpb.PlannedJobsRequest{
 		Key:  key,
 		Jobs: plannedJobs,
 	}
 
-	_, err := e.schedulerClient.PlannedJobs(ctx, req)
-	if err != nil {
-		return err
-	}
+	_, err := failsafe.Get(func() (*schedulerpb.PlannedJobsResponse, error) {
+		return e.schedulerClient.PlannedJobs(ctx, req)
+	}, PlannedJobsRetryPolicy)
 
-	return nil
+	return err
 }

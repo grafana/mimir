@@ -18,7 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -390,4 +392,51 @@ func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 	assert.Error(t, err, "LeaseJob should fail when scheduler is unreachable")
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+}
+
+func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
+
+	callCount := 0
+	failuresBeforeSuccess := 2
+
+	mockSchedulerClient := &mockCompactorSchedulerClient{
+		LeaseJobFunc: func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+			return &schedulerpb.LeaseJobResponse{
+				Key:  &schedulerpb.JobKey{Id: "planning-job"},
+				Spec: &schedulerpb.JobSpec{Tenant: "test-tenant", Job: &schedulerpb.CompactionJob{}, JobType: schedulerpb.PLANNING},
+			}, nil
+		},
+		UpdatePlanJobFunc: func(_ context.Context, _ *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+			return &schedulerpb.UpdateJobResponse{}, nil
+		},
+		PlannedJobsFunc: func(_ context.Context, _ *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+			callCount++
+			if callCount <= failuresBeforeSuccess {
+				return nil, status.Error(codes.Unavailable, "scheduler unavailable")
+			}
+			return &schedulerpb.PlannedJobsResponse{}, nil
+		},
+	}
+
+	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+
+	schedulerExec := &schedulerExecutor{
+		cfg:             cfg,
+		logger:          log.NewNopLogger(),
+		schedulerClient: mockSchedulerClient,
+	}
+
+	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
+	c.shardingStrategy = schedulerExec.createShardingStrategy(
+		c.compactorCfg.EnabledTenants,
+		c.compactorCfg.DisabledTenants,
+		c.ring,
+		c.ringLifecycler,
+		c.cfgProvider,
+	)
+
+	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
+	require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
+	require.True(t, gotWork)
+	require.Equal(t, failuresBeforeSuccess+1, callCount)
 }
