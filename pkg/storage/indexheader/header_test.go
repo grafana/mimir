@@ -86,7 +86,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 
 	idIndexV2, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil)
+	require.NoError(t, err)
 
 	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
@@ -98,7 +99,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), nil)
+	require.NoError(t, err)
 
 	for _, testBlock := range []struct {
 		version string
@@ -420,7 +422,8 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 		Source: block.TestSource,
 	}, &m.BlockMeta)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil))
+	_, err = block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil)
+	require.NoError(t, err)
 
 	return m
 }
@@ -516,7 +519,8 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 
 	id, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil)
+	require.NoError(t, err)
 
 	indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 	require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
