@@ -262,7 +262,6 @@ func NewQuerierHandler(
 		false,
 		false,
 		true,
-		0,
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
 		nil,

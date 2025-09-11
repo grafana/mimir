@@ -53,6 +53,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -129,10 +130,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-
-			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
-			})
+			}, log.NewNopLogger())
 			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
@@ -1562,7 +1563,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 			require.NoError(t, err)
 
 			reg := prometheus.NewRegistry()
-			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
+			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1605,7 +1606,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, push, newPushMetrics(reg), reg, log.NewNopLogger())
+	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, push, newPushMetrics(reg), reg, log.NewNopLogger())
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server

@@ -39,6 +39,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -396,9 +397,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				md,
@@ -471,8 +471,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter()
-		mimirTS, dropped, err := otelMetricsToTimeseries(
+		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
 			md,
@@ -664,7 +664,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						Sum:           30,
 						Schema:        -53,
 						ZeroThreshold: 0,
-						ZeroCount:     nil,
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						PositiveSpans: []mimirpb.BucketSpan{
 							{
 								Length: 3,
@@ -682,8 +682,8 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				tc.input,
@@ -703,6 +703,90 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				require.Equal(t, 0, dropped)
 				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
 			}
+		})
+	}
+}
+
+// TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
+// the otel start time is turned into the created timestamp of the resulting time series.
+// Also check what happens if the option is off.
+func TestOTelCTZeroIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name         string
+		enableCTZero bool
+		input        pmetric.Metrics
+		expected     mimirpb.TimeSeries
+	}{
+		{
+			name:         "enable CT zero ingestion",
+			enableCTZero: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+			},
+		},
+		{
+			name:         "disable CT zero ingestion",
+			enableCTZero: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: 0,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+				context.Background(),
+				converter,
+				tc.input,
+				conversionOptions{
+					addSuffixes:             true,
+					enableCTZeroIngestion:   tc.enableCTZero,
+					convertHistogramsToNHCB: true,
+				},
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			require.Len(t, mimirTS, 1)
+			require.Equal(t, 0, dropped)
+			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
 		})
 	}
 }
@@ -805,7 +889,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
@@ -1342,7 +1426,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, false, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1432,7 +1516,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -1474,7 +1558,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -1500,7 +1584,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -1528,7 +1612,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
