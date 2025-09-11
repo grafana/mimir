@@ -10,10 +10,6 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-type NotificationHistorian interface {
-	Record(ctx context.Context, alerts []*types.Alert, retry bool, notificationErr error, duration time.Duration) <-chan error
-}
-
 // Integration wraps an upstream notify.Integration, adding the ability to
 // capture notification status.
 type Integration struct {
@@ -22,9 +18,9 @@ type Integration struct {
 }
 
 // NewIntegration returns a new integration.
-func NewIntegration(notifier notify.Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string, notificationHistorian NotificationHistorian) *Integration {
+func NewIntegration(notifier notify.Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string) *Integration {
 	// Wrap the provided Notifier with our own, which will capture notification attempt errors.
-	status := &statusCaptureNotifier{upstream: notifier, notificationHistorian: notificationHistorian}
+	status := &statusCaptureNotifier{upstream: notifier}
 
 	integration := notify.NewIntegration(status, rs, name, idx, receiverName)
 
@@ -83,8 +79,7 @@ func GetIntegrations(integrations []*Integration) []*notify.Integration {
 
 // statusCaptureNotifier is used to wrap a notify.Notifer and capture information about attempts.
 type statusCaptureNotifier struct {
-	upstream              notify.Notifier
-	notificationHistorian NotificationHistorian
+	upstream notify.Notifier
 
 	mtx                       sync.RWMutex
 	lastNotifyAttempt         time.Time
@@ -97,10 +92,6 @@ func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Ale
 	start := time.Now()
 	retry, err := n.upstream.Notify(ctx, alerts...)
 	duration := time.Since(start)
-
-	if n.notificationHistorian != nil {
-		n.notificationHistorian.Record(ctx, alerts, retry, err, duration)
-	}
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()

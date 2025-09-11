@@ -154,13 +154,7 @@ func Merge(a, b PostableApiAlertingConfig, opts MergeOpts) (MergeResult, error) 
 
 	renameReceiversInRoutes([]*Route{b.Route}, renamedReceivers, renamedTimeIntervals)
 
-	if a.Route == nil {
-		return MergeResult{}, fmt.Errorf("cannot merge into undefined routing tree")
-	}
-	if b.Route == nil {
-		return MergeResult{}, fmt.Errorf("cannot merge undefined routing tree")
-	}
-	route := mergeRoutes(*a.Route, *b.Route, opts.SubtreeMatchers)
+	route := mergeRoutes(a.Route, b.Route, opts.SubtreeMatchers)
 
 	inhibitRules := mergeInhibitRules(a.InhibitRules, b.InhibitRules, opts.SubtreeMatchers)
 
@@ -209,8 +203,7 @@ func mergeTimeIntervals(amt []config.MuteTimeInterval, ati []config.TimeInterval
 	return amt, ati, renamed
 }
 
-func mergeRoutes(a, b Route, matcher config.Matchers) *Route {
-	// get a and b by value so we get shallow copies of the top level routes, which we can modify.
+func mergeRoutes(a, b *Route, matcher config.Matchers) *Route {
 	// make sure "b" route has all defaults set explicitly to avoid inheriting "a"'s default route settings.
 	defaultOpts := dispatch.DefaultRouteOpts
 	if b.GroupWait == nil {
@@ -226,8 +219,8 @@ func mergeRoutes(a, b Route, matcher config.Matchers) *Route {
 		b.RepeatInterval = &ri
 	}
 	b.Matchers = append(b.Matchers, matcher...)
-	a.Routes = append([]*Route{&b}, a.Routes...)
-	return &a
+	a.Routes = append([]*Route{b}, a.Routes...)
+	return a
 }
 
 func checkIfMatchersUsed(matchers config.Matchers, routes []*Route) (bool, error) {

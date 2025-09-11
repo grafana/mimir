@@ -305,7 +305,7 @@ func (c *PostableApiAlertingConfig) Validate() error {
 		}
 	}
 
-	return ValidateAlertmanagerConfig(c)
+	return nil
 }
 
 // Type requires validate has been called and just checks the first receiver type
