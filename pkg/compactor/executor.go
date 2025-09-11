@@ -244,7 +244,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
 	go e.startJobStatusUpdater(context.WithoutCancel(ctx), resp.Key, resp.Spec)
 
-	if jobType == schedulerpb.COMPACTION {
+	switch jobType {
+	case schedulerpb.COMPACTION:
 		status, err := e.executeCompactionJob(ctx, c, resp.Spec)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
@@ -253,9 +254,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
-	}
-
-	if jobType == schedulerpb.PLANNING {
+	case schedulerpb.PLANNING:
 		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
@@ -270,6 +269,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			return true, err
 		}
 		return true, nil
+	default:
+		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
 	}
 
 	return true, nil
@@ -281,10 +282,12 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *schedulerp
 		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 		return err
-	default:
+	case schedulerpb.PLANNING:
 		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
+	default:
+		return fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
 	}
 }
 

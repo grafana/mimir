@@ -192,7 +192,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			// Wait for job status goroutine to send the final status
 			time.Sleep(100 * time.Millisecond)
 
-			// Check behavior based on test case
 			if tc.expectedFinalStatus == schedulerpb.IN_PROGRESS {
 				// Planning job: should only have initial IN_PROGRESS update, no final status
 				require.True(t, mockSchedulerClient.ReceivedPlannedRequest(), "planning jobs should send PlannedJobs message")

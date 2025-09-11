@@ -56,7 +56,9 @@ const (
 	planningModeScheduler  = "scheduler"
 )
 
-var CompactionPlanningModes = []string{planningModeScheduler, planningModeStandalone}
+var (
+	compactionPlanningModes = []string{planningModeScheduler, planningModeStandalone}
+)
 
 var (
 	errInvalidBlockRanges                         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
@@ -65,7 +67,7 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
-	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
+	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(compactionPlanningModes, ", "))
 	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address, required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
 	errInvalidSchedulerMinLeasingBackoff          = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
@@ -232,7 +234,7 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		return errInvalidCompactionOrder
 	}
 
-	if !slices.Contains(CompactionPlanningModes, cfg.PlanningMode) {
+	if !slices.Contains(compactionPlanningModes, cfg.PlanningMode) {
 		return errInvalidPlanningMode
 	}
 
