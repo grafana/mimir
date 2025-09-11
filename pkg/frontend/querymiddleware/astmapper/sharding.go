@@ -18,8 +18,8 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(shardSummer ASTMapper, shardCount int, squasher Squasher) ASTMapper {
-	if shardCount == 1 {
+func NewSharding(shardSummer ASTMapper, inspectOnly bool, squasher Squasher) ASTMapper {
+	if inspectOnly {
 		// If we only want one shard, then we don't need the subtree folder, as we just want to
 		// count the number of shardable legs in the expression, which the shardSummer does.
 		return shardSummer
@@ -60,12 +60,12 @@ func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
-func NewQueryShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats) ASTMapper {
-	return NewShardSummerWithLabeller(shards, squasher, logger, stats, newQueryShardLabeller(shards))
+func NewQueryShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.Logger, stats *MapperStats) ASTMapper {
+	return NewShardSummerWithLabeller(shards, inspectOnly, squasher, logger, stats, newQueryShardLabeller(shards))
 }
 
-func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) ASTMapper {
-	summer := newShardSummer(shards, squasher, logger, stats, labeller)
+func NewShardSummerWithLabeller(shards int, inspectOnly bool, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) ASTMapper {
+	summer := newShardSummer(shards, inspectOnly, squasher, logger, stats, labeller)
 	return NewASTExprMapper(summer)
 }
 
@@ -82,12 +82,16 @@ type shardSummer struct {
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
+func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
+	if inspectOnly && shards != 1 {
+		panic("inspectOnly=true requires shards=1")
+	}
+
 	return &shardSummer{
 		shards:       shards,
 		squasher:     squasher,
 		currentShard: nil,
-		inspectOnly:  shards == 1,
+		inspectOnly:  inspectOnly,
 		logger:       logger,
 		stats:        stats,
 

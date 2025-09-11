@@ -20,10 +20,10 @@ import (
 )
 
 func TestShardSummer(t *testing.T) {
-	runTest := func(t *testing.T, input string, expected string, shardCount int, expectedShardedQueries int) {
+	runTest := func(t *testing.T, input string, expected string, shardCount int, inspectOnly bool, expectedShardedQueries int) {
 		stats := NewMapperStats()
-		summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-		mapper := NewSharding(summer, shardCount, EmbeddedQueriesSquasher)
+		summer := NewQueryShardSummer(shardCount, inspectOnly, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
+		mapper := NewSharding(summer, inspectOnly, EmbeddedQueriesSquasher)
 		expr, err := parser.ParseExpr(input)
 		require.NoError(t, err)
 		expectedExpr, err := parser.ParseExpr(expected)
@@ -536,13 +536,12 @@ func TestShardSummer(t *testing.T) {
 		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			runTest(t, tt.in, tt.out, 3, tt.expectedShardedQueries*3)
+			runTest(t, tt.in, tt.out, 3, false, tt.expectedShardedQueries*3)
 		})
 
-		t.Run(tt.in+" with shard count of 1", func(t *testing.T) {
-			// With a shard count of 1, the query should be unchanged, but the number of sharded queries should still be reported.
-			// This is required for the query sharding middleware that uses this to determine the number of shardable legs in the query.
-			runTest(t, tt.in, tt.in, 1, tt.expectedShardedQueries)
+		t.Run(tt.in+" with 'inspect only' set", func(t *testing.T) {
+			// The query should be unchanged, but the number of sharded queries should still be reported.
+			runTest(t, tt.in, tt.in, 1, true, tt.expectedShardedQueries)
 		})
 	}
 }
@@ -592,7 +591,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer := NewQueryShardSummer(c.shards, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
+			summer := NewQueryShardSummer(c.shards, false, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
 

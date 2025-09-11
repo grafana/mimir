@@ -276,7 +276,7 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 	}
 
 	s.metrics.shardingAttempts.Inc()
-	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards)
+	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards, false)
 	if err != nil {
 		return nil, err
 	}
@@ -303,13 +303,13 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalShards int) (parser.Expr, *astmapper.MapperStats, error) {
+func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalShards int, inspectOnly bool) (parser.Expr, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
 	ctx, cancel := context.WithTimeoutCause(ctx, shardingTimeout, fmt.Errorf("%w: %s", context.DeadlineExceeded, "timeout while rewriting the input query into a shardable query"))
 	defer cancel()
 
-	summer := astmapper.NewQueryShardSummer(totalShards, s.squasher, s.logger, stats)
-	mapper := astmapper.NewSharding(summer, totalShards, s.squasher)
+	summer := astmapper.NewQueryShardSummer(totalShards, inspectOnly, s.squasher, s.logger, stats)
+	mapper := astmapper.NewSharding(summer, inspectOnly, s.squasher)
 
 	shardedQuery, err := mapper.Map(ctx, expr)
 	if err != nil {
@@ -377,7 +377,7 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		// - count(metric)
 		//
 		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1)
+		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1, true)
 		if err != nil {
 			return 0, err
 		}
