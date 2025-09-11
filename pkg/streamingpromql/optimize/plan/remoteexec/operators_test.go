@@ -27,7 +27,7 @@ func TestFinalize(t *testing.T) {
 	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
 	queryStats.TotalSamples = 100
 
-	err = finalise(ctx, &mockResponse{}, annos, queryStats)
+	err = finalize(ctx, &mockResponse{}, annos, queryStats)
 	require.NoError(t, err)
 	require.Equal(t, int64(100+456), queryStats.TotalSamples)
 

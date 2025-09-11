@@ -52,7 +52,7 @@ func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
 
 	s.finalized = true
 
-	return finalise(ctx, s.resp, s.Annotations, s.QueryStats)
+	return finalize(ctx, s.resp, s.Annotations, s.QueryStats)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {

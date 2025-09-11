@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func finalise(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
+func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
 	newAnnos, totalSamples, err := resp.GetEvaluationInfo(ctx)
 	if err != nil {
 		return err

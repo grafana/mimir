@@ -51,7 +51,7 @@ func (r *InstantVectorRemoteExec) Finalize(ctx context.Context) error {
 
 	r.finalized = true
 
-	return finalise(ctx, r.resp, r.Annotations, r.QueryStats)
+	return finalize(ctx, r.resp, r.Annotations, r.QueryStats)
 }
 
 func (r *InstantVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
