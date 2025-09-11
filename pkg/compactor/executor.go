@@ -123,8 +123,8 @@ func (e *schedulerExecutor) stop() error {
 	return nil
 }
 
-// startJobStatusUpdater starts a goroutine that handles periodic keep-alive updates and final status updates
-func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, statusChan <-chan schedulerpb.UpdateType) {
+// startJobStatusUpdater starts a goroutine that sends periodic IN_PROGRESS keep-alive updates
+func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec) {
 	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
 	defer ticker.Stop()
 
@@ -135,14 +135,21 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 		select {
 		case <-ticker.C:
 			if err := e.updateJobStatus(ctx, key, spec, schedulerpb.IN_PROGRESS); err != nil {
-				level.Warn(e.logger).Log("msg", "failed to send status update", "job_id", jobId, "tenant", jobTenant, "status", schedulerpb.IN_PROGRESS, "err", err)
+				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)
 			}
-		case status := <-statusChan:
-			if err := e.updateJobStatus(ctx, key, spec, status); err != nil {
-				level.Warn(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
-			}
+		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// sendFinalJobStatus sends a final status update to the scheduler
+func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, status schedulerpb.UpdateType) {
+	jobId := key.Id
+	jobTenant := spec.Tenant
+
+	if err := e.updateJobStatus(ctx, key, spec, status); err != nil {
+		level.Warn(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
 	}
 }
 
@@ -188,37 +195,38 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
-	statusCtx := context.WithoutCancel(ctx)
-	statusChan := make(chan schedulerpb.UpdateType, 1)
+	// Create cancellable context for keep-alive updater
+	keepAliveCtx, cancelKeepAlive := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelKeepAlive() // Ensure keep-alive is cancelled when job finishes
 
-	// start async status updater, handles renewing lease every cfg.SchedulerUpdateInterval
-	go e.startJobStatusUpdater(statusCtx, resp.Key, resp.Spec, statusChan)
-
-	var status schedulerpb.UpdateType
+	// Start async keep-alive updater for periodic IN_PROGRESS messages
+	go e.startJobStatusUpdater(keepAliveCtx, resp.Key, resp.Spec)
 
 	if jobType == schedulerpb.COMPACTION {
-		status, err = e.executeCompactionJob(ctx, c, resp.Spec)
+		status, err := e.executeCompactionJob(ctx, c, resp.Spec)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			statusChan <- schedulerpb.REASSIGN
+			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.REASSIGN)
 			return true, err
 		}
-		statusChan <- status
+		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+		return true, nil
 	}
 
 	if jobType == schedulerpb.PLANNING {
 		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
-			statusChan <- schedulerpb.REASSIGN
+			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.REASSIGN)
 			return true, planErr
 		}
 
+		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
 		if err := e.sendPlannedJobs(ctx, resp.Spec, resp.Key, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
-			statusChan <- schedulerpb.REASSIGN
 			return true, err
 		}
+		return true, nil
 	}
 
 	return true, nil
