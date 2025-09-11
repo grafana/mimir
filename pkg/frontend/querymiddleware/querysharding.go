@@ -274,18 +274,13 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 
 	s.metrics.shardingAttempts.Inc()
 	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards)
+	if err != nil {
+		return nil, err
+	}
 
-	// If an error occurred while trying to rewrite the query or the query has not been sharded,
-	// then we should fallback to execute it via queriers.
-	if err != nil || shardingStats.GetShardedQueries() == 0 {
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			level.Error(log).Log("msg", "timeout while rewriting the input query into a shardable query, please fill in a bug report with this query, falling back to try executing without sharding", "err", err)
-		} else if err != nil {
-			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "err", err)
-		} else {
-			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query")
-		}
-
+	if shardingStats.GetShardedQueries() == 0 {
+		// The query can't be sharded, fallback to execute it via queriers.
+		level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query")
 		return nil, nil
 	}
 
@@ -307,7 +302,7 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 // can't be sharded.
 func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalShards int) (parser.Expr, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
-	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, shardingTimeout, fmt.Errorf("%w: %s", context.DeadlineExceeded, "timeout while rewriting the input query into a shardable query"))
 	defer cancel()
 
 	summer := astmapper.NewQueryShardSummer(totalShards, s.squasher, s.logger, stats)
