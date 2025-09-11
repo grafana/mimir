@@ -252,7 +252,7 @@ func newQuerySharder(
 
 // shard attempts to rewrite expr in a sharded way.
 //
-// expr may be modified in place.
+// expr may be modified in place, including if an error is returned.
 //
 // If the query can't be sharded, shard returns nil and no error, and expr is unchanged.
 func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
