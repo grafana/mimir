@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -273,7 +272,7 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 	}
 
 	if totalShards <= 1 {
-		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
+		log.DebugLog("msg", "query sharding is disabled for this query or tenant")
 		return nil, nil
 	}
 
@@ -285,11 +284,11 @@ func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedSha
 
 	if shardingStats.GetShardedQueries() == 0 {
 		// The query can't be sharded, fallback to execute it via queriers.
-		level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query")
+		log.DebugLog("msg", "query is not supported for being rewritten into a shardable query")
 		return nil, nil
 	}
 
-	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "rewritten", shardedExpr, "sharded_queries", shardingStats.GetShardedQueries())
+	log.DebugLog("msg", "query has been rewritten into a shardable query", "rewritten", shardedExpr, "sharded_queries", shardingStats.GetShardedQueries())
 
 	// Update metrics.
 	s.metrics.shardingSuccesses.Inc()
