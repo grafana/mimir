@@ -763,6 +763,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
+		nil, // TODO: Use non-nil NotificationsHistorian.
 		opts...,
 	)
 	if err != nil {
@@ -785,7 +786,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, nil)) // TODO: Use non-nil NotificationsHistorian.
 		}
 	)
 
