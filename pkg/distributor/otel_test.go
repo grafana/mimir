@@ -889,7 +889,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
@@ -1426,7 +1426,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, nil, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1516,7 +1516,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -1558,7 +1558,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -1584,7 +1584,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -1612,7 +1612,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
