@@ -2705,6 +2705,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -2900,6 +2905,11 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler

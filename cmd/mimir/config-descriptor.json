@@ -2688,6 +2688,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "enable_delayed_name_removal",
+          "required": false,
+          "desc": "Enable the experimental Prometheus feature for delayed name removal.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-delayed-name-removal",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -7941,6 +7952,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_remote_execution",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.enable-remote-execution",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
