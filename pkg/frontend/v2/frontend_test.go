@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/metrics"
@@ -37,8 +38,11 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -124,7 +128,26 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	})
 }
 
-func TestFrontendBasicWorkflow(t *testing.T) {
+func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+	for _, m := range resp {
+		m.QueryID = queryID
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	stream := &mockQueryResultStreamServer{
+		ctx:  ctx,
+		msgs: resp,
+	}
+
+	err := f.QueryResultStream(stream)
+	if err != nil {
+		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
+		// So just log it but don't fail the test.
+		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
+	}
+}
+
+func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
@@ -150,58 +173,216 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	require.Equal(t, []byte(body), resp.Body)
 }
 
+func TestFrontend_Protobuf_HappyPath(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+	}
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+	}
+
+	responseRead := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// Send the entire response, and wait until it has been received by the test below.
+		sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+
+		select {
+		case <-responseRead:
+			// Test has read the entire response, continue.
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for response to be read by test")
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+
+	close(responseRead)
+}
+
+func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+		newStringMessage("third message"),
+	}
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+	resp.Close() // We expect all goroutines to be cleaned up after this (verified by the VerifyNoLeakTestMain call in TestMain above)
+}
+
+func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
+	const userID = "test"
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
+		go sendStreamingResponse(t, f, userID, msg.QueryID, errorMessage)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeBadData, "something went wrong"), err)
+	require.Nil(t, msg)
+}
+
 func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
 	)
 
-	reg := prometheus.NewRegistry()
-
-	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
-		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
-
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	})
-
-	// Assert on cortex_query_frontend_enqueue_duration_seconds.
-	metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
-	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
-	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
-	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
-
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	testCases := map[string]struct {
+		sendQuerierResponse func(t *testing.T, f *Frontend, queryID uint64)
+		makeRequest         func(t *testing.T, f *Frontend)
+	}{
+		"HTTP-over-gRPC": {
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
+				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+				// It first needs to be told that enqueuing has succeeded.
+				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
+					Code: 200,
+					Body: []byte(body),
+				})
+			},
+			makeRequest: func(t *testing.T, f *Frontend) {
+				req := &httpgrpc.HTTPRequest{
+					Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+				}
+				resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+				require.NoError(t, err)
+				require.Equal(t, int32(200), resp.Code)
+				require.Equal(t, []byte(body), resp.Body)
+			},
+		},
+		"Protobuf": {
+			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
+				go sendStreamingResponse(t, f, userID, queryID, newStringMessage("the message"))
+			},
+			makeRequest: func(t *testing.T, f *Frontend) {
+				ctx := user.InjectOrgID(context.Background(), userID)
+				req := &querierpb.EvaluateQueryRequest{}
+				resp, err := f.DoProtobufRequest(ctx, req)
+				require.NoError(t, err)
+				t.Cleanup(resp.Close)
+			},
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
-	require.NoError(t, err)
-	require.Equal(t, int32(200), resp.Code)
-	require.Equal(t, []byte(body), resp.Body)
 
-	// Assert on cortex_query_frontend_enqueue_duration_seconds.
-	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
-	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
-	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
-	assert.Equal(t, uint64(1), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
 
-	// Manually remove the address, check that label is removed.
-	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+			f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				testCase.sendQuerierResponse(t, f, msg.QueryID)
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
 
-	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
-	require.NoError(t, err)
-	assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+			// Assert on cortex_query_frontend_enqueue_duration_seconds.
+			metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+			require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+			assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+			assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
+
+			testCase.makeRequest(t, f)
+
+			// Wait for the request to be sent to the scheduler.
+			// For HTTP-over-gRPC, this should be true before RoundTripGRPC returns, but for Protobuf requests,
+			// this is done asynchronously after DoProtobufRequest returns.
+			require.Eventually(t, func() bool {
+				metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+				require.NoError(t, err)
+				require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+				require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+				assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+				return metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount() == 1
+			}, time.Second, time.Millisecond*100)
+
+			// Manually remove the address, check that label is removed.
+			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+			metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+		})
+	}
 }
 
-func TestFrontendRetryEnqueue(t *testing.T) {
+func TestFrontend_HTTPGRPC_RetryEnqueue(t *testing.T) {
 	// Frontend uses worker concurrency to compute number of retries. We use one less failure.
 	failures := atomic.NewInt64(testFrontendWorkerConcurrency - 1)
 	const (
@@ -229,8 +410,103 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestFrontendTooManyRequests(t *testing.T) {
+func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
+	// Frontend uses worker concurrency to compute number of retries. We use one less failure.
+	failures := atomic.NewInt64(testFrontendWorkerConcurrency - 1)
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+	}
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		fail := failures.Dec()
+		if fail >= 0 {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+		}
+
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+}
+
+func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), err)
+	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T) {
+	const userID = "test"
+
+	expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+		newStringMessage("first message"),
+		newStringMessage("second message"),
+		newStringMessage("third message"),
+	}
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[0], msg)
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[1], msg)
+
+	// Wait until the last message has been buffered into the stream channel and the stream's context has been cancelled by DoProtobufRequest.
+	select {
+	case <-resp.ctx.Done():
+		// Context cancelled, continue.
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for stream context to be cancelled")
+	}
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedMessages[2], msg, "should still be able to read last message after stream has been completely read")
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+}
+
+func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
@@ -240,9 +516,69 @@ func TestFrontendTooManyRequests(t *testing.T) {
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
 }
 
-func TestFrontendEnqueueFailures(t *testing.T) {
+func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), err)
+	require.Nil(t, msg)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
+}
+
+func TestFrontend_HTTPGRPC_SchedulerError(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+	require.Equal(t, "something went wrong inside the scheduler", string(resp.Body))
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on scheduler errors")
+}
+
+func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
+	schedulerEnqueueAttempts := atomic.NewInt64(0)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		schedulerEnqueueAttempts.Inc()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	msg, err := resp.Next(ctx)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "something went wrong inside the scheduler"), err)
+	require.Nil(t, msg)
+
+	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on scheduler errors")
+}
+
+func TestFrontend_HTTPGRPC_EnqueueFailures(t *testing.T) {
 	t.Run("scheduler is shutting down with valid query", func(t *testing.T) {
 		f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
@@ -298,125 +634,231 @@ func TestFrontendEnqueueFailures(t *testing.T) {
 }
 
 func TestFrontendCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, resp)
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, msg)
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-	require.EqualError(t, err, context.DeadlineExceeded.Error())
-	require.Nil(t, resp)
 
-	// We wait a bit to make sure scheduler receives the cancellation request.
-	test.Poll(t, time.Second, 2, func() interface{} {
-		ms.mu.Lock()
-		defer ms.mu.Unlock()
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
 
-		return len(ms.msgs)
-	})
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
+			defer cancel()
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 2, len(ms.msgs))
-		require.True(t, ms.msgs[0].Type == schedulerpb.ENQUEUE)
-		require.True(t, ms.msgs[1].Type == schedulerpb.CANCEL)
-		require.True(t, ms.msgs[0].QueryID == ms.msgs[1].QueryID)
-	})
+			makeRequest(ctx, t, f)
+
+			// We wait a bit to make sure scheduler receives the cancellation request.
+			test.Poll(t, time.Second, 2, func() interface{} {
+				ms.mu.Lock()
+				defer ms.mu.Unlock()
+
+				return len(ms.msgs)
+			})
+
+			ms.checkWithLock(func() {
+				require.Len(t, ms.msgs, 2)
+				require.Equal(t, schedulerpb.ENQUEUE, ms.msgs[0].Type)
+				require.Equal(t, schedulerpb.CANCEL, ms.msgs[1].Type)
+				require.Equal(t, ms.msgs[0].QueryID, ms.msgs[1].QueryID)
+			})
+		})
+	}
+
 }
 
 // When frontendWorker that processed the request is busy (processing a new request or cancelling a previous one)
 // we still need to make sure that the cancellation reach the scheduler at some point.
 // Issue: https://github.com/grafana/mimir/issues/740
 func TestFrontendWorkerCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
-	}
-	reqCount := testFrontendWorkerConcurrency + 5
-	var wg sync.WaitGroup
-	for i := 0; i < reqCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-			require.EqualError(t, err, context.DeadlineExceeded.Error())
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
 			require.Nil(t, resp)
-		}()
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
+
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.Nil(t, msg)
+		},
 	}
 
-	wg.Wait()
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
 
-	// We wait a bit to make sure scheduler receives the cancellation request.
-	// 2 * reqCount because for every request, should also be corresponding cancel request
-	test.Poll(t, 5*time.Second, 2*reqCount, func() interface{} {
-		ms.mu.Lock()
-		defer ms.mu.Unlock()
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
+			defer cancel()
 
-		return len(ms.msgs)
-	})
+			// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
+			reqCount := testFrontendWorkerConcurrency + 5
+			var wg sync.WaitGroup
+			for i := 0; i < reqCount; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					makeRequest(ctx, t, f)
+				}()
+			}
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 2*reqCount, len(ms.msgs))
-		msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
-		for _, msg := range ms.msgs {
-			msgTypeCounts[msg.Type]++
-		}
-		expectedMsgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{
-			schedulerpb.ENQUEUE: reqCount,
-			schedulerpb.CANCEL:  reqCount,
-		}
-		require.Equalf(t, expectedMsgTypeCounts, msgTypeCounts,
-			"Should receive %d enqueue (%d) requests, and %d cancel (%d) requests.", reqCount, schedulerpb.ENQUEUE, reqCount, schedulerpb.CANCEL,
-		)
-	})
+			wg.Wait()
+
+			// We wait a bit to make sure scheduler receives the cancellation request.
+			// 2 * reqCount because for every request, should also be corresponding cancel request
+			test.Poll(t, 5*time.Second, 2*reqCount, func() interface{} {
+				ms.mu.Lock()
+				defer ms.mu.Unlock()
+
+				return len(ms.msgs)
+			})
+
+			ms.checkWithLock(func() {
+				require.Len(t, ms.msgs, 2*reqCount)
+				msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
+				for _, msg := range ms.msgs {
+					msgTypeCounts[msg.Type]++
+				}
+				expectedMsgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{
+					schedulerpb.ENQUEUE: reqCount,
+					schedulerpb.CANCEL:  reqCount,
+				}
+				require.Equalf(t, expectedMsgTypeCounts, msgTypeCounts,
+					"Should receive %d enqueue (%d) requests, and %d cancel (%d) requests.", reqCount, schedulerpb.ENQUEUE, reqCount, schedulerpb.CANCEL,
+				)
+			})
+		})
+	}
 }
 
 func TestFrontendFailedCancellation(t *testing.T) {
-	f, ms := setupFrontend(t, nil, nil)
+	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
+		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &httpgrpc.HTTPRequest{
+				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			}
+			resp, _, err := f.RoundTripGRPC(ctx, req)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, resp)
+		},
+		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
+			req := &querierpb.EvaluateQueryRequest{}
+			resp, err := f.DoProtobufRequest(ctx, req)
+			require.NoError(t, err)
+			t.Cleanup(resp.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-
-		// stop scheduler workers
-		addr := ""
-		f.schedulerWorkers.mu.Lock()
-		for k := range f.schedulerWorkers.workers {
-			addr = k
-			break
-		}
-		f.schedulerWorkers.mu.Unlock()
-
-		f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
-
-		// Wait for worker goroutines to stop.
-		time.Sleep(100 * time.Millisecond)
-
-		// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
-		// Everything else should still work fine.
-		cancel()
-	}()
-
-	// send request
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+			msg, err := resp.Next(ctx)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, msg)
+		},
 	}
-	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
-	require.EqualError(t, err, context.Canceled.Error())
-	require.Nil(t, resp)
 
-	ms.checkWithLock(func() {
-		require.Equal(t, 1, len(ms.msgs))
+	for name, makeRequest := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f, ms := setupFrontend(t, nil, nil)
+
+			ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "test"))
+			defer cancel()
+
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+
+				// stop scheduler workers
+				addr := ""
+				f.schedulerWorkers.mu.Lock()
+				for k := range f.schedulerWorkers.workers {
+					addr = k
+					break
+				}
+				f.schedulerWorkers.mu.Unlock()
+
+				f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
+
+				// Wait for worker goroutines to stop.
+				time.Sleep(100 * time.Millisecond)
+
+				// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
+				// Everything else should still work fine.
+				cancel()
+			}()
+
+			makeRequest(ctx, t, f)
+
+			ms.checkWithLock(func() {
+				require.Equal(t, 1, len(ms.msgs))
+			})
+		})
+	}
+}
+
+func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
+	signal := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		<-signal // Don't respond until the test has attempted to read from the stream.
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	cancelledContext, cancel := context.WithCancel(ctx)
+	cancel()
+
+	start := time.Now()
+	msg, err := resp.Next(cancelledContext)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, msg)
+	require.Less(t, time.Since(start), time.Second, "calling Next() with a cancelled context should not block")
+
+	close(signal)
+}
+
+func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+	cancellationError := cancellation.NewErrorf("the request has been canceled")
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		cancel(cancellationError)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	uncancelledContext := context.Background()
+	msg, err := resp.Next(uncancelledContext)
+	require.ErrorIs(t, err, cancellationError)
+	require.Nil(t, msg)
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {
@@ -437,7 +879,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				body := "result stream body"
 				headers := []*httpgrpc.Header{{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}}}
 				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, int(resp.Code), resp.Headers),
 					bodyChunkRequest(msg, resp.Body[:len(resp.Body)/2]),
@@ -451,7 +893,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "received metadata only, no body data sent",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
 				)
@@ -462,7 +904,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "metadata and empty body chunks",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
 					bodyChunkRequest(msg, nil),
@@ -475,7 +917,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		{
 			name: "errors on wrong message sequence",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
-				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID)}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"16"}}}),
 					bodyChunkRequest(msg, []byte("part 1/2")),
@@ -494,7 +936,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
 				recvCalled := make(chan chan struct{})
 				cancelAfterCalls := 2
-				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
+				s := &mockQueryResultStreamServer{ctx: ctx, recvCalled: recvCalled}
 				go func() {
 					recvCount := 0
 					for called := range recvCalled {
@@ -579,7 +1021,6 @@ func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *fro
 
 type mockQueryResultStreamServer struct {
 	ctx        context.Context
-	queryID    uint64
 	msgs       []*frontendv2pb.QueryResultStreamRequest
 	next       int
 	recvCalled chan chan struct{}
@@ -782,4 +1223,29 @@ type limits struct {
 
 func (l limits) QueryIngestersWithin(string) time.Duration {
 	return l.queryIngestersWithin
+}
+
+func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_StringValue{
+					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+						Value: s,
+					},
+				},
+			},
+		},
+	}
+}
+
+func newErrorMessage(typ mimirpb.QueryErrorType, msg string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: msg,
+			},
+		},
+	}
 }
