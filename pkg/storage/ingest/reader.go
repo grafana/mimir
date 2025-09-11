@@ -966,7 +966,7 @@ type ReaderMetrics struct {
 	missedRecords                    prometheus.Counter
 }
 
-type readerMetricsSource interface {
+type ReaderMetricsSource interface {
 	BufferedBytes() int64
 	BufferedRecords() int64
 	EstimatedBytesPerRecord() int64
@@ -986,7 +986,7 @@ func (n *NoOpReaderMetricsSource) EstimatedBytesPerRecord() int64 {
 	return 0
 }
 
-func NewReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
+func NewReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
