@@ -24,7 +24,7 @@ type labelsIdx struct {
 // minute for delays.
 const defaultIntervalForStartTimestamps = int64(300_000)
 
-type CombinedAppender struct {
+type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
 
@@ -41,8 +41,8 @@ type CombinedAppender struct {
 	metricFamilies map[string]metadata.Metadata
 }
 
-func NewCombinedAppender() *CombinedAppender {
-	return &CombinedAppender{
+func NewCombinedAppender() *MimirAppender {
+	return &MimirAppender{
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
 		refs:           make(map[uint64]labelsIdx),
@@ -52,19 +52,19 @@ func NewCombinedAppender() *CombinedAppender {
 }
 
 // GetResult returns the created timeseries and metadata.
-func (c *CombinedAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
 	return c.series, c.metadata
 }
 
-func (c *CombinedAppender) AppendSample(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
+func (c *MimirAppender) AppendSample(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
 	return c.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
 }
 
-func (c *CombinedAppender) AppendHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (c *MimirAppender) AppendHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	return c.appendFloatOrHistogram(ls, meta, ct, t, 0, h, es)
 }
 
-func (c *CombinedAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (c *MimirAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
 	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
@@ -84,7 +84,7 @@ func (c *CombinedAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpapp
 	return nil
 }
 
-func (c *CombinedAppender) recalcCreatedTimestamp(t, ct int64) int64 {
+func (c *MimirAppender) recalcCreatedTimestamp(t, ct int64) int64 {
 	if !c.EnableCreatedTimestampZeroIngestion || ct < 0 || ct > t || (c.ValidIntervalCreatedTimestampZeroIngestion > 0 && t-ct > c.ValidIntervalCreatedTimestampZeroIngestion) {
 		return 0
 	}
@@ -94,7 +94,7 @@ func (c *CombinedAppender) recalcCreatedTimestamp(t, ct int64) int64 {
 
 // ctRequiresNewSeries checks if the created timestamp is meaningful and different
 // from the one already stored in the series at the given index.
-func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
+func (c *MimirAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 	return ct > 0 && c.series[seriesIdx].CreatedTimestamp != ct
 }
 
@@ -103,7 +103,7 @@ func (c *CombinedAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 // The returned collisionIdx is -1 if there's no hash collision and
 // the index into the collisions otherwise.
 // krajorama: I could not make this inline.
-func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, collisionIdx int, seenSeries bool) {
+func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, collisionIdx int, seenSeries bool) {
 	hash = ls.Hash()
 	idx, ok := c.refs[hash]
 	collisionIdx = -1
@@ -141,7 +141,7 @@ func (c *CombinedAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint
 	return
 }
 
-func (c *CombinedAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
+func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
 	// TODO(krajorama): consider using mimirpb.TimeseriesFromPool
 	ts := &mimirpb.TimeSeries{
 		Labels:           mimirpb.FromLabelsToLabelAdapters(ls),
@@ -159,7 +159,7 @@ func (c *CombinedAppender) createNewSeries(idx *labelsIdx, collisionIdx int, has
 
 // appendExemplars appends exemplars to the time series at the given index.
 // It's split from appenndMetadata to be eligible for inlining.
-func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar) {
+func (c *MimirAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar) {
 	if len(es) == 0 {
 		return
 	}
@@ -167,7 +167,7 @@ func (c *CombinedAppender) appendExemplars(seriesIdx int, es []exemplar.Exemplar
 }
 
 // appendMetadata appends metadata to the time series at the given index.
-func (c *CombinedAppender) appendMetadata(metricFamilyName string, meta metadata.Metadata) {
+func (c *MimirAppender) appendMetadata(metricFamilyName string, meta metadata.Metadata) {
 	storedMeta, ok := c.metricFamilies[metricFamilyName]
 	if ok && storedMeta.Help == meta.Help && storedMeta.Unit == meta.Unit && storedMeta.Type == meta.Type {
 		return

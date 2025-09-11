@@ -22,7 +22,7 @@ func TestCombinedAppender(t *testing.T) {
 
 	testCases := map[string]struct {
 		validIntervalCreatedTimestampZeroIngestion int64
-		appends                                    func(*testing.T, *CombinedAppender)
+		appends                                    func(*testing.T, *MimirAppender)
 		expectTimeseries                           []mimirpb.PreallocTimeseries
 		expectTimeseriesNoCT                       []mimirpb.PreallocTimeseries // Same as expectTimeseries if nil.
 		expectMetadata                             []*mimirpb.MetricMetadata
@@ -30,7 +30,7 @@ func TestCombinedAppender(t *testing.T) {
 	}{
 		"no appends": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(_ *testing.T, _ *CombinedAppender) {
+			appends: func(_ *testing.T, _ *MimirAppender) {
 				// No appends to test.
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{}, // Initialized from pool.
@@ -38,7 +38,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"single float sample": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -77,7 +77,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"multiple float samples, same series": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -130,7 +130,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"multiple float samples, different series, same family": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -193,7 +193,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"multiple float samples, same series, but created time changed": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -280,7 +280,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"single float sample, with created timestamp too old": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -333,7 +333,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"single float sample, with created timestamp too old for some samples": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -386,7 +386,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"single histogram sample": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendHistogram(
 					labels.FromStrings(model.MetricNameLabel, "spam", "a", "ham"),
 					otlpappender.Metadata{
@@ -425,7 +425,7 @@ func TestCombinedAppender(t *testing.T) {
 		},
 		"mixed float and histogram samples, same series": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
 					otlpappender.Metadata{
@@ -488,7 +488,7 @@ func TestCombinedAppender(t *testing.T) {
 			},
 		},
 		"colliding labels are tracked": {
-			appends: func(t *testing.T, ca *CombinedAppender) {
+			appends: func(t *testing.T, ca *MimirAppender) {
 				require.NoError(t, ca.AppendSample(
 					collidingLabels1,
 					otlpappender.Metadata{

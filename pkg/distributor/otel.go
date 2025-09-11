@@ -543,13 +543,13 @@ func otelMetricsToSeriesAndMetadata(
 }
 
 type otlpMimirConverter struct {
-	appender  *otlpappender.CombinedAppender
+	appender  *otlpappender.MimirAppender
 	converter *prometheusremotewrite.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
 }
 
-func newOTLPMimirConverter(appender *otlpappender.CombinedAppender) *otlpMimirConverter {
+func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConverter {
 	return &otlpMimirConverter{
 		appender:  appender,
 		converter: prometheusremotewrite.NewPrometheusConverter(appender),
