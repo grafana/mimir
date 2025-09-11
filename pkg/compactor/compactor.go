@@ -68,8 +68,8 @@ var (
 	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(CompactionPlanningModes, ", "))
 	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address, required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
-	errInvalidSchedulerMinBackoff                 = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
-	errInvalidSchedulerMaxBackoff                 = fmt.Errorf("invalid scheduler-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerMinLeasingBackoff          = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
+	errInvalidSchedulerMaxLeasingBackoff          = fmt.Errorf("invalid scheduler-max-backoff, must be greater than min backoff")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -147,12 +147,12 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Scheduler mode options
-	PlanningMode            string            `yaml:"planning_mode" category:"experimental"`
-	SchedulerAddress        string            `yaml:"scheduler_address" category:"experimental"`
-	SchedulerUpdateInterval time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
-	SchedulerMinBackoff     time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
-	SchedulerMaxBackoff     time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
-	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
+	PlanningMode               string            `yaml:"planning_mode" category:"experimental"`
+	SchedulerAddress           string            `yaml:"scheduler_address" category:"experimental"`
+	SchedulerUpdateInterval    time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
+	SchedulerMinLeasingBackoff time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
+	SchedulerMaxLeasingBackoff time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
+	GRPCClientConfig           grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -178,8 +178,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.PlanningMode, "compactor.planning-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
 	f.StringVar(&cfg.SchedulerAddress, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
 	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
-	f.DurationVar(&cfg.SchedulerMinBackoff, "compactor.scheduler-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
-	f.DurationVar(&cfg.SchedulerMaxBackoff, "compactor.scheduler-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.SchedulerMinLeasingBackoff, "compactor.scheduler-min-leasing-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
@@ -243,11 +243,11 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		if cfg.SchedulerUpdateInterval <= 0 {
 			return errInvalidSchedulerUpdateInterval
 		}
-		if cfg.SchedulerMinBackoff <= 0 {
-			return errInvalidSchedulerMinBackoff
+		if cfg.SchedulerMinLeasingBackoff <= 0 {
+			return errInvalidSchedulerMinLeasingBackoff
 		}
-		if cfg.SchedulerMaxBackoff <= cfg.SchedulerMinBackoff {
-			return errInvalidSchedulerMaxBackoff
+		if cfg.SchedulerMaxLeasingBackoff <= cfg.SchedulerMinLeasingBackoff {
+			return errInvalidSchedulerMaxLeasingBackoff
 		}
 	}
 

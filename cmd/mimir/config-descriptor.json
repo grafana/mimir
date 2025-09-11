@@ -11270,7 +11270,7 @@
           "desc": "Minimum backoff time between scheduler job lease requests.",
           "fieldValue": null,
           "fieldDefaultValue": 100000000,
-          "fieldFlag": "compactor.scheduler-min-backoff",
+          "fieldFlag": "compactor.scheduler-min-leasing-backoff",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
@@ -11281,7 +11281,7 @@
           "desc": "Maximum backoff time between scheduler job lease requests.",
           "fieldValue": null,
           "fieldDefaultValue": 120000000000,
-          "fieldFlag": "compactor.scheduler-max-backoff",
+          "fieldFlag": "compactor.scheduler-max-leasing-backoff",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

@@ -73,7 +73,7 @@ The following features are currently experimental:
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
   - Scheduler mode for requesting compaction jobs from an external scheduler service instead of local planning
-    - `-compactor.mode`
+    - `-compactor.planning-mode`
     - `-compactor.scheduler-endpoint`
     - `-compactor.scheduler-update-interval`
 - Ruler

@@ -93,8 +93,8 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerAddress, "worker_id", workerID)
 
 	b := backoff.New(ctx, backoff.Config{
-		MinBackoff: e.cfg.SchedulerMinBackoff,
-		MaxBackoff: e.cfg.SchedulerMaxBackoff,
+		MinBackoff: e.cfg.SchedulerMinLeasingBackoff,
+		MaxBackoff: e.cfg.SchedulerMaxLeasingBackoff,
 	})
 
 	for {
@@ -112,8 +112,6 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 			continue
 		case <-ctx.Done():
 			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return errors.Wrap(err, "compactor subservice failed")
 		}
 	}
 }

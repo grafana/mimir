@@ -5201,11 +5201,11 @@ sharding_ring:
 [scheduler_update_interval: <duration> | default = 15s]
 
 # (experimental) Minimum backoff time between scheduler job lease requests.
-# CLI flag: -compactor.scheduler-min-backoff
+# CLI flag: -compactor.scheduler-min-leasing-backoff
 [scheduler_min_backoff: <duration> | default = 100ms]
 
 # (experimental) Maximum backoff time between scheduler job lease requests.
-# CLI flag: -compactor.scheduler-max-backoff
+# CLI flag: -compactor.scheduler-max-leasing-backoff
 [scheduler_max_backoff: <duration> | default = 2m]
 
 # The grpc_client block configures the gRPC client used to communicate between
