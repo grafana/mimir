@@ -438,7 +438,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	// Compute the expected number of queries.
 	simpleQueryCount := float64(numUsers * numQueriesPerUser)
-	expectedQueryFrontendQueryCount := simpleQueryCount + 6
+	expectedQueryFrontendQueryCount := simpleQueryCount + 6 // All of the queries above count once for query-frontend requests.
 	expectedMinimumQuerierQueryCount := simpleQueryCount +
 		31 + // Minimum number of split queries
 		1 + // Series query
