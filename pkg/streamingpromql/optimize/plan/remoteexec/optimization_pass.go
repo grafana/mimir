@@ -31,14 +31,22 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 		return plan, nil
 	}
 
-	n := &RemoteExecution{}
-	if err := n.SetChildren([]planning.Node{plan.Root}); err != nil {
+	var err error
+	plan.Root, err = o.wrapInRemoteExecutionNode(plan.Root)
+	if err != nil {
 		return nil, err
 	}
 
-	plan.Root = n
-
 	return plan, nil
+}
+
+func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node) (planning.Node, error) {
+	n := &RemoteExecution{}
+	if err := n.SetChildren([]planning.Node{child}); err != nil {
+		return nil, err
+	}
+
+	return n, nil
 }
 
 // inspect returns two booleans:
