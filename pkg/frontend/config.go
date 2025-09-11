@@ -57,6 +57,11 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 	if err := cfg.QueryMiddleware.Validate(); err != nil {
 		return err
 	}
+
+	if cfg.EnableRemoteExecution && cfg.QueryEngine != querier.MimirEngine {
+		return errors.New("remote execution is only supported when the Mimir query engine is in use")
+	}
+
 	return nil
 }
 
