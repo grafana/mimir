@@ -26,25 +26,32 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// PlannedJobsRetryPolicy is a retry policy that does not set WithMaxAttempts,
-// will retry forever until it can communicate w. the scheduler
-var PlannedJobsRetryPolicy = retrypolicy.
-	Builder[*schedulerpb.PlannedJobsResponse]().
-	HandleIf(func(r *schedulerpb.PlannedJobsResponse, err error) bool {
-		if err == nil {
-			return false
-		}
-		st, _ := status.FromError(err)
-		switch code := st.Code(); code {
-		case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
-			return true
-		default:
-			return false
-		}
-	}).
-	WithBackoffFactor(1*time.Second, 32*time.Second, 2.0).
-	WithJitter(500 * time.Millisecond).
-	Build()
+// createSchedulerRetryPolicy creates a retry policy that retries on transient scheduler errors.
+// This is used for to avoid discarding completed work due to temporary scheduler unavailability.
+func createSchedulerRetryPolicy[T any]() retrypolicy.RetryPolicy[T] {
+	return retrypolicy.
+		Builder[T]().
+		HandleIf(func(_ T, err error) bool {
+			if err == nil {
+				return false
+			}
+			st, _ := status.FromError(err)
+			switch code := st.Code(); code {
+			case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
+				return true
+			default:
+				return false
+			}
+		}).
+		WithBackoffFactor(1*time.Second, 32*time.Second, 2.0).
+		WithJitter(500 * time.Millisecond).
+		Build()
+}
+
+var (
+	plannedJobsRetryPolicy = createSchedulerRetryPolicy[*schedulerpb.PlannedJobsResponse]()
+	updateJobRetryPolicy   = createSchedulerRetryPolicy[*schedulerpb.UpdateJobResponse]()
+)
 
 // compactionExecutor defines how compaction work is executed.
 type compactionExecutor interface {
@@ -167,13 +174,28 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 	}
 }
 
-// sendFinalJobStatus sends a final status update to the scheduler
+// sendFinalJobStatus sends a final status update to the scheduler with retry policy.
+// Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, status schedulerpb.UpdateType) {
 	jobId := key.Id
 	jobTenant := spec.Tenant
 
-	if err := e.updateJobStatus(ctx, key, spec, status); err != nil {
-		level.Warn(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
+	var err error
+	switch spec.JobType {
+	case schedulerpb.COMPACTION:
+		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
+		_, err = failsafe.Get(func() (*schedulerpb.UpdateJobResponse, error) {
+			return e.schedulerClient.UpdateCompactionJob(ctx, req)
+		}, updateJobRetryPolicy)
+	default: // PLANNING
+		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
+		_, err = failsafe.Get(func() (*schedulerpb.UpdateJobResponse, error) {
+			return e.schedulerClient.UpdatePlanJob(ctx, req)
+		}, updateJobRetryPolicy)
+	}
+
+	if err != nil {
+		level.Error(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
 	}
 }
 
@@ -237,6 +259,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
+			// Planning jobs only send final status updates on failure
 			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.REASSIGN)
 			return true, planErr
 		}
@@ -286,9 +309,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	return []*schedulerpb.PlannedCompactionJob{plannedJob}, nil
 }
 
-// sendPlannedJobs sends the planned compaction jobs back to the scheduler with aggressive retries.
-// This is a critical operation that preserves completed planning work, so it retries indefinitely
-// with exponential backoff up to 5 minutes between attempts.
+// sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
 func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *schedulerpb.JobSpec, key *schedulerpb.JobKey, plannedJobs []*schedulerpb.PlannedCompactionJob) error {
 	req := &schedulerpb.PlannedJobsRequest{
 		Key:  key,
@@ -297,7 +318,7 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *scheduler
 
 	_, err := failsafe.Get(func() (*schedulerpb.PlannedJobsResponse, error) {
 		return e.schedulerClient.PlannedJobs(ctx, req)
-	}, PlannedJobsRetryPolicy)
+	}, plannedJobsRetryPolicy)
 
 	return err
 }
