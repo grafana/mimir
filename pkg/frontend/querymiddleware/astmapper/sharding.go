@@ -54,16 +54,13 @@ func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
-func NewQueryShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+func NewQueryShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats) ASTMapper {
 	return NewShardSummerWithLabeller(shards, squasher, logger, stats, newQueryShardLabeller(shards))
 }
 
-func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) (ASTMapper, error) {
-	summer, err := newShardSummer(shards, squasher, logger, stats, labeller)
-	if err != nil {
-		return nil, err
-	}
-	return NewASTExprMapper(summer), nil
+func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) ASTMapper {
+	summer := newShardSummer(shards, squasher, logger, stats, labeller)
+	return NewASTExprMapper(summer)
 }
 
 type shardSummer struct {
@@ -78,11 +75,7 @@ type shardSummer struct {
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) (*shardSummer, error) {
-	if squasher == nil {
-		return nil, errors.Errorf("squasher required and not passed")
-	}
-
+func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
 	return &shardSummer{
 		shards:       shards,
 		squasher:     squasher,
@@ -93,7 +86,7 @@ func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *Map
 		shardLabeller: shardLabeller,
 
 		canShardAllVectorSelectorsCache: make(map[string]bool),
-	}, nil
+	}
 }
 
 // Clone returns a clone of shardSummer with stats and current shard index reset to default.
