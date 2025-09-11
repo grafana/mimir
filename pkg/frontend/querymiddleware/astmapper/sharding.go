@@ -181,25 +181,17 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 				}
 			}()
 
-			// Clone the expression cause the mapper can modify it in-place.
-			clonedExpr, err := parser.ParseExpr(query)
-			if err != nil {
-				return false, err
-			}
-
 			c := summer.Clone()
 			c.shards = 1
-			c.inspectOnly = false
+			c.inspectOnly = true
 			m := NewASTExprMapper(c)
 
-			mappedExpr, err := m.Map(ctx, clonedExpr)
+			mappedExpr, err := m.Map(ctx, expr)
 			if err != nil {
 				return false, err
 			}
 
-			// The mapped expression could have been rewritten and the number of vector selectors
-			// be changed compared to the original expression, so we should compare with that.
-			return c.stats.GetShardedQueries() == countVectorSelectors(mappedExpr), nil
+			return c.stats.GetShardableExpressions() == countVectorSelectors(mappedExpr), nil
 		}
 
 		canLHS, err := canShardAllVectorSelectors(e.LHS)
@@ -249,6 +241,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 	*/
 
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, true, nil
 	}
@@ -357,6 +350,7 @@ func (summer *shardSummer) shardGroup(ctx context.Context, expr *parser.Aggregat
 	*/
 
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, nil
 	}
@@ -400,6 +394,7 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 	*/
 
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, nil
 	}
@@ -423,6 +418,7 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 // shardCount attempts to shard the given COUNT aggregation expression.
 func (summer *shardSummer) shardCount(ctx context.Context, expr *parser.AggregateExpr) (result *parser.AggregateExpr, err error) {
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, nil
 	}
@@ -451,6 +447,7 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 	}
 
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, nil
 	}
@@ -475,6 +472,7 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateExpr) (result parser.Expr, err error) {
 	if summer.inspectOnly {
 		summer.stats.AddShardedQueries(2 * summer.shards) // If we aren't rewriting the query, then record two sharded queries (one for the sum, and another for the count).
+		summer.stats.AddShardableExpressions(1)
 		return expr, nil
 	}
 
@@ -554,6 +552,7 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 	}
 
 	summer.stats.AddShardedQueries(summer.shards)
+	summer.stats.AddShardableExpressions(1)
 	if summer.inspectOnly {
 		return expr, nil
 	}
