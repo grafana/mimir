@@ -289,9 +289,9 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 			partition,
 			startOffset,
 			b.cfg.Kafka.FetchConcurrencyMax,
-			100_000_000,
-			false,
-			5*time.Second,
+			int32(b.cfg.Kafka.MaxBufferedBytes),
+			b.cfg.Kafka.UseCompressedBytesAsFetchMaxBytes,
+			b.cfg.Kafka.FetchMaxWait,
 			nil, // Don't need a reader since we've provided the start offset.
 			ingest.NewGenericOffsetReader(func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
 			backoff.Config{
@@ -302,6 +302,7 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 		if ferr == nil {
 			return f, nil
 		}
+		level.Warn(b.logger).Log("msg", "failed to create concurrent fetcher, probably retrying...", "err", ferr)
 		lastError = ferr
 		boff.Wait()
 	}
