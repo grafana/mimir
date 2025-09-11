@@ -20,8 +20,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -32,11 +32,11 @@ func createSchedulerRetryPolicy[T any]() retrypolicy.RetryPolicy[T] {
 	return retrypolicy.
 		Builder[T]().
 		HandleIf(func(_ T, err error) bool {
-			if err == nil {
+			errStatus, ok := grpcutil.ErrorToStatus(err)
+			if !ok {
 				return false
 			}
-			st, _ := status.FromError(err)
-			switch code := st.Code(); code {
+			switch code := errStatus.Code(); code {
 			case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
 				return true
 			default:
