@@ -252,7 +252,9 @@ func newQuerySharder(
 
 // shard attempts to rewrite expr in a sharded way.
 //
-// If the query can't be sharded, it returns nil and no error.
+// expr may be modified in place.
+//
+// If the query can't be sharded, shard returns nil and no error, and expr is unchanged.
 func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
