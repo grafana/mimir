@@ -140,8 +140,9 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	summer := NewQueryShardSummer(2, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
-	mapper := NewSharding(summer, EmbeddedQueriesSquasher)
+	shardCount := 2
+	summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
+	mapper := NewSharding(summer, shardCount, EmbeddedQueriesSquasher)
 
 	_, err = mapper.Map(ctx, expr)
 	require.NoError(t, err)
