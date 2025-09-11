@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // UserTSDBStats is used to access index.Statistics for a particular user.
@@ -126,36 +127,39 @@ func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool
 }
 
 func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
-	logger := spanlogger.FromContext(ctx, log.NewNopLogger())
+	span, _, traceSampled := tracing.SpanFromContext(ctx)
 
 	var outcome string
 	switch {
 	case abortedEarly:
 		outcome = "aborted_due_to_too_many_matchers"
-		logger.DebugLog("msg", "aborted creating lookup plan because there are too many matchers")
+		if span != nil {
+			span.AddEvent("aborted creating lookup plan because there are too many matchers")
+		}
 	case retErr != nil:
 		outcome = "error"
-		logger.DebugLog("msg", "failed to create lookup plan", "err", retErr)
+		if span != nil {
+			span.AddEvent("failed to create lookup plan", trace.WithAttributes(
+				attribute.String("error", retErr.Error()),
+			))
+		}
 	default:
 		outcome = "success"
-		const topKPlans = 3
-		numPredicates := 0
-		if len(allPlans) > 0 {
-			numPredicates = len(allPlans[0].predicates)
+		if !traceSampled {
+			// Avoid logging overhead if the events aren't going to make it into a span.
+			break
 		}
-		logKvs := make([]any, 0, 2 /* msg */ +2 /* duration */ +topKPlans*2 /* key+value */ *(5 /* cost */ +numPredicates /* matchers */))
-		logKvs = append(logKvs,
-			"msg", "selected lookup plan",
-			"duration", time.Since(start).String(),
-		)
+		span.AddEvent("selected lookup plan", trace.WithAttributes(
+			attribute.Stringer("duration", time.Since(start)),
+		))
+		const topKPlans = 2
 		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planFieldPrefix := "selected_plan"
+			planName := "selected_plan"
 			if i > 0 {
-				planFieldPrefix = fmt.Sprintf("plan_%d", i+1)
+				planName = strconv.Itoa(i + 1)
 			}
-			logKvs = plan.appendLogKVs(logKvs, planFieldPrefix)
+			plan.addSpanEvent(span, planName)
 		}
-		logger.DebugLog(logKvs...)
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
 }
