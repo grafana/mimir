@@ -82,14 +82,43 @@ type seriesStripe struct {
 	activeSeriesAttributionFailureCounter atomic.Float64
 }
 
+// seriesEntryFlag contains boolean flags that can be set on seriesEntry.
+type seriesEntryFlag uint8
+
+const (
+	// flagIsDeleted indicates this series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
+	flagIsDeleted seriesEntryFlag = 1 << iota
+	// flagIsOTLP indicates that this series was ingested using OTLP.
+	flagIsOTLP
+)
+
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
 	nanos                     *atomic.Int64                // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   asmodel.PreAllocDynamicSlice //  Index of the matcher matching
 	numNativeHistogramBuckets int                          // Number of buckets in native histogram series, -1 if not a native histogram.
-	isOTLP                    bool
 
-	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
+	flags seriesEntryFlag
+}
+
+// markAsOTLP sets flagIsDeleted and indicates that this series needs to be removed from deletedSeries before purging.
+func (s *seriesEntry) markAsDeleted() {
+	s.flags |= flagIsDeleted
+}
+
+// isDeleted checks whether this series is marked for deletion.
+func (s seriesEntry) isDeleted() bool {
+	return s.flags&flagIsDeleted > 0
+}
+
+// markAsOTLP sets flagIsOTLP and indicates that the series was ingested using OTLP.
+func (s *seriesEntry) markAsOTLP() {
+	s.flags |= flagIsOTLP
+}
+
+// isOTLP checks whether this seriesEntry was ingested using OTLP.
+func (s seriesEntry) isOTLP() bool {
+	return s.flags&flagIsOTLP > 0
 }
 
 func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.ActiveSeriesTracker) *ActiveSeries {
@@ -274,7 +303,7 @@ func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
 	}
 
 	series := s.refs[ref]
-	series.deleted = true
+	series.markAsDeleted()
 	s.refs[ref] = series
 
 	s.deleted.add(ref, lbls)
@@ -417,7 +446,9 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		nanos:                     atomic.NewInt64(nowNanos),
 		matches:                   matches,
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
-		isOTLP:                    isOTLP,
+	}
+	if isOTLP {
+		e.markAsOTLP()
 	}
 
 	s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
@@ -490,7 +521,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 					s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 				}
 			}
-			if entry.deleted {
+			if entry.isDeleted() {
 				s.deleted.purge(ref)
 			}
 			delete(s.refs, ref)
@@ -498,7 +529,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 		}
 
 		s.active++
-		if entry.isOTLP {
+		if entry.isOTLP() {
 			s.activeOTLP++
 		}
 		if entry.numNativeHistogramBuckets >= 0 {
