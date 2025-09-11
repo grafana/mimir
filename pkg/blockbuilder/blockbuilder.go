@@ -75,9 +75,7 @@ func newWithSchedulerClient(
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
 	kpm := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", reg)
-
-	var readerMetricsSource swappableReaderMetricsSource
-	readerMetricsSource.set(&zeroReaderMetricsSource{})
+	readerMetricsSource := swappableReaderMetricsSource{&zeroReaderMetricsSource{}}
 
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
