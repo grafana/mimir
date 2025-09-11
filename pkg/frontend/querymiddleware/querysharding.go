@@ -122,9 +122,6 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	if err != nil {
 		return nil, err
 	}
-	if err != nil {
-		return nil, err
-	}
 
 	if shardedQuery == nil {
 		return s.next.Do(ctx, r)
@@ -383,7 +380,7 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 			return 0, err
 		}
 		numShardableLegs := 1
-		if err == nil && shardingStats.GetShardedQueries() > 0 {
+		if shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()
 		}
 
