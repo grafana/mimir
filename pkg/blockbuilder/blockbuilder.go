@@ -364,7 +364,6 @@ func (b *BlockBuilder) consumePartitionSection(
 			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
 	}(time.Now())
 
-	b.kafkaClient.ForceMetadataRefresh()
 	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		b.cfg.Kafka.Topic: {
 			partition: kgo.NewOffset().At(startOffset),
