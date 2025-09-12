@@ -2623,18 +2623,14 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
+
 	metrics := lookupplan.NewMetrics(r)
-	statsGenerator := lookupplan.NewStatisticsGenerator(log.With(i.logger, "user", userID))
+	logger := log.With(i.logger, "user", userID)
+	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
 
-	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
-		stats, err := statsGenerator.Stats(meta, reader)
-		if err != nil {
-			level.Warn(i.logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "user", userID, "block", meta.ULID.String(), "err", err)
-			return lookupplan.NoopPlanner{}
-		}
+	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
 
-		return lookupplan.NewCostBasedPlanner(metrics, stats)
-	}
+	return provider.CreatePlanner
 }
 
 // List all users for which we have a TSDB. We do it here in order
