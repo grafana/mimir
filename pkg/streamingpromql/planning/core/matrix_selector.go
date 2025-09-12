@@ -65,18 +65,13 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 }
 
 func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	matchers, err := LabelMatchersToPrometheusType(m.Matchers)
-	if err != nil {
-		return nil, err
-	}
-
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(m.Timestamp),
 		Offset:                   m.Offset.Milliseconds(),
 		Range:                    m.Range,
-		Matchers:                 matchers,
+		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition(),

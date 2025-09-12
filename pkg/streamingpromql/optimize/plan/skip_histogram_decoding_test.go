@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Different test package name to break import cycle
 package plan_test
 
 import (

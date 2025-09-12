@@ -96,7 +96,7 @@ func NewVectorScalarBinaryOperation(
 	return b, nil
 }
 
-func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Get the scalar values once, now, rather than having to do this later in NextSeries.
 	var err error
 	v.scalarData, err = v.Scalar.GetValues(ctx)
@@ -104,7 +104,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 		return nil, err
 	}
 
-	metadata, err := v.Vector.SeriesMetadata(ctx)
+	metadata, err := v.Vector.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}

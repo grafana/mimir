@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -625,10 +626,10 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -722,10 +723,10 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: false}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
-			metadata, err := o.SeriesMetadata(ctx)
+			metadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
 			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)

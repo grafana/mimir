@@ -94,7 +94,7 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			outputSeries, err := aggregator.SeriesMetadata(context.Background())
+			outputSeries, err := aggregator.SeriesMetadata(context.Background(), nil)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
@@ -375,7 +375,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			o, err := testCase.createOperator(inner, timeRange, memoryConsumptionTracker)
 			require.NoError(t, err)
 
-			series, err := o.SeriesMetadata(ctx)
+			series, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if testCase.allowExpectedSeriesInAnyOrder {

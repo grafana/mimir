@@ -2747,6 +2747,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_narrow_binary_selectors",
+              "required": false,
+              "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-narrow-binary-selectors",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

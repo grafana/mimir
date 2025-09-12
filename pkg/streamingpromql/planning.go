@@ -74,6 +74,10 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
 	return planner, nil
 }
 
@@ -304,7 +308,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
@@ -323,7 +327,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
