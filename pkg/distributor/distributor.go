@@ -264,6 +264,9 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
+	// OTLPPushMiddlewares are wrappers that are called when an OTLP push request is received.
+	OTLPPushMiddlewares []OTLPPushMiddleware `yaml:"-"`
+
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 

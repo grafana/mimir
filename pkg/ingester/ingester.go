@@ -2629,15 +2629,17 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
-// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
 // When index lookup planning is enabled, it uses the CostBasedPlanner,
 // which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner(r prometheus.Registerer) index.LookupPlanner {
+// The function ignores the BlockReader parameter for now, maintaining current behavior.
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
+		planner := lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return planner }
 	}
-	return lookupplan.NoopPlanner{}
+	return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2781,7 +2783,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},

@@ -5,7 +5,9 @@ package v2
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -17,6 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -554,4 +558,33 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 	for i := range expected {
 		require.Equalf(t, buffer.PointAt(i), expected[i], "expected points at index %v to be equal", i)
 	}
+}
+
+func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
+	frontendMock := &timeRangeCapturingFrontend{}
+	cfg := Config{LookBackDelta: 7 * time.Minute}
+	executor := NewRemoteExecutor(frontendMock, cfg)
+
+	endT := time.Now().Truncate(time.Minute).UTC()
+	startT := endT.Add(-time.Hour)
+	timeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+
+	ctx := context.Background()
+	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false)
+	require.NoError(t, err)
+
+	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
+	require.Equal(t, endT, frontendMock.maxT)
+}
+
+type timeRangeCapturingFrontend struct {
+	minT time.Time
+	maxT time.Time
+}
+
+func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+	m.minT = minT
+	m.maxT = maxT
+	return nil, nil
 }

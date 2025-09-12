@@ -131,12 +131,13 @@ func TestOptimizationPass(t *testing.T) {
 func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	const maxShards = 2
 	stats := astmapper.NewMapperStats()
-	summer, err := astmapper.NewQueryShardSummer(maxShards, astmapper.VectorSquasher, log.NewNopLogger(), stats)
+	squasher := astmapper.EmbeddedQueriesSquasher
+	summer, err := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
 	if err != nil {
 		return "", err
 	}
 
-	mapper := astmapper.NewSharding(summer)
+	mapper := astmapper.NewSharding(summer, squasher)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
 		return "", err

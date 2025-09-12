@@ -5,7 +5,9 @@ package v2
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -20,13 +22,18 @@ import (
 )
 
 type RemoteExecutor struct {
-	frontend *Frontend
+	frontend ProtobufFrontend
+	cfg      Config
 }
 
 var _ remoteexec.RemoteExecutor = &RemoteExecutor{}
 
-func NewRemoteExecutor(frontend *Frontend) *RemoteExecutor {
-	return &RemoteExecutor{frontend: frontend}
+type ProtobufFrontend interface {
+	DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error)
+}
+
+func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
+	return &RemoteExecutor{frontend: frontend, cfg: cfg}
 }
 
 func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
@@ -63,8 +70,6 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 		OriginalExpression: fullPlan.OriginalExpression,
 	}
 
-	// FIXME: need to capture the affected query components (ingester, store-gateway or both) here by calling QueriedTimeRange
-
 	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)
 	if err != nil {
 		return nil, err
@@ -78,7 +83,8 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 		EnablePerStepStats: enablePerStepStats,
 	}
 
-	stream, err := r.frontend.DoProtobufRequest(ctx, req)
+	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+	stream, err := r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
 	if err != nil {
 		return nil, err
 	}

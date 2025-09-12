@@ -636,7 +636,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.Cfg.Querier,
-		dispatcher,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,
@@ -647,11 +646,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		util_log.Logger,
 		t.Overrides,
 	)
-
-	if dispatcher != nil {
-		// If MQE is enabled, register the evaluation API with the external HTTP server.
-		t.API.RegisterEvaluationAPI(internalQuerierRouter)
-	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -898,7 +892,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.API.RegisterQueryFrontend2(frontend)
 
 	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
-		executor := v2.NewRemoteExecutor(frontend)
+		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
 
 		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
 			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)

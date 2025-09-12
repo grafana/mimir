@@ -85,8 +85,6 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
         run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml
-      - name: Check Generated OTLP Code
-        run: make BUILD_IN_CONTAINER=false check-generated-otlp-code
 
   lint-jsonnet:
     runs-on: ubuntu-latest

@@ -7,11 +7,7 @@ package querier
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"io"
-	"mime"
-	"net/http"
 	"strings"
 	"time"
 
@@ -67,53 +63,6 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 	}
 }
 
-// ServeHTTP responds to requests made to the evaluation HTTP endpoint.
-// This is primarily used for debugging: most requests will arrive from query-frontends via
-// the query-scheduler over gRPC and therefore be handled by HandleProtobuf.
-func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	contentType := r.Header.Get("Content-Type")
-
-	mediaType, params, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-
-	if mediaType != "application/protobuf" {
-		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
-		return
-	}
-
-	protoType := params["proto"]
-	if protoType == "" {
-		http.Error(w, "missing proto parameter in Content-Type header", http.StatusBadRequest)
-		return
-	}
-
-	switch protoType {
-	case evaluateQueryRequestMessageName:
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusAccepted)
-		stream := &httpResultStream{w: w}
-		writer := &queryResponseWriter{
-			stream: stream,
-			logger: d.logger,
-		}
-		d.evaluateQuery(r.Context(), body, writer)
-	default:
-		http.Error(w, "unknown request type", http.StatusUnsupportedMediaType)
-	}
-}
-
-// Why do we call this method "HandleProtobuf", and the other "ServeHTTP"?
-// We want to satisfy the http.Handler interface, which requires a method called ServeHTTP,
-// and the querier/worker.RequestHandler interface that uses the verb "handle"
-// in its method name, so we've made the querier/worker.ProtobufRequestHandler interface use "handle" as well.
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
 	writer := &queryResponseWriter{
 		stream:         stream,
@@ -216,27 +165,6 @@ func errorTypeForError(err error) mimirpb.QueryErrorType {
 	return t
 }
 
-type httpResultStream struct {
-	w http.ResponseWriter
-}
-
-func (s *httpResultStream) Write(ctx context.Context, r *frontendv2pb.QueryResultStreamRequest) error {
-	b, err := r.Marshal()
-	if err != nil {
-		return err
-	}
-
-	if err := binary.Write(s.w, binary.LittleEndian, uint64(len(b))); err != nil {
-		return err
-	}
-
-	if _, err := s.w.Write(b); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 type queryResponseWriter struct {
 	stream         frontendv2pb.QueryResultStream
 	querierMetrics *RequestMetrics
@@ -255,7 +183,6 @@ type queryResponseWriter struct {
 
 // Start emits metrics at the start of request processing.
 // It should only be called once per instance.
-// It should not be called for HTTP requests, as the HTTP server records these metrics automatically.
 func (w *queryResponseWriter) Start(routeName string, payloadSize int) {
 	if routeName == "" {
 		routeName = "<invalid>"
@@ -321,11 +248,9 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryE
 }
 
 func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.QueryResultStreamRequest) error {
-	if w.querierResponseMessageBytes != nil {
-		size := float64(resp.Size())
-		w.querierResponseMessageBytes.Observe(size)
-		w.serverResponseMessageBytes.Observe(size)
-	}
+	size := float64(resp.Size())
+	w.querierResponseMessageBytes.Observe(size)
+	w.serverResponseMessageBytes.Observe(size)
 
 	return w.stream.Write(ctx, resp)
 }
