@@ -9,6 +9,10 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -157,23 +161,15 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-func (p plan) appendLogKVs(keyVals []any, fieldPrefix string) []any {
-	indexMatchers := p.IndexMatchers()
-	scanMatchers := p.ScanMatchers()
-
-	keyVals = append(keyVals,
-		fmt.Sprintf("%s_total_cost", fieldPrefix), p.totalCost(),
-		fmt.Sprintf("%s_index_lookup_cost", fieldPrefix), p.indexLookupCost(),
-		fmt.Sprintf("%s_filter_cost", fieldPrefix), p.filterCost(),
-		fmt.Sprintf("%s_intersection_cost", fieldPrefix), p.intersectionCost(),
-		fmt.Sprintf("%s_cardinality", fieldPrefix), p.cardinality(),
-	)
-
-	for i, m := range indexMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_index_%d", fieldPrefix, i), m.String())
-	}
-	for i, m := range scanMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_scan_%d", fieldPrefix, i), m.String())
-	}
-	return keyVals
+func (p plan) addSpanEvent(span trace.Span, planName string) {
+	span.AddEvent("lookup plan", trace.WithAttributes(
+		attribute.String("plan_name", planName),
+		attribute.Float64("total_cost", p.totalCost()),
+		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
+		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
+	))
 }

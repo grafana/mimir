@@ -2705,6 +2705,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -2900,6 +2905,11 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -4880,10 +4890,10 @@ blocked_requests:
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
-# (experimental) Enable labels query optimizations. When enabled, the
-# query-frontend may rewrite labels queries to improve their performance.
+# (advanced) Enable labels query optimizations. When enabled, the query-frontend
+# may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
-[labels_query_optimizer_enabled: <boolean> | default = false]
+[labels_query_optimizer_enabled: <boolean> | default = true]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4923,7 +4933,7 @@ cost_attribution_labels_structured:
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 10000]
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if

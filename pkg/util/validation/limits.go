@@ -219,7 +219,7 @@ type Limits struct {
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
-	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"experimental"`
+	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -381,7 +381,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
+	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
@@ -467,7 +467,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
-	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", false, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
+	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", true, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")

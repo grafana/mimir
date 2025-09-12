@@ -16,6 +16,9 @@ spec:
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.query_scheduler.service.internalTrafficPolicy }}
   {{- end }}
+  {{- if .Values.query_scheduler.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.query_scheduler.service.trafficDistribution }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP

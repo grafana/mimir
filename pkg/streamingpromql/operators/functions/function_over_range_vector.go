@@ -32,7 +32,8 @@ type FunctionOverRangeVector struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	timeRange types.QueryTimeRange
+	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   types.EmitAnnotationFunc
@@ -49,6 +50,7 @@ func NewFunctionOverRangeVector(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *FunctionOverRangeVector {
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
@@ -58,6 +60,7 @@ func NewFunctionOverRangeVector(
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 
 	if f.SeriesValidationFuncFactory != nil {
@@ -92,7 +95,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
 
 	return metadata, nil

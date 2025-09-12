@@ -63,7 +63,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.9.2
+    image: grafana/alloy:v1.10.2
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -120,8 +120,8 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.130.1
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
+    image: otel/opentelemetry-collector-contrib:0.134.1
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -136,8 +136,8 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.130.1
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
+    image: otel/opentelemetry-collector-contrib:0.134.1
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-otlp-push
     volumes:

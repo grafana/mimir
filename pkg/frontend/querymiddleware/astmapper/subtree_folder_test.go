@@ -51,7 +51,7 @@ func TestEvalPredicate(t *testing.T) {
 		},
 		"hasEmbeddedQueries()": {
 			input:       `sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"}) or sum(selector)`,
-			fn:          hasEmbeddedQueries,
+			fn:          EmbeddedQueriesSquasher.ContainsSquashedExpression,
 			expectedRes: true,
 			expectedErr: false,
 		},
@@ -97,7 +97,7 @@ func TestSubtreeFolder(t *testing.T) {
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			mapper := newSubtreeFolder()
+			mapper := newSubtreeFolder(EmbeddedQueriesSquasher)
 			ctx := context.Background()
 
 			expr, err := parser.ParseExpr(tc.input)

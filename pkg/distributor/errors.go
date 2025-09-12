@@ -62,6 +62,8 @@ var (
 type Error interface {
 	// Cause returns the cause of the error.
 	Cause() mimirpb.ErrorCause
+	// IsSoft returns whether it's a soft type of error (didn't halt ingestion).
+	IsSoft() bool
 }
 
 // replicasDidNotMatchError is an error stating that replicas do not match.
@@ -83,6 +85,10 @@ func (e replicasDidNotMatchError) Error() string {
 
 func (e replicasDidNotMatchError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH
+}
+
+func (e replicasDidNotMatchError) IsSoft() bool {
+	return false
 }
 
 // Ensure that replicasDidNotMatchError implements Error.
@@ -108,6 +114,10 @@ func (e tooManyClustersError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS
 }
 
+func (e tooManyClustersError) IsSoft() bool {
+	return false
+}
+
 // Ensure that tooManyClustersError implements Error.
 var _ Error = tooManyClustersError{}
 
@@ -127,6 +137,10 @@ func (e validationError) Cause() mimirpb.ErrorCause {
 
 func (e validationError) Unwrap() error {
 	return e.error
+}
+
+func (e validationError) IsSoft() bool {
+	return false
 }
 
 // Ensure that validationError implements Error.
@@ -154,6 +168,10 @@ func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED
 }
 
+func (e activeSeriesLimitedError) IsSoft() bool {
+	return false
+}
+
 // Ensure that activeSeriesLimitedError implements Error.
 var _ Error = activeSeriesLimitedError{}
 
@@ -177,6 +195,10 @@ func (e ingestionRateLimitedError) Error() string {
 
 func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
+}
+
+func (e ingestionRateLimitedError) IsSoft() bool {
+	return false
 }
 
 // Ensure that ingestionRateLimitedError implements Error.
@@ -204,6 +226,10 @@ func (e ingestionBurstSizeLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
 }
 
+func (e ingestionBurstSizeLimitedError) IsSoft() bool {
+	return false
+}
+
 // Ensure that ingestionBurstSizeLimitedError implements Error.
 var _ Error = ingestionBurstSizeLimitedError{}
 
@@ -229,6 +255,10 @@ func (e requestRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
 }
 
+func (e requestRateLimitedError) IsSoft() bool {
+	return false
+}
+
 // Ensure that requestRateLimitedError implements Error.
 var _ Error = requestRateLimitedError{}
 
@@ -236,21 +266,25 @@ var _ Error = requestRateLimitedError{}
 type ingesterPushError struct {
 	message string
 	cause   mimirpb.ErrorCause
+	soft    bool
 }
 
 // newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.ERROR_CAUSE_UNKNOWN
+	softErr := false
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
+			softErr = errorDetails.GetSoft()
 		}
 	}
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
 		message: message,
 		cause:   errorCause,
+		soft:    softErr,
 	}
 }
 
@@ -260,6 +294,10 @@ func (e ingesterPushError) Error() string {
 
 func (e ingesterPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
+}
+
+func (e ingesterPushError) IsSoft() bool {
+	return e.soft
 }
 
 // Ensure that ingesterPushError implements Error.
@@ -284,6 +322,10 @@ func (e partitionPushError) Error() string {
 
 func (e partitionPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
+}
+
+func (e partitionPushError) IsSoft() bool {
+	return false
 }
 
 func (e partitionPushError) Unwrap() error {
@@ -442,4 +484,8 @@ func (e unavailableError) Error() string {
 
 func (e unavailableError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE
+}
+
+func (e unavailableError) IsSoft() bool {
+	return false
 }

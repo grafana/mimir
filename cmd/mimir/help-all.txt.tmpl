@@ -2043,6 +2043,8 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
+  -querier.enable-delayed-name-removal
+    	[experimental] Enable the experimental Prometheus feature for delayed name removal.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2263,6 +2265,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Optionally define the cluster validation label.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -query-frontend.enable-remote-execution
+    	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
@@ -2322,7 +2326,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.labels-query-optimizer-enabled
-    	[experimental] Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.
+    	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
@@ -3281,6 +3285,16 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.ingest-storage-record.consumer-group string
+    	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
+  -tests.ingest-storage-record.enabled
+    	Whether the test for ingest-storage record correctness is enabled.
+  -tests.ingest-storage-record.max-jump-size int
+    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 100000000)
+  -tests.ingest-storage-record.max-records-per-run int
+    	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
+  -tests.ingest-storage-record.records-processed-percent int
+    	The approximate percent of records to actually fetch and compare. (default 5)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
@@ -3914,7 +3928,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.label-value-length-over-limit-strategy value
     	What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-cost-attribution-cardinality int
-    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 2000)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

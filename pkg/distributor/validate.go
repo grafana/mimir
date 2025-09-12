@@ -77,7 +77,7 @@ var (
 		validation.MaxLabelNameLengthFlag,
 	)
 	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		"received a series whose label value length exceeds the limit, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
+		"received a series whose label value length of %d exceeds the limit of %d, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
@@ -135,7 +135,7 @@ type labelValueTooLongError struct {
 }
 
 func (e labelValueTooLongError) Error() string {
-	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, e.Series)
+	return fmt.Sprintf(labelValueTooLongMsgFormat, len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series)
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.

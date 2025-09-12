@@ -401,13 +401,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		partition:   partition,
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
-			name:    "planned",
+			name:    offsetNamePlanned,
 			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
-			name:    "committed",
+			name:    offsetNameCommitted,
 			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
@@ -973,6 +973,11 @@ type advancingOffset struct {
 
 const offsetEmpty int64 = -1
 
+const (
+	offsetNamePlanned   = "planned"
+	offsetNameCommitted = "committed"
+)
+
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
@@ -989,7 +994,7 @@ func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
 		// Gap detected.
 		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		o.metrics.jobGapDetected.WithLabelValues(o.name, fmt.Sprint(spec.Partition)).Inc()
+		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}
 
 	o.off = spec.EndOffset
