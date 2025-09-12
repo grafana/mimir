@@ -59,11 +59,14 @@ func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationCons
 	}
 }
 
-func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, matchers)
+		// Note that we are ignoring the matchers passed at runtime and not passing them to the inner
+		// operator. This is because this operator is being used for multiple parts of the query and
+		// the matchers may filter out results needed for other uses of this operator.
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, nil)
 		if err != nil {
 			return nil, err
 		}

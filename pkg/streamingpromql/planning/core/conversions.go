@@ -17,11 +17,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func (h *BinaryExpressionHints) ToQueryHint() *binops.QueryHints {
+func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	if h == nil {
 		return nil
 	}
-	return &binops.QueryHints{
+	return &binops.Hints{
 		Include: slices.Clone(h.Include),
 	}
 }

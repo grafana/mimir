@@ -750,9 +750,8 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
-// QueryHints are hints that can be applied to binary operations to avoid doing
-// unnecessary work.
-type QueryHints struct {
+// Hints are hints that can be applied to binary operations to avoid doing unnecessary work.
+type Hints struct {
 	Include []string
 }
 
@@ -764,7 +763,7 @@ const (
 // based on the series returned by the other side and QueryHints as determined by the query
 // planner. If there are more than a hard-coded maximum number of values for the hinted labels
 // matchers for that label are skipped.
-func BuildMatchers(metadata []types.SeriesMetadata, hints *QueryHints) types.Matchers {
+func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
 	var matchers []types.Matcher
 
 	for _, label := range hints.Include {
