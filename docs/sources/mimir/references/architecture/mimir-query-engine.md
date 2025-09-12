@@ -81,7 +81,7 @@ When MQE evaluates a binary operation (such as `+`, `-`, `/`, `and`, `or`, etc.)
   `bar` selects a single series `bar{env="prod"}`, then the query cannot produce any series and so the
   data for each side is not evaluated.
   
-- If MQE can determine that some series on the binary operation side will not match anything on another side, it will skip evaluating this series.
+- If MQE can determine that some series on one side will not match anything on the other side, it will skip evaluating the series that do not match the other side.
   For example, if the query is `foo / on (env) bar`, and `foo` has series `foo{env="1", region="a"}` and `foo{env="2", region="a"}` and `bar` has `bar{env="1", cluster="x"}`, `bar{env="3", cluster="x"}` and `bar{env="3", cluster="y"}`,
   MQE will ignore the `env="3"` series from `bar`, which might conflict, because they don't match anything on the LHS, whereas Prometheus will still examine them and produce a conflict error.
 
