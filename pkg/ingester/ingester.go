@@ -2631,10 +2631,6 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 		stats, err := statsGenerator.Stats(meta, reader)
 		if err != nil {
 			level.Warn(i.logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "user", userID, "block", meta.ULID.String(), "err", err)
-			stats = nil
-		}
-
-		if stats == nil {
 			return lookupplan.NoopPlanner{}
 		}
 
