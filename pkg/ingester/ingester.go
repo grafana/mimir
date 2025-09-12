@@ -969,19 +969,6 @@ func (i *Ingester) updateLimitMetrics() {
 	}
 }
 
-func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-	db := i.getTSDB(user)
-	// If no user TSDB is found, we should not run lookup planning.
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-	return db.Head().PostingsStats(), nil
-}
-
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
@@ -2630,16 +2617,25 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it uses the CostBasedPlanner,
-// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
+// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
+// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-// The function ignores the BlockReader parameter for now, maintaining current behavior.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		planner := lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
-		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return planner }
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-	return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
+	metrics := lookupplan.NewMetrics(r)
+	statsGenerator := lookupplan.NewStatisticsGenerator(log.With(i.logger, "user", userID))
+
+	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
+		stats, err := statsGenerator.Stats(meta, reader)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "user", userID, "block", meta.ULID.String(), "err", err)
+			return lookupplan.NoopPlanner{}
+		}
+
+		return lookupplan.NewCostBasedPlanner(metrics, stats)
+	}
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2783,7 +2779,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
