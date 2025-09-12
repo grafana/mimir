@@ -28,7 +28,7 @@ func NewNarrowSelectorsOptimizationPass(logger log.Logger) *NarrowSelectorsOptim
 }
 
 func (n *NarrowSelectorsOptimizationPass) Name() string {
-	return ""
+	return "narrow selectors"
 }
 
 func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
@@ -57,7 +57,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 		e.Hints = n.hintsFromNode(ctx, e)
 		if e.Hints != nil {
 			sl := spanlogger.FromContext(ctx, n.logger)
-			sl.DebugLog("msg", "setting query hint on binary expression", "fields", e.Hints.GetInclude())
+			sl.DebugLog("msg", "setting query hint on binary expression", "labels", e.Hints.GetInclude())
 		}
 	}
 
