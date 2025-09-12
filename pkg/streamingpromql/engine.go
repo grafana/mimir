@@ -85,7 +85,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
-		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 
 		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -119,12 +118,11 @@ type QueryTracker interface {
 }
 
 type Engine struct {
-	lookbackDelta            time.Duration
-	timeout                  time.Duration
-	limitsProvider           QueryLimitsProvider
-	activeQueryTracker       QueryTracker
-	enablePerStepStats       bool
-	enableDelayedNameRemoval bool
+	lookbackDelta      time.Duration
+	timeout            time.Duration
+	limitsProvider     QueryLimitsProvider
+	activeQueryTracker QueryTracker
+	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
