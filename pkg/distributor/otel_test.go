@@ -41,6 +41,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -699,6 +700,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				require.Equal(t, 1, dropped)
 			} else {
 				require.NoError(t, err)
+				mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
 				require.Len(t, mimirTS, 1)
 				require.Equal(t, 0, dropped)
 				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
@@ -784,6 +786,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
+			mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
 			require.Len(t, mimirTS, 1)
 			require.Equal(t, 0, dropped)
 			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
