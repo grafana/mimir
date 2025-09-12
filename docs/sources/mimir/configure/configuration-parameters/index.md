@@ -5224,7 +5224,7 @@ ruler_alertmanager_client_config:
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
 # wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams,
-# msteamsv2.
+# msteamsv2, jira.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
