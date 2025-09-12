@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
@@ -2852,47 +2851,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
-// disabledPlanningChunkQuerier wraps a storage.ChunkQuerier and disables lookup planning for all operations
-type disabledPlanningChunkQuerier struct {
-	delegate storage.ChunkQuerier
-}
-
-func (q *disabledPlanningChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelValues(ctxWithoutPlanning, name, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelNames(ctxWithoutPlanning, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) Close() error {
-	return q.delegate.Close()
-}
-
-func (q *disabledPlanningChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.Select(ctxWithoutPlanning, sortSeries, hints, matchers...)
-}
-
 // createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
-	}
-
-	blockMeta := b.Meta()
-
-	// Check if block is older than 3 hours.
-	// 1h in memory + 2h for compaction - only use stats for very recent (mostly in-memory) blocks
-	threeHoursAgo := time.Now().Add(-3 * time.Hour).UnixMilli()
-	if blockMeta.MaxTime < threeHoursAgo {
-		// For old blocks, use a querier with disabled lookup planning to avoid using outdated statistics
-		return &disabledPlanningChunkQuerier{
-			delegate: defaultQuerier,
-		}, nil
 	}
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
@@ -2903,7 +2866,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
-		blockMeta,
+		b.Meta(),
 		i.logger,
 		defaultQuerier,
 	)
