@@ -145,6 +145,14 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		if err != nil {
 			return errors.Wrap(err, "parsing chunk length")
 		}
+
+		// Validate chunk data length to prevent unreasonably large memory allocations or panics from a corrupted data.
+		// Note, that on a 64-bit system Go should allow to allocate up to 1<<47 bytes; a larger len causes "makeslice: len out of range".
+		// Such a large chunk data len is unrealistic. Here we're opting to a more conservative check.
+		if chunkDataLen > uint64(tsdb.EstimatedMaxChunkSize) {
+			return fmt.Errorf("chunk seq %d: data length %d exceeds estimated maximum chunk size %d", seq, chunkDataLen, tsdb.EstimatedMaxChunkSize)
+		}
+
 		// We ignore the crc32 after the chunk data.
 		chunkEncDataLen := chunks.ChunkEncodingSize + int(chunkDataLen)
 		cb := chunksPool.Get(chunkEncDataLen)
