@@ -6,6 +6,7 @@
 package v2
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -78,11 +79,12 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.WorkerConcurrency = concurrency
 	cfg.Addr = h
 	cfg.Port = grpcPort
+	cfg.QueryStoreAfter = 12 * time.Hour
 
 	logger := log.NewLogfmtLogger(os.Stdout)
 	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
-	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
+	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -115,20 +117,29 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	return f, ms
 }
 
-func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
+func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) error {
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
 		Stats:        &stats.SafeStats{},
 	})
+	return err
 }
 
 func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, resp...); err != nil {
+		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
+		// So just log it but don't fail the test.
+		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
+	}
+}
+
+func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) error {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -139,12 +150,7 @@ func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uin
 		msgs: resp,
 	}
 
-	err := f.QueryResultStream(stream)
-	if err != nil {
-		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
-		// So just log it but don't fail the test.
-		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
-	}
+	return f.QueryResultStream(stream)
 }
 
 func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
@@ -156,10 +162,12 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -182,6 +190,8 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -189,7 +199,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -232,7 +242,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -268,7 +278,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 
 	msg, err := resp.Next(ctx)
@@ -289,7 +299,7 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -312,10 +322,12 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
 				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 				// It first needs to be told that enqueuing has succeeded.
-				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
-					Code: 200,
-					Body: []byte(body),
-				})
+				go func() {
+					_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
+						Code: 200,
+						Body: []byte(body),
+					})
+				}()
 			},
 			makeRequest: func(t *testing.T, f *Frontend) {
 				req := &httpgrpc.HTTPRequest{
@@ -334,7 +346,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			makeRequest: func(t *testing.T, f *Frontend) {
 				ctx := user.InjectOrgID(context.Background(), userID)
 				req := &querierpb.EvaluateQueryRequest{}
-				resp, err := f.DoProtobufRequest(ctx, req)
+				resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 				require.NoError(t, err)
 				t.Cleanup(resp.Close)
 			},
@@ -396,10 +408,12 @@ func TestFrontend_HTTPGRPC_RetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -432,7 +446,7 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -448,7 +462,7 @@ func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -474,7 +488,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -529,7 +543,7 @@ func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -567,7 +581,7 @@ func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -602,22 +616,22 @@ func TestFrontend_HTTPGRPC_EnqueueFailures(t *testing.T) {
 			{
 				name:  "start time is wrong",
 				url:   "/api/v1/query_range?start=9466camnsd84800&end=946771200&step=60&query=up{}",
-				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "start": cannot parse "9466camnsd84800" to a valid timestamp`,
+				error: `invalid parameter "start": cannot parse "9466camnsd84800" to a valid timestamp`,
 			},
 			{
 				name:  "end time is wrong",
 				url:   "/api/v1/query_range?start=946684800&end=946771200dgiu&step=60&query=up{}",
-				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "end": cannot parse "946771200dgiu" to a valid timestamp`,
+				error: `invalid parameter "end": cannot parse "946771200dgiu" to a valid timestamp`,
 			},
 			{
 				name:  "query time is wrong",
 				url:   "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{",
-				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": 1:4: parse error: unexpected end of input inside braces`,
+				error: `invalid parameter "query": 1:4: parse error: unexpected end of input inside braces`,
 			},
 			{
 				name:  "no query provided",
 				url:   "/api/v1/query_range?start=946684800&end=946771200&step=60",
-				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": unknown position: parse error: no expression found in input`,
+				error: `invalid parameter "query": unknown position: parse error: no expression found in input`,
 			},
 		}
 		for _, c := range cases {
@@ -645,7 +659,7 @@ func TestFrontendCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -698,7 +712,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -767,7 +781,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 		},
 		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
 			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req)
+			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 			require.NoError(t, err)
 			t.Cleanup(resp.Close)
 
@@ -825,7 +839,7 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -851,7 +865,7 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	})
 
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -859,6 +873,147 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	msg, err := resp.Next(uncancelledContext)
 	require.ErrorIs(t, err, cancellationError)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	responseSucceeded := atomic.NewBool(false)
+	responseError := atomic.NewError(nil)
+	queryID := atomic.NewUint64(0)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		queryID.Store(msg.QueryID)
+
+		for range 2 {
+			go func() {
+				defer wg.Done()
+
+				err := sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+					Code: 200,
+					Body: []byte(body),
+				})
+
+				if err != nil {
+					responseError.CompareAndSwap(nil, err)
+				} else {
+					responseSucceeded.Store(true)
+				}
+			}()
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+	require.Equal(t, []byte(body), resp.Body)
+
+	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
+	wg.Wait()
+	require.True(t, responseSucceeded.Load())
+	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID.Load()))
+}
+
+func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
+	const userID = "test"
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	responseSucceeded := atomic.NewBool(false)
+	responseError := atomic.NewError(nil)
+	queryID := atomic.NewUint64(0)
+	queryIDReceived := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
+			// notification to the scheduler, which we should ignore.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
+
+		queryID.Store(msg.QueryID)
+		close(queryIDReceived)
+
+		for range 2 {
+			go func() {
+				defer wg.Done()
+
+				err := sendStreamingResponseWithErrorCapture(
+					f, userID, msg.QueryID,
+					newStringMessage("first message"),
+					newStringMessage("second message"),
+				)
+
+				if err != nil {
+					responseError.CompareAndSwap(nil, err)
+				} else {
+					responseSucceeded.Store(true)
+				}
+			}()
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	require.NoError(t, err)
+	defer resp.Close()
+
+	<-queryIDReceived
+	firstMessage := newStringMessage("first message")
+	firstMessage.QueryID = queryID.Load()
+	secondMessage := newStringMessage("second message")
+	secondMessage.QueryID = queryID.Load()
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, firstMessage, msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, secondMessage, msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+
+	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
+	wg.Wait()
+	require.True(t, responseSucceeded.Load())
+	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID))
+}
+
+func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
+	queryID := atomic.NewUint64(0)
+	errChan := make(chan error)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			queryID.Store(msg.QueryID)
+			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	require.NoError(t, err)
+	defer resp.Close()
+
+	errSentToQuerier := <-errChan
+	require.EqualError(t, errSentToQuerier, fmt.Sprintf(`got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {
@@ -1248,4 +1403,236 @@ func newErrorMessage(typ mimirpb.QueryErrorType, msg string) *frontendv2pb.Query
 			},
 		},
 	}
+}
+
+const rangeURLFormat = "/api/v1/query_range?end=%d&query=go_goroutines{}&start=%d&step=%d"
+
+func makeRangeHTTPRequest(ctx context.Context, start, end time.Time, step int64) *http.Request {
+	rangeURL := fmt.Sprintf(rangeURLFormat, end.Unix(), start.Unix(), step)
+	rangeHTTPReq, _ := http.NewRequestWithContext(ctx, "GET", rangeURL, bytes.NewReader([]byte{}))
+	rangeHTTPReq.RequestURI = rangeHTTPReq.URL.RequestURI()
+	return rangeHTTPReq
+}
+
+const instantURLFormat = "/api/v1/query?query=go_goroutines{}&time=%d"
+
+func makeInstantHTTPRequest(ctx context.Context, time time.Time) *http.Request {
+	instantURL := fmt.Sprintf(instantURLFormat, time.Unix())
+	instantHTTPReq, _ := http.NewRequestWithContext(ctx, "GET", instantURL, bytes.NewReader([]byte{}))
+	instantHTTPReq.RequestURI = instantHTTPReq.URL.RequestURI()
+	return instantHTTPReq
+}
+
+const labelValuesURLFormat = "/prometheus/api/v1/label/__name__/values"
+const labelValuesURLFormatWithStartOnly = "/prometheus/api/v1/label/__name__/values?start=%d"
+const labelValuesURLFormatWithEndOnly = "/prometheus/api/v1/label/__name__/values?end=%d"
+const labelValuesURLFormatWithStartAndEnd = "/prometheus/api/v1/label/__name__/values?end=%d&start=%d"
+
+func makeLabelValuesHTTPRequest(ctx context.Context, start, end *time.Time) *http.Request {
+	var labelValuesURL string
+	switch {
+	case start == nil && end == nil:
+		labelValuesURL = labelValuesURLFormat
+	case start != nil && end == nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithStartOnly, start.Unix())
+	case start == nil && end != nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithEndOnly, end.Unix())
+	case start != nil && end != nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithStartAndEnd, end.Unix(), start.Unix())
+	}
+
+	labelValuesHTTPReq, _ := http.NewRequestWithContext(ctx, "GET", labelValuesURL, bytes.NewReader([]byte{}))
+	labelValuesHTTPReq.RequestURI = labelValuesHTTPReq.URL.RequestURI()
+	return labelValuesHTTPReq
+}
+
+func TestExtractAdditionalQueueDimensions(t *testing.T) {
+	frontend := &Frontend{
+		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
+		limits: limits{queryIngestersWithin: 13 * time.Hour},
+		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+	}
+
+	now := time.Now()
+
+	// range and label queries have `start` and `end` params,
+	// requiring different cases than instant queries with only a `time` param
+	// label query start and end params are optional; these tests are only for when both are present
+	rangeAndLabelQueryTests := map[string]struct {
+		start                       time.Time
+		end                         time.Time
+		expectedAddlQueueDimensions []string
+	}{
+		"query with start after query store after is ingesters only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                            |----|
+			start:                       now.Add(-frontend.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			end:                         now,
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"query with end before query ingesters within is store-gateways only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:        |----|
+			start:                       now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Hour),
+			end:                         now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"query with start before query ingesters and end after query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:            |--------------|
+			start:                       now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-frontend.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"query with start before query ingesters and end before query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:             |---------|
+			start:                       now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-frontend.cfg.QueryStoreAfter).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"query with start after query ingesters and end after query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                  |---------|
+			start:                       now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-frontend.cfg.QueryStoreAfter).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"query with start and end between query ingesters and query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                 |-----|
+			start:                       now.Add(-frontend.limits.QueryIngestersWithin("")).Add(29 * time.Minute),
+			end:                         now.Add(-frontend.limits.QueryIngestersWithin("")).Add(31 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+	}
+
+	for testName, testData := range rangeAndLabelQueryTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+
+			rangeHTTPReq := makeRangeHTTPRequest(ctx, testData.start, testData.end, 60)
+			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, &testData.start, &testData.end)
+
+			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
+
+			for _, req := range reqs {
+				httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+				require.NoError(t, err)
+
+				additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
+					ctx, httpgrpcReq, now,
+				)
+				require.NoError(t, err)
+				require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+			}
+		})
+	}
+
+	instantQueryTests := map[string]struct {
+		time                        time.Time
+		expectedAddlQueueDimensions []string
+	}{
+		"query with time after query store after is ingesters only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                                 |
+			time:                        now.Add(-frontend.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"query with end before query ingesters within is store-gateways only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                   |
+			time:                        now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Hour),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"query with start and end between query ingesters and query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                          |
+			time:                        now.Add(-frontend.limits.QueryIngestersWithin("")).Add(30 * time.Minute),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+	}
+	for testName, testData := range instantQueryTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+
+			instantHTTPReq := makeInstantHTTPRequest(ctx, testData.time)
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(instantHTTPReq)
+			require.NoError(t, err)
+
+			additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
+				ctx, httpgrpcReq, now,
+			)
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+		})
+	}
+
+}
+
+func TestQueryDecoding(t *testing.T) {
+	frontend := &Frontend{
+		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
+		limits: limits{queryIngestersWithin: 13 * time.Hour},
+		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+	}
+
+	now := time.Now()
+
+	// these timestamps are arbitrary; these tests only check for successful decoding,
+	// not the logic of assigning additional queue dimensions
+	start := now.Add(-frontend.limits.QueryIngestersWithin("")).Add(29 * time.Minute)
+	end := now.Add(-frontend.limits.QueryIngestersWithin("")).Add(31 * time.Minute)
+
+	labelQueryTimeParamTests := map[string]struct {
+		start *time.Time
+		end   *time.Time
+	}{
+		"labels query without end time param passes validation": {
+			start: &start,
+			end:   nil,
+		},
+		"labels query without start time param passes validation": {
+			start: nil,
+			end:   &end,
+		},
+		"labels query without start or end time param passes validation": {
+			start: nil,
+			end:   nil,
+		},
+	}
+
+	for testName, testData := range labelQueryTimeParamTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+
+			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, testData.start, testData.end)
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(labelValuesHTTPReq)
+			require.NoError(t, err)
+
+			additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
+				ctx, httpgrpcReq, now,
+			)
+			require.NoError(t, err)
+			require.Len(t, additionalQueueDimensions, 1)
+
+		})
+	}
+
+	t.Run("malformed httpgrpc requests fail decoding", func(t *testing.T) {
+		reqFailsHTTPDecode := &httpgrpc.HTTPRequest{Method: ";"}
+
+		_, errHTTPDecode := frontend.extractTouchedQueryComponentsForHTTPRequest(context.Background(), reqFailsHTTPDecode, time.Now())
+		require.Error(t, errHTTPDecode)
+		require.Contains(t, errHTTPDecode.Error(), "net/http")
+	})
 }
