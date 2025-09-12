@@ -14,10 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestCombinedAppender(t *testing.T) {
+func TestMimirAppender(t *testing.T) {
 	collidingLabels1, collidingLabels2 := labelsWithHashCollision()
 
 	testCases := map[string]struct {
@@ -577,6 +578,7 @@ func TestCombinedAppender(t *testing.T) {
 					}
 
 					series, metadata := appender.GetResult()
+					series = testutil.RemoveEmptyObjectFromSeries(series)
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)
 					if tc.expectCollisions {
