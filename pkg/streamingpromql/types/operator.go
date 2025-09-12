@@ -48,10 +48,11 @@ type SeriesOperator interface {
 	Operator
 
 	// SeriesMetadata returns a list of all series that will be returned by this operator.
+	// Additional matchers determined during query evaluation may be passed to further limit
+	// the series produced by this operator. Implementations may ignore these extra matchers.
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
-	// TODO: Docs
 	SeriesMetadata(ctx context.Context, matchers Matchers) ([]SeriesMetadata, error)
 }
 

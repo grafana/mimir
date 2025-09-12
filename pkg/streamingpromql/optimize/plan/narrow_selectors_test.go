@@ -73,10 +73,50 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
 		},
+		"binary expression aggregation LHS aggregation RHS aggregation": {
+			expr: `sum by (region) (some_metric) / sum by (region) (some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints (region)
+					- LHS: AggregateExpression: sum by (region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum by (region)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
 		"binary expression multiple aggregation LHS aggregation RHS": {
 			expr: `sum by (region, env) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS, hints (region, env)
+					- LHS: AggregateExpression: sum by (region, env)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
+		"binary expression multiple aggregation LHS aggregation RHS aggregation": {
+			expr: `sum by (region, env) (some_metric) / sum by (region, env) (some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints (region, env)
+					- LHS: AggregateExpression: sum by (region, env)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum by (region, env)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
+		"binary expression multiple aggregation LHS aggregation RHS aggregation different labels": {
+			expr: `sum by (region, env) (some_metric) / sum by (region, cluster) (some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints (region, env)
+					- LHS: AggregateExpression: sum by (region, env)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum by (region, cluster)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
+		"binary expression on multiple aggregation LHS aggregation RHS aggregation": {
+			expr: `sum by (region, env) (some_metric) / on(region) sum(some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (region) RHS, hints (region)
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum

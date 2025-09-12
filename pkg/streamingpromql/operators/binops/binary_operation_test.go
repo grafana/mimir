@@ -15,7 +15,7 @@ import (
 func TestBuildMatchers(t *testing.T) {
 	t.Run("single series single hint", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 1)
-		hints := &QueryHints{Include: []string{"container"}}
+		hints := &Hints{Include: []string{"container"}}
 		expected := types.Matchers([]types.Matcher{{
 			Type:  labels.MatchRegexp,
 			Name:  "container",
@@ -28,7 +28,7 @@ func TestBuildMatchers(t *testing.T) {
 
 	t.Run("multiple series single hint", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 3)
-		hints := &QueryHints{Include: []string{"container"}}
+		hints := &Hints{Include: []string{"container"}}
 		expected := types.Matchers([]types.Matcher{{
 			Type:  labels.MatchRegexp,
 			Name:  "container",
@@ -41,7 +41,7 @@ func TestBuildMatchers(t *testing.T) {
 
 	t.Run("multiple series multiple hints", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 3)
-		hints := &QueryHints{Include: []string{"container", "region"}}
+		hints := &Hints{Include: []string{"container", "region"}}
 		expected := types.Matchers([]types.Matcher{
 			{
 				Type:  labels.MatchRegexp,
@@ -61,7 +61,7 @@ func TestBuildMatchers(t *testing.T) {
 
 	t.Run("too many values single hint", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 128)
-		hints := &QueryHints{Include: []string{"pod"}}
+		hints := &Hints{Include: []string{"pod"}}
 
 		res := BuildMatchers(series, hints)
 		require.Empty(t, res)
@@ -69,7 +69,7 @@ func TestBuildMatchers(t *testing.T) {
 
 	t.Run("too many values multiple hints", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 128)
-		hints := &QueryHints{Include: []string{"pod", "container"}}
+		hints := &Hints{Include: []string{"pod", "container"}}
 		expected := types.Matchers([]types.Matcher{{
 			Type:  labels.MatchRegexp,
 			Name:  "container",
