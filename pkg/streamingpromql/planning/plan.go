@@ -146,6 +146,7 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
+	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
 }
 

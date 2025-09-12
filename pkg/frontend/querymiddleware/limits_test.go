@@ -20,12 +20,17 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1111,4 +1116,168 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 	v.selectors = append(v.selectors, selector)
 	return v, nil
+}
+
+func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
+	logger := log.NewNopLogger()
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, logger)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1s
+			some_metric{foo="bar"} 0+1x50
+			some_other_metric{foo="bar", idx="0"} 0+1x50
+			some_other_metric{foo="bar", idx="1"} 0+1x50
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	// Replace the handler's storage with our test storage so we can test specific scenarios that depend on data.
+	handler.(*engineQueryRequestRoundTripperHandler).storage = storage
+
+	lookbackDelta := 5 * time.Minute
+
+	mustParseExpr := func(s string) parser.Expr {
+		expr, err := parser.ParseExpr(s)
+		require.NoError(t, err)
+		return expr
+	}
+
+	testCases := map[string]struct {
+		req              MetricsQueryRequest
+		expectedResponse Response
+		expectedErr      error
+	}{
+		"range query": {
+			req: NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"instant query": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"scalar result": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 5},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"string result": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`"foo"`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "value", Value: "foo"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 0},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"execution error": {
+			req:         NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), Options{}, nil, ""),
+			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
+		},
+
+		"annotations": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result:     []SampleStream{},
+				},
+				Warnings: []string{
+					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
+				},
+				Infos: []string{
+					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			response, err := handler.Do(context.Background(), testCase.req)
+			require.Equal(t, testCase.expectedErr, err)
+
+			if testCase.expectedErr != nil {
+				require.Nil(t, response)
+				return
+			}
+
+			responseWithFinalizer, ok := response.(*PrometheusResponseWithFinalizer)
+			require.True(t, ok)
+			require.Equal(t, testCase.expectedResponse, responseWithFinalizer.PrometheusResponse)
+			require.NotNil(t, responseWithFinalizer.finalizer, "expected response to have a finalizer")
+
+			responseWithFinalizer.Close()
+		})
+	}
 }

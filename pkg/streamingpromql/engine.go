@@ -249,6 +249,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Annotations:              annotations.New(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
+		Plan:                     plan,
 		EnableDelayedNameRemoval: e.enableDelayedNameRemoval,
 	}
 

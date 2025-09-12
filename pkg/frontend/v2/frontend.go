@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -46,6 +47,8 @@ import (
 var tracer = otel.Tracer("pkg/frontend/v2")
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
+var errStreamClosed = cancellation.NewErrorf("stream closed")
+var errUnexpectedHTTPResponse = errors.New("unexpected HTTP response to non-HTTP request")
 
 // Config for a Frontend.
 type Config struct {
@@ -127,16 +130,23 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID         uint64
-	httpRequest     *httpgrpc.HTTPRequest
-	protobufRequest proto.Message
-	userID          string
-	statsEnabled    bool
+	queryID      uint64
+	userID       string
+	statsEnabled bool
 
-	ctx context.Context
+	ctx        context.Context
+	spanLogger *spanlogger.SpanLogger
 
-	enqueue  chan enqueueResult
-	response chan queryResultWithBody
+	enqueue chan enqueueResult
+
+	// If this is a httpgrpc request, then these fields will be populated:
+	httpRequest  *httpgrpc.HTTPRequest
+	httpResponse chan queryResultWithBody
+
+	// If this is a Protobuf request, then these fields will be populated:
+	protobufRequest        proto.Message
+	protobufResponseStream *ProtobufResponseStream
+	protobufResponseDone   chan struct{} // Used to signal when the response has been completely read (but possibly not yet consumed) and we can stop monitoring the request context for cancellation.
 }
 
 type enqueueStatus int
@@ -147,13 +157,23 @@ const (
 
 	// Failed to forward request to scheduler, frontend will try again.
 	failed
+
+	// User has too many outstanding requests. Frontend should not try again.
+	tooManyRequests
+
+	// The scheduler returned an error. Frontend should not try again.
+	schedulerReturnedError
 )
 
 type enqueueResult struct {
 	status enqueueStatus
-	// If the status is failed and if it was because of a client error on the frontend,
+
+	// If status is failed and if it was because of a client error on the frontend,
 	// the clientErr should be updated with the appropriate error.
 	clientErr error
+
+	// If status is schedulerReturnedError, schedulerErr contains the error returned by the scheduler.
+	schedulerErr string
 
 	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
 }
@@ -223,26 +243,22 @@ func (f *Frontend) stopping(_ error) error {
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
-// RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
-		return nil, nil, fmt.Errorf("frontend not running: %v", s)
+		return nil, nil, nil, fmt.Errorf("frontend not running: %v", s)
 	}
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
-	// cancel is passed to the cleanup function and invoked from there
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
-		httpRequest:  httpRequest,
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
@@ -250,9 +266,25 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
-		enqueue:  make(chan enqueueResult, 1),
-		response: make(chan queryResultWithBody, 1),
+		enqueue: make(chan enqueueResult, 1),
+
+		spanLogger: spanlogger.FromContext(ctx, f.log),
 	}
+
+	return freq, ctx, cancel, nil
+}
+
+// RoundTripGRPC round trips a httpgrpc request.
+func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	freq.httpRequest = httpRequest
+	// Buffer of 1 to ensure response or error can be written to the channel
+	// even if this goroutine goes away due to client context cancellation.
+	freq.httpResponse = make(chan queryResultWithBody, 1)
 
 	f.requests.put(freq)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
@@ -268,29 +300,29 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		}
 	}()
 
-	cancelCh, err := f.enqueueRequestWithRetries(ctx, freq, spanLogger)
+	cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
+	freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
 	select {
 	case <-ctx.Done():
-		spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
+		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
 
 		select {
 		case cancelCh <- freq.queryID:
 			// cancellation sent.
 		default:
 			// failed to cancel, ignore.
-			level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 		}
 
-		return nil, nil, ctx.Err()
+		return nil, nil, context.Cause(ctx)
 
-	case resp := <-freq.response:
-		spanLogger.DebugLog("msg", "received response")
+	case resp := <-freq.httpResponse:
+		freq.spanLogger.DebugLog("msg", "received response")
 
 		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 			stats := stats.FromContext(ctx)
@@ -309,16 +341,178 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	}
 }
 
-func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest, spanLogger *spanlogger.SpanLogger) (chan<- uint64, error) {
+// DoProtobufRequest initiates a Protobuf request to queriers.
+// If the returned error is nil, then callers must either Close the returned stream
+// or cancel ctx to ensure resources are not leaked.
+func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
+	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
+	logger.SetTag("request.type", proto.MessageName(req))
+
+	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	if err != nil {
+		logger.Finish()
+		return nil, err
+	}
+
+	freq.protobufRequest = req
+	freq.protobufResponseDone = make(chan struct{})
+	freq.protobufResponseStream = &ProtobufResponseStream{
+		ctx:        ctx,
+		cancel:     cancel,
+		spanLogger: freq.spanLogger,
+		// Buffer of 1 to ensure response or error can be written to the channel
+		// even if this goroutine goes away due to client context cancellation.
+		messages:     make(chan protobufResponseMessage, 1),
+		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
+	}
+
+	f.requests.put(freq)
+
+	go func() {
+		defer func() {
+			f.requests.delete(freq.queryID)
+			cancel(errExecutingQueryRoundTripFinished)
+			logger.Finish()
+		}()
+
+		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
+		if err != nil {
+			freq.protobufResponseStream.writeEnqueueError(err)
+			return
+		}
+
+		freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
+
+		// Wait until either the response is completely read, or the request is cancelled.
+		select {
+		case <-ctx.Done():
+			freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
+
+			select {
+			case cancelCh <- freq.queryID:
+				// cancellation sent.
+			default:
+				// failed to cancel, ignore.
+				level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+			}
+
+			freq.protobufResponseStream.writeEnqueueError(context.Cause(ctx))
+
+		case <-freq.protobufResponseDone:
+			freq.spanLogger.DebugLog("msg", "finished receiving response")
+		}
+	}()
+
+	return freq.protobufResponseStream, nil
+}
+
+type ProtobufResponseStream struct {
+	// Why do we have two channels here?
+	// Different goroutines write to each, and each needs to close its corresponding channel when finished.
+	// There's no guarantee which order the goroutines finish in, and one may never be called at all.
+	messages     chan protobufResponseMessage
+	enqueueError chan error
+	cancel       context.CancelCauseFunc
+
+	ctx        context.Context
+	spanLogger *spanlogger.SpanLogger
+}
+
+type protobufResponseMessage struct {
+	msg *frontendv2pb.QueryResultStreamRequest
+	err error
+}
+
+func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamRequest, err error) error {
+	if err == nil {
+		err = s.errorFromMessage(msg)
+
+		if err != nil {
+			msg = nil
+		}
+	}
+
+	if err != nil && !errors.Is(err, errStreamClosed) {
+		_ = s.spanLogger.Error(err)
+	}
+
+	select {
+	case s.messages <- protobufResponseMessage{msg: msg, err: err}:
+		return nil
+	case <-s.ctx.Done():
+		return context.Cause(s.ctx)
+	}
+}
+
+// writeEnqueueError writes an error message to the stream.
+// This method must only be called once per ProtobufResponseStream instance to ensure it does not block.
+func (s *ProtobufResponseStream) writeEnqueueError(err error) {
+	if !errors.Is(err, errStreamClosed) {
+		_ = s.spanLogger.Error(err)
+	}
+
+	// This is guaranteed not to block provided this method is only called once per request,
+	// as enqueueError is buffered with a size of 1.
+	s.enqueueError <- err
+}
+
+// Next returns the next available message from this stream, or an error if the stream
+// has failed or the context provided to DoProtobufRequest or Next was cancelled.
+//
+// If no message is available and neither context has been cancelled, then Next blocks
+// until either a message is received or either context is cancelled.
+//
+// Calling Next after an error has been returned by a previous Next call may lead to
+// undefined behaviour.
+func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	select {
+	case resp := <-s.messages:
+		if resp.err != nil {
+			return nil, resp.err
+		}
+
+		return resp.msg, nil
+	case err := <-s.enqueueError:
+		// If the context provided to DoProtobufRequest is cancelled, it will call writeEnqueueError and so
+		// s.enqueueError will contain the cancellation error.
+		return nil, err
+	case <-ctx.Done():
+		// Note that we deliberately wait on the passed context, rather than s.ctx, as s.ctx is cancelled as soon
+		// as the response has been completely received, but we want to continue reading any outstanding messages
+		// from the stream unless the provided context (presumably for the query as a whole) is cancelled.
+		return nil, context.Cause(ctx)
+	}
+}
+
+func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultStreamRequest) error {
+	e := msg.GetError()
+	if e == nil {
+		return nil
+	}
+
+	errorType, err := e.Type.ToPrometheusString()
+	if err != nil {
+		return err
+	}
+
+	return apierror.New(apierror.Type(errorType), e.Message)
+}
+
+func (s *ProtobufResponseStream) Close() {
+	s.spanLogger.DebugLog("msg", "response stream closed")
+	s.cancel(errStreamClosed)
+}
+
+func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- uint64, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 	for attempt := range maxAttempts {
-		spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
+		freq.spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
 
 		select {
 		case <-ctx.Done():
-			spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
-			return nil, ctx.Err()
+			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", context.Cause(ctx))
+			return nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
 			// Enqueued in our worker queue, let's wait for response from scheduler.
@@ -327,20 +521,54 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
 				return enqRes.cancelCh, nil
+
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
+
+			case schedulerReturnedError:
+				if freq.httpRequest != nil {
+					freq.httpResponse <- queryResultWithBody{
+						queryResult: &frontendv2pb.QueryResultRequest{
+							HttpResponse: &httpgrpc.HTTPResponse{
+								Code: http.StatusInternalServerError,
+								Body: []byte(enqRes.schedulerErr),
+							},
+						}}
+
+					return nil, nil
+				}
+
+				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
+
+			case tooManyRequests:
+				if freq.httpRequest != nil {
+					freq.httpResponse <- queryResultWithBody{
+						queryResult: &frontendv2pb.QueryResultRequest{
+							HttpResponse: &httpgrpc.HTTPResponse{
+								Code: http.StatusTooManyRequests,
+								Body: []byte("too many outstanding requests"),
+							},
+						}}
+					return nil, nil
+				}
+
+				return nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
 			}
 
 			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.
 		}
 	}
 
-	spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
+	freq.spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
 
-	return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	if freq.httpRequest != nil {
+		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+	}
+
+	return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 }
 
 type cleanupReadCloser struct {
@@ -369,8 +597,12 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req != nil && req.userID == userID {
+		if req.httpResponse == nil {
+			return nil, errUnexpectedHTTPResponse
+		}
+
 		select {
-		case req.response <- queryResultWithBody{
+		case req.httpResponse <- queryResultWithBody{
 			queryResult: qrReq,
 		}:
 			// Should always be possible, unless QueryResult is called multiple times with the same queryID.
@@ -404,11 +636,29 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		return errors.New("received EOF at start of stream")
 	}
 
+	req := f.requests.get(firstMessage.QueryID)
+
+	if req == nil {
+		return fmt.Errorf("query %d not found", firstMessage.QueryID)
+	}
+
+	if req.userID != userID {
+		return fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", firstMessage.QueryID, req.userID, userID)
+	}
+
 	switch d := firstMessage.Data.(type) {
 	case *frontendv2pb.QueryResultStreamRequest_Metadata:
-		return f.receiveResultForHTTPRequest(userID, firstMessage, d, stream)
+		if req.httpResponse == nil {
+			return errUnexpectedHTTPResponse
+		}
+
+		return f.receiveResultForHTTPRequest(req, firstMessage, d, stream)
 	default:
-		return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
+		if req.protobufResponseStream == nil {
+			return fmt.Errorf("unexpected first message type: %T", firstMessage.Data)
+		}
+
+		return f.receiveResultForProtobufRequest(req, firstMessage, stream)
 	}
 }
 
@@ -431,17 +681,7 @@ func (f *Frontend) receiveFromStream(stream frontendv2pb.FrontendForQuerier_Quer
 	return nil, fmt.Errorf("failed to receive query result stream message: %w", err)
 }
 
-func (f *Frontend) receiveResultForHTTPRequest(userID string, firstMessage *frontendv2pb.QueryResultStreamRequest, metadata *frontendv2pb.QueryResultStreamRequest_Metadata, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
-	req := f.requests.get(firstMessage.QueryID)
-
-	if req == nil {
-		return fmt.Errorf("query %d not found", firstMessage.QueryID)
-	}
-
-	if req.userID != userID {
-		return fmt.Errorf("expected metadata for user: %q, got: %q", req.userID, userID)
-	}
-
+func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessage *frontendv2pb.QueryResultStreamRequest, metadata *frontendv2pb.QueryResultStreamRequest_Metadata, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	reader, writer := io.Pipe()
 	defer func(c *io.PipeWriter) {
 		if err := c.CloseWithError(err); err != nil {
@@ -462,11 +702,11 @@ func (f *Frontend) receiveResultForHTTPRequest(userID string, firstMessage *fron
 	}
 
 	select {
-	case req.response <- res:
+	case req.httpResponse <- res:
 		// Should always be possible unless QueryResultStream is called multiple times with the same queryID.
 	default:
 		level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", firstMessage.QueryID, "user", req.userID)
-		return fmt.Errorf("failed to write query result to the response channel for query ID %d for user %q", firstMessage.QueryID, userID)
+		return fmt.Errorf("failed to write query result to the response channel for query ID %d for user %q", firstMessage.QueryID, req.userID)
 	}
 
 	for {
@@ -487,6 +727,38 @@ func (f *Frontend) receiveResultForHTTPRequest(userID string, firstMessage *fron
 		_, err = writer.Write(d.Body.Chunk)
 		if err != nil {
 			return fmt.Errorf("failed to write query result body chunk: %w", err)
+		}
+	}
+}
+
+func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMessage *frontendv2pb.QueryResultStreamRequest, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	defer func() {
+		close(req.protobufResponseStream.messages)
+		close(req.protobufResponseDone)
+	}()
+
+	req.spanLogger.DebugLog("msg", "got first response message")
+
+	if err := req.protobufResponseStream.write(firstMessage, nil); err != nil {
+		return err
+	}
+
+	for {
+		msg, err := f.receiveFromStream(stream)
+		if err != nil {
+			req.spanLogger.DebugLog("msg", "received error", "err", err)
+			_ = req.protobufResponseStream.write(nil, err) // If the context has already been cancelled, then we don't care.
+			return err
+		}
+		if msg == nil {
+			// EOF. We are done.
+			// The response channel will be closed in the deferred close() call above.
+			req.spanLogger.DebugLog("msg", "finished reading response stream")
+			return nil
+		}
+
+		if err := req.protobufResponseStream.write(msg, nil); err != nil {
+			return err
 		}
 	}
 }

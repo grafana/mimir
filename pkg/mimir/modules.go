@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -64,6 +65,8 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -332,7 +335,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
-	serv, err := server.New(t.Cfg.Server)
+	t.ServerMetrics = server.NewServerMetrics(t.Cfg.Server)
+	serv, err := server.NewWithMetrics(t.Cfg.Server, t.ServerMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -620,10 +624,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
@@ -631,21 +636,16 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.Cfg.Querier,
-		dispatcher,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
+		metrics,
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
 	)
-
-	if dispatcher != nil {
-		// If MQE is enabled, register the evaluation API with the external HTTP server.
-		t.API.RegisterEvaluationAPI(internalQuerierRouter)
-	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -827,15 +827,16 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	case querier.PrometheusEngine:
 		eng = promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
+		var err error
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(streamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
 		} else {
-			eng = streamingEngine
+			eng = t.QueryFrontendStreamingEngine
 		}
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
@@ -850,6 +851,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
+		t.Cfg.Frontend.EnableRemoteExecution,
+		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
 	if err != nil {
@@ -874,7 +877,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		t.Cfg.Frontend.FrontendV2.SchedulerAddress = address
 	}
 
-	roundTripper, frontendV2, err := frontend.InitFrontend(
+	roundTripper, frontend, err := frontend.InitFrontend(
 		t.Cfg.Frontend,
 		t.Overrides,
 		t.Cfg.Server.GRPCListenPort,
@@ -886,12 +889,20 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	t.API.RegisterQueryFrontend2(frontendV2)
+	t.API.RegisterQueryFrontend2(frontend)
+
+	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
+		executor := v2.NewRemoteExecutor(frontend)
+
+		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
+			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)
+		}
+	}
 
 	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
 	// that the frontend is ready to receive requests when running the query-frontend.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendV2, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontend, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
@@ -900,10 +911,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
-		w.WatchService(frontendV2)
+		w.WatchService(frontend)
 		// Note that we pass an independent context to the service, since we want to
 		// delay stopping it until in-flight requests are waited on.
-		return services.StartAndAwaitRunning(context.Background(), frontendV2)
+		return services.StartAndAwaitRunning(context.Background(), frontend)
 	}, func(serviceContext context.Context) error {
 		select {
 		case <-serviceContext.Done():
@@ -913,7 +924,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 	}, func(_ error) error {
 		handler.Stop()
-		return services.StopAndAwaitTerminated(context.Background(), frontendV2)
+		return services.StopAndAwaitTerminated(context.Background(), frontend)
 	}), nil
 }
 
@@ -947,6 +958,13 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
+	if t.Cfg.Frontend.EnableRemoteExecution {
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	}
+
+	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
+	// like sharding, splitting etc.
+	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
 	analysisHandler := streamingpromql.AnalysisHandler(t.QueryFrontendQueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 

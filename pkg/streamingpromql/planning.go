@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grafana/dskit/tracing"
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Replaced during testing to ensure timing produces consistent results.
@@ -43,6 +44,8 @@ type QueryPlanner struct {
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
+
+	logger log.Logger
 }
 
 func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
@@ -96,6 +99,8 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, e
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
+
+		logger: opts.Logger,
 	}, nil
 }
 
@@ -121,9 +126,9 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	span, ctx := tracing.StartSpanFromContext(ctx, "QueryPlanner.NewQueryPlan")
-	defer span.Finish()
-	span.SetTag("query", qs)
+	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("query", qs)
 
 	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
 	if err != nil {
@@ -131,6 +136,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	defer p.activeQueryTracker.Delete(queryID)
+
+	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
 
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
@@ -169,6 +176,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	if err := observer.OnAllASTStagesComplete(expr); err != nil {
 		return nil, err
 	}
+
+	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := p.nodeFromExpr(expr)
@@ -209,6 +218,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
+
 	for _, o := range p.planOptimizationPasses {
 		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
 
@@ -220,6 +231,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
 	}
+
+	spanLogger.DebugLog("msg", "planning completed", "plan", plan)
 
 	return plan, err
 }
