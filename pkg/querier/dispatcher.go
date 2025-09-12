@@ -40,7 +40,6 @@ import (
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
-var timeNow = time.Now
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -52,6 +51,9 @@ type Dispatcher struct {
 	// cortex_... (eg. cortex_inflight_requests).
 	querierMetrics *RequestMetrics
 	serverMetrics  *server.Metrics
+
+	// This will usually be time.Now(), but is replaced in some tests.
+	timeNow func() time.Time
 }
 
 func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *Dispatcher {
@@ -61,6 +63,7 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 		logger:         logger,
 		querierMetrics: querierMetrics,
 		serverMetrics:  serverMetrics,
+		timeNow:        time.Now,
 	}
 }
 
@@ -146,7 +149,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
-	startTime := timeNow()
+	startTime := d.timeNow()
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
 
@@ -187,6 +190,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		w:                  resp,
 		nodeIndex:          evaluationNode.NodeIndex,
 		startTime:          startTime,
+		timeNow:            d.timeNow,
 		originalExpression: req.Plan.OriginalExpression,
 	}
 
@@ -330,6 +334,7 @@ type evaluationObserver struct {
 	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
 	startTime time.Time
+	timeNow   func() time.Time
 
 	originalExpression string
 }
@@ -506,7 +511,7 @@ func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *strea
 		querierStats.AddSamplesProcessedPerStep(stepStats)
 	}
 
-	querierStats.AddWallTime(timeNow().Sub(o.startTime))
+	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
 	// stats after we return them for serialization.

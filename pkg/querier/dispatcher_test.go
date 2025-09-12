@@ -616,7 +616,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			replaceTimeNow(t, timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
 			stats, ctx := stats.ContextWithEmptyStats(context.Background())
 
 			// This value should be set by the querier's scheduler processor (ie. the thing that calls Dispatcher.HandleProtobuf).
@@ -643,6 +642,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
 			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, opts.Logger)
+			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
 			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 
@@ -794,13 +794,8 @@ func requireMetricsIgnoringHistogramBucketsAndDurationSums(t *testing.T, reg *pr
 	require.Equal(t, expected, filteredText)
 }
 
-func replaceTimeNow(t *testing.T, times ...time.Time) {
-	oldTimeNow := timeNow
-	t.Cleanup(func() {
-		timeNow = oldTimeNow
-	})
-
-	timeNow = func() time.Time {
+func replaceTimeNow(times ...time.Time) func() time.Time {
+	return func() time.Time {
 		t := times[0]
 		times = times[1:]
 		return t
