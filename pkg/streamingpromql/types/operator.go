@@ -146,4 +146,20 @@ func (s Matchers) Append(other Matchers) Matchers {
 	return append(s, other...)
 }
 
+// Retain returns a new Matchers that only contains matchers targeting labels
+// with the given names.
+func (s Matchers) Retain(names ...string) Matchers {
+	out := make([]Matcher, 0, len(s))
+
+	for _, m := range s {
+		for _, name := range names {
+			if m.Name == name {
+				out = append(out, m)
+			}
+		}
+	}
+
+	return out
+}
+
 var EOS = errors.New("operator stream exhausted") //nolint:revive,staticcheck

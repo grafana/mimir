@@ -37,7 +37,7 @@ func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.Prepa
 	return err
 }
 
-func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	return r.resp.GetSeriesMetadata(ctx)
 }
 

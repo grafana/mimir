@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grafana/dskit/tracing"
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
