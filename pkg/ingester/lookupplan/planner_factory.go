@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
+const minSeriesPerBlockForQueryPlanning = 10_000
+
 // PlannerFactory provides index lookup planners for TSDB blocks.
 type PlannerFactory struct {
 	metrics        Metrics
@@ -30,13 +32,12 @@ func NewPlannerFactory(metrics Metrics, logger log.Logger, statsGenerator *Stati
 // If statistics generation fails, it falls back to NoopPlanner.
 func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
 	logger := log.With(p.logger, "block", meta.ULID.String(), "block_series", meta.Stats.NumSeries)
-	const statsThreshold = 10_000
 
-	if meta.Stats.NumSeries < statsThreshold {
+	if meta.Stats.NumSeries < minSeriesPerBlockForQueryPlanning {
 		// For very small blocks, the planning overhead is likely not worth it.
 		// This also prevents problems when we've gathered stats on an empty head block,
 		// but then the ingester starts receiving series for that tenant.
-		level.Debug(logger).Log("msg", "skipping query planning for small block", "planning_threshold_series", statsThreshold)
+		level.Debug(logger).Log("msg", "skipping query planning for small block", "planning_threshold_series", minSeriesPerBlockForQueryPlanning)
 		return NoopPlanner{}
 	}
 	stats, err := p.statsGenerator.Stats(meta, reader)

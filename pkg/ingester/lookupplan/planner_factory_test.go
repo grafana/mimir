@@ -124,10 +124,10 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name: "boundary case just below threshold returns NoopPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: 9999,
+					NumSeries: minSeriesPerBlockForQueryPlanning - 1,
 				},
 			},
-			indexReader:     createMockIndexReaderWithSeries(9999),
+			indexReader:     createMockIndexReaderWithSeries(minSeriesPerBlockForQueryPlanning - 1),
 			expectedPlanner: reflect.TypeOf(NoopPlanner{}),
 		},
 		{
@@ -144,10 +144,10 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name: "exactly at threshold with working IndexReader returns CostBasedPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: 10000,
+					NumSeries: minSeriesPerBlockForQueryPlanning,
 				},
 			},
-			indexReader:     createMockIndexReaderWithSeries(10000),
+			indexReader:     createMockIndexReaderWithSeries(minSeriesPerBlockForQueryPlanning),
 			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
 		},
 		{
@@ -174,7 +174,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name: "exactly at threshold with error IndexReader fallbacks to NoopPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: 10000,
+					NumSeries: minSeriesPerBlockForQueryPlanning,
 				},
 			},
 			indexReader:     &errorIndexReader{},
