@@ -41,10 +41,11 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (ret
 
 	defer func(startTime time.Time) {
 		l := log.With(g.logger, "block", meta.ULID.String())
-		l = level.Info(l)
 		if retErr != nil {
 			l = level.Error(l)
 			l = log.With(l, "err", retErr)
+		} else {
+			l = level.Info(l)
 		}
 		l.Log("msg", "generated statistics for block", "duration", time.Since(startTime).String(), "total_series", retStats.TotalSeries(), "total_size_bytes", size.Of(retStats))
 	}(time.Now())
