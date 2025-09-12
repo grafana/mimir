@@ -50,6 +50,8 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 }
 
 // isVectorSelector returns whether the expr is a vector selector.
+//
+// It will never return an error, but does so to satisfy the predicate function signature for anyNode.
 func isVectorSelector(n parser.Node) (bool, error) {
 	_, ok := n.(*parser.VectorSelector)
 	return ok, nil
