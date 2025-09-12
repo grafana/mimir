@@ -998,6 +998,11 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 	errChan := make(chan error)
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
+			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
 		go func() {
 			queryID.Store(msg.QueryID)
 			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))
