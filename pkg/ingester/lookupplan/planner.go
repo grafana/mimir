@@ -64,17 +64,32 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	statistics, err := p.stats.UserTSDBStatistics(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving stattistics: %w", err)
+		return nil, fmt.Errorf("error retrieving statistics: %w", err)
 	}
 
-	allPlans, err = p.generatePlans(ctx, statistics, matchers)
+	allPlansUnordered, err := p.generatePlans(ctx, statistics, matchers)
 	if err != nil {
 		return nil, fmt.Errorf("error generating plans: %w", err)
 	}
 
-	slices.SortFunc(allPlans, func(a, b plan) int {
-		return cmp.Compare(a.totalCost(), b.totalCost())
+	type planWithCost struct {
+		plan
+		totalCost float64
+	}
+	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
+	allPlansWithCosts := make([]planWithCost, len(allPlansUnordered))
+	for i, p := range allPlansUnordered {
+		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
+	}
+
+	slices.SortFunc(allPlansWithCosts, func(a, b planWithCost) int {
+		return cmp.Compare(a.totalCost, b.totalCost)
 	})
+
+	// build the sorted slice of plans
+	for _, pwc := range allPlansWithCosts {
+		allPlans = append(allPlans, pwc.plan)
+	}
 
 	// Select the cheapest plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.

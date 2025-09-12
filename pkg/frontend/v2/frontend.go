@@ -31,17 +31,20 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var tracer = otel.Tracer("pkg/frontend/v2")
@@ -108,8 +111,10 @@ type Limits interface {
 type Frontend struct {
 	services.Service
 
-	cfg Config
-	log log.Logger
+	cfg    Config
+	log    log.Logger
+	limits Limits
+	codec  querymiddleware.Codec
 
 	lastQueryID atomic.Uint64
 
@@ -119,6 +124,7 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
+	inflightRequestCount    prometheus.Gauge
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -130,9 +136,10 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID      uint64
-	userID       string
-	statsEnabled bool
+	queryID                uint64
+	userID                 string
+	statsEnabled           bool
+	touchedQueryComponents []string
 
 	ctx        context.Context
 	spanLogger *spanlogger.SpanLogger
@@ -181,13 +188,7 @@ type enqueueResult struct {
 // NewFrontend creates a new frontend.
 func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
-	toSchedulerAdapter := frontendToSchedulerAdapter{
-		log:    log,
-		cfg:    cfg,
-		limits: limits,
-		codec:  codec,
-	}
-
+	toSchedulerAdapter := frontendToSchedulerAdapter{}
 	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
 	if err != nil {
 		return nil, err
@@ -196,22 +197,21 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	f := &Frontend{
 		cfg:                     cfg,
 		log:                     log,
+		limits:                  limits,
+		codec:                   codec,
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
+		inflightRequestCount: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_query_frontend_queries_in_progress",
+			Help: "Number of queries in progress handled by this frontend.",
+		}),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
-
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_query_frontend_queries_in_progress",
-		Help: "Number of queries in progress handled by this frontend.",
-	}, func() float64 {
-		return float64(f.requests.count())
-	})
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_frontend_connected_schedulers",
@@ -286,12 +286,19 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	// even if this goroutine goes away due to client context cancellation.
 	freq.httpResponse = make(chan queryResultWithBody, 1)
 
+	freq.touchedQueryComponents, err = f.extractTouchedQueryComponentsForHTTPRequest(ctx, httpRequest, time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+
 	f.requests.put(freq)
+	f.inflightRequestCount.Inc()
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
 	cleanup := func() {
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
+		f.inflightRequestCount.Dec()
 	}
 	cleanupInDefer := true
 	defer func() {
@@ -342,9 +349,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 }
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
+//
 // If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
-func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
+//
+// minT and maxT should be the start and end time of the queried data.
+// These timestamps should consider the lookback delta (ie. are not necessarily the time range provided in the query request).
+func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
 	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
@@ -354,6 +365,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		return nil, err
 	}
 
+	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
 	freq.protobufResponseDone = make(chan struct{})
 	freq.protobufResponseStream = &ProtobufResponseStream{
@@ -367,12 +379,14 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 	}
 
 	f.requests.put(freq)
+	f.inflightRequestCount.Inc()
 
 	go func() {
 		defer func() {
 			f.requests.delete(freq.queryID)
 			cancel(errExecutingQueryRoundTripFinished)
 			logger.Finish()
+			f.inflightRequestCount.Dec()
 		}()
 
 		cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
@@ -592,23 +606,29 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
-	req := f.requests.get(qrReq.QueryID)
+	req := f.requests.getAndDelete(qrReq.QueryID)
 	// It is possible that some old response belonging to different user was received, if frontend has restarted.
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
-	if req != nil && req.userID == userID {
-		if req.httpResponse == nil {
-			return nil, errUnexpectedHTTPResponse
-		}
+	if req == nil {
+		return nil, fmt.Errorf("query %d not found or response already received", qrReq.QueryID)
+	}
 
-		select {
-		case req.httpResponse <- queryResultWithBody{
-			queryResult: qrReq,
-		}:
-			// Should always be possible, unless QueryResult is called multiple times with the same queryID.
-		default:
-			level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", qrReq.QueryID, "user", userID)
-		}
+	if req.userID != userID {
+		return nil, fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
+	}
+
+	if req.httpResponse == nil {
+		return nil, errUnexpectedHTTPResponse
+	}
+
+	select {
+	case req.httpResponse <- queryResultWithBody{
+		queryResult: qrReq,
+	}:
+		// Should always be possible, unless QueryResult is called multiple times with the same queryID.
+	default:
+		level.Warn(f.log).Log("msg", "failed to receive query result, a result for the same query has likely already been received", "queryID", qrReq.QueryID, "user", userID)
 	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
@@ -636,10 +656,10 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		return errors.New("received EOF at start of stream")
 	}
 
-	req := f.requests.get(firstMessage.QueryID)
+	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return fmt.Errorf("query %d not found", firstMessage.QueryID)
+		return fmt.Errorf("query %d not found or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {
@@ -763,6 +783,73 @@ func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMe
 	}
 }
 
+const ingesterQueryComponent = "ingester"
+const storeGatewayQueryComponent = "store-gateway"
+const ingesterAndStoreGatewayQueryComponent = "ingester-and-store-gateway"
+
+func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
+	ctx context.Context, request *httpgrpc.HTTPRequest, now time.Time,
+) ([]string, error) {
+	var err error
+
+	httpRequest, err := httpgrpc.ToHTTPRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	tenantIDs, err := tenant.TenantIDs(httpRequest.Context())
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+		decodedRequest, err := f.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		minT := decodedRequest.GetMinT()
+		maxT := decodedRequest.GetMaxT()
+
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
+	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
+		decodedRequest, err := f.codec.DecodeLabelsSeriesQueryRequest(httpRequest.Context(), httpRequest)
+		if err != nil {
+			return nil, err
+		}
+
+		return f.queryComponentQueueDimensionFromTimeParams(
+			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+		), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
+		// cardinality only hits ingesters
+		return []string{ingesterQueryComponent}, nil
+	default:
+		// no query time params to parse; cannot infer query component
+		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL)
+		return nil, nil
+	}
+}
+
+func (f *Frontend) queryComponentQueueDimensionFromTimeParams(
+	tenantIDs []string, queryStartUnixMs, queryEndUnixMs int64, now time.Time,
+) []string {
+	longestQueryIngestersWithinWindow := validation.MaxDurationPerTenant(tenantIDs, f.limits.QueryIngestersWithin)
+	shouldQueryIngesters := querier.ShouldQueryIngesters(
+		longestQueryIngestersWithinWindow, now, queryEndUnixMs,
+	)
+	shouldQueryBlockStore := querier.ShouldQueryBlockStore(
+		f.cfg.QueryStoreAfter, now, queryStartUnixMs,
+	)
+
+	if shouldQueryIngesters && !shouldQueryBlockStore {
+		return []string{ingesterQueryComponent}
+	} else if !shouldQueryIngesters && shouldQueryBlockStore {
+		return []string{storeGatewayQueryComponent}
+	}
+	return []string{ingesterAndStoreGatewayQueryComponent}
+}
+
 // CheckReady determines if the query frontend is ready.  Function parameters/return
 // chosen to match the same method in the ingester
 func (f *Frontend) CheckReady(_ context.Context) error {
@@ -789,13 +876,6 @@ func newRequestsInProgress() *requestsInProgress {
 	}
 }
 
-func (r *requestsInProgress) count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return len(r.requests)
-}
-
 func (r *requestsInProgress) put(req *frontendRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -810,9 +890,11 @@ func (r *requestsInProgress) delete(queryID uint64) {
 	delete(r.requests, queryID)
 }
 
-func (r *requestsInProgress) get(queryID uint64) *frontendRequest {
+func (r *requestsInProgress) getAndDelete(queryID uint64) *frontendRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return r.requests[queryID]
+	req := r.requests[queryID]
+	delete(r.requests, queryID)
+	return req
 }
