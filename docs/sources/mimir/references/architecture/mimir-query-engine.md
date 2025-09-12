@@ -74,7 +74,7 @@ The following are known differences between MQE and Prometheus' engine:
 
 ### Binary operations that produce no series
 
-When MQE evaluates a binary operation (such as `+`, `-`, `/`, `and`, `or`, etc.), it can determine that the binary operation will produce no series, or that some series from  side of the operation can be skipped, based on the series labels on both sides.
+When MQE evaluates a binary operation (such as `+`, `-`, `/`, `and`, `or`, etc.), it checks if the binary operation will produce no series, or if some series from one side of the operation can be skipped, based on the series labels on both sides.
 
 - If MQE can determine that a binary operation produce no series based on the series labels on both sides, it skips evaluating both sides.
   For example, if the query is `foo / bar`, and `foo` selects a single series `foo{env="test"}`, and
