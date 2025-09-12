@@ -76,9 +76,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		}, []string{"offset_type"}),
 	}
 
-	// Make sure the gap detection counters starts with zero to avoid gaps in their series.
-	scm.jobGapDetected.WithLabelValues(offsetNamePlanned).Add(0)
-	scm.jobGapDetected.WithLabelValues(offsetNameCommitted).Add(0)
+	// Make sure the gap detection counters are pre-initialized. This avoids misleading blanks in the series on restart.
+	scm.jobGapDetected.WithLabelValues(offsetNamePlanned)
+	scm.jobGapDetected.WithLabelValues(offsetNameCommitted)
 
 	return scm
 }
