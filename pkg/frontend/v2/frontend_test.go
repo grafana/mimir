@@ -115,20 +115,29 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	return f, ms
 }
 
-func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
+func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) error {
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
 		Stats:        &stats.SafeStats{},
 	})
+	return err
 }
 
 func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, resp...); err != nil {
+		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
+		// So just log it but don't fail the test.
+		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
+	}
+}
+
+func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) error {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -139,12 +148,7 @@ func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uin
 		msgs: resp,
 	}
 
-	err := f.QueryResultStream(stream)
-	if err != nil {
-		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
-		// So just log it but don't fail the test.
-		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
-	}
+	return f.QueryResultStream(stream)
 }
 
 func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
@@ -156,10 +160,12 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -312,10 +318,12 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			sendQuerierResponse: func(t *testing.T, f *Frontend, queryID uint64) {
 				// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 				// It first needs to be told that enqueuing has succeeded.
-				go sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
-					Code: 200,
-					Body: []byte(body),
-				})
+				go func() {
+					_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, queryID, &httpgrpc.HTTPResponse{
+						Code: 200,
+						Body: []byte(body),
+					})
+				}()
 			},
 			makeRequest: func(t *testing.T, f *Frontend) {
 				req := &httpgrpc.HTTPRequest{
@@ -396,10 +404,12 @@ func TestFrontend_HTTPGRPC_RetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -859,6 +869,147 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	msg, err := resp.Next(uncancelledContext)
 	require.ErrorIs(t, err, cancellationError)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	responseSucceeded := atomic.NewBool(false)
+	responseError := atomic.NewError(nil)
+	queryID := atomic.NewUint64(0)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		queryID.Store(msg.QueryID)
+
+		for range 2 {
+			go func() {
+				defer wg.Done()
+
+				err := sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+					Code: 200,
+					Body: []byte(body),
+				})
+
+				if err != nil {
+					responseError.CompareAndSwap(nil, err)
+				} else {
+					responseSucceeded.Store(true)
+				}
+			}()
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+	require.Equal(t, []byte(body), resp.Body)
+
+	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
+	wg.Wait()
+	require.True(t, responseSucceeded.Load())
+	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID.Load()))
+}
+
+func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
+	const userID = "test"
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	responseSucceeded := atomic.NewBool(false)
+	responseError := atomic.NewError(nil)
+	queryID := atomic.NewUint64(0)
+	queryIDReceived := make(chan struct{})
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
+			// notification to the scheduler, which we should ignore.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
+
+		queryID.Store(msg.QueryID)
+		close(queryIDReceived)
+
+		for range 2 {
+			go func() {
+				defer wg.Done()
+
+				err := sendStreamingResponseWithErrorCapture(
+					f, userID, msg.QueryID,
+					newStringMessage("first message"),
+					newStringMessage("second message"),
+				)
+
+				if err != nil {
+					responseError.CompareAndSwap(nil, err)
+				} else {
+					responseSucceeded.Store(true)
+				}
+			}()
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	<-queryIDReceived
+	firstMessage := newStringMessage("first message")
+	firstMessage.QueryID = queryID.Load()
+	secondMessage := newStringMessage("second message")
+	secondMessage.QueryID = queryID.Load()
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, firstMessage, msg)
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, secondMessage, msg)
+
+	// Response stream exhausted.
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, msg)
+
+	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
+	wg.Wait()
+	require.True(t, responseSucceeded.Load())
+	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID))
+}
+
+func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
+	queryID := atomic.NewUint64(0)
+	errChan := make(chan error)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			queryID.Store(msg.QueryID)
+			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req)
+	require.NoError(t, err)
+	defer resp.Close()
+
+	errSentToQuerier := <-errChan
+	require.EqualError(t, errSentToQuerier, fmt.Sprintf(`got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {
