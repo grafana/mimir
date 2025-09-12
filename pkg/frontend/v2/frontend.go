@@ -31,17 +31,20 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var tracer = otel.Tracer("pkg/frontend/v2")
@@ -108,8 +111,10 @@ type Limits interface {
 type Frontend struct {
 	services.Service
 
-	cfg Config
-	log log.Logger
+	cfg    Config
+	log    log.Logger
+	limits Limits
+	codec  querymiddleware.Codec
 
 	lastQueryID atomic.Uint64
 
@@ -131,9 +136,10 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID      uint64
-	userID       string
-	statsEnabled bool
+	queryID                uint64
+	userID                 string
+	statsEnabled           bool
+	touchedQueryComponents []string
 
 	ctx        context.Context
 	spanLogger *spanlogger.SpanLogger
@@ -182,13 +188,7 @@ type enqueueResult struct {
 // NewFrontend creates a new frontend.
 func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
-	toSchedulerAdapter := frontendToSchedulerAdapter{
-		log:    log,
-		cfg:    cfg,
-		limits: limits,
-		codec:  codec,
-	}
-
+	toSchedulerAdapter := frontendToSchedulerAdapter{}
 	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
 	if err != nil {
 		return nil, err
@@ -197,6 +197,8 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	f := &Frontend{
 		cfg:                     cfg,
 		log:                     log,
+		limits:                  limits,
+		codec:                   codec,
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
@@ -284,6 +286,11 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	// even if this goroutine goes away due to client context cancellation.
 	freq.httpResponse = make(chan queryResultWithBody, 1)
 
+	freq.touchedQueryComponents, err = f.extractTouchedQueryComponentsForHTTPRequest(ctx, httpRequest, time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
@@ -342,9 +349,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 }
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
+//
 // If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
-func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*ProtobufResponseStream, error) {
+//
+// minT and maxT should be the start and end time of the queried data.
+// These timestamps should consider the lookback delta (ie. are not necessarily the time range provided in the query request).
+func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
 	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
@@ -354,6 +365,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message) (*P
 		return nil, err
 	}
 
+	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
 	freq.protobufResponseDone = make(chan struct{})
 	freq.protobufResponseStream = &ProtobufResponseStream{
@@ -769,6 +781,73 @@ func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMe
 			return err
 		}
 	}
+}
+
+const ingesterQueryComponent = "ingester"
+const storeGatewayQueryComponent = "store-gateway"
+const ingesterAndStoreGatewayQueryComponent = "ingester-and-store-gateway"
+
+func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
+	ctx context.Context, request *httpgrpc.HTTPRequest, now time.Time,
+) ([]string, error) {
+	var err error
+
+	httpRequest, err := httpgrpc.ToHTTPRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	tenantIDs, err := tenant.TenantIDs(httpRequest.Context())
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+		decodedRequest, err := f.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		minT := decodedRequest.GetMinT()
+		maxT := decodedRequest.GetMaxT()
+
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
+	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
+		decodedRequest, err := f.codec.DecodeLabelsSeriesQueryRequest(httpRequest.Context(), httpRequest)
+		if err != nil {
+			return nil, err
+		}
+
+		return f.queryComponentQueueDimensionFromTimeParams(
+			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+		), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
+		// cardinality only hits ingesters
+		return []string{ingesterQueryComponent}, nil
+	default:
+		// no query time params to parse; cannot infer query component
+		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL)
+		return nil, nil
+	}
+}
+
+func (f *Frontend) queryComponentQueueDimensionFromTimeParams(
+	tenantIDs []string, queryStartUnixMs, queryEndUnixMs int64, now time.Time,
+) []string {
+	longestQueryIngestersWithinWindow := validation.MaxDurationPerTenant(tenantIDs, f.limits.QueryIngestersWithin)
+	shouldQueryIngesters := querier.ShouldQueryIngesters(
+		longestQueryIngestersWithinWindow, now, queryEndUnixMs,
+	)
+	shouldQueryBlockStore := querier.ShouldQueryBlockStore(
+		f.cfg.QueryStoreAfter, now, queryStartUnixMs,
+	)
+
+	if shouldQueryIngesters && !shouldQueryBlockStore {
+		return []string{ingesterQueryComponent}
+	} else if !shouldQueryIngesters && shouldQueryBlockStore {
+		return []string{storeGatewayQueryComponent}
+	}
+	return []string{ingesterAndStoreGatewayQueryComponent}
 }
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return
