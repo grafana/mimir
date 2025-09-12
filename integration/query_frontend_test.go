@@ -222,23 +222,34 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 }
 
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerDiscoveryMode: "dns",
-		queryStatsEnabled:           true,
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-				IngestStorageFlags(),
-			)
+	runScenario := func(t *testing.T, enableRemoteExecution bool) {
+		runQueryFrontendTest(t, queryFrontendTestConfig{
+			querySchedulerDiscoveryMode: "dns",
+			queryStatsEnabled:           true,
+			remoteExecutionEnabled:      enableRemoteExecution,
+			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+				flags = mergeFlags(
+					BlocksStorageFlags(),
+					BlocksStorageS3Flags(),
+					IngestStorageFlags(),
+				)
 
-			kafka := e2edb.NewKafka()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+				kafka := e2edb.NewKafka()
+				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+				require.NoError(t, s.StartAndWaitReady(minio, kafka))
 
-			return "", flags
-		},
-		withHistograms: true,
+				return "", flags
+			},
+			withHistograms: true,
+		})
+	}
+
+	t.Run("with remote execution disabled", func(t *testing.T) {
+		runScenario(t, false)
+	})
+
+	t.Run("with remote execution enabled", func(t *testing.T) {
+		runScenario(t, true)
 	})
 }
 
