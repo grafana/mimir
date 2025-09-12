@@ -312,7 +312,7 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 	case *schedulerpb.SchedulerToQuerier_HttpRequest:
 		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
 	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().TraceHeaders))
+		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().Metadata))
 		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
 	default:
 		return ctx, false
