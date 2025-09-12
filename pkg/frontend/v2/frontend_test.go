@@ -966,7 +966,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
@@ -1008,7 +1008,7 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "the-user")
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req)
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
 
