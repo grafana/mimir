@@ -198,21 +198,26 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 }
 
 func TestQueryFrontendWithRemoteExecution(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				CommonStorageBackendFlags(),
-				BlocksStorageFlags(),
-			)
+	for _, queryStatsEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("query stats enabled: %v", queryStatsEnabled), func(t *testing.T) {
+			runQueryFrontendTest(t, queryFrontendTestConfig{
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(
+						CommonStorageBackendFlags(),
+						BlocksStorageFlags(),
+					)
 
-			minio := e2edb.NewMinio(9000, mimirBucketName)
-			require.NoError(t, s.StartAndWaitReady(minio))
+					minio := e2edb.NewMinio(9000, mimirBucketName)
+					require.NoError(t, s.StartAndWaitReady(minio))
 
-			return "", flags
-		},
-		withHistograms:         true,
-		remoteExecutionEnabled: true,
-	})
+					return "", flags
+				},
+				withHistograms:         true,
+				remoteExecutionEnabled: true,
+				queryStatsEnabled:      queryStatsEnabled,
+			})
+		})
+	}
 }
 
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {

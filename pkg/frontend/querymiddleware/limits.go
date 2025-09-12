@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -323,14 +324,16 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
 	defer spanLogger.Finish()
 
+	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
+
 	var q promql.Query
 	var err error
 
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
-		q, err = rth.engine.NewRangeQuery(ctx, rth.storage, nil, r.GetQuery(), timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()), time.Duration(r.GetStep())*time.Millisecond)
+		q, err = rth.engine.NewRangeQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()), time.Duration(r.GetStep())*time.Millisecond)
 	case *PrometheusInstantQueryRequest:
-		q, err = rth.engine.NewInstantQuery(ctx, rth.storage, nil, r.GetQuery(), timestamp.Time(r.GetTime()))
+		q, err = rth.engine.NewInstantQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetTime()))
 	default:
 		return nil, fmt.Errorf("unknown metrics query request type: %T", r)
 	}
@@ -356,6 +359,21 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	}
 
 	warnings, infos := res.Warnings.AsStrings(r.GetQuery(), 0, 0)
+
+	if localStats := stats.FromContext(ctx); localStats != nil {
+		engineStats := q.Stats()
+		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
+
+		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
+		for i, count := range engineStats.Samples.TotalSamplesPerStep {
+			stepStats = append(stepStats, stats.StepStat{
+				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
+				Value:     count,
+			})
+		}
+
+		localStats.AddSamplesProcessedPerStep(stepStats)
+	}
 
 	resp := &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{

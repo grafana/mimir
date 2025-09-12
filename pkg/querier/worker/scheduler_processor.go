@@ -267,10 +267,16 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
+			var stats *querier_stats.SafeStats
+			if request.StatsEnabled {
+				stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
+				stats.AddQueueTime(time.Duration(request.QueueTimeNanos))
+			}
+
 			switch payload := request.Payload.(type) {
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
 				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
-				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
+				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, payload.HttpRequest)
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
 				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
 			default:
@@ -313,13 +319,7 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 	}
 }
 
-func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
-	var stats *querier_stats.SafeStats
-	if statsEnabled {
-		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
-		stats.AddQueueTime(queueTime)
-	}
-
+func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, request *httpgrpc.HTTPRequest) {
 	response, err := sp.httpHandler.Handle(ctx, request)
 	if err != nil {
 		var ok bool
@@ -472,8 +472,6 @@ sendBody:
 }
 
 func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
-	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
-
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
 	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
 	writer.Close(ctx)
