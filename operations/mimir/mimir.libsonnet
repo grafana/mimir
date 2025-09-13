@@ -24,6 +24,7 @@
 // Mimir features
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
+(import 'rollout-operator/rollout-operator.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 (import 'ruler-remote-evaluation.libsonnet') +
 (import 'continuous-test.libsonnet') +
@@ -43,9 +44,6 @@
 
 // Automatic cleanup of unused PVCs after scaling down
 (import 'pvc-auto-deletion.libsonnet') +
-
-// Support for ReplicaTemplate objects.
-(import 'replica-template.libsonnet') +
 
 // Experimental ingest storage. Keep this at the end, because we need to override components on top of other changes.
 (import 'ingest-storage.libsonnet') +
