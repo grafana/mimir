@@ -12,10 +12,3 @@ metadata-cache:
 
 results-cache:
   enabled: true
-
-nginx:
-  autoscaling:
-    enabled: true
-  resources:
-    requests:
-      cpu: 1
