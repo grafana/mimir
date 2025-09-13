@@ -76,6 +76,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -215,6 +219,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -354,6 +362,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:

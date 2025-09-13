@@ -10,6 +10,36 @@ global:
       - name: ndots
         value: "3"
 
+alertmanager:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+compactor:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+store_gateway:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+memcached:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ingester:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
 distributor:
   dnsConfig:
     options:
