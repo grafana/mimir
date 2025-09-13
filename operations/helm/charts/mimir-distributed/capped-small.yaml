@@ -79,7 +79,7 @@ ingester:
                 operator: In
                 values:
                   - ingester
-          topologyKey: 'kubernetes.io/hostname'
+          topologyKey: "kubernetes.io/hostname"
 
         - labelSelector:
             matchExpressions:
@@ -87,9 +87,9 @@ ingester:
                 operator: In
                 values:
                   - ingester
-          topologyKey: 'kubernetes.io/hostname'
+          topologyKey: "kubernetes.io/hostname"
   zoneAwareReplication:
-    topologyKey: 'kubernetes.io/hostname'
+    topologyKey: "kubernetes.io/hostname"
 
 admin-cache:
   enabled: true
@@ -173,7 +173,7 @@ store_gateway:
                 operator: In
                 values:
                   - store-gateway
-          topologyKey: 'kubernetes.io/hostname'
+          topologyKey: "kubernetes.io/hostname"
 
         - labelSelector:
             matchExpressions:
@@ -181,20 +181,10 @@ store_gateway:
                 operator: In
                 values:
                   - store-gateway
-          topologyKey: 'kubernetes.io/hostname'
+          topologyKey: "kubernetes.io/hostname"
 
   zoneAwareReplication:
-    topologyKey: 'kubernetes.io/hostname'
-
-nginx:
-  replicas: 1
-  resources:
-    limits:
-      cpu: 1.4
-      memory: 731Mi
-    requests:
-      cpu: 1.4
-      memory: 731Mi
+    topologyKey: "kubernetes.io/hostname"
 
 # Grafana Enterprise Metrics feature related
 admin_api:
