@@ -208,7 +208,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			TimeRange: timeRange,
 			Root:      root,
 
-			OriginalExpression: qs,
+			OriginalExpression:       qs,
+			EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
 		}
 
 		return plan, nil

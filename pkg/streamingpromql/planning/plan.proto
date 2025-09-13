@@ -17,6 +17,8 @@ message EncodedQueryPlan {
   // The original PromQL expression for this query.
   // May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
   string originalExpression = 4;
+
+  bool enableDelayedNameRemoval = 5;
 }
 
 message EncodedQueryTimeRange {
