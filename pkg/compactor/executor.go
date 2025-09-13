@@ -26,12 +26,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// createSchedulerRetryPolicy creates a retry policy that retries on transient scheduler errors.
-// This is used for to avoid discarding completed work due to temporary scheduler unavailability.
-func createSchedulerRetryPolicy[T any]() retrypolicy.RetryPolicy[T] {
-	return retrypolicy.
-		Builder[T]().
-		HandleIf(func(_ T, err error) bool {
+var (
+	// retryPolicy retries indefinetly on transient scheduler errors. This is used for to avoid discarding
+	// completed work due to temporary scheduler unavailability.
+	retryPolicy = retrypolicy.Builder[any]().
+		HandleIf(func(_ any, err error) bool {
 			errStatus, ok := grpcutil.ErrorToStatus(err)
 			if !ok {
 				return false
@@ -46,11 +45,6 @@ func createSchedulerRetryPolicy[T any]() retrypolicy.RetryPolicy[T] {
 		WithBackoffFactor(1*time.Second, 32*time.Second, 2.0).
 		WithJitter(500 * time.Millisecond).
 		Build()
-}
-
-var (
-	plannedJobsRetryPolicy = createSchedulerRetryPolicy[*schedulerpb.PlannedJobsResponse]()
-	updateJobRetryPolicy   = createSchedulerRetryPolicy[*schedulerpb.UpdateJobResponse]()
 )
 
 // compactionExecutor defines how compaction work is executed.
@@ -184,14 +178,16 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 	switch spec.JobType {
 	case schedulerpb.COMPACTION:
 		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		_, err = failsafe.Get(func() (*schedulerpb.UpdateJobResponse, error) {
-			return e.schedulerClient.UpdateCompactionJob(ctx, req)
-		}, updateJobRetryPolicy)
+		err = failsafe.Run(func() error {
+			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
+			return err
+		}, retryPolicy)
 	default: // PLANNING
 		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
-		_, err = failsafe.Get(func() (*schedulerpb.UpdateJobResponse, error) {
-			return e.schedulerClient.UpdatePlanJob(ctx, req)
-		}, updateJobRetryPolicy)
+		err = failsafe.Run(func() error {
+			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
+			return err
+		}, retryPolicy)
 	}
 
 	if err != nil {
@@ -317,9 +313,8 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *scheduler
 		Jobs: plannedJobs,
 	}
 
-	_, err := failsafe.Get(func() (*schedulerpb.PlannedJobsResponse, error) {
-		return e.schedulerClient.PlannedJobs(ctx, req)
-	}, plannedJobsRetryPolicy)
-
-	return err
+	return failsafe.Run(func() error {
+		_, err := e.schedulerClient.PlannedJobs(ctx, req)
+		return err
+	}, retryPolicy)
 }
