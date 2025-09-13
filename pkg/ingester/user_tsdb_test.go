@@ -243,8 +243,8 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		db := userTSDB{userID: "test", limiter: limiter}
-		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
-			return 10
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() (int, int) {
+			return 10, 0
 		})
 		require.True(t, success)
 		require.Equal(t, 1, attempts)
@@ -255,9 +255,9 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 
 	t.Run("increase during computation, but within limit", func(t *testing.T) {
 		db := userTSDB{userID: "test", limiter: limiter}
-		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() (int, int) {
 			db.ownedState.ownedSeriesCount += recomputeOwnedSeriesMaxSeriesDiff / 2
-			return 10
+			return 10, 0
 		})
 
 		require.True(t, success)
@@ -277,10 +277,10 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		}
 		mods[len(mods)-1] = recomputeOwnedSeriesMaxSeriesDiff
 
-		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() (int, int) {
 			db.ownedState.ownedSeriesCount += mods[0]
 			mods = mods[1:]
-			return 10
+			return 10, 0
 		})
 		require.True(t, success)
 		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
@@ -298,10 +298,10 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 			mods[i] = 2 * recomputeOwnedSeriesMaxSeriesDiff
 		}
 
-		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() (int, int) {
 			db.ownedState.ownedSeriesCount += mods[0]
 			mods = mods[1:]
-			return 10
+			return 10, 0
 		})
 		require.False(t, success)
 		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
