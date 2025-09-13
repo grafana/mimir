@@ -180,15 +180,6 @@ store_gateway:
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
 
-nginx:
-  replicas: 1
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi
-
 # Grafana Enterprise Metrics feature related
 admin_api:
   replicas: 1
