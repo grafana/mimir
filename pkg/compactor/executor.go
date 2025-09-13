@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	// retryPolicy retries indefinetly on transient scheduler errors. This is used for to avoid discarding
+	// retryPolicy retries indefinitely on transient scheduler errors. This is used for to avoid discarding
 	// completed work due to temporary scheduler unavailability.
 	retryPolicy = retrypolicy.Builder[any]().
 		HandleIf(func(_ any, err error) bool {
