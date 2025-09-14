@@ -244,8 +244,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 		f, err := NewConcurrentFetchers(ctx, r.client.Load(), r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset,
 			r.kafkaCfg.FetchConcurrencyMax, int32(r.kafkaCfg.MaxBufferedBytes), r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes,
-			r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, r.kafkaCfg.concurrentFetchersFetchBackoffConfig,
-			&r.metrics)
+			r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, OnRangeErrorResumeFromStart, startOffsetReader,
+			r.kafkaCfg.concurrentFetchersFetchBackoffConfig, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}

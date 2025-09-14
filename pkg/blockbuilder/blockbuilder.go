@@ -310,7 +310,8 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 			b.cfg.Kafka.UseCompressedBytesAsFetchMaxBytes,
 			b.cfg.Kafka.FetchMaxWait,
 			nil, // Don't need a reader since we've provided the start offset.
-			ingest.NewGenericOffsetReader(func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+			ingest.OnRangeErrorAbort,
+			nil, // We're aborting on range error, so we don't need an offset reader.
 			backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
 				MaxBackoff: 1 * time.Second,

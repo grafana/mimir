@@ -271,7 +271,8 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), offsetR))
 			})
 
-			actualFw := handleKafkaFetchErr(testCase.err, testCase.fw, backoff, offsetR, refresher, logger)
+			actualFw, err := handleKafkaFetchErr(testCase.err, testCase.fw, backoff, OnRangeErrorResumeFromStart, offsetR, refresher, logger)
+			assert.NoError(t, err)
 			assert.Equal(t, testCase.expectedFw, actualFw)
 			assert.Equal(t, testCase.expectedBackoff, waitedBackoff)
 			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
@@ -758,6 +759,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			false,
 			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 			offsetReader,
+			OnRangeErrorResumeFromStart,
 			startOffsetsReader,
 			fastFetchBackoffConfig,
 			&metrics,
@@ -1231,6 +1233,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		true,        // kfake uses compression and behaves similar to apache kafka
 		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 		offsetReader,
+		OnRangeErrorResumeFromStart,
 		startOffsetsReader,
 		fastFetchBackoffConfig,
 		&metrics,

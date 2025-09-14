@@ -252,6 +252,15 @@ func newErrorFetchResult(ctx context.Context, partitionID int32, err error) fetc
 	}
 }
 
+type RangeErrorPolicy int
+
+const (
+	// OnRangeErrorResumeFromStart means that when a range error occurs, we resume from the start of the partition.
+	OnRangeErrorResumeFromStart RangeErrorPolicy = iota
+	// OnRangeErrorAbort means that when a range error occurs, we abort the fetch.
+	OnRangeErrorAbort
+)
+
 type ConcurrentFetchers struct {
 	wg   sync.WaitGroup
 	done chan struct{}
@@ -274,6 +283,7 @@ type ConcurrentFetchers struct {
 	lastReturnedOffset int64
 	startOffset        int64
 	startConcurrency   int
+	rangeErrorPolicy   RangeErrorPolicy
 	startOffsetsReader *GenericOffsetReader[int64]
 
 	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
@@ -302,6 +312,7 @@ func NewConcurrentFetchers(
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
+	rangeErrorPolicy RangeErrorPolicy,
 	startOffsetsReader *GenericOffsetReader[int64],
 	fetchBackoffConfig backoff.Config,
 	metrics *ReaderMetrics,
@@ -346,6 +357,7 @@ func NewConcurrentFetchers(
 		startOffset:             startOffset,
 		startConcurrency:        concurrency,
 		startOffsetsReader:      startOffsetsReader,
+		rangeErrorPolicy:        rangeErrorPolicy,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
 		tracer:                  recordsTracer(),
@@ -689,7 +701,14 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			// Run a single Fetch request.
 			if res := r.fetchSingle(ctx, w); res.Err != nil {
 				// We got an error. We handle it and then discard this fetch result content.
-				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsetsReader, r.client, attemptSpan)
+				var err error
+				w, err = handleKafkaFetchErr(res.Err, w, errBackoff, r.rangeErrorPolicy, r.startOffsetsReader, r.client, attemptSpan)
+				if err != nil {
+					wantSpan.Finish()
+					close(w.result)
+					level.Warn(logger).Log("msg", "failed to handle Kafka fetch error", "error", err)
+					break
+				}
 			} else {
 				// We increase the count of buffered records as soon as we fetch them.
 				r.bufferedFetchedRecords.Add(int64(len(res.Records)))
@@ -914,7 +933,8 @@ type metadataRefresher interface {
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionStartOffset *GenericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeErrorStrategy RangeErrorPolicy,
+	partitionStartOffset *GenericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) (fetchWant, error) {
 	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
 	// So we force a metadata refresh here to be sure.
 	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).
@@ -931,30 +951,38 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	switch {
 	case err == nil:
 	case errors.Is(err, kerr.OffsetOutOfRange):
-		// We're either consuming from before the first offset or after the last offset.
-		partitionStart, err := partitionStartOffset.CachedOffset()
-		logger = log.With(logger, "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to find start offset to readjust on OffsetOutOfRange; retrying same records range", "err", err)
-			break
-		}
 
-		if fw.startOffset < partitionStart {
-			// We're too far behind.
-			if partitionStart >= fw.endOffset {
-				// The next fetch want is responsible for this range. We set startOffset=endOffset to effectively mark this fetch as complete.
-				fw.startOffset = fw.endOffset
-				level.Debug(logger).Log("msg", "we're too far behind aborting fetch")
+		if rangeErrorStrategy == OnRangeErrorAbort {
+			return fetchWant{}, errors.New("out of range, aborting fetch")
+		} else if rangeErrorStrategy == OnRangeErrorResumeFromStart {
+
+			// We're either consuming from before the first offset or after the last offset.
+			partitionStart, err := partitionStartOffset.CachedOffset()
+			logger = log.With(logger, "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
+			if err != nil {
+				level.Error(logger).Log("msg", "failed to find start offset to readjust on OffsetOutOfRange; retrying same records range", "err", err)
 				break
 			}
-			// Only some of the offsets of our want are out of range, so let's fast-forward.
-			fw.startOffset = partitionStart
-			level.Debug(logger).Log("msg", "part of fetch want is outside of available offsets, adjusted start offset")
+
+			if fw.startOffset < partitionStart {
+				// We're too far behind.
+				if partitionStart >= fw.endOffset {
+					// The next fetch want is responsible for this range. We set startOffset=endOffset to effectively mark this fetch as complete.
+					fw.startOffset = fw.endOffset
+					level.Debug(logger).Log("msg", "we're too far behind aborting fetch")
+					break
+				}
+				// Only some of the offsets of our want are out of range, so let's fast-forward.
+				fw.startOffset = partitionStart
+				level.Debug(logger).Log("msg", "part of fetch want is outside of available offsets, adjusted start offset")
+			} else {
+				// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
+				// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
+				// Wait for a short time to allow the broker to catch up or for new records to be produced.
+				level.Debug(logger).Log("msg", "offset out of range; waiting for new records to be produced")
+			}
 		} else {
-			// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
-			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
-			// Wait for a short time to allow the broker to catch up or for new records to be produced.
-			level.Debug(logger).Log("msg", "offset out of range; waiting for new records to be produced")
+			panic(fmt.Sprintf("unexpected range error policy: %d", rangeErrorStrategy))
 		}
 	case errors.Is(err, kerr.TopicAuthorizationFailed):
 		longBackoff.Wait()
@@ -1018,5 +1046,5 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 		level.Error(logger).Log("msg", "received an error we're not prepared to handle; this shouldn't happen; please report this as a bug", "err", err)
 		longBackoff.Wait()
 	}
-	return fw
+	return fw, nil
 }
