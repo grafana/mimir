@@ -724,6 +724,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 					case w.result <- newErrorFetchResult(ctx, r.partitionID, err):
 					}
 
+					// Break out of the retry loop, but continue servicing the `wants` channel.
 					break
 				}
 			} else {
