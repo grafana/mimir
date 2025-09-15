@@ -612,13 +612,13 @@ HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest --rego-version=v0 fmt $(REGO_POLICIES_PATH)
+	@conftest fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
 	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest --rego-version=v0 verify -p $(REGO_POLICIES_PATH) --report notes
+	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
