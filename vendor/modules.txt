@@ -686,7 +686,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250821194625-e93687a58b7e
+# github.com/grafana/alerting v0.0.0-20250912123615-16bb72514d26
 ## explicit; go 1.23.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -1109,7 +1109,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250722103749-329f0c4df1ba
+# github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 ## explicit; go 1.23.0
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1139,6 +1139,7 @@ github.com/prometheus/alertmanager/notify
 github.com/prometheus/alertmanager/notify/discord
 github.com/prometheus/alertmanager/notify/email
 github.com/prometheus/alertmanager/notify/msteams
+github.com/prometheus/alertmanager/notify/msteamsv2
 github.com/prometheus/alertmanager/notify/opsgenie
 github.com/prometheus/alertmanager/notify/pagerduty
 github.com/prometheus/alertmanager/notify/pushover
@@ -2144,5 +2145,5 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250722103749-329f0c4df1ba
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
