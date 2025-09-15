@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -323,7 +324,7 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 	}
 
 	expectedError := apierror.New(apierror.TypeUnavailable, "something went wrong")
-	expectedTotalSamples := int64(1234)
+	expectedTotalSamples := uint64(1234)
 	expectedWarnings := []string{"warning #1", "warning #2"}
 	expectedInfos := []string{"info #1", "info #2"}
 
@@ -338,10 +339,10 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 				memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 				response := responseCreator(stream, memoryConsumptionTracker)
 
-				annos, totalSamples, err := response.GetEvaluationInfo(ctx)
+				annos, stats, err := response.GetEvaluationInfo(ctx)
 				if expectSuccess {
 					require.NoError(t, err)
-					require.Equal(t, expectedTotalSamples, totalSamples)
+					require.Equal(t, expectedTotalSamples, stats.SamplesProcessed)
 
 					warnings, infos := annos.AsStrings("", 0, 0)
 					require.ElementsMatch(t, expectedWarnings, warnings)
@@ -415,13 +416,13 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 				"info: you should know about this too",
 			},
 		},
-		Stats: querierpb.QueryStats{
-			TotalSamples: 1234,
+		Stats: stats.Stats{
+			SamplesProcessed: 1234,
 		},
 	}
 
-	annos, totalSamples := decodeEvaluationCompletedMessage(msg)
-	require.Equal(t, int64(1234), totalSamples)
+	annos, stats := decodeEvaluationCompletedMessage(msg)
+	require.Equal(t, msg.Stats, stats)
 
 	// If these tests fail, then the errors we're adding to the set of annotations likely
 	// don't wrap PromQLInfo / PromQLWarning correctly.
@@ -499,7 +500,7 @@ func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, ra
 	}
 }
 
-func newEvaluationCompleted(totalSamples int64, warnings []string, infos []string) *frontendv2pb.QueryResultStreamRequest {
+func newEvaluationCompleted(totalSamples uint64, warnings []string, infos []string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -509,8 +510,8 @@ func newEvaluationCompleted(totalSamples int64, warnings []string, infos []strin
 							Warnings: warnings,
 							Infos:    infos,
 						},
-						Stats: querierpb.QueryStats{
-							TotalSamples: totalSamples,
+						Stats: stats.Stats{
+							SamplesProcessed: totalSamples,
 						},
 					},
 				},
@@ -570,7 +571,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 
 	ctx := context.Background()
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
