@@ -5212,6 +5212,21 @@ sharding_ring:
 # two Mimir components.
 # The CLI flags prefix for this block configuration is: compactor.scheduler
 [grpc_client_config: <grpc_client>]
+
+# (experimental) Minimum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-min-retry-backoff
+[executor_retry_min_backoff: <duration> | default = 1s]
+
+# (experimental) Maximum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-max-retry-backoff
+[executor_retry_max_backoff: <duration> | default = 32s]
+
+# (experimental) Backoff factor for compaction executor retries when sending
+# scheduler status updates.
+# CLI flag: -compactor.executor-retry-backoff-factor
+[executor_retry_backoff_factor: <float> | default = 2]
 ```
 
 ### store_gateway

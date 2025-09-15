@@ -396,7 +396,7 @@ func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 
 	callCount := 0
-	failuresBeforeSuccess := 2
+	failuresBeforeSuccess := 3
 
 	mockSchedulerClient := &mockCompactorSchedulerClient{
 		LeaseJobFunc: func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {

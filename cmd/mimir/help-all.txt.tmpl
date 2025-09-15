@@ -1039,6 +1039,12 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.executor-max-retry-backoff duration
+    	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
+  -compactor.executor-min-retry-backoff duration
+    	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
+  -compactor.executor-retry-backoff-factor float
+    	[experimental] Backoff factor for compaction executor retries when sending scheduler status updates. (default 2)
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int

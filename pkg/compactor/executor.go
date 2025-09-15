@@ -26,27 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var (
-	// retryPolicy retries indefinitely on transient scheduler errors. This is used for to avoid discarding
-	// completed work due to temporary scheduler unavailability.
-	retryPolicy = retrypolicy.Builder[any]().
-		HandleIf(func(_ any, err error) bool {
-			errStatus, ok := grpcutil.ErrorToStatus(err)
-			if !ok {
-				return false
-			}
-			switch code := errStatus.Code(); code {
-			case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
-				return true
-			default:
-				return false
-			}
-		}).
-		WithBackoffFactor(1*time.Second, 32*time.Second, 2.0).
-		WithJitter(500 * time.Millisecond).
-		Build()
-)
-
 // compactionExecutor defines how compaction work is executed.
 type compactionExecutor interface {
 	run(ctx context.Context, compactor *MultitenantCompactor) error
@@ -111,6 +90,30 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 	}
 
 	return executor, nil
+}
+
+// retryPolicy retries indefinitely on transient scheduler errors. This is used to avoid discarding
+// completed work due to temporary scheduler unavailability.
+func (e *schedulerExecutor) retryPolicy() failsafe.Policy[any] {
+	return retrypolicy.Builder[any]().
+		HandleIf(func(_ any, err error) bool {
+			errStatus, ok := grpcutil.ErrorToStatus(err)
+			if !ok {
+				return false
+			}
+			switch code := errStatus.Code(); code {
+			case codes.Unavailable:
+				// client will generate UNAVAILABLE if some data transmitted (e.g., request metadata written
+				// to TCP connection) before connection breaks.
+				return true
+			default:
+				return false
+			}
+		}).
+		WithBackoffFactor(e.cfg.ExecutorRetryMinBackoff, e.cfg.ExecutorRetryMaxBackoff, float32(e.cfg.ExecutorRetryBackoffFactor)).
+		WithJitter(500 * time.Millisecond).
+		WithMaxAttempts(-1).
+		Build()
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
@@ -181,13 +184,13 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 		err = failsafe.Run(func() error {
 			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 			return err
-		}, retryPolicy)
+		}, e.retryPolicy())
 	default: // PLANNING
 		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
 		err = failsafe.Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
-		}, retryPolicy)
+		}, e.retryPolicy())
 	}
 
 	if err != nil {
@@ -316,5 +319,5 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *scheduler
 	return failsafe.Run(func() error {
 		_, err := e.schedulerClient.PlannedJobs(ctx, req)
 		return err
-	}, retryPolicy)
+	}, e.retryPolicy())
 }

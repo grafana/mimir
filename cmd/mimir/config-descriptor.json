@@ -11567,6 +11567,39 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "executor_retry_min_backoff",
+          "required": false,
+          "desc": "Minimum backoff time for compaction executor retries when sending scheduler status updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000000000,
+          "fieldFlag": "compactor.executor-min-retry-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "executor_retry_max_backoff",
+          "required": false,
+          "desc": "Maximum backoff time for compaction executor retries when sending scheduler status updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32000000000,
+          "fieldFlag": "compactor.executor-max-retry-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "executor_retry_backoff_factor",
+          "required": false,
+          "desc": "Backoff factor for compaction executor retries when sending scheduler status updates.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "compactor.executor-retry-backoff-factor",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
