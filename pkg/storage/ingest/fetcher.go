@@ -340,6 +340,10 @@ func NewConcurrentFetchers(
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
 
+	if rangeErrorPolicy != OnRangeErrorResumeFromStart && rangeErrorPolicy != OnRangeErrorAbort {
+		return nil, fmt.Errorf("unrecognized range error policy: %d", rangeErrorPolicy)
+	}
+
 	if maxBufferedBytesLimit <= 0 {
 		maxBufferedBytesLimit = math.MaxInt32
 	}
