@@ -4,6 +4,7 @@
 (import 'tracing.libsonnet') +
 (import 'config.libsonnet') +
 (import 'consul.libsonnet') +
+(import 'rollout-operator/rollout-operator.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 
 // Mimir services

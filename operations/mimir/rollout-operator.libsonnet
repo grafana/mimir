@@ -1,9 +1,10 @@
-(import 'rollout-operator/rollout-operator.libsonnet') {
-  _config+:: {
+{
+  _config+: {
     // Configure the rollout operator to accept webhook requests made as part of scaling
     // statefulsets up or down. This allows the rollout operator to ensure that stateful
     // components (ingesters, store-gateways) are scaled up or down safely.
-    rollout_operator_webhooks_enabled: $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
+    rollout_operator_webhooks_enabled: $._config.multi_zone_ingester_enabled ||
+                                       $._config.multi_zone_store_gateway_enabled,
 
     rollout_operator_enabled: $._config.multi_zone_ingester_enabled ||
                               $._config.multi_zone_store_gateway_enabled ||
@@ -18,7 +19,7 @@
     replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
   },
 
-  rollout_operator_container:
+  rollout_operator_container: if !std.objectHas($, 'tracing_env_mixin') then super.rollout_operator_container else
     super.rollout_operator_container + $.tracing_env_mixin,
 
   rollout_operator_pdb: if !$._config.rollout_operator_enabled then null else
