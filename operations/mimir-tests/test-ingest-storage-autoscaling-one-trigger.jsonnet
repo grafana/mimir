@@ -23,7 +23,7 @@
     multi_zone_ingester_replicas: 0,
     ingester_automated_downscale_enabled: false,
 
-    # not relevant to this test
+    // not relevant to this test
     zpdb_custom_resource_definition_enabled: false,
 
     shuffle_sharding+:: {
