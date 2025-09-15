@@ -1856,7 +1856,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/metric
 google.golang.org/genproto/googleapis/api/monitoredres
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20250826171959-ef028d996bc1
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20250908214217-97024824d090
 ## explicit; go 1.24.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
