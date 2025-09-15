@@ -854,7 +854,7 @@ func (r *ConcurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	wants := make(chan fetchWant)
 	defer close(wants)
 	r.wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
+	for i := range concurrency {
 		logger := log.With(r.logger, "fetcher", i)
 		go r.run(ctx, wants, logger, highWatermark)
 	}
