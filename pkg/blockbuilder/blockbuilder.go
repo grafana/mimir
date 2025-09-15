@@ -403,12 +403,19 @@ func (b *BlockBuilder) consumePartitionSection(
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
 		fetches := fetchPoller.PollFetches(ctx)
+		var fetchErr error
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
 				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
+				if fetchErr == nil {
+					fetchErr = err
+				}
 			}
 		})
+		if fetchErr != nil {
+			return fmt.Errorf("poll fetches: %w", fetchErr)
+		}
 
 		recordsAll := func(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
 			return func(yield func(*kgo.Record) bool) {
@@ -433,8 +440,7 @@ func (b *BlockBuilder) consumePartitionSection(
 			}
 		}
 
-		err := consumer.Consume(ctx, records)
-		if err != nil {
+		if err := consumer.Consume(ctx, records); err != nil {
 			return fmt.Errorf("consume records in partition %d: %w", partition, err)
 		}
 	}

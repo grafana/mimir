@@ -704,10 +704,25 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				var err error
 				w, err = handleKafkaFetchErr(res.Err, w, errBackoff, r.rangeErrorPolicy, r.startOffsetsReader, r.client, attemptSpan)
 				if err != nil {
+					// An error returned from handleKafkaFetchErr is a fatal
+					// error. We produce an error result and abort further
+					// processing.
+
+					select {
+					case <-r.done:
+					case <-ctx.Done():
+					case w.result <- fetchResult{
+						FetchPartition: kgo.FetchPartition{
+							Partition: r.partitionID,
+							Err:       err,
+						},
+					}:
+					}
+
 					wantSpan.Finish()
 					close(w.result)
 					level.Warn(logger).Log("msg", "failed to handle Kafka fetch error", "error", err)
-					break
+					return
 				}
 			} else {
 				// We increase the count of buffered records as soon as we fetch them.
@@ -933,7 +948,7 @@ type metadataRefresher interface {
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeErrorStrategy RangeErrorPolicy,
+func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeErrorPolicy RangeErrorPolicy,
 	partitionStartOffset *GenericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) (fetchWant, error) {
 	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
 	// So we force a metadata refresh here to be sure.
@@ -952,10 +967,9 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeError
 	case err == nil:
 	case errors.Is(err, kerr.OffsetOutOfRange):
 
-		if rangeErrorStrategy == OnRangeErrorAbort {
-			return fetchWant{}, errors.New("out of range, aborting fetch")
-		} else if rangeErrorStrategy == OnRangeErrorResumeFromStart {
-
+		if rangeErrorPolicy == OnRangeErrorAbort {
+			return fetchWant{}, fmt.Errorf("out of range, aborting fetch: %w", err)
+		} else if rangeErrorPolicy == OnRangeErrorResumeFromStart {
 			// We're either consuming from before the first offset or after the last offset.
 			partitionStart, err := partitionStartOffset.CachedOffset()
 			logger = log.With(logger, "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
@@ -982,7 +996,7 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeError
 				level.Debug(logger).Log("msg", "offset out of range; waiting for new records to be produced")
 			}
 		} else {
-			panic(fmt.Sprintf("unexpected range error policy: %d", rangeErrorStrategy))
+			panic(fmt.Sprintf("unexpected range error policy: %d", rangeErrorPolicy))
 		}
 	case errors.Is(err, kerr.TopicAuthorizationFailed):
 		longBackoff.Wait()
