@@ -1,6 +1,7 @@
-/*
- *
- * Copyright 2020 gRPC authors.
+//go:build go1.24
+
+/*-
+ * Copyright 2014 Square Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +14,15 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
-package load
+package jose
 
-// PerClusterReporter wraps the methods from the loadStore that are used here.
-type PerClusterReporter interface {
-	CallStarted(locality string)
-	CallFinished(locality string, err error)
-	CallServerLoad(locality, name string, val float64)
-	CallDropped(category string)
+import (
+	"crypto/pbkdf2"
+	"hash"
+)
+
+func pbkdf2Key(h func() hash.Hash, password string, salt []byte, iter, keyLen int) ([]byte, error) {
+	return pbkdf2.Key(h, password, salt, iter, keyLen)
 }
