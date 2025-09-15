@@ -45,7 +45,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Run Flaky Tests Analysis
-        uses: dimitarvdimitrov/shared-workflows/actions/go-flaky-tests@20a72aa1821825fb2871515ed53002e4c18842db # dimitar/analyze-test-failures/exclude-tests
+        uses: dimitarvdimitrov/shared-workflows/actions/go-flaky-tests@2c842d90ec0e332485acf7d7afe9f03d03f68f7b # dimitar/analyze-test-failures/exclude-tests
         with:
           loki-url: ${{ env.LOKI_URL }}
           loki-username: ${{ env.LOKI_USERNAME }}
