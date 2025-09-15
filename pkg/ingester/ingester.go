@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
@@ -967,19 +966,6 @@ func (i *Ingester) updateLimitMetrics() {
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
-}
-
-func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-	db := i.getTSDB(user)
-	// If no user TSDB is found, we should not run lookup planning.
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-	return db.Head().PostingsStats(), nil
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -2630,16 +2616,21 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it uses the CostBasedPlanner,
-// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
+// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
+// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-// The function ignores the BlockReader parameter for now, maintaining current behavior.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer) tsdb.IndexLookupPlannerFunc {
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		planner := lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
-		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return planner }
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-	return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
+
+	metrics := lookupplan.NewMetrics(r)
+	logger := log.With(i.logger, "user", userID)
+	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
+
+	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
+
+	return provider.CreatePlanner
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2783,7 +2774,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2852,47 +2843,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
-// disabledPlanningChunkQuerier wraps a storage.ChunkQuerier and disables lookup planning for all operations
-type disabledPlanningChunkQuerier struct {
-	delegate storage.ChunkQuerier
-}
-
-func (q *disabledPlanningChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelValues(ctxWithoutPlanning, name, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelNames(ctxWithoutPlanning, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) Close() error {
-	return q.delegate.Close()
-}
-
-func (q *disabledPlanningChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.Select(ctxWithoutPlanning, sortSeries, hints, matchers...)
-}
-
 // createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
-	}
-
-	blockMeta := b.Meta()
-
-	// Check if block is older than 3 hours.
-	// 1h in memory + 2h for compaction - only use stats for very recent (mostly in-memory) blocks
-	threeHoursAgo := time.Now().Add(-3 * time.Hour).UnixMilli()
-	if blockMeta.MaxTime < threeHoursAgo {
-		// For old blocks, use a querier with disabled lookup planning to avoid using outdated statistics
-		return &disabledPlanningChunkQuerier{
-			delegate: defaultQuerier,
-		}, nil
 	}
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
@@ -2903,7 +2858,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
-		blockMeta,
+		b.Meta(),
 		i.logger,
 		defaultQuerier,
 	)
