@@ -16,7 +16,8 @@ import (
 
 	promDiscord "github.com/prometheus/alertmanager/notify/discord"
 	promEmail "github.com/prometheus/alertmanager/notify/email"
-	promMsteams "github.com/prometheus/alertmanager/notify/msteams"
+	promMSTeams "github.com/prometheus/alertmanager/notify/msteams"
+	promMSTeamsV2 "github.com/prometheus/alertmanager/notify/msteamsv2"
 	promOpsgenie "github.com/prometheus/alertmanager/notify/opsgenie"
 	promPagerduty "github.com/prometheus/alertmanager/notify/pagerduty"
 	promPushover "github.com/prometheus/alertmanager/notify/pushover"
@@ -289,7 +290,10 @@ func BuildPrometheusReceiverIntegrations(
 		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return promWebex.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.MSTeamsConfigs {
-		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return promMsteams.New(c, tmpl, l, httpOps...) })
+		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return promMSTeams.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.MSTeamsV2Configs {
+		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return promMSTeamsV2.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

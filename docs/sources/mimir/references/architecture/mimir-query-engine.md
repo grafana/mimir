@@ -74,12 +74,15 @@ The following are known differences between MQE and Prometheus' engine:
 
 ### Binary operations that produce no series
 
-If MQE can determine that a binary operation such as `+`, `-`, `/` or `and` produce no series
-based on the series labels on both sides, it skips evaluating both sides.
+When MQE evaluates a binary operation (such as `+`, `-`, `/`, `and`, `or`, etc.), it checks if the binary operation will produce no series, or if some series from one side of the operation can be skipped, based on the series labels on both sides.
 
-For example, if the query is `foo / bar`, and `foo` selects a single series `foo{env="test"}`, and
-`bar` selects a single series `bar{env="prod"}`, then the query cannot produce any series and so the
-data for each side is not evaluated.
+- If MQE can determine that a binary operation produce no series based on the series labels on both sides, it skips evaluating both sides.
+  For example, if the query is `foo / bar`, and `foo` selects a single series `foo{env="test"}`, and
+  `bar` selects a single series `bar{env="prod"}`, then the query cannot produce any series and so the
+  data for each side is not evaluated.
+- If MQE can determine that some series on one side will not match anything on the other side, it will skip evaluating the series that do not match the other side.
+  For example, if the query is `foo / on (env) bar`, and `foo` has series `foo{env="1", region="a"}` and `foo{env="2", region="a"}` and `bar` has `bar{env="1", cluster="x"}`, `bar{env="3", cluster="x"}` and `bar{env="3", cluster="y"}`,
+  MQE will ignore the `env="3"` series from `bar`.
 
 This has some noticeable side effects, including:
 
