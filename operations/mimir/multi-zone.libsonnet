@@ -47,8 +47,7 @@
     multi_zone_schedule_toleration: 'secondary-az',
   },
 
-  assert !($._config.multi_zone_zpdb_enabled && !$._config.enable_rollout_operator_webhook) : 'zpdb configuration requires enable_rollout_operator_webhook=true',
-
+  assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
 
   //
   // Zone-aware replication.

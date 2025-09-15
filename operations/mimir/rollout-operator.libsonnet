@@ -1,14 +1,15 @@
-{
+(import 'rollout-operator/rollout-operator.libsonnet') {
   _config+:: {
     // Configure the rollout operator to accept webhook requests made as part of scaling
     // statefulsets up or down. This allows the rollout operator to ensure that stateful
     // components (ingesters, store-gateways) are scaled up or down safely.
-    enable_rollout_operator_webhook: $._config.multi_zone_ingester_enabled ||
-                                     $._config.multi_zone_store_gateway_enabled ||
-                                     $._config.cortex_compactor_concurrent_rollout_enabled ||
-                                     $._config.ingest_storage_ingester_autoscaling_enabled,
+    rollout_operator_webhooks_enabled: $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
 
-    rollout_operator_enabled: $._config.enable_rollout_operator_webhook,
+    rollout_operator_enabled: $._config.multi_zone_ingester_enabled ||
+                              $._config.multi_zone_store_gateway_enabled ||
+                              $._config.cortex_compactor_concurrent_rollout_enabled ||
+                              $._config.ingest_storage_ingester_autoscaling_enabled ||
+                              $._config.rollout_operator_webhooks_enabled,
 
     // Ignore these labels used for controlling webhook behavior when creating services.
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],

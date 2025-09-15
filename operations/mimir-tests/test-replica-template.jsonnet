@@ -1,8 +1,9 @@
-local rt = import 'mimir/replica-template.libsonnet';
+local rt = import 'rollout-operator/rollout-operator.libsonnet';
 
 rt {
   _config+:: {
     namespace: 'test',
+    rollout_operator_webhooks_enabled: true,
     replica_template_custom_resource_definition_enabled: true,
   },
 }

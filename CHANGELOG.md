@@ -81,6 +81,7 @@
 * [CHANGE] Rollout-operator: Add `watch` permission to the rollout-operators's cluster role. #12360. See [rollout-operator#262](https://github.com/grafana/rollout-operator/pull/262)
 * [CHANGE] Updates to CPU and memory scaling metric. Use `irate()` when calculating the CPU metric and remove `or vector(0)` from a leg of the memory query. These changes prevent downscaling deployments when scraping fails. #12406
 * [CHANGE] Memcached: Remove configuration for enabling mTLS connections to Memcached servers. #12434
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688
 
 ### Documentation
 
