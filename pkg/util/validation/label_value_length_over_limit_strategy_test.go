@@ -41,7 +41,7 @@ func TestLabelValueLengthOverLimitStrategy_Unmarshal(t *testing.T) {
 		t.Run("input="+tc.input, func(t *testing.T) {
 			for _, format := range []struct {
 				name string
-				set  func(t *testing.T, *LabelValueLengthOverLimitStrategy, string) error
+				set  func(*testing.T, *LabelValueLengthOverLimitStrategy, string) error
 			}{
 				{name: "json", set: func(t *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
 					t.Helper()
@@ -63,7 +63,7 @@ func TestLabelValueLengthOverLimitStrategy_Unmarshal(t *testing.T) {
 					t.Parallel()
 
 					var got LabelValueLengthOverLimitStrategy
-					err := format.set(&got, tc.input)
+					err := format.set(t, &got, tc.input)
 					if tc.wantErr {
 						require.Error(t, err)
 						return

@@ -1785,7 +1785,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg.MaxLabelValueLength = LabelValueHashLen - 1
 				return cfg
 			}(),
-			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "truncate": label value hash would exceed max label value length of 22`),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "truncate": label value hash suffix would exceed max label value length of 22`),
 		},
 		"should fail if label_value_length_over_limit_strategy=drop and hash suffix would be longer than max label value limit": {
 			cfg: func() Limits {
@@ -1795,7 +1795,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg.MaxLabelValueLength = LabelValueHashLen - 1
 				return cfg
 			}(),
-			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "drop": label value hash would exceed max label value length of 22`),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "drop": label value hash suffix would exceed max label value length of 22`),
 		},
 		"should pass if label_value_length_over_limit_strategy=truncate and hash suffix would be shorter than or equal to max label value limit": {
 			cfg: func() Limits {
