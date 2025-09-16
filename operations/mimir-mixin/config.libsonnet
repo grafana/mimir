@@ -25,6 +25,15 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
+    // the name for the rollout-operator. This is also used as the container name
+    rollout_operator_name: 'rollout-operator',
+    rollout_operator_dashoard_title: 'Rollout operator',
+    rollout_operator_dashboard_uid: '6c62cd598d5e741954ca8ebb251c5852',
+    rollout_operator_container_name: $._config.rollout_operator_name,
+    rollout_operator_instance_matcher:
+        if $._config.helm == '' then $._config.rollout_operator_container_name + '.*' else '(.*%g-)?%g.*' % [$._config.helm, $._config.rollout_operator_container_name],
+    rollout_operator_resources_panel_queries: self.resources_panel_queries.kubernetes,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.

@@ -5,6 +5,8 @@
     alert_product: 'Mimir',
     tags+: ['gem'],
 
+    rollout_operator_dashboard_uid: '801faae3a2957d9534139f0f9456faef',
+
     gem_enabled: true,
 
     gateway_enabled: true,
