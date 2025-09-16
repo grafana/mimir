@@ -19,7 +19,7 @@
     (import 'dashboards/overview.libsonnet') +
 
     (if $._config.deployment_type != 'kubernetes' || $._config.singleBinary == true then {} else
-        (import 'rollout-operator-mixin/dashboards/rollout-operator.libsonnet')($._config)) +
+       (import 'rollout-operator-mixin/dashboards/rollout-operator.libsonnet')($._config)) +
 
     (if !$._config.block_builder_enabled then {} else
        (import 'dashboards/block-builder.libsonnet')) +

@@ -31,7 +31,7 @@
     rollout_operator_dashboard_uid: '6c62cd598d5e741954ca8ebb251c5852',
     rollout_operator_container_name: $._config.rollout_operator_name,
     rollout_operator_instance_matcher:
-        if $._config.helm == '' then $._config.rollout_operator_container_name + '.*' else '(.*%g-)?%g.*' % [$._config.helm, $._config.rollout_operator_container_name],
+      if $._config.helm == '' then $._config.rollout_operator_container_name + '.*' else '(.*%g-)?%g.*' % [$._config.helm, $._config.rollout_operator_container_name],
     rollout_operator_resources_panel_queries: self.resources_panel_queries.kubernetes,
 
     // This is mapping between a Mimir component name and the regular expression that should be used
