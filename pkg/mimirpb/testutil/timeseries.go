@@ -5,7 +5,7 @@ package testutil
 import "github.com/grafana/mimir/pkg/mimirpb"
 
 // RemoveEmptyObjectFromSeries is a test utility to replace some empty fields
-// inside the given series with `nil` for easy comparition.
+// inside the given series with `nil` for easy comparison.
 func RemoveEmptyObjectFromSeries(series []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
 	for i := range series {
 		s := series[i].TimeSeries
