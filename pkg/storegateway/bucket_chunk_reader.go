@@ -29,6 +29,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+// maxChunkDataLen is a safeguard to protect the chunk data parsing from over allocating in case of a broken chunk.
+// Refer to https://github.com/grafana/mimir/issues/12691 for the background.
+// 512MB would be a ridiculously large chunk. But, to keep things relaxed, we use a much larger value than tsdb.EstimatedMaxChunkSize.
+const maxChunkDataLen = 512 * 1024 * 1024
+
 type bucketChunkReader struct {
 	ctx   context.Context
 	block *bucketBlock
@@ -147,10 +152,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		}
 
 		// Validate chunk data length to prevent unreasonably large memory allocations or panics from a corrupted data.
-		// Note, that on a 64-bit system Go should allow to allocate up to 1<<47 bytes; a larger len causes "makeslice: len out of range".
-		// Such a large chunk data len is unrealistic. Here we're opting to a more conservative check.
-		if chunkDataLen > uint64(tsdb.EstimatedMaxChunkSize) {
-			return fmt.Errorf("chunk seq %d: data length %d exceeds estimated maximum chunk size %d", seq, chunkDataLen, tsdb.EstimatedMaxChunkSize)
+		// Note, that on a 64-bit system Go should allow to allocate up to ~140TB; a larger len causes "makeslice: len out of range".
+		// Such a large chunk data len is unrealistic.
+		if chunkDataLen > uint64(maxChunkDataLen) {
+			return fmt.Errorf("chunk seq %d: parsed data length %d exceeds expected maximum chunk size %d", seq, chunkDataLen, maxChunkDataLen)
 		}
 
 		// We ignore the crc32 after the chunk data.
