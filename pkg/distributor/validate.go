@@ -501,14 +501,11 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	return nil
 }
 
-func hashLabelValue(src mimirpb.UnsafeMutableString) uint64 {
+func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
 	h := fnv.New64a()
 	_, _ = h.Write(unsafeMutableStringToBytes(src))
-	return h.Sum64()
-}
+	hash := h.Sum64()
 
-func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
-	hash := hashLabelValue(src)
 	buf := unsafeMutableStringToBytes(dst)
 	// Encode as hex inline instead of fmt.Sprintf to avoid allocations due to interface values.
 	copy(buf, "(hash:")
