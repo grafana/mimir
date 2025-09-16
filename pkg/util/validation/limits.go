@@ -84,7 +84,7 @@ var (
 
 const (
 	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
-	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash would exceed max label value length of %d"
+	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
 )
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -806,8 +806,7 @@ func (o *Overrides) MaxLabelValueLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelValueLength
 }
 
-// LabelValueLengthOverLimitStrategy returns maximum length a label value can be. This also is
-// the maximum length of a metric name.
+// LabelValueLengthOverLimitStrategy returns the strategy for when label values exceed the limit.
 func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueLengthOverLimitStrategy {
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
 }

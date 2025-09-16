@@ -523,7 +523,7 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 // references may change once the timeseries is returned to the shared pool.
 type UnsafeMutableLabel = LabelAdapter
 
-// A UnsafeMutableString is a string that may violate the invariant that it's
+// An UnsafeMutableString is a string that may violate the invariant that it's
 // immutable. Contrary to string, holding a value of UnsafeMutableString may
 // later refer to different data than it originally did: it's effectively
 // a []byte with a string-like (and thus read-only) API and implicit capacity.

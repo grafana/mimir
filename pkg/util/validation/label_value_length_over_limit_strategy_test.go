@@ -41,17 +41,21 @@ func TestLabelValueLengthOverLimitStrategy_Unmarshal(t *testing.T) {
 		t.Run("input="+tc.input, func(t *testing.T) {
 			for _, format := range []struct {
 				name string
-				set  func(*LabelValueLengthOverLimitStrategy, string) error
+				set  func(t *testing.T, *LabelValueLengthOverLimitStrategy, string) error
 			}{
-				{name: "json", set: func(v *LabelValueLengthOverLimitStrategy, input string) error {
-					b, _ := json.Marshal(input)
+				{name: "json", set: func(t *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
+					t.Helper()
+					b, err := json.Marshal(input)
+					require.NoError(t, err)
 					return json.Unmarshal(b, &v)
 				}},
-				{name: "yaml", set: func(v *LabelValueLengthOverLimitStrategy, input string) error {
-					b, _ := yaml.Marshal(input)
+				{name: "yaml", set: func(t *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
+					t.Helper()
+					b, err := yaml.Marshal(input)
+					require.NoError(t, err)
 					return yaml.Unmarshal(b, &v)
 				}},
-				{name: "flag", set: func(v *LabelValueLengthOverLimitStrategy, input string) error {
+				{name: "flag", set: func(_ *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
 					return v.Set(input)
 				}},
 			} {

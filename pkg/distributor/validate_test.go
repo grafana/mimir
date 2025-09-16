@@ -176,7 +176,6 @@ func TestValidateLabels(t *testing.T) {
 		skipLabelNameValidation  bool
 		skipLabelCountValidation bool
 		customUserID             string
-
 		wantErr    func(model.ValidationScheme) error
 		wantLabels map[model.LabelName]model.LabelValue
 	}{
@@ -284,7 +283,7 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   model.LabelValue(fmt.Sprintf("(hash:%016x)", hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here_2"))),
+				"much_shorter_name":   "(hash:0710946ebb65ac31)",
 			},
 		},
 		{
@@ -551,7 +550,8 @@ func TestValidateLabels(t *testing.T) {
 							defer wg.Done()
 
 							expectedTraceID := trace.TraceID{}
-							_, _ = rand.Read(expectedTraceID[:])
+							_, err := rand.Read(expectedTraceID[:])
+							require.NoError(t, err)
 							tracer := noop.NewTracerProvider().Tracer("test")
 							spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
 								TraceID:    expectedTraceID,
@@ -588,7 +588,8 @@ func TestValidateLabels(t *testing.T) {
 								var gotReq *mimirpb.WriteRequest
 								ingesters[0].assertCalledFunc("Push", func(args ...any) {
 									ctx, req := args[0].(context.Context), args[1].(*mimirpb.WriteRequest)
-									traceID, _ := tracing.ExtractTraceID(ctx)
+									traceID, ok := tracing.ExtractTraceID(ctx)
+									require.True(t, ok)
 									if traceID == expectedTraceID.String() {
 										gotReq = req
 									}

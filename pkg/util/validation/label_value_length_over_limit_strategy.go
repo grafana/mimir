@@ -61,7 +61,7 @@ func (s LabelValueLengthOverLimitStrategy) String() string {
 	case LabelValueLengthOverLimitStrategyDrop:
 		return "drop"
 	default:
-		panic(fmt.Errorf("unrecognized LabelValueLengthOverLimitStrategy: %d", int(s)))
+		panic(fmt.Errorf("unrecognized LabelValueLengthOverLimitStrategy: %d", s))
 	}
 }
 

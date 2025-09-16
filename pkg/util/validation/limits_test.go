@@ -1777,7 +1777,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless metric suffixes are disabled"),
 		},
-		"should fail if label_value_length_over_limit_strategy=truncate and hash would be higher than max label value limit": {
+		"should fail if label_value_length_over_limit_strategy=truncate and hash suffix would be longer than max label value limit": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1787,7 +1787,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "truncate": label value hash would exceed max label value length of 22`),
 		},
-		"should fail if label_value_length_over_limit_strategy=drop and hash would be higher than max label value limit": {
+		"should fail if label_value_length_over_limit_strategy=drop and hash suffix would be longer than max label value limit": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1797,7 +1797,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "drop": label value hash would exceed max label value length of 22`),
 		},
-		"should pass if label_value_length_over_limit_strategy=truncate and hash would be lower or equal than max label value limit": {
+		"should pass if label_value_length_over_limit_strategy=truncate and hash suffix would be shorter than or equal to max label value limit": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1807,7 +1807,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if label_value_length_over_limit_strategy=drop and hash would be lower or equal than max label value limit": {
+		"should pass if label_value_length_over_limit_strategy=drop and hash suffix would be shorter than or equal to max label value limit": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
