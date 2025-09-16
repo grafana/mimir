@@ -767,12 +767,12 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	var matchers []types.Matcher
 
 	for _, label := range hints.Include {
-		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
+		values := getUniqueLabelValues2(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
 			ordered := make([]string, 0, len(values))
-			for k := range maps.Keys(values) {
-				ordered = append(ordered, regexp.QuoteMeta(k))
+			for v := range maps.Values(values) {
+				ordered = append(ordered, regexp.QuoteMeta(v))
 			}
 
 			// It's important that the values we're matching against for each matcher are in the
@@ -790,20 +790,42 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
-func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
-	values := make(map[string]struct{})
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]string {
+	values := make(map[string]string)
 
 	for _, series := range metadata {
 		// Stop getting values from each series if we're past the max number of
 		// values that we'll include in a matcher. In this case, we can't use the
 		// values collected so far to build a matcher.
 		if len(values) >= maxValues {
-			return map[string]struct{}{}
+			return map[string]string{}
 		}
 
 		val := series.Labels.Get(label)
 		if val != "" {
-			values[val] = struct{}{}
+			values[val] = val
+		}
+	}
+
+	return values
+}
+
+
+func getUniqueLabelValues2(metadata []types.SeriesMetadata, label string, maxValues int) map[string]string {
+	values := make(map[string]string)
+	var buf [1024]byte
+
+	for _, series := range metadata {
+		// Stop getting values from each series if we're past the max number of
+		// values that we'll include in a matcher. In this case, we can't use the
+		// values collected so far to build a matcher.
+		if len(values) >= maxValues {
+			return map[string]string{}
+		}
+
+		b := series.Labels.BytesWithLabels(buf[:0], label)
+		if _, ok := values[string(b)]; !ok {
+			values[string(b)] = series.Labels.Get(label)
 		}
 	}
 
