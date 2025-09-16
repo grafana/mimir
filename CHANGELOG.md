@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+
 ## 2.17.1
 
 ### Grafana Mimir
