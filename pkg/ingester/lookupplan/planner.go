@@ -156,6 +156,7 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 			attribute.Stringer("duration", time.Since(start)),
 		))
 		const topKPlans = 2
+		allPlans[0].addPredicatesToSpan(span)
 		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
 			planName := "selected_plan"
 			if i > 0 {
