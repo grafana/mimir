@@ -1560,7 +1560,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1625,7 +1625,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
