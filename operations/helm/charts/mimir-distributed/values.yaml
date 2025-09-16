@@ -3231,7 +3231,7 @@ gateway:
   # -- The gateway is deployed by default for enterprise installations (enterprise.enabled=true).
   # Toggle this to have it deployed for non-enterprise installations too.
   # The value of this field is ignored when gateway.enabled=false.
-  enabledNonEnterprise: true
+  enabledNonEnterprise: false
 
   # -- Allows to override the container image of the gateway component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
