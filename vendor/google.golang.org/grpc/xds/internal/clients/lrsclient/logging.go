@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021 gRPC authors.
+ * Copyright 2025 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,21 @@
  *
  */
 
-package priority
+package lrsclient
 
-func equalStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+import (
+	"fmt"
+
+	"google.golang.org/grpc/grpclog"
+	internalgrpclog "google.golang.org/grpc/internal/grpclog"
+)
+
+var logger = grpclog.Component("xds")
+
+func prefixLogger(c *LRSClient) *internalgrpclog.PrefixLogger {
+	return internalgrpclog.NewPrefixLogger(logger, clientPrefix(c))
+}
+
+func clientPrefix(c *LRSClient) string {
+	return fmt.Sprintf("[lrs-client %p] ", c)
 }

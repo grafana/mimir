@@ -764,6 +764,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
+		nil,
 		opts...,
 	)
 	if err != nil {
@@ -780,13 +781,14 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		errs         types.MultiError
 		integrations []*nfstatus.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
-			n, err := f(log.With(logger, "integration", name))
+			integrationLogger := log.With(logger, "integration", name)
+			n, err := f(integrationLogger)
 			if err != nil {
 				errs.Add(err)
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, nil, integrationLogger))
 		}
 	)
 
