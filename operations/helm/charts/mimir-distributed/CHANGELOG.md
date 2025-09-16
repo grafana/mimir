@@ -48,6 +48,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
 * [ENHANCEMENT] Upgrade rollout-operator to [0.33.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591
 * [CHANGE] Remove deprecated `nginx` top-level values section. #12702
+  * Users should use the `gateway` instead. Refer to
+  https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/ for a detailed migration guide.
 
 ## 5.8.0
 
