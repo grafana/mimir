@@ -28,9 +28,28 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *TestOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if len(t.Series) == 0 {
 		return nil, nil
+	}
+
+	if len(matchers) != 0 {
+		promMatchers, err := matchers.ToPrometheusType()
+		if err != nil {
+			return nil, err
+		}
+
+		// If we've been passed extra matchers to apply at runtime, adjust the series metadata
+		// and data to remove anything that doesn't match. This simulates how the matchers would
+		// be applied in a real operator.
+		for i := 0; i < len(t.Series); {
+			if !t.matches(t.Series[i], promMatchers) {
+				t.Series = append(t.Series[:i], t.Series[i+1:]...)
+				t.Data = append(t.Data[:i], t.Data[i+1:]...)
+			} else {
+				i++
+			}
+		}
 	}
 
 	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
@@ -50,6 +69,18 @@ func (t *TestOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]ty
 		}
 	}
 	return metadata, nil
+}
+
+func (t *TestOperator) matches(series labels.Labels, matchers []*labels.Matcher) bool {
+	matches := true
+	for _, m := range matchers {
+		series.Range(func(l labels.Label) {
+			if l.Name == m.Name && !m.Matches(l.Value) {
+				matches = false
+			}
+		})
+	}
+	return matches
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

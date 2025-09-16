@@ -146,9 +146,9 @@ func (s Matchers) Append(other Matchers) Matchers {
 	return append(s, other...)
 }
 
-// Retain returns a new Matchers that only contains matchers targeting labels
+// With returns a new Matchers that only contains matchers targeting labels
 // with the given names.
-func (s Matchers) Retain(names ...string) Matchers {
+func (s Matchers) With(names ...string) Matchers {
 	out := make([]Matcher, 0, len(s))
 
 	for _, m := range s {

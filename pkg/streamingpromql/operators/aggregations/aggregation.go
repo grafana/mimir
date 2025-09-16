@@ -119,6 +119,22 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	// If we've been passed extra matchers at runtime when grouping by a label, make sure
+	// the matchers only apply to the fields we are grouping by. It shouldn't be the case
+	// that we are given matchers that apply to other labels since the matchers are
+	// created based hints applied to binary operations which come from aggregations but
+	// this prevents misuse.
+	if len(matchers) != 0 && len(a.Grouping) != 0 {
+		if !a.Without {
+			matchers = matchers.With(a.Grouping...)
+		} else {
+			// We don't set hints for aggregations using "without" and we don't (yet) support
+			// excluding matchers so drop any extra matchers passed at runtime if this is a
+			// "without" aggregation.
+			matchers = nil
+		}
+	}
+
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {

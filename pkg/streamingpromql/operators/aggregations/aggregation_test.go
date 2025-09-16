@@ -398,6 +398,209 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	}
 }
 
+func TestAggregation_RuntimeMatchersAdjusted(t *testing.T) {
+	rangeQueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(5*time.Minute), time.Minute)
+
+	testCases := map[string]struct {
+		grouping             []string
+		without              bool
+		matchers             types.Matchers
+		expectedOutputSeries []types.SeriesMetadata
+		expectedSeriesData   []types.InstantVectorSeriesData
+	}{
+		"matcher for grouping all series": {
+			grouping: []string{"group"},
+			without:  false,
+			matchers: []types.Matcher{{Type: labels.MatchRegexp, Name: "group", Value: "1|2|3"}},
+			expectedOutputSeries: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("group", "1")},
+				{Labels: labels.FromStrings("group", "2")},
+				{Labels: labels.FromStrings("group", "3")},
+			},
+			expectedSeriesData: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 3.0},
+						{T: 120_000, F: 6.0},
+						{T: 180_000, F: 9.0},
+						{T: 240_000, F: 12.0},
+						{T: 300_000, F: 15.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+			},
+		},
+
+		"matcher for grouping subset of series": {
+			grouping: []string{"group"},
+			without:  false,
+			matchers: []types.Matcher{{Type: labels.MatchRegexp, Name: "group", Value: "2"}},
+			expectedOutputSeries: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("group", "2")},
+			},
+			expectedSeriesData: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 3.0},
+						{T: 120_000, F: 6.0},
+						{T: 180_000, F: 9.0},
+						{T: 240_000, F: 12.0},
+						{T: 300_000, F: 15.0},
+					},
+				},
+			},
+		},
+
+		"matcher for without grouping should be ignored": {
+			grouping: []string{"idx"},
+			without:  true,
+			matchers: []types.Matcher{{Type: labels.MatchRegexp, Name: "group", Value: "2"}},
+			expectedOutputSeries: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("group", "1")},
+				{Labels: labels.FromStrings("group", "2")},
+				{Labels: labels.FromStrings("group", "3")},
+			},
+			expectedSeriesData: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 3.0},
+						{T: 120_000, F: 6.0},
+						{T: 180_000, F: 9.0},
+						{T: 240_000, F: 12.0},
+						{T: 300_000, F: 15.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+			},
+		},
+
+		"matcher for label not grouped should be ignored": {
+			grouping: []string{"group"},
+			without:  false,
+			matchers: []types.Matcher{{Type: labels.MatchRegexp, Name: "idx", Value: "1|2"}},
+			expectedOutputSeries: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("group", "1")},
+				{Labels: labels.FromStrings("group", "2")},
+				{Labels: labels.FromStrings("group", "3")},
+			},
+			expectedSeriesData: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 3.0},
+						{T: 120_000, F: 6.0},
+						{T: 180_000, F: 9.0},
+						{T: 240_000, F: 12.0},
+						{T: 300_000, F: 15.0},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 1.0},
+						{T: 120_000, F: 2.0},
+						{T: 180_000, F: 3.0},
+						{T: 240_000, F: 4.0},
+						{T: 300_000, F: 5.0},
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			timeRange := rangeQueryTimeRange
+			inputSeries := []labels.Labels{
+				labels.FromStrings("group", "2", "idx", "1"),
+				labels.FromStrings("group", "2", "idx", "2"),
+				labels.FromStrings("group", "1", "idx", "3"),
+				labels.FromStrings("group", "2", "idx", "4"),
+				labels.FromStrings("group", "3", "idx", "5"),
+			}
+
+			inner := &operators.TestOperator{
+				Series: inputSeries,
+				Data: []types.InstantVectorSeriesData{
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+
+			op, err := NewAggregation(inner, timeRange, testCase.grouping, testCase.without, parser.SUM, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+			require.NoError(t, err)
+
+			series, err := op.SeriesMetadata(ctx, testCase.matchers)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedOutputSeries, series)
+
+			for i := range testCase.expectedSeriesData {
+				expected := testCase.expectedSeriesData[i]
+				seriesData, err := op.NextSeries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, expected, seriesData)
+			}
+		})
+	}
+}
+
 func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	d := types.InstantVectorSeriesData{}
 

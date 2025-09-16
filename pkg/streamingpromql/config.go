@@ -62,5 +62,6 @@ func NewTestEngineOpts() EngineOpts {
 		EnableCommonSubexpressionElimination: true,
 		EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries: true,
 		EnableSkippingHistogramDecoding:                                               true,
+		EnableNarrowBinarySelectors:                                                   true,
 	}
 }
