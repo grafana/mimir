@@ -112,6 +112,8 @@ type Config struct {
 
 	GrafanaAlertmanagerCompatibility bool
 	EnableNotifyHooks                bool
+
+	NotificationHistory NotificationHistoryConfig
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -158,6 +160,8 @@ type Alertmanager struct {
 	rateLimitedNotifications *prometheus.CounterVec
 
 	notifyHooksMetrics *notifyHooksMetrics
+
+	notificationHistorian nfstatus.NotificationHistorian
 }
 
 var (
@@ -342,6 +346,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
+
+	am.notificationHistorian = createNotificationHistorian(cfg.UserID, cfg.NotificationHistory, reg, am.logger)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
@@ -679,7 +685,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, am.notificationHistorian, grafanaOpts...)
 		case definition.AlertmanagerReceiverType:
 			if tmpl == nil {
 				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
@@ -688,7 +694,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				tmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier, am.notificationHistorian)
 		case definition.EmptyReceiverType:
 			// Empty receiver, no integrations to build.
 		}
@@ -734,10 +740,18 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 		opts = append(opts, alertingHttp.WithDialer(*firewallDialer))
 	}
 
-	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier, opts...)
+	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier, am.notificationHistorian, opts...)
 }
 
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(
+	emailCfg alertingReceivers.EmailSenderConfig,
+	rcv *alertingNotify.APIReceiver,
+	tmplProvider alertingNotify.TemplatesProvider,
+	logger log.Logger,
+	wrapper alertingNotify.WrapNotifierFunc,
+	notificationHistorian nfstatus.NotificationHistorian,
+	opts ...alertingHttp.ClientOption,
+) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
@@ -764,6 +778,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
+		notificationHistorian,
 		opts...,
 	)
 	if err != nil {
@@ -775,7 +790,14 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*nfstatus.Integration, error) {
+func buildReceiverIntegrations(
+	nc config.Receiver,
+	tmpl *template.Template,
+	firewallDialer *util_net.FirewallDialer,
+	logger log.Logger,
+	wrapper func(string, notify.Notifier) notify.Notifier,
+	notificationHistorian nfstatus.NotificationHistorian,
+) ([]*nfstatus.Integration, error) {
 	var (
 		errs         types.MultiError
 		integrations []*nfstatus.Integration
@@ -786,7 +808,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, notificationHistorian))
 		}
 	)
 
