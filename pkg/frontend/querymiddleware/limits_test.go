@@ -1120,6 +1120,7 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
 	planner, err := streamingpromql.NewQueryPlanner(opts)
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
@@ -1147,12 +1148,15 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		req              MetricsQueryRequest
-		expectedResponse Response
-		expectedErr      error
+		req                             MetricsQueryRequest
+		expectedResponse                Response
+		expectedErr                     error
+		expectedSamplesProcessed        uint64
+		expectedSamplesProcessedPerStep []stats.StepStat
 	}{
 		"range query": {
-			req: NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedSamplesProcessed: 4,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1177,7 +1181,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"instant query": {
-			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedSamplesProcessed: 1,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1245,7 +1250,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"annotations": {
-			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			expectedSamplesProcessed: 2,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1260,11 +1266,44 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				},
 			},
 		},
+
+		"query with per-step stats enabled": {
+			req:                      NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, "all"),
+			expectedSamplesProcessed: 4,
+			expectedSamplesProcessedPerStep: []stats.StepStat{
+				{Timestamp: 1000, Value: 1},
+				{Timestamp: 3000, Value: 1},
+				{Timestamp: 5000, Value: 1},
+				{Timestamp: 7000, Value: 1},
+			},
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			response, err := handler.Do(context.Background(), testCase.req)
+			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+			response, err := handler.Do(ctx, testCase.req)
 			require.Equal(t, testCase.expectedErr, err)
 
 			if testCase.expectedErr != nil {
@@ -1278,6 +1317,9 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			require.NotNil(t, responseWithFinalizer.finalizer, "expected response to have a finalizer")
 
 			responseWithFinalizer.Close()
+
+			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
+			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
 		})
 	}
 }

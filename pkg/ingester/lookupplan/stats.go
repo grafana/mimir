@@ -44,9 +44,9 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (ret
 		if retErr != nil {
 			l = log.With(level.Error(l), "err", retErr)
 		} else {
-			l = level.Info(l)
+			l = log.With(level.Info(l), "total_series", retStats.TotalSeries())
 		}
-		l.Log("msg", "generated statistics for block", "block", meta.ULID.String(), "duration", time.Since(startTime).String(), "total_series", retStats.TotalSeries(), "total_size_bytes", size.Of(retStats))
+		l.Log("msg", "generated statistics for block", "block", meta.ULID.String(), "duration", time.Since(startTime).String(), "total_size_bytes", size.Of(retStats))
 	}(time.Now())
 
 	// Use the "all series" postings to count total series

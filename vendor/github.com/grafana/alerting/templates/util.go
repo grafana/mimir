@@ -107,6 +107,8 @@ func checkNode(node parse.Node, executedTmpls map[string]struct{}) {
 	case parse.NodeWith:
 		n := node.(*parse.WithNode)
 		checkBranchNode(&n.BranchNode, executedTmpls)
+	default:
+		// do nothing
 	}
 }
 

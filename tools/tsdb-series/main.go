@@ -11,7 +11,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,7 +24,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-var logger = log.NewLogfmtLogger(os.Stderr)
+var logger = util_log.MakeLeveledLogger(os.Stderr, "info")
 
 func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
