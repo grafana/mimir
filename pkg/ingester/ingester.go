@@ -1562,9 +1562,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					stats.succeededSamplesCount++
 				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// it is normal to have a start time that is equal to the timestamp of the first sample, which
-					// will mean a created timestamp equal to the timestamp of the first sample for later samples.
-					// Thus we ignore if zero sample would cause duplicate.
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
 					// We also ignore out of order sample as created timestamp is out of order most of the time,
 					// except when written before the first sample.
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
@@ -1633,9 +1633,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						stats.succeededSamplesCount++
 					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-						// it is normal to have a start time that is equal to the timestamp of the first sample, which
-						// will mean a created timestamp equal to the timestamp of the first sample for later samples.
-						// Thus we ignore if zero sample would cause duplicate.
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
 						// We also ignore out of order sample as created timestamp is out of order most of the time,
 						// except when written before the first sample.
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
