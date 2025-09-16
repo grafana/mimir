@@ -40,17 +40,20 @@ var (
 
 func TestHandleKafkaFetchErr(t *testing.T) {
 	tests := map[string]struct {
-		err error
-		lso int64
-		fw  fetchWant
+		err              error
+		lso              int64
+		fw               fetchWant
+		rangeErrorPolicy RangeErrorPolicy
 
 		expectedFw              fetchWant
 		expectedBackoff         bool
 		expectedMetadataRefresh bool
+		expectedError           error
 	}{
 		"no error": {
-			err: nil,
-			lso: 1,
+			err:              nil,
+			lso:              1,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 1,
 				endOffset:   5,
@@ -59,10 +62,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 1,
 				endOffset:   5,
 			},
+			expectedError: nil,
 		},
 		"offset out of range - fetching slightly before start": {
-			err: kerr.OffsetOutOfRange,
-			lso: 5,
+			err:              kerr.OffsetOutOfRange,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 4,
 				endOffset:   10,
@@ -71,10 +76,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 5,
 				endOffset:   10,
 			},
+			expectedError: nil,
 		},
 		"offset out of range - fetching completely outside of available offsets": {
-			err: kerr.OffsetOutOfRange,
-			lso: 5,
+			err:              kerr.OffsetOutOfRange,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 1,
 				endOffset:   3,
@@ -83,10 +90,28 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 3,
 				endOffset:   3,
 			},
+			expectedError: nil,
+		},
+		"offset out of range - abort": {
+			err:              kerr.OffsetOutOfRange,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorAbort,
+			fw: fetchWant{
+				startOffset: 1,
+				endOffset:   3,
+			},
+			expectedFw: fetchWant{
+				startOffset: 1,
+				endOffset:   3,
+			},
+			expectedBackoff:         false,
+			expectedMetadataRefresh: false,
+			expectedError:           kerr.OffsetOutOfRange,
 		},
 		"recoverable error": {
-			err: kerr.KafkaStorageError,
-			lso: -1, // unknown
+			err:              kerr.KafkaStorageError,
+			lso:              -1, // unknown
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -96,10 +121,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				endOffset:   15,
 			},
 			expectedBackoff: true,
+			expectedError:   nil,
 		},
 		"NotLeaderForPartition": {
-			err: kerr.NotLeaderForPartition,
-			lso: 5,
+			err:              kerr.NotLeaderForPartition,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -110,10 +137,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"ReplicaNotAvailable": {
-			err: kerr.ReplicaNotAvailable,
-			lso: 5,
+			err:              kerr.ReplicaNotAvailable,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -124,10 +153,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"UnknownLeaderEpoch": {
-			err: kerr.UnknownLeaderEpoch,
-			lso: 5,
+			err:              kerr.UnknownLeaderEpoch,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -138,10 +169,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"FencedLeaderEpoch": {
-			err: kerr.FencedLeaderEpoch,
-			lso: 5,
+			err:              kerr.FencedLeaderEpoch,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -152,10 +185,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"LeaderNotAvailable": {
-			err: kerr.LeaderNotAvailable,
-			lso: 5,
+			err:              kerr.LeaderNotAvailable,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -166,10 +201,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"BrokerNotAvailable": {
-			err: kerr.BrokerNotAvailable,
-			lso: 5,
+			err:              kerr.BrokerNotAvailable,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -180,10 +217,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"errUnknownPartitionLeader": {
-			err: errUnknownPartitionLeader,
-			lso: 5,
+			err:              errUnknownPartitionLeader,
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -194,10 +233,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 		"unknown broker": {
-			err: errors.New(unknownBroker),
-			lso: 5,
+			err:              errors.New(unknownBroker),
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -208,10 +249,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         false,
 			expectedMetadataRefresh: false,
+			expectedError:           nil,
 		},
 		"closed broker": {
-			err: errors.New(chosenBrokerDied),
-			lso: 5,
+			err:              errors.New(chosenBrokerDied),
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -222,10 +265,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         false,
 			expectedMetadataRefresh: false,
+			expectedError:           nil,
 		},
 		"closed network connection": {
-			err: fmt.Errorf("read tcp 10.0.227.72:37486->10.0.29.4:9092: use of closed network connection"), // this isn't exposed by the standard library so we just make one of our own
-			lso: 5,
+			err:              fmt.Errorf("read tcp 10.0.227.72:37486->10.0.29.4:9092: use of closed network connection"), // this isn't exposed by the standard library so we just make one of our own
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -236,10 +281,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         false,
 			expectedMetadataRefresh: false,
+			expectedError:           nil,
 		},
 		"network timeout": {
-			err: fmt.Errorf("read tcp 127.0.0.1:62984->127.0.0.1:9092: i/o timeout"),
-			lso: 5,
+			err:              fmt.Errorf("read tcp 127.0.0.1:62984->127.0.0.1:9092: i/o timeout"),
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
 				startOffset: 11,
 				endOffset:   15,
@@ -250,6 +297,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			},
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
+			expectedError:           nil,
 		},
 	}
 
@@ -271,8 +319,12 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), offsetR))
 			})
 
-			actualFw, err := handleKafkaFetchErr(testCase.err, testCase.fw, backoff, OnRangeErrorResumeFromStart, offsetR, refresher, logger)
-			assert.NoError(t, err)
+			actualFw, err := handleKafkaFetchErr(testCase.err, testCase.fw, backoff, testCase.rangeErrorPolicy, offsetR, refresher, logger)
+			if testCase.expectedError != nil {
+				assert.ErrorIs(t, err, testCase.expectedError)
+			} else {
+				assert.NoError(t, err)
+			}
 			assert.Equal(t, testCase.expectedFw, actualFw)
 			assert.Equal(t, testCase.expectedBackoff, waitedBackoff)
 			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
@@ -332,7 +384,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// This should not block forever now
 		fetches, fetchCtx := fetchers.PollFetches(ctx)
@@ -356,7 +408,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		fetches := longPollFetches(fetchers, 5, 2*time.Second)
 		assert.Equal(t, fetches.NumRecords(), 5)
@@ -374,7 +426,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce some records after starting the fetchers
 		for i := 0; i < 3; i++ {
@@ -395,7 +447,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce some records
 		for i := 0; i < 5; i++ {
@@ -446,7 +498,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce some records
 		for i := 0; i < 10; i++ {
@@ -477,7 +529,7 @@ func TestConcurrentFetchers(t *testing.T) {
 				_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 				client := newKafkaProduceClient(t, clusterAddr)
 
-				fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+				fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 				// Produce some records
 				for i := 0; i < 20; i++ {
@@ -513,7 +565,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		lastOffset := produceRecord(ctx, t, client, topicName, partitionID, []byte("last-initial-record"))
 
 		// Start fetchers from the offset after the initial records
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce some more records
 		for i := 0; i < 3; i++ {
@@ -548,7 +600,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		for round := 0; round < 3; round++ {
 			t.Log("starting round", round)
@@ -593,7 +645,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce enough records to saturate each fetcher.
 		const initiallyProducedRecords = concurrency * 10
@@ -654,7 +706,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		fetchRequestCount := atomic.NewInt64(0)
 		maxRequestedOffset := atomic.NewInt64(-1)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce initial records
 		var producedRecordsBytes [][]byte
@@ -777,7 +829,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 		// Produce some records.
 		for i := 0; i < 10; i++ {
@@ -842,7 +894,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Logf("Produced %d records", totalProducedRecords)
 
 		// Create fetchers with tracking of uncompressed bytes
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true, OnRangeErrorResumeFromStart)
 
 		// Wait for buffered records to stabilize, we expect that they stabilize because the limit is in effect.
 		waitForStableBufferedRecords(t, fetchers)
@@ -898,11 +950,11 @@ func TestConcurrentFetchers(t *testing.T) {
 		client := newKafkaProduceClient(t, clusterAddr)
 
 		// Create fetchers early to ensure we don't miss any records
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true, OnRangeErrorResumeFromStart)
 
 		// Produce large records
 		largeValue := bytes.Repeat([]byte{'a'}, largeRecordSize)
-		for i := 0; i < largeRecordsCount; i++ {
+		for range largeRecordsCount {
 			produceRecord(ctx, t, client, topicName, partitionID, largeValue)
 		}
 
@@ -953,6 +1005,32 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
+
+	t.Run("out of range error aborts under abort policy", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce some records before starting the fetchers
+		for i := range 5 {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		const startOffset = 10_000_000 // an offset that is definitely out of range
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, startOffset, concurrency, 0, true, OnRangeErrorAbort)
+		fetches, _ := fetchers.PollFetches(ctx)
+
+		hasRangeError := false
+		fetches.EachError(func(topic string, partition int32, err error) {
+			if errors.Is(err, kerr.OffsetOutOfRange) {
+				hasRangeError = true
+			}
+		})
+		require.True(t, hasRangeError, "out of range error should be present among fetch errors")
+	})
 }
 
 func TestConcurrentFetchers_fetchSingle(t *testing.T) {
@@ -968,7 +1046,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			client               = newKafkaProduceClient(t, clusterAddr)
 
 			// Do not start the fetchers, because we want to be in control of the single Fetch request.
-			fetchers, reg = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false)
+			fetchers, reg = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false, OnRangeErrorResumeFromStart)
 		)
 		t.Cleanup(cluster.Close)
 
@@ -1093,7 +1171,7 @@ func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
 		client         = newKafkaProduceClient(t, clusterAddr)
 
 		// Do not start the fetchers because we want to test a single function in isolation.
-		fetchers, _ = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false)
+		fetchers, _ = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false, OnRangeErrorResumeFromStart)
 	)
 
 	t.Run("should return error if the response does not contain any topic", func(t *testing.T) {
@@ -1205,7 +1283,7 @@ func TestFetchResult_Merge(t *testing.T) {
 	})
 }
 
-func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32, start bool) (*ConcurrentFetchers, prometheus.Gatherer) {
+func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32, start bool, rangeErrorPolicy RangeErrorPolicy) (*ConcurrentFetchers, prometheus.Gatherer) {
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1233,7 +1311,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		true,        // kfake uses compression and behaves similar to apache kafka
 		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 		offsetReader,
-		OnRangeErrorResumeFromStart,
+		rangeErrorPolicy,
 		startOffsetsReader,
 		fastFetchBackoffConfig,
 		&metrics,

@@ -972,7 +972,7 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeError
 	case errors.Is(err, kerr.OffsetOutOfRange):
 
 		if rangeErrorPolicy == OnRangeErrorAbort {
-			return fw, fmt.Errorf("out of range, aborting fetch: %w", err)
+			return fw, err
 		} else if rangeErrorPolicy == OnRangeErrorResumeFromStart {
 			// We're either consuming from before the first offset or after the last offset.
 			partitionStart, err := partitionStartOffset.CachedOffset()
