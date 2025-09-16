@@ -7,14 +7,13 @@ COMPONENTARGS["compactor"]="-g"
 COMPONENTARGS["distributor"]="-g"
 COMPONENTARGS["gateway"]="-e"
 COMPONENTARGS["ingester"]="-g"
-COMPONENTARGS["nginx"]="-ne"
 COMPONENTARGS["overrides-exporter"]=""
 COMPONENTARGS["querier"]="-g"
 COMPONENTARGS["query-frontend"]=""
 COMPONENTARGS["ruler"]="-g"
 COMPONENTARGS["store-gateway"]="-g"
 
-for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "nginx" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
+for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
   ./scripts/create-pdb ${COMPONENTARGS["${component}"]} "${component}" > "templates/${component}/${component}-pdb.yaml"
 done
 

@@ -465,7 +465,6 @@ Examples:
   "memcached" "memcached"
   "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"
-  "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
   "query-frontend" "query_frontend"
@@ -548,20 +547,28 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
 {{- end -}}
 
-{{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{- define "mimir.remoteWriteUrl" -}}
 {{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
-{{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{ include "mimir.gatewayUrl" . }}
 {{- else -}}
-http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
+http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{- define "mimir.remoteReadUrl" -}}
 {{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
-{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{ include "mimir.gatewayUrl" . }}
 {{- else -}}
-http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
 {{- end -}}
+{{- end -}}
+
+{{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{ include "mimir.remoteWriteUrl" . }}/api/v1/push
+{{- end -}}
+
+{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.remoteReadUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- end -}}
 
 {{/*
