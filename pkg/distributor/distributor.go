@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel"
@@ -817,7 +818,7 @@ func (d *Distributor) stopping(_ error) error {
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string) (removeReplicaLabel bool, _ error) {
+func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string, ts int64) (removeReplicaLabel bool, _ error) {
 	// If the sample doesn't have either HA label, accept it.
 	// At the moment we want to accept these samples by default.
 	if cluster == "" || replica == "" {
@@ -831,7 +832,9 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 
 	// At this point we know we have both HA labels, we should lookup
 	// the cluster/instance here to see if we want to accept this sample.
-	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now())
+	// Convert the timestamp to a time.Time for checking the replica
+	sampleTime := timestamp.Time(ts)
+	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
 	// checkReplica would have returned an error if there was a real error talking to Consul,
 	// or if the replica is not the currently elected replica.
 	if err != nil { // Don't accept the sample.
@@ -1075,11 +1078,30 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		numSamples := 0
 		now := time.Now()
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+		sampleTimestamp := timestamp.FromTime(now)
+		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
+			earliestSampleTimestamp := sampleTimestamp
+			for _, ts := range req.Timeseries {
+				if len(ts.Samples) > 0 {
+					tsms := ts.Samples[0].TimestampMs
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
+				if len(ts.Histograms) > 0 {
+					tsms := ts.Histograms[0].Timestamp
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
+			}
+			sampleTimestamp = earliestSampleTimestamp
+		}
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
 		if err != nil {
 			if errors.As(err, &replicasDidNotMatchError{}) {
 				// These samples have been deduped.
