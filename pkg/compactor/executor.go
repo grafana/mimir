@@ -71,6 +71,7 @@ type schedulerExecutor struct {
 	schedulerClient          schedulerpb.CompactorSchedulerClient
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
+	retryPol                 failsafe.Policy[any]
 }
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
@@ -81,21 +82,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 		invalidClusterValidation: invalidClusterValidation,
 	}
 
-	// Initialize scheduler client. This call will succeed even if scheduler is unreachable
-	// since grpc.Dial() creates the connection immediately and connects lazily.
-	var err error
-	executor.schedulerClient, executor.schedulerConn, err = executor.makeSchedulerClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return executor, nil
-}
-
-// retryPolicy retries indefinitely on transient scheduler errors. This is used to avoid discarding
-// completed work due to temporary scheduler unavailability.
-func (e *schedulerExecutor) retryPolicy() failsafe.Policy[any] {
-	return retrypolicy.Builder[any]().
+	executor.retryPol = retrypolicy.Builder[any]().
 		HandleIf(func(_ any, err error) bool {
 			errStatus, ok := grpcutil.ErrorToStatus(err)
 			if !ok {
@@ -110,10 +97,20 @@ func (e *schedulerExecutor) retryPolicy() failsafe.Policy[any] {
 				return false
 			}
 		}).
-		WithBackoffFactor(e.cfg.ExecutorRetryMinBackoff, e.cfg.ExecutorRetryMaxBackoff, float32(e.cfg.ExecutorRetryBackoffFactor)).
+		WithBackoffFactor(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff, float32(cfg.ExecutorRetryBackoffFactor)).
 		WithJitter(500 * time.Millisecond).
 		WithMaxAttempts(-1).
 		Build()
+
+	// Initialize scheduler client. This call will succeed even if scheduler is unreachable
+	// since grpc.Dial() creates the connection immediately and connects lazily.
+	var err error
+	executor.schedulerClient, executor.schedulerConn, err = executor.makeSchedulerClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return executor, nil
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
@@ -184,13 +181,13 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 		err = failsafe.Run(func() error {
 			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 			return err
-		}, e.retryPolicy())
+		}, e.retryPol)
 	default: // PLANNING
 		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
 		err = failsafe.Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
-		}, e.retryPolicy())
+		}, e.retryPol)
 	}
 
 	if err != nil {
@@ -319,5 +316,5 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *scheduler
 	return failsafe.Run(func() error {
 		_, err := e.schedulerClient.PlannedJobs(ctx, req)
 		return err
-	}, e.retryPolicy())
+	}, e.retryPol)
 }

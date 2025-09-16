@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	//"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/go-kit/log"
+	//"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -169,11 +171,9 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			bucketClient.MockIter("test-tenant/", []string{}, nil)
 			bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
 
-			schedulerExec := &schedulerExecutor{
-				cfg:             cfg,
-				logger:          log.NewNopLogger(),
-				schedulerClient: mockSchedulerClient,
-			}
+			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			schedulerExec.schedulerClient = mockSchedulerClient
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
@@ -297,11 +297,10 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
 
 			// Create a scheduler executor with the mock client
-			schedulerExec := &schedulerExecutor{
-				cfg:             cfg,
-				logger:          c.logger,
-				schedulerClient: mockSchedulerClient,
-			}
+			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			schedulerExec.schedulerClient = mockSchedulerClient
+
 			c.shardingStrategy = schedulerExec.createShardingStrategy(
 				c.compactorCfg.EnabledTenants,
 				c.compactorCfg.DisabledTenants,
@@ -419,11 +418,9 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 
 	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
 
-	schedulerExec := &schedulerExecutor{
-		cfg:             cfg,
-		logger:          log.NewNopLogger(),
-		schedulerClient: mockSchedulerClient,
-	}
+	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	schedulerExec.schedulerClient = mockSchedulerClient
 
 	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 	c.shardingStrategy = schedulerExec.createShardingStrategy(
