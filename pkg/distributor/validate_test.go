@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
@@ -1213,8 +1214,11 @@ func TestValidUTF8Message(t *testing.T) {
 	}
 }
 
-func TestLabelValueHashLen(t *testing.T) {
-	x := strings.Repeat("x", 100)
-	x = hashLabelValueInto(x, x)
-	require.Len(t, x, validation.LabelValueHashLen)
+func TestHashLabelValueInto(t *testing.T) {
+	input := strings.Repeat("x", 100)
+	result := hashLabelValueInto(input, input)
+	require.Equal(t, "(hash:052c9e7cec411035)", result)
+	require.Len(t, result, validation.LabelValueHashLen)
+	// Check that input's underlying array was kept.
+	require.Equal(t, unsafe.StringData(input), unsafe.StringData(result))
 }
