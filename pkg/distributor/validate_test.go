@@ -115,7 +115,6 @@ func TestValidateLabels(t *testing.T) {
 	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
-	perTenant[truncatingUserID].MaxLabelNamesPerSeries = 5
 	perTenant[truncatingUserID].MaxLabelNameLength = 40
 
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))

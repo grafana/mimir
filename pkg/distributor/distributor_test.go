@@ -6472,7 +6472,7 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	// Clone req by unmarhsalling and unmarshalling. Otherwise tests cannot
+	// Clone req by marshalling and unmarshalling. Otherwise tests cannot
 	// inspect it, because it gets cleared for reuse after push is finished.
 	breq, err := req.Marshal()
 	if err != nil {

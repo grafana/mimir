@@ -458,8 +458,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	labelValueLengthOverLimitStrategy := cfg.LabelValueLengthOverLimitStrategy(userID)
 
 	lastLabelName := ""
-	for i := range ls {
-		l := ls[i]
+	for i, l := range ls {
 		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
