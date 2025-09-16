@@ -107,3 +107,23 @@ func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {
 
 	return out
 }
+
+func BenchmarkBuildMatchers(b *testing.B) {
+	series := generateSeriesMetadata("http_requests_total", 1024)
+
+	b.Run("container", func(b *testing.B) {
+		for b.Loop() {
+			_ = BuildMatchers(series, &Hints{Include: []string{"container"}})
+		}
+	})
+	b.Run("container,region", func(b *testing.B) {
+		for b.Loop() {
+			_ = BuildMatchers(series, &Hints{Include: []string{"container", "region"}})
+		}
+	})
+	b.Run("container,region,pod", func(b *testing.B) {
+		for b.Loop() {
+			_ = BuildMatchers(series, &Hints{Include: []string{"container", "region", "pod"}})
+		}
+	})
+}
