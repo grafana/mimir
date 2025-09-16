@@ -482,7 +482,8 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 					Limit:  maxLabelValueLength,
 				}
 			case validation.LabelValueLengthOverLimitStrategyTruncate:
-				_ = hashLabelValueInto(l.Value[len(l.Value)-validation.LabelValueHashLen:], l.Value)
+				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
+				ls[i].Value = ls[i].Value[:maxLabelValueLength]
 			case validation.LabelValueLengthOverLimitStrategyDrop:
 				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
 			default:

@@ -115,16 +115,13 @@ func TestValidateLabels(t *testing.T) {
 	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
-	perTenant[truncatingUserID].MaxLabelNameLength = 40
-
+	perTenant[truncatingUserID].MaxLabelValueLength = 30
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
-	perTenant[droppingUserID].MaxLabelNameLength = 40
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
 		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
 			[]string{defaultUserID, "team"},
 			[]string{utf8UserID, "team"},
-			[]string{droppingUserID, "team"},
 		)
 	}
 
@@ -176,8 +173,8 @@ func TestValidateLabels(t *testing.T) {
 		skipLabelNameValidation  bool
 		skipLabelCountValidation bool
 		customUserID             string
-		wantErr    func(model.ValidationScheme) error
-		wantLabels map[model.LabelName]model.LabelValue
+		wantErr                  func(model.ValidationScheme) error
+		wantLabels               map[model.LabelName]model.LabelValue
 	}{
 		{
 			name:                     "missing metric name",
@@ -270,7 +267,7 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   model.LabelValue(fmt.Sprintf("test_value_please_ignore_no_rea(hash:%016x)", hashLabelValue("test_value_please_ignore_no_really_nothing_to_see_here"))),
+				"much_shorter_name":   "test_va(hash:c13fa87bc8c8c5bc)",
 			},
 		},
 		{
