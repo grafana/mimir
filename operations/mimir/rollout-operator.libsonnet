@@ -19,8 +19,8 @@
     replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
   },
 
-  rollout_operator_container: if !std.objectHas($, 'tracing_env_mixin') then super.rollout_operator_container else
-    super.rollout_operator_container + $.tracing_env_mixin,
+  rollout_operator_container+:
+    if std.get($, 'tracing_env_mixin') != null then $.tracing_env_mixin else {},
 
   rollout_operator_pdb: if !$._config.rollout_operator_enabled then null else
     $.newMimirPdb('rollout-operator'),
