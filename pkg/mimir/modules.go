@@ -630,6 +630,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Propagators = append(
 		t.Propagators,
 		&chunkinfologger.Propagator{},
+		&streamingpromqlcompat.EngineFallbackPropagator{},
 
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency propagator here too.
 		&querierapi.ConsistencyPropagator{},
@@ -920,7 +921,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
-	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackPropagator{})
 	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
