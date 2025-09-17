@@ -268,7 +268,7 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   "test_va(hash:c13fa87bc8c8c5bc)",
+				"much_shorter_name":   "test_va(hash:b8c405bf4bb4c06c)",
 			},
 		},
 		{
@@ -281,7 +281,7 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   "(hash:0710946ebb65ac31)",
+				"much_shorter_name":   "(hash:9246227e23578886)",
 			},
 		},
 		{
@@ -1215,9 +1215,11 @@ func TestValidUTF8Message(t *testing.T) {
 }
 
 func TestHashLabelValueInto(t *testing.T) {
+	t.Parallel()
+
 	input := strings.Repeat("x", 100)
 	result := hashLabelValueInto(input, input)
-	require.Equal(t, "(hash:052c9e7cec411035)", result)
+	require.Equal(t, "(hash:58f49f86224fc946)", result)
 	require.Len(t, result, validation.LabelValueHashLen)
 	// Check that input's underlying array was kept.
 	require.Equal(t, unsafe.StringData(input), unsafe.StringData(result))

@@ -8,7 +8,6 @@ package distributor
 import (
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"time"
 	"unicode"
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -502,15 +502,15 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 }
 
 func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
-	h := fnv.New64a()
-	_, _ = h.Write(unsafeMutableStringToBytes(src))
-	hash := h.Sum64()
+	h := blake2b.Sum256(unsafeMutableStringToBytes(src))
 
 	buf := unsafeMutableStringToBytes(dst)
 	// Encode as hex inline instead of fmt.Sprintf to avoid allocations due to interface values.
 	copy(buf, "(hash:")
-	for i := range 16 {
-		buf[6+i] = "0123456789abcdef"[(hash>>(60-4*i))&0xf]
+	const hexChars = "0123456789abcdef"
+	for i, b := range h[:8] {
+		buf[6+i*2] = hexChars[b>>4]
+		buf[7+i*2] = hexChars[b&0x0f]
 	}
 	buf[22] = ')'
 	return dst[:validation.LabelValueHashLen]
