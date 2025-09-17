@@ -32,7 +32,7 @@
     multi_zone_store_gateway_zpdb_max_unavailable: std.toString($._config.multi_zone_store_gateway_max_unavailable),
 
     // the regex to extract the ingester partition identifier from a pod name
-    multi_zone_ingester_zpdb_partition_regex: if !$._config.ingest_storage_enabled then '' else '[a-z\\-]+-zone-[a-z]-([0-9]+)',
+    multi_zone_ingester_zpdb_partition_regex: if $._config.ingest_storage_enabled then '[a-z\\-]+-zone-[a-z]-([0-9]+)' else '',
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
 

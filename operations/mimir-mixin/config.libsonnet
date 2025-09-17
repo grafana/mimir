@@ -25,9 +25,12 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
-    // the name for the rollout-operator. This is also used as the container name
+    // The name for the rollout-operator. This is also used as the container name
     rollout_operator_name: 'rollout-operator',
     rollout_operator_dashoard_title: 'Rollout operator',
+    // This is the md5 of the mimir-rollout-operator dashboard name.
+    // This is set such that if the name / uid was to change an error will be raised in dashboard generation.
+    // This ensures that the uid is consistent and can be reliably linked to.
     rollout_operator_dashboard_uid: '6c62cd598d5e741954ca8ebb251c5852',
     rollout_operator_container_name: $._config.rollout_operator_name,
     rollout_operator_instance_matcher:

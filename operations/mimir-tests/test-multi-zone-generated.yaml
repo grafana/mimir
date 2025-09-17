@@ -1146,8 +1146,8 @@ spec:
     spec:
       containers:
       - args:
-        - --server-tls.enabled=true
         - -kubernetes.namespace=default
+        - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         image: grafana/rollout-operator:v0.29.0
