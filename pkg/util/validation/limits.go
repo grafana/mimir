@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -139,7 +140,7 @@ type Limits struct {
 	DropLabels                                  flagext.StringSlice               `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
-	LabelValueLengthOverLimitStrategy           LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '<original label name><label_value_length_over_limit_hash_suffix>'."`
+	LabelValueLengthOverLimitStrategy           LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
 	MaxLabelNamesPerSeries                      int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries                  int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                           int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -668,7 +669,7 @@ func (l *Limits) Validate() error {
 // LabelValueHashLen is the length of the hash portion that replaces part of all
 // of a label value when it exceeds [Limits.MaxLabelValueLength] and [Limits.LabelValueLengthOverLimitStrategy]
 // is [Limits.LabelValueLengthOverLimitStrategyTruncate] or  [Limits.LabelValueLengthOverLimitStrategyDrop].
-const LabelValueHashLen = len("(hash:)") + 256/8*2
+const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
 	for i, q := range l.BlockedQueries {

@@ -4873,7 +4873,7 @@
           "kind": "field",
           "name": "label_value_length_over_limit_strategy",
           "required": false,
-          "desc": "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full value is added as a new label, named '\u003coriginal label name\u003e\u003clabel_value_length_over_limit_hash_suffix\u003e'.",
+          "desc": "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.",
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldFlag": "validation.label-value-length-over-limit-strategy",
