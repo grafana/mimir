@@ -298,13 +298,13 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
 		bucketCount := s.BucketCount()
-		if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
-			// Custom buckets cannot be scaled down.
-			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
-			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-			return false, fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
-		}
 		if bucketCount > bucketLimit {
+			if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
+				// Custom buckets cannot be scaled down.
+				cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+				return false, fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+			}
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()

@@ -1028,6 +1028,13 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedError:  nil,
 			expectedDeltas: []int64{1, 2, 3},
 		},
+		"valid nhcb and bucket limit is set": {
+			cfg:            sampleValidationCfg{maxNativeHistogramBuckets: 100, reduceNativeHistogramOverMaxBuckets: true},
+			schema:         -53,
+			deltas:         []int64{1, 2, 3},
+			expectedError:  nil,
+			expectedDeltas: []int64{1, 2, 3},
+		},
 		"downscaling not possible for nhcb": {
 			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:        -53,
