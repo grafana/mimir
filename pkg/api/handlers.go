@@ -31,13 +31,13 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/querier"
-	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -221,6 +221,7 @@ func NewQuerierHandler(
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
+	propagator propagation.Propagator,
 ) http.Handler {
 	const (
 		remoteWriteEnabled = false
@@ -271,7 +272,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
 	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.Middleware().Wrap)
+	router.Use(routeInjector.Wrap, propagation.Middleware(propagator).Wrap, fallbackInjector.Wrap, chunkinfologger.Middleware().Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.
@@ -282,8 +283,6 @@ func NewQuerierHandler(
 		InflightRequests: metrics.InflightRequests,
 	}
 	router.Use(instrumentMiddleware.Wrap)
-	// Since we don't use the regular RegisterQueryAPI, we need to add the consistency middleware manually.
-	router.Use(querierapi.ConsistencyMiddleware().Wrap)
 
 	// Define the prefixes for all routes
 	promPrefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix, "/api/v1")

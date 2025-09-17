@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -624,6 +625,16 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	// Add the default propagators.
+	t.Propagators = append(
+		t.Propagators,
+
+		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency propagator here too.
+		&querierapi.ConsistencyPropagator{},
+	)
+
+	propagator := &propagation.MultiPropagator{Propagators: t.Propagators}
+
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
@@ -645,6 +656,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
+		propagator,
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
