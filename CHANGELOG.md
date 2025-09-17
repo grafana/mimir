@@ -3,6 +3,7 @@
 ## unreleased
 
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+* [BUGFIX] Ingest: Fix memory pool poisoning in Remote-Write 2.0/OTLP by not clearning created timestamp field before returning time series to the memory pool. #12735
 
 ## 2.17.1
 

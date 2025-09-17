@@ -570,6 +570,8 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Histograms = ts.Histograms[:0]
 	}
 
+	ts.CreatedTimestamp = 0
+
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
 }
