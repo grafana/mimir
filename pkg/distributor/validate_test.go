@@ -116,8 +116,9 @@ func TestValidateLabels(t *testing.T) {
 	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
 
 	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
-	perTenant[truncatingUserID].MaxLabelValueLength = 30
+	perTenant[truncatingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
+	perTenant[droppingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
 		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
@@ -260,7 +261,7 @@ func TestValidateLabels(t *testing.T) {
 		},
 		{
 			name:                     "label value too long gets truncated",
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
 			customUserID:             truncatingUserID,
@@ -268,12 +269,12 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   "test_va(hash:b8c405bf4bb4c06c)",
+				"much_shorter_name":   "xxxx(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
 			},
 		},
 		{
 			name:                     "label value too long gets dropped",
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here_2", "team": "biz"},
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
 			customUserID:             droppingUserID,
@@ -281,7 +282,7 @@ func TestValidateLabels(t *testing.T) {
 				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
-				"much_shorter_name":   "(hash:9246227e23578886)",
+				"much_shorter_name":   "(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
 			},
 		},
 		{
@@ -1219,7 +1220,7 @@ func TestHashLabelValueInto(t *testing.T) {
 
 	input := strings.Repeat("x", 100)
 	result := hashLabelValueInto(input, input)
-	require.Equal(t, "(hash:58f49f86224fc946)", result)
+	require.Equal(t, "(hash:58f49f86224fc9467549c0954fb0b9dc706e6728023bb7bd88b7958cf2115ac8)", result)
 	require.Len(t, result, validation.LabelValueHashLen)
 	// Check that input's underlying array was kept.
 	require.Equal(t, unsafe.StringData(input), unsafe.StringData(result))

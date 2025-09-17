@@ -668,7 +668,7 @@ func (l *Limits) Validate() error {
 // LabelValueHashLen is the length of the hash portion that replaces part of all
 // of a label value when it exceeds [Limits.MaxLabelValueLength] and [Limits.LabelValueLengthOverLimitStrategy]
 // is [Limits.LabelValueLengthOverLimitStrategyTruncate] or  [Limits.LabelValueLengthOverLimitStrategyDrop].
-const LabelValueHashLen = len("(hash:)") + 64/8*2
+const LabelValueHashLen = len("(hash:)") + 256/8*2
 
 func (l *Limits) canonicalizeQueries() {
 	for i, q := range l.BlockedQueries {

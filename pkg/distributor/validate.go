@@ -6,6 +6,7 @@
 package distributor
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -505,14 +506,9 @@ func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMuta
 	h := blake2b.Sum256(unsafeMutableStringToBytes(src))
 
 	buf := unsafeMutableStringToBytes(dst)
-	// Encode as hex inline instead of fmt.Sprintf to avoid allocations due to interface values.
-	copy(buf, "(hash:")
-	const hexChars = "0123456789abcdef"
-	for i, b := range h[:8] {
-		buf[6+i*2] = hexChars[b>>4]
-		buf[7+i*2] = hexChars[b&0x0f]
-	}
-	buf[22] = ')'
+	buf = buf[copy(buf, "(hash:"):]
+	buf = buf[hex.Encode(buf, h[:]):]
+	buf[0] = ')'
 	return dst[:validation.LabelValueHashLen]
 }
 
