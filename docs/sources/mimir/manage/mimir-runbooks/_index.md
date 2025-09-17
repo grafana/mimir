@@ -1589,7 +1589,7 @@ How to **investigate**:
 
 - Check the `grpc_concurrent_streams_by_conn_max` metric to see if a sudden increase in streams per connection can be attributed to another issue.
 - If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting (see the `cortex_grpc_concurrent_streams_limit` metric for the current value).
-- Scaling up the component horizontally can also reduce the number of concurrent streams on each replica.
+- You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
 
 ## Mimir ingest storage (experimental)
 
