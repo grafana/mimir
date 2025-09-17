@@ -166,20 +166,14 @@ func handler(
 
 		isRW2, err := isRemoteWrite2(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		}
 
 		// https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#unsupported-request-content:
 		// Receivers MUST return 415 HTTP Unsupported Media Type status code if they
-		// don't support a given content type or encoding provided by Senders. Since this handler implements
-		// RW1 and RW2 (based on content-type header) we can only handle the case of invalid encoding when we are
-		// acting as a remote-write 2.0 receiver.
+		// don't support a given content type or encoding provided by Senders.
 		if !isValidContentEncoding(r) {
-			code := http.StatusBadRequest
-			if isRW2 {
-				code = http.StatusUnsupportedMediaType
-			}
-			http.Error(w, "invalid content encoding", code)
+			http.Error(w, "invalid content encoding", http.StatusUnsupportedMediaType)
 		}
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
@@ -316,8 +310,8 @@ func isRemoteWrite2(r *http.Request) (bool, error) {
 }
 
 // isValidContentEncoding validates the content-encoding header is either empty
-// (in which case Mimir assumes the "snappy") or set to a supported value.
-// Currently, Mimir supports only "snappy".
+// (in which case Mimir assumes "snappy") or set to a supported value. Currently,
+// Mimir supports only "snappy".
 func isValidContentEncoding(r *http.Request) bool {
 	contentEncoding := r.Header.Get("Content-Encoding")
 	switch contentEncoding {
