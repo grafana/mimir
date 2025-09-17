@@ -845,6 +845,17 @@ func TestHandler_ContentEncoding(t *testing.T) {
 			isRW2:          false,
 		},
 		{
+			name: "RW1 request, no proto segments",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"application/x-protobuf"},
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			isRW2:          false,
+		},
+		{
 			name: "malformed content-types (invalid segments)",
 			req: &http.Request{
 				Method: "GET",
@@ -852,7 +863,7 @@ func TestHandler_ContentEncoding(t *testing.T) {
 					"Content-Type": []string{"application/x-protobuf;proto=a=b"},
 				},
 			},
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode: http.StatusUnsupportedMediaType,
 			isRW2:          false,
 		},
 		{
@@ -863,7 +874,7 @@ func TestHandler_ContentEncoding(t *testing.T) {
 					"Content-Type": []string{"application/x-protobuf;proto=unsupported"},
 				},
 			},
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode: http.StatusUnsupportedMediaType,
 			isRW2:          false,
 		},
 		{
@@ -886,7 +897,7 @@ func TestHandler_ContentEncoding(t *testing.T) {
 					"Content-Encoding": []string{"unsupported"},
 				},
 			},
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode: http.StatusUnsupportedMediaType,
 			isRW2:          false,
 		},
 		{
