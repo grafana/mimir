@@ -4878,7 +4878,7 @@
           "fieldDefaultValue": null,
           "fieldFlag": "validation.label-value-length-over-limit-strategy",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

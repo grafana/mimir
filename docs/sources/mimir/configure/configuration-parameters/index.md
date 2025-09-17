@@ -4485,7 +4485,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
-# (advanced) What to do for label values over the length limit. Options are:
+# (experimental) What to do for label values over the length limit. Options are:
 # 'error', 'truncate', 'drop'. For 'truncate' and 'drop', the hash of the full
 # value is added as a new label, named '<original label
 # name><label_value_length_over_limit_hash_suffix>'.
