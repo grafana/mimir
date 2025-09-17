@@ -170,6 +170,12 @@
     then null
     else super.ingester_zone_c_service,
 
+  // Given that the data is the same on all ingesters when using ingest storage, we only need 1 zone shipping blocks.
+  // We keep two to ensure we have redundancy but a third would be a waste of resources.
+  ingester_zone_c_args+:: if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3 then {} else {
+    'blocks-storage.tsdb.ship-interval': 0,
+  },
+
   //
   // Utilities.
   //
