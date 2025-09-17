@@ -101,7 +101,7 @@ type seriesEntry struct {
 	flags seriesEntryFlag
 }
 
-// markAsOTLP sets flagIsDeleted and indicates that this series needs to be removed from deletedSeries before purging.
+// markAsDeleted sets flagIsDeleted and indicates that this series needs to be removed from deletedSeries before purging.
 func (s *seriesEntry) markAsDeleted() {
 	s.flags |= flagIsDeleted
 }
@@ -212,10 +212,10 @@ func (c *ActiveSeries) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool)
 	return c.stripes[stripeID].nativeHistogramBuckets(ref)
 }
 
-// Active returns the total numbers of active series, active native
-// histogram series, and buckets of those native histogram series.
-// This method does not purge expired entries, so Purge should be
-// called periodically.
+// Active returns the total numbers of active series, active series ingested via
+// OTLP, active native histogram series, and buckets of those native histogram
+// series. This method does not purge expired entries, so Purge should be called
+// periodically.
 func (c *ActiveSeries) Active() (total, totalOTLP, totalNativeHistograms, totalNativeHistogramBuckets int) {
 	for s := 0; s < numStripes; s++ {
 		all, allOTLP, histograms, buckets := c.stripes[s].getTotal()
@@ -227,13 +227,14 @@ func (c *ActiveSeries) Active() (total, totalOTLP, totalNativeHistograms, totalN
 	return
 }
 
-// ActiveWithMatchers returns the total number of active series, as well as a
-// slice of active series matching each one of the custom trackers provided (in
-// the same order as custom trackers are defined), and then the same thing for
-// only active series that are native histograms, then the same for the number
-// of buckets in those active native histogram series. This method does not purge
-// expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) ActiveWithMatchers() (total int, totalOTLP int, totalMatching []int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
+// ActiveWithMatchers returns the total number of active series, total active
+// series ingested using OTLP, as well as a slice of active series matching each
+// one of the custom trackers provided (in the same order as custom trackers are
+// defined), and then the same thing for only active series that are native
+// histograms, then the same for the number of buckets in those active native
+// histogram series. This method does not purge expired entries, so Purge should
+// be called periodically.
+func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, totalOTLP int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 
@@ -309,18 +310,19 @@ func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
 	s.deleted.add(ref, lbls)
 }
 
-// getTotal will return the total active series in the stripe
-// and the total active series that are native histograms
-// and the total number of buckets in active native histogram series
+// getTotal will return the total active series, active series ingested via OTLP,
+// total active series that are native histograms and the total number of buckets
+// in active native histogram series in the stripe.
 func (s *seriesStripe) getTotal() (uint32, uint32, uint32, uint32) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.active, s.activeOTLP, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-// getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
-// with each matcher's total, and will also do the same for total active series that are native histograms
-// as well as the total number of buckets in active native histogram series.
+// getTotalAndUpdateMatching updates the slice provided with each matcher's
+// total, and will also do the same for total active series that are native
+// histograms as well as the total number of buckets in active native histogram
+// series.
 //
 // Returns total active series, active OTLP series, active native histograms, and sum of native histogram buckets.
 func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeHistograms []int, matchingNativeHistogramBuckets []int) (uint32, uint32, uint32, uint32) {
