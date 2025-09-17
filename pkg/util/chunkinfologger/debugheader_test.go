@@ -3,16 +3,16 @@
 package chunkinfologger
 
 import (
-	"io"
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
-func TestChunkInfoLoggerMiddleware(t *testing.T) {
+func TestChunkInfoLoggerPropagator(t *testing.T) {
 	testCases := map[string]struct {
 		headers         http.Header
 		expectedEnabled bool
@@ -40,32 +40,11 @@ func TestChunkInfoLoggerMiddleware(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mw := Middleware()
-			var (
-				actualEnabled bool
-				actualLabels  []string
-			)
-			recorderHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ctx := r.Context()
-				actualEnabled = IsChunkInfoLoggingEnabled(ctx)
-				if actualEnabled {
-					actualLabels = ChunkInfoLoggingFromContext(ctx)
-				}
-				w.WriteHeader(http.StatusOK)
-			})
-			handler := middleware.Merge(mw).Wrap(recorderHandler)
-			req := httptest.NewRequest("GET", "/", nil)
-			req.Header = tc.headers
-
-			resp := httptest.NewRecorder()
-
-			handler.ServeHTTP(resp, req)
-			_, err := io.ReadAll(resp.Body)
-
+			propagator := &Propagator{}
+			ctx, err := propagator.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(tc.headers))
 			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.Code)
-			require.Equal(t, tc.expectedEnabled, actualEnabled)
-			require.Equal(t, tc.expectedLabels, actualLabels)
+			require.Equal(t, tc.expectedEnabled, IsChunkInfoLoggingEnabled(ctx))
+			require.Equal(t, tc.expectedLabels, ChunkInfoLoggingFromContext(ctx))
 		})
 	}
 }

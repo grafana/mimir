@@ -71,6 +71,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -628,6 +629,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// Add the default propagators.
 	t.Propagators = append(
 		t.Propagators,
+		&chunkinfologger.Propagator{},
 
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency propagator here too.
 		&querierapi.ConsistencyPropagator{},
