@@ -530,6 +530,134 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 	})
 }
 
+func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 0
+	)
+
+	ctx := t.Context()
+
+	setup := func(t *testing.T, consumer RecordConsumer) (*PartitionReader, *kgo.Client) {
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+
+		// In this test we produce records with an old timestamp. We need to set a very high write timeout
+		// otherwise records expire before the Kafka client even try to send them on the wire.
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(10*time.Minute))
+
+		return reader, writeClient
+	}
+
+	t.Run("should succeed if no record has been consumed yet", func(t *testing.T) {
+		t.Parallel()
+
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			return nil
+		})
+
+		reader, _ := setup(t, consumer)
+
+		assert.Zero(t, reader.highestConsumedTimestamp.Load())
+		assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+	})
+
+	t.Run("should succeed if the partition has been consumed until the end", func(t *testing.T) {
+		t.Parallel()
+
+		for _, recordTimestampAge := range []time.Duration{0, 5 * time.Minute} {
+			t.Run(fmt.Sprintf("record timestamp age: %s", recordTimestampAge.String()), func(t *testing.T) {
+				var (
+					consumedRecordsMx sync.Mutex
+					consumedRecords   []string
+				)
+
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
+					}
+					return nil
+				})
+
+				reader, writeClient := setup(t, consumer)
+
+				// Produce records.
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-1"), time.Now().Add(-recordTimestampAge))
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-2"), time.Now().Add(-recordTimestampAge))
+				t.Log("produced 2 records")
+
+				// Wait until they've been consumed.
+				test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+					return slices.Clone(consumedRecords)
+				})
+
+				// Wait until highest consumed timestamp is reset to the zero value because we reached the
+				// end of the partition.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return reader.highestConsumedTimestamp.Load().IsZero()
+				})
+
+				assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+			})
+		}
+	})
+
+	t.Run("should fail if the partition has not been consumed until the end and the current consumption delay is above the max delay", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			firstRecordConsumed     = atomic.NewBool(false)
+			firstRecordConsumedWait = make(chan struct{})
+		)
+
+		// Mock the customer to stop processing records after the first one, to reproduce the case
+		// there are more records in Kafka and consumption hasn't reached the end of the partition.
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			if firstRecordConsumed.CompareAndSwap(false, true) {
+				close(firstRecordConsumedWait)
+				return nil
+			}
+
+			return errors.New("mocked error to stop consuming records")
+		})
+
+		reader, writeClient := setup(t, consumer)
+
+		// Produce a large number of records with an old timestamp (total 1GB of data to make sure records end up in
+		// different fetches).
+		payload, err := generateRandomBytes(1024 * 1024)
+		require.NoError(t, err)
+
+		const numRecords = 1024
+		for range numRecords {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, payload, time.Now().Add(-5*time.Minute))
+		}
+		t.Logf("produced %d records", numRecords)
+
+		// Wait until the first record is consumed.
+		select {
+		case <-firstRecordConsumedWait:
+		case <-t.Context().Done():
+			t.Fatal("test timed out")
+		}
+
+		// At this point we expect the max delay to not be honored. Due to async consumption it may not be immediate,
+		// so we wait until a timestamp is stored.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return !reader.highestConsumedTimestamp.Load().IsZero()
+		})
+
+		require.NotZero(t, reader.highestConsumedTimestamp.Load())
+		assert.Greater(t, time.Since(reader.highestConsumedTimestamp.Load()), time.Minute)
+		assert.Error(t, reader.EnforceReadMaxDelay(time.Minute))
+	})
+}
+
 func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -2647,13 +2775,25 @@ func TestPartitionCommitter_commit(t *testing.T) {
 	})
 }
 
-func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
+type writerTestCfgOpt func(cfg *KafkaConfig)
+
+func withWriteTimeout(timeout time.Duration) writerTestCfgOpt {
+	return func(cfg *KafkaConfig) {
+		cfg.WriteTimeout = timeout
+	}
+}
+
+func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt) *kgo.Client {
 	// Configure it close to the writer client we use in the real producers, but
 	// do not configure the linger to keep tests running fast.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.Address = addrs
 	cfg.disableLinger = true
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
 
@@ -2683,6 +2823,16 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 
 func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
 	rec := createRecord(topicName, partitionID, content, version)
+	produceResult := writeClient.ProduceSync(ctx, rec)
+	require.NoError(t, produceResult.FirstErr())
+
+	return rec.Offset
+}
+
+func produceRecordWithTimestamp(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, timestamp time.Time) int64 {
+	rec := createRecord(topicName, partitionID, content, 1)
+	rec.Timestamp = timestamp
+
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 

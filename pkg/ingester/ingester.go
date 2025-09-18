@@ -4414,21 +4414,28 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	spanLog := spanlogger.FromContext(ctx, i.logger)
 	spanLog.DebugLog("msg", "checked read consistency", "level", level)
 
-	if level != api.ReadConsistencyStrong {
-		return nil
-	}
-
-	// Check if request already contains the minimum offset we have to guarantee being queried
-	// for our partition.
-	if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-		if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-			spanLog.DebugLog("msg", "enforcing read consistency", "offset", offset)
-			return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+	if level == api.ReadConsistencyEventual {
+		if maxDelay, ok := api.ReadConsistencyMaxDelayFromContext(ctx); ok {
+			spanLog.DebugLog("msg", "enforcing read consistency max delay", "max_delay", maxDelay)
+			return errors.Wrap(i.ingestReader.EnforceReadMaxDelay(maxDelay), "enforce read consistency max delay")
 		}
 	}
 
-	spanLog.DebugLog("msg", "enforcing read consistency", "offset", "last produced")
-	return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
+	if level == api.ReadConsistencyStrong {
+		// Check if request already contains the minimum offset we have to guarantee being queried
+		// for our partition.
+		if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+			if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
+				spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
+				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+			}
+		}
+
+		spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", "last produced")
+		return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
+	}
+
+	return nil
 }
 
 func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {
