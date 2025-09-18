@@ -15,9 +15,9 @@ const chunkInfoLoggingContextKey = chunkInfoLoggingContextType(1)
 
 const ChunkInfoLoggingHeader = "X-Mimir-Chunk-Info-Logger"
 
-type Propagator struct{}
+type Extractor struct{}
 
-func (p *Propagator) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (p *Extractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if value := carrier.Get(ChunkInfoLoggingHeader); value != "" {
 		// Split along commas
 		labels := strings.Split(value, ",")

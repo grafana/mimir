@@ -14,9 +14,9 @@ type engineFallbackContextKey int
 const forceFallbackEnabledContextKey = engineFallbackContextKey(0)
 const ForceFallbackHeaderName = "X-Mimir-Force-Prometheus-Engine"
 
-type EngineFallbackPropagator struct{}
+type EngineFallbackExtractor struct{}
 
-func (e *EngineFallbackPropagator) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (e *EngineFallbackExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if value := carrier.Get(ForceFallbackHeaderName); value != "" {
 		if value != "true" {
 			return nil, apierror.Newf(apierror.TypeBadData, "invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)

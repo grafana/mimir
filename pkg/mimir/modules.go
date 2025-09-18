@@ -623,26 +623,25 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
 	// Add the default propagators.
-	t.Propagators = append(
-		t.Propagators,
-		&chunkinfologger.Propagator{},
-		&streamingpromqlcompat.EngineFallbackPropagator{},
+	t.Extractors = append(
+		t.Extractors,
+		&chunkinfologger.Extractor{},
+		&streamingpromqlcompat.EngineFallbackExtractor{},
 
-		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency propagator here too.
-		&querierapi.ConsistencyPropagator{},
+		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
+		&querierapi.ConsistencyExtractor{},
 	)
 
 	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Propagators = append(t.Propagators, &querier.FilterQueryablesPropagator{})
+		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
 	}
 
-	propagator := &propagation.MultiPropagator{Propagators: t.Propagators}
-
+	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, propagator, util_log.Logger)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, extractor, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
@@ -659,7 +658,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
-		propagator,
+		extractor,
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
@@ -921,7 +920,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
-	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackPropagator{})
+	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
 	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()

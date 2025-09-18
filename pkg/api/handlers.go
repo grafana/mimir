@@ -219,7 +219,7 @@ func NewQuerierHandler(
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
-	propagator propagation.Propagator,
+	extractor propagation.Extractor,
 ) http.Handler {
 	const (
 		remoteWriteEnabled = false
@@ -269,7 +269,7 @@ func NewQuerierHandler(
 
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
-	router.Use(routeInjector.Wrap, propagation.Middleware(propagator).Wrap)
+	router.Use(routeInjector.Wrap, propagation.Middleware(extractor).Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.

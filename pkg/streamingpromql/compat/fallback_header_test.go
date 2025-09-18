@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
-func TestEngineFallbackPropagator(t *testing.T) {
+func TestEngineFallbackExtractor(t *testing.T) {
 	testCases := map[string]struct {
 		headers http.Header
 
@@ -45,8 +45,8 @@ func TestEngineFallbackPropagator(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			propagator := &EngineFallbackPropagator{}
-			ctx, err := propagator.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(testCase.headers))
+			extractor := &EngineFallbackExtractor{}
+			ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(testCase.headers))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)

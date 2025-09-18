@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
-func TestChunkInfoLoggerPropagator(t *testing.T) {
+func TestChunkInfoLoggerExtractor(t *testing.T) {
 	testCases := map[string]struct {
 		headers         http.Header
 		expectedEnabled bool
@@ -40,8 +40,8 @@ func TestChunkInfoLoggerPropagator(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			propagator := &Propagator{}
-			ctx, err := propagator.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(tc.headers))
+			extractor := &Extractor{}
+			ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(tc.headers))
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedEnabled, IsChunkInfoLoggingEnabled(ctx))
 			require.Equal(t, tc.expectedLabels, ChunkInfoLoggingFromContext(ctx))

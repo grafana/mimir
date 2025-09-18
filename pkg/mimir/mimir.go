@@ -876,7 +876,7 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
-	Propagators                      []propagation.Propagator
+	Extractors                       []propagation.Extractor
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
 	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,

@@ -11,32 +11,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMultiPropagator_ReadFromCarrier_HappyPath(t *testing.T) {
+func TestMultiExtractor_ReadFromCarrier_HappyPath(t *testing.T) {
 	c := MapCarrier{
 		"key-1": {"value-1"},
 		"key-2": {"value-2", "value-3"},
 	}
 
-	p := MultiPropagator{
-		Propagators: []Propagator{
-			&testPropagator{key: "key-1"},
-			&testPropagator{key: "key-2"},
+	p := MultiExtractor{
+		Extractors: []Extractor{
+			&testExtractor{key: "key-1"},
+			&testExtractor{key: "key-2"},
 		},
 	}
 
-	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), testPropagatorContextKey("base-key"), "base-value"), c)
+	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), testExtractorContextKey("base-key"), "base-value"), c)
 	require.NoError(t, err)
-	require.Equal(t, "value-1", ctx.Value(testPropagatorContextKey("key-1")))
-	require.Equal(t, "value-2", ctx.Value(testPropagatorContextKey("key-2")))
-	require.Equal(t, "base-value", ctx.Value(testPropagatorContextKey("base-key")), "should use provided context as parent context")
+	require.Equal(t, "value-1", ctx.Value(testExtractorContextKey("key-1")))
+	require.Equal(t, "value-2", ctx.Value(testExtractorContextKey("key-2")))
+	require.Equal(t, "base-value", ctx.Value(testExtractorContextKey("base-key")), "should use provided context as parent context")
 }
 
-func TestMultiPropagator_ReadFromCarrier_Error(t *testing.T) {
+func TestMultiExtractor_ReadFromCarrier_Error(t *testing.T) {
 	c := MapCarrier{}
 
-	p := MultiPropagator{
-		Propagators: []Propagator{
-			&testPropagator{err: errors.New("something went wrong")},
+	p := MultiExtractor{
+		Extractors: []Extractor{
+			&testExtractor{err: errors.New("something went wrong")},
 		},
 	}
 
@@ -44,19 +44,19 @@ func TestMultiPropagator_ReadFromCarrier_Error(t *testing.T) {
 	require.EqualError(t, err, "something went wrong")
 }
 
-type testPropagator struct {
+type testExtractor struct {
 	key string
 	err error
 }
 
-type testPropagatorContextKey string
+type testExtractorContextKey string
 
-func (p *testPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
-	if p.err != nil {
-		return nil, p.err
+func (e *testExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+	if e.err != nil {
+		return nil, e.err
 	}
 
-	return context.WithValue(ctx, testPropagatorContextKey(p.key), carrier.Get(p.key)), nil
+	return context.WithValue(ctx, testExtractorContextKey(e.key), carrier.Get(e.key)), nil
 }
 
 func TestMapCarrier(t *testing.T) {

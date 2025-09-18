@@ -40,9 +40,9 @@ var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQuery
 
 type Dispatcher struct {
 	engine     *streamingpromql.Engine
-	queryable  storage.Queryable
-	propagator propagation.Propagator
-	logger     log.Logger
+	queryable storage.Queryable
+	extractor propagation.Extractor
+	logger    log.Logger
 
 	// We need to report two kinds of metrics, to mirror those emitted by HTTP requests:
 	// cortex_querier_... (eg. cortex_querier_inflight_requests), and
@@ -54,11 +54,11 @@ type Dispatcher struct {
 	timeNow func() time.Time
 }
 
-func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, propagator propagation.Propagator, logger log.Logger) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, extractor propagation.Extractor, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
 		engine:         engine,
 		queryable:      queryable,
-		propagator:     propagator,
+		extractor:      extractor,
 		logger:         logger,
 		querierMetrics: querierMetrics,
 		serverMetrics:  serverMetrics,
@@ -89,7 +89,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, me
 		return
 	}
 
-	ctx, err = d.propagator.ReadFromCarrier(ctx, propagation.MapCarrier(metadata))
+	ctx, err = d.extractor.ReadFromCarrier(ctx, propagation.MapCarrier(metadata))
 	if err != nil {
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
 		return

@@ -163,7 +163,7 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
 	// Propagate the consistency level on all HTTP routes.
 	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
-	handler = propagation.Middleware(&querierapi.ConsistencyPropagator{}).Wrap(handler)
+	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
 
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)

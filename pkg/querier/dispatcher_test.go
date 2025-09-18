@@ -651,9 +651,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
 			storage := &contextCapturingStorage{inner: storage}
-			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &testPropagator{}, opts.Logger)
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &testExtractor{}, opts.Logger)
 			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
-			metadata := map[string][]string{testPropagatorHeaderName: {"some-value-from-the-request"}}
+			metadata := map[string][]string{testExtractorHeaderName: {"some-value-from-the-request"}}
 			dispatcher.HandleProtobuf(ctx, testCase.req, metadata, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 
@@ -714,7 +714,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 			if testCase.expectStorageToBeCalledWithPropagatedHeaders {
 				require.NotNil(t, storage.ctx)
-				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testPropagatorKey))
+				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
 			}
 		})
 	}
@@ -764,7 +764,7 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 
 func TestDispatcher_MQEDisabled(t *testing.T) {
 	reg, requestMetrics, serverMetrics := newMetrics()
-	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, &propagation.NoopPropagator{}, log.NewNopLogger())
+	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, log.NewNopLogger())
 
 	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
 	require.NoError(t, err)
@@ -869,13 +869,13 @@ func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage
 	panic("not supported")
 }
 
-type testPropagator struct{}
+type testExtractor struct{}
 
-type testPropagatorKeyType int
+type testExtractorKeyType int
 
-const testPropagatorHeaderName = "The-Test-Header"
-const testPropagatorKey testPropagatorKeyType = iota
+const testExtractorHeaderName = "The-Test-Header"
+const testExtractorKey testExtractorKeyType = iota
 
-func (p *testPropagator) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
-	return context.WithValue(ctx, testPropagatorKey, carrier.Get(testPropagatorHeaderName)), nil
+func (p *testExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	return context.WithValue(ctx, testExtractorKey, carrier.Get(testExtractorHeaderName)), nil
 }

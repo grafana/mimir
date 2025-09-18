@@ -8,10 +8,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 )
 
-func Middleware(propagator Propagator) middleware.Interface {
+func Middleware(extractor Extractor) middleware.Interface {
 	return middleware.Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, err := propagator.ReadFromCarrier(r.Context(), HttpHeaderCarrier(r.Header))
+			ctx, err := extractor.ReadFromCarrier(r.Context(), HttpHeaderCarrier(r.Header))
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

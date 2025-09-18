@@ -32,14 +32,14 @@ var (
 	})
 )
 
-func TestConsistencyPropagator(t *testing.T) {
+func TestConsistencyExtractor(t *testing.T) {
 	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
 	headers := http.Header{}
 	headers.Set(ReadConsistencyHeader, ReadConsistencyStrong)
 	headers.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
 
-	propagator := ConsistencyPropagator{}
-	ctx, err := propagator.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
+	extractor := ConsistencyExtractor{}
+	ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
 	require.NoError(t, err)
 
 	// Should inject consistency settings in the context.

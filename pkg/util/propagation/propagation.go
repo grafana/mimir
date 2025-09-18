@@ -7,27 +7,27 @@ import (
 	"net/http"
 )
 
-// Propagator represents something that extracts auxiliary information to and from a request.
-type Propagator interface {
+// Extractor represents something that extracts auxiliary information from a request.
+type Extractor interface {
 	// ReadFromCarrier extracts auxiliary information from a request (represented by a carrier)
 	// and returns a new context derived from ctx with that information included.
 	ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error)
 }
 
-type NoopPropagator struct{}
+type NoopExtractor struct{}
 
-func (p *NoopPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+func (e *NoopExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
 	return ctx, nil
 }
 
-type MultiPropagator struct {
-	Propagators []Propagator
+type MultiExtractor struct {
+	Extractors []Extractor
 }
 
-func (m *MultiPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
-	for _, p := range m.Propagators {
+func (m *MultiExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+	for _, e := range m.Extractors {
 		var err error
-		ctx, err = p.ReadFromCarrier(ctx, carrier)
+		ctx, err = e.ReadFromCarrier(ctx, carrier)
 		if err != nil {
 			return nil, err
 		}

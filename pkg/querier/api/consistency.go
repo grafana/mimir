@@ -73,11 +73,11 @@ func ReadConsistencyEncodedOffsetsFromContext(ctx context.Context) (EncodedOffse
 	return encoded, true
 }
 
-// ConsistencyPropagator takes the consistency level from the X-Read-Consistency header and sets it in the context.
+// ConsistencyExtractor takes the consistency level from the X-Read-Consistency header and sets it in the context.
 // It can be retrieved with ReadConsistencyLevelFromContext.
-type ConsistencyPropagator struct{}
+type ConsistencyExtractor struct{}
 
-func (p *ConsistencyPropagator) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (p *ConsistencyExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if level := carrier.Get(ReadConsistencyHeader); IsValidReadConsistency(level) {
 		ctx = ContextWithReadConsistencyLevel(ctx, level)
 	}

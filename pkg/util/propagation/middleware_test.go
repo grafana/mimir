@@ -12,15 +12,15 @@ import (
 )
 
 func TestMiddleware_HappyPath(t *testing.T) {
-	p := &testPropagator{key: "X-Header"}
+	p := &testExtractor{key: "X-Header"}
 
 	handler := Middleware(p).Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "header-value", r.Context().Value(testPropagatorContextKey("X-Header")))
-		require.Equal(t, "existing-value", r.Context().Value(testPropagatorContextKey("existing-key")))
+		require.Equal(t, "header-value", r.Context().Value(testExtractorContextKey("X-Header")))
+		require.Equal(t, "existing-value", r.Context().Value(testExtractorContextKey("existing-key")))
 		w.WriteHeader(http.StatusTeapot)
 	}))
 
-	ctx := context.WithValue(context.Background(), testPropagatorContextKey("existing-key"), "existing-value")
+	ctx := context.WithValue(context.Background(), testExtractorContextKey("existing-key"), "existing-value")
 	req, err := http.NewRequestWithContext(ctx, "GET", "/", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Header", "header-value")
