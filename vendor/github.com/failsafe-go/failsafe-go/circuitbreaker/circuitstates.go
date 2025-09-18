@@ -4,12 +4,23 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/internal/util"
 )
+
+// The default number of buckets to aggregate time-based stats into.
+const defaultBucketCount = 10
+
+func newStats[R any](config *config[R], supportsTimeBased bool, capacity uint) util.ExecutionStats {
+	if supportsTimeBased && config.failureThresholdingPeriod != 0 {
+		return util.NewTimedStats(defaultBucketCount, config.failureThresholdingPeriod, config.clock)
+	}
+	return util.NewCountingStats(capacity)
+}
 
 // State of a CircuitBreaker.
 // Implementations are not concurrency safe and must be guarded externally.
 type circuitState[R any] interface {
-	stats
+	util.ExecutionStats
 	state() State
 	remainingDelay() time.Duration
 	tryAcquirePermit() bool
@@ -18,7 +29,7 @@ type circuitState[R any] interface {
 
 type closedState[R any] struct {
 	breaker *circuitBreaker[R]
-	stats
+	util.ExecutionStats
 }
 
 func newClosedState[R any](breaker *circuitBreaker[R]) *closedState[R] {
@@ -29,8 +40,8 @@ func newClosedState[R any](breaker *circuitBreaker[R]) *closedState[R] {
 		capacity = breaker.failureThresholdingCapacity
 	}
 	return &closedState[R]{
-		breaker: breaker,
-		stats:   newStats(breaker.config, true, capacity),
+		breaker:        breaker,
+		ExecutionStats: newStats(breaker.config, true, capacity),
 	}
 }
 
@@ -49,11 +60,11 @@ func (s *closedState[R]) tryAcquirePermit() bool {
 // Checks to see if the executions and failure thresholds have been exceeded, opening the circuit if so.
 func (s *closedState[R]) checkThresholdAndReleasePermit(exec failsafe.Execution[R]) {
 	// Execution threshold can only be set for time based thresholding
-	if s.executionCount() >= s.breaker.failureExecutionThreshold {
+	if s.ExecutionCount() >= s.breaker.failureExecutionThreshold {
 		// Failure rate threshold can only be set for time based thresholding
 		failureRateThreshold := s.breaker.failureRateThreshold
-		if (failureRateThreshold != 0 && s.failureRate() >= failureRateThreshold) ||
-			(failureRateThreshold == 0 && s.failureCount() >= s.breaker.failureThreshold) {
+		if (failureRateThreshold != 0 && s.FailureRate() >= failureRateThreshold) ||
+			(failureRateThreshold == 0 && s.FailureCount() >= s.breaker.failureThreshold) {
 			s.breaker.open(exec)
 		}
 	}
@@ -61,17 +72,17 @@ func (s *closedState[R]) checkThresholdAndReleasePermit(exec failsafe.Execution[
 
 type openState[R any] struct {
 	breaker *circuitBreaker[R]
-	stats
+	util.ExecutionStats
 	startTime int64
 	delay     time.Duration
 }
 
 func newOpenState[R any](breaker *circuitBreaker[R], previousState circuitState[R], delay time.Duration) *openState[R] {
 	return &openState[R]{
-		breaker:   breaker,
-		stats:     previousState,
-		startTime: breaker.clock.CurrentUnixNano(),
-		delay:     delay,
+		breaker:        breaker,
+		ExecutionStats: previousState,
+		startTime:      breaker.clock.Now().UnixNano(),
+		delay:          delay,
 	}
 }
 
@@ -80,12 +91,12 @@ func (s *openState[R]) state() State {
 }
 
 func (s *openState[R]) remainingDelay() time.Duration {
-	elapsedTime := s.breaker.clock.CurrentUnixNano() - s.startTime
+	elapsedTime := s.breaker.clock.Now().UnixNano() - s.startTime
 	return max(0, s.delay-time.Duration(elapsedTime))
 }
 
 func (s *openState[R]) tryAcquirePermit() bool {
-	if s.breaker.clock.CurrentUnixNano()-s.startTime >= s.delay.Nanoseconds() {
+	if s.breaker.clock.Now().UnixNano()-s.startTime >= s.delay.Nanoseconds() {
 		s.breaker.halfOpen()
 		return s.breaker.tryAcquirePermit()
 	}
@@ -97,7 +108,7 @@ func (s *openState[R]) checkThresholdAndReleasePermit(_ failsafe.Execution[R]) {
 
 type halfOpenState[R any] struct {
 	breaker *circuitBreaker[R]
-	stats
+	util.ExecutionStats
 	permittedExecutions uint
 }
 
@@ -111,7 +122,7 @@ func newHalfOpenState[R any](breaker *circuitBreaker[R]) *halfOpenState[R] {
 	}
 	return &halfOpenState[R]{
 		breaker:             breaker,
-		stats:               newStats[R](breaker.config, false, capacity),
+		ExecutionStats:      newStats[R](breaker.config, false, capacity),
 		permittedExecutions: capacity,
 	}
 }
@@ -146,21 +157,21 @@ func (s *halfOpenState[R]) checkThresholdAndReleasePermit(exec failsafe.Executio
 	successThreshold := s.breaker.successThreshold
 	if successThreshold != 0 {
 		successThresholdingCapacity := s.breaker.successThresholdingCapacity
-		successesExceeded = s.successCount() >= successThreshold
-		failuresExceeded = s.failureCount() > successThresholdingCapacity-successThreshold
+		successesExceeded = s.SuccessCount() >= successThreshold
+		failuresExceeded = s.FailureCount() > successThresholdingCapacity-successThreshold
 	} else {
 		// Failure rate threshold can only be set for time based thresholding
 		failureRateThreshold := s.breaker.failureRateThreshold
 		if failureRateThreshold != 0 {
 			// Execution threshold can only be set for time based thresholding
-			executionThresholdExceeded := s.executionCount() >= s.breaker.failureExecutionThreshold
-			failuresExceeded = executionThresholdExceeded && s.failureRate() >= failureRateThreshold
-			successesExceeded = executionThresholdExceeded && s.successRate() > 100-failureRateThreshold
+			executionThresholdExceeded := s.ExecutionCount() >= s.breaker.failureExecutionThreshold
+			failuresExceeded = executionThresholdExceeded && s.FailureRate() >= failureRateThreshold
+			successesExceeded = executionThresholdExceeded && s.SuccessRate() > 1-failureRateThreshold
 		} else {
 			failureThresholdingCapacity := s.breaker.failureThresholdingCapacity
 			failureThreshold := s.breaker.failureThreshold
-			failuresExceeded = s.failureCount() >= failureThreshold
-			successesExceeded = s.successCount() > failureThresholdingCapacity-failureThreshold
+			failuresExceeded = s.FailureCount() >= failureThreshold
+			successesExceeded = s.SuccessCount() > failureThresholdingCapacity-failureThreshold
 		}
 	}
 

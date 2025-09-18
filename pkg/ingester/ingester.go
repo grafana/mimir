@@ -811,12 +811,17 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
-			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			}
+			if allActiveOTLP > 0 {
+				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+			} else {
+				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 			}
 			if allActiveHistograms > 0 {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
@@ -881,7 +886,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _ := userDB.activeSeries.Active()
+		activeSeries, _, _, _ := userDB.activeSeries.Active()
 		activeSeriesCount += int64(activeSeries)
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
@@ -1367,7 +1372,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, &errProcessor, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
+		userID,
+		req.Timeseries,
+		app,
+		startAppend,
+		&stats,
+		&errProcessor,
+		updateFirstPartial,
+		activeSeries,
+		i.limits.OutOfOrderTimeWindow(userID),
+		minAppendTimeAvailable,
+		minAppendTime,
+		req.Source == mimirpb.OTLP,
+	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
@@ -1460,9 +1478,20 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
-func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+func (i *Ingester) pushSamplesToAppender(
+	userID string,
+	timeseries []mimirpb.PreallocTimeseries,
+	app extendedAppender,
+	startAppend time.Time,
+	stats *pushStats,
+	errProcessor *mimir_storage.SoftAppendErrorProcessor,
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction),
+	activeSeries *activeseries.ActiveSeries,
+	outOfOrderWindow time.Duration,
+	minAppendTimeAvailable bool,
+	minAppendTime int64,
+	isOTLP bool,
+) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
@@ -1560,7 +1589,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
+					// We also ignore out of order sample as created timestamp is out of order most of the time,
+					// except when written before the first sample.
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1625,7 +1660,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1665,7 +1706,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2211,7 +2252,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries, _, _ := db.activeSeries.Active()
+		activeSeries, _, _, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
@@ -3443,7 +3484,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		totalActiveSeries, _, _ := db.activeSeries.Active()
+		totalActiveSeries, _, _, _ := db.activeSeries.Active()
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,

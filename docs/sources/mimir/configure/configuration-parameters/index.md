@@ -2731,6 +2731,11 @@ mimir_query_engine:
   # queries that do not require full histograms.
   # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
   [enable_skipping_histogram_decoding: <boolean> | default = true]
+
+  # (experimental) Enable generating selectors for one side of a binary
+  # expression based on results from the other side.
+  # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
+  [enable_narrow_binary_selectors: <boolean> | default = false]
 ```
 
 ### frontend
@@ -4485,6 +4490,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
+# (experimental) What to do for label values over the length limit. Options are:
+# 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value
+# replaces the end portion of the value. For 'drop', the hash fully replaces the
+# value.
+# CLI flag: -validation.label-value-length-over-limit-strategy
+[label_value_length_over_limit_strategy: <string> | default = "error"]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -5223,7 +5235,8 @@ ruler_alertmanager_client_config:
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams,
+# msteamsv2.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
