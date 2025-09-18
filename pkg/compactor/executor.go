@@ -84,7 +84,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 		invalidClusterValidation: invalidClusterValidation,
 	}
 
-	executor.retryPol = retrypolicy.Builder[any]().
+	executor.retryPol = retrypolicy.NewBuilder[any]().
 		HandleIf(func(_ any, err error) bool {
 			errStatus, ok := grpcutil.ErrorToStatus(err)
 			if !ok {
