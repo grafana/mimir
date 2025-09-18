@@ -100,7 +100,7 @@ func TestStatisticsService_generateStats(t *testing.T) {
 	}
 
 	// Create service
-	service := NewStatisticsService(logger, mockFactory, "test-user")
+	service := NewStatisticsService(logger, mockFactory)
 
 	// Test generateStats with block metadata
 	mockReader := &mockIndexReader{}
@@ -120,7 +120,7 @@ func TestStatisticsService_Interface(t *testing.T) {
 	mockFactory := &MockPlannerFactory{}
 
 	// Test that StatisticsService can be created
-	service := NewStatisticsService(logger, mockFactory, "test-user")
+	service := NewStatisticsService(logger, mockFactory)
 
 	// Should be able to call service methods
 	require.NotNil(t, service)
@@ -130,7 +130,7 @@ func TestStatisticsService_GetPlanner(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
-	service := NewStatisticsService(logger, mockFactory, "test-user")
+	service := NewStatisticsService(logger, mockFactory)
 
 	// Test getting a planner that doesn't exist
 	blockID := ulid.MustNew(1, nil)
