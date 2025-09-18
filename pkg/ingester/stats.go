@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 )
 
-// PlannerFactoryInterface defines the interface for creating planners
-type PlannerFactoryInterface interface {
+// IPlannerFactory defines the interface for creating planners
+type IPlannerFactory interface {
 	CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
 
@@ -33,12 +33,12 @@ type StatisticsService struct {
 	services.Service
 
 	logger         log.Logger
-	plannerFactory PlannerFactoryInterface
+	plannerFactory IPlannerFactory
 	tsdbProvider   TSDBProvider
 }
 
 // NewStatisticsService creates a new StatisticsService.
-func NewStatisticsService(logger log.Logger, plannerFactory PlannerFactoryInterface, statsFrequency time.Duration, tsdbProvider TSDBProvider) *StatisticsService {
+func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory, statsFrequency time.Duration, tsdbProvider TSDBProvider) *StatisticsService {
 	s := &StatisticsService{
 		logger:         logger,
 		plannerFactory: plannerFactory,
