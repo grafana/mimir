@@ -876,6 +876,9 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
 	Extractors                       []propagation.Extractor
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
