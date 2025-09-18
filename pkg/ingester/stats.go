@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -23,9 +22,8 @@ type StatisticsService struct {
 	logger         log.Logger
 	plannerFactory IPlannerFactory
 
-	// In-memory planner storage by block ULID
-	mtx      sync.RWMutex
-	planners map[ulid.ULID]index.LookupPlanner // map[blockULID] -> planner
+	plannersMtx sync.RWMutex
+	planners    map[ulid.ULID]index.LookupPlanner
 }
 
 // NewStatisticsService creates a new StatisticsService for a single tenant.
@@ -39,29 +37,35 @@ func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory) *St
 
 // getPlanner returns a cached planner for the given block ULID.
 // Returns nil if no planner is cached for this block.
-func (s *StatisticsService) getPlanner(blockULID ulid.ULID) index.LookupPlanner {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+func (s *StatisticsService) getPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+	s.plannersMtx.RLock()
+	planner, ok := s.planners[blockMeta.ULID]
+	s.plannersMtx.RUnlock()
+	if ok {
+		return planner
+	}
+	s.generateStats(blockMeta, indexReader)
 
-	return s.planners[blockULID]
+	s.plannersMtx.RLock()
+	planner, ok = s.planners[blockMeta.ULID]
+	s.plannersMtx.RUnlock()
+	if !ok {
+		panic("planner should have been created after stats generation")
+	}
+	return planner
+
 }
 
 // storePlanner stores a planner for the given block ULID.
 func (s *StatisticsService) storePlanner(blockULID ulid.ULID, planner index.LookupPlanner) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	s.plannersMtx.Lock()
+	defer s.plannersMtx.Unlock()
 
 	s.planners[blockULID] = planner
 }
 
 // generateStats generates statistics for the given head block metadata and index reader.
 func (s *StatisticsService) generateStats(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) {
-	blockULID := blockMeta.ULID
-
-	// Generate planner using the factory
-	level.Info(s.logger).Log("msg", "generating statistics for head block", "block", blockULID.String(), "series_count", blockMeta.Stats.NumSeries)
 	planner := s.plannerFactory.CreatePlanner(blockMeta, indexReader)
-
-	// Store the planner in our internal storage
-	s.storePlanner(blockULID, planner)
+	s.storePlanner(blockMeta.ULID, planner)
 }

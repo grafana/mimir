@@ -296,7 +296,6 @@ type Ingester struct {
 	statisticsService     services.Service
 
 	// Index lookup planning
-	plannerFactory    IPlannerFactory
 	lookupPlanMetrics lookupplan.Metrics
 
 	// Mimir blocks storage.
@@ -405,13 +404,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
-	// Initialize shared lookup planning metrics
 	i.lookupPlanMetrics = lookupplan.NewMetrics(registerer)
-
-	// Initialize planner factory for index lookup planning
-	i.plannerFactory = lookupplan.NewPlannerFactory(i.lookupPlanMetrics, logger, lookupplan.NewStatisticsGenerator(logger))
-
-	// We don't initialize a global statistics service anymore - each userTSDB will have its own
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -522,12 +515,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
 	// Init head statistics generation service if enabled
-	if cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency > 0 {
-		statisticsTimerService := services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, func(context.Context) error {
-			i.generateHeadStatisticsForAllUsers()
-			return nil
-		}, nil)
-		i.statisticsService = statisticsTimerService
+	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
@@ -536,15 +525,16 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 }
 
 // generateHeadStatisticsForAllUsers iterates over all user TSDBs and generates head statistics.
-func (i *Ingester) generateHeadStatisticsForAllUsers() {
-	userIDs := i.getTSDBUsers()
-	for _, userID := range userIDs {
+func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
+	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
+			// A race with a user TSDB being removed, just skip it.
 			continue
 		}
 		userDB.generateHeadStatistics()
 	}
+	return nil
 }
 
 // NewForFlusher is a special version of ingester used by Flusher. This
@@ -652,7 +642,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, shippingService)
 	}
 
-	servs = append(servs, i.statisticsService)
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		servs = append(servs, i.statisticsService)
+	}
 
 	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
 		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
@@ -2707,11 +2699,10 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 		// Get the userTSDB for this tenant
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
-			// Fall back to using the ingester-level shared factory
-			return i.plannerFactory.CreatePlanner(meta, reader)
+			// This might happen if a query runs while we're initializing the TSDB for a user.
+			return lookupplan.NoopPlanner{}
 		}
 
-		// Delegate to the userTSDB's method
 		return userDB.getIndexLookupPlanner(meta, reader)
 	}
 }
@@ -2823,15 +2814,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
 			localSeriesLimit: initialLocalLimit,
 		},
-
-		// Query planning - create per-tenant factory using shared metrics
-		plannerFactory: lookupplan.NewPlannerFactory(i.lookupPlanMetrics, userLogger, lookupplan.NewStatisticsGenerator(userLogger)),
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	// Create per-tenant statistics service if enabled
-	if i.cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency > 0 {
-		userDB.statisticsService = NewStatisticsService(userLogger, userDB.plannerFactory)
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics, userLogger, lookupplan.NewStatisticsGenerator(userLogger))
+		userDB.statisticsService = NewStatisticsService(userLogger, plannerFactory)
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		defer userDB.generateHeadStatistics()
 	}
 
 	userDBHasDB := atomic.NewBool(false)
