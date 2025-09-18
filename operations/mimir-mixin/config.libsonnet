@@ -26,8 +26,9 @@
     gem_enabled: false,
 
     // The name for the rollout-operator. This is also used as the container name
+    rollout_operator_dashboard_enable: true,
     rollout_operator_name: 'rollout-operator',
-    rollout_operator_dashoard_title: 'Rollout operator',
+    rollout_operator_dashoard_title: 'rollout-operator',
     // This is the md5 of the mimir-rollout-operator dashboard name.
     // This is set such that if the name / uid was to change an error will be raised in dashboard generation.
     // This ensures that the uid is consistent and can be reliably linked to.
