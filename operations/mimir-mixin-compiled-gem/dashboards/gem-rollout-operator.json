@@ -1338,7 +1338,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "GEM / Rollout operator",
+      "title": "GEM / rollout-operator",
       "uid": "801faae3a2957d9534139f0f9456faef",
       "version": 0
    }
