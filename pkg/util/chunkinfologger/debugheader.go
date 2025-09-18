@@ -17,7 +17,7 @@ const ChunkInfoLoggingHeader = "X-Mimir-Chunk-Info-Logger"
 
 type Extractor struct{}
 
-func (p *Extractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (p *Extractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if value := carrier.Get(ChunkInfoLoggingHeader); value != "" {
 		// Split along commas
 		labels := strings.Split(value, ",")

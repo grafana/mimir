@@ -41,7 +41,7 @@ func TestChunkInfoLoggerExtractor(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			extractor := &Extractor{}
-			ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(tc.headers))
+			ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(tc.headers))
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedEnabled, IsChunkInfoLoggingEnabled(ctx))
 			require.Equal(t, tc.expectedLabels, ChunkInfoLoggingFromContext(ctx))

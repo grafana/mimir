@@ -34,7 +34,7 @@ func (f filterQueryables) use(name string) bool {
 
 type FilterQueryablesExtractor struct{}
 
-func (f *FilterQueryablesExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (f *FilterQueryablesExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if filterQueryables := carrier.Get(FilterQueryablesHeader); len(filterQueryables) > 0 {
 		ctx = addFilterQueryablesToContext(ctx, filterQueryables)
 	}

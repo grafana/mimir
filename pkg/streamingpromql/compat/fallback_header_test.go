@@ -46,7 +46,7 @@ func TestEngineFallbackExtractor(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			extractor := &EngineFallbackExtractor{}
-			ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(testCase.headers))
+			ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(testCase.headers))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)

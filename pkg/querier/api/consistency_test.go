@@ -39,7 +39,7 @@ func TestConsistencyExtractor(t *testing.T) {
 	headers.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
 
 	extractor := ConsistencyExtractor{}
-	ctx, err := extractor.ReadFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
+	ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
 	require.NoError(t, err)
 
 	// Should inject consistency settings in the context.

@@ -39,7 +39,7 @@ import (
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
 
 type Dispatcher struct {
-	engine     *streamingpromql.Engine
+	engine    *streamingpromql.Engine
 	queryable storage.Queryable
 	extractor propagation.Extractor
 	logger    log.Logger
@@ -89,7 +89,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, me
 		return
 	}
 
-	ctx, err = d.extractor.ReadFromCarrier(ctx, propagation.MapCarrier(metadata))
+	ctx, err = d.extractor.ExtractFromCarrier(ctx, propagation.MapCarrier(metadata))
 	if err != nil {
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
 		return

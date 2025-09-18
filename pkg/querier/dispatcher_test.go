@@ -876,6 +876,6 @@ type testExtractorKeyType int
 const testExtractorHeaderName = "The-Test-Header"
 const testExtractorKey testExtractorKeyType = iota
 
-func (p *testExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (p *testExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	return context.WithValue(ctx, testExtractorKey, carrier.Get(testExtractorHeaderName)), nil
 }

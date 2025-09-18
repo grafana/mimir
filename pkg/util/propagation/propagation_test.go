@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMultiExtractor_ReadFromCarrier_HappyPath(t *testing.T) {
+func TestMultiExtractor_ExtractFromCarrier_HappyPath(t *testing.T) {
 	c := MapCarrier{
 		"Key-1": {"value-1"},
 		"Key-2": {"value-2", "value-3"},
@@ -23,14 +23,14 @@ func TestMultiExtractor_ReadFromCarrier_HappyPath(t *testing.T) {
 		},
 	}
 
-	ctx, err := extractor.ReadFromCarrier(context.WithValue(context.Background(), testContextKey("Base-Key"), "base-value"), c)
+	ctx, err := extractor.ExtractFromCarrier(context.WithValue(context.Background(), testContextKey("Base-Key"), "base-value"), c)
 	require.NoError(t, err)
 	require.Equal(t, "value-1", ctx.Value(testContextKey("Key-1")))
 	require.Equal(t, "value-2", ctx.Value(testContextKey("Key-2")))
 	require.Equal(t, "base-value", ctx.Value(testContextKey("Base-Key")), "should use provided context as parent context")
 }
 
-func TestMultiExtractor_ReadFromCarrier_Error(t *testing.T) {
+func TestMultiExtractor_ExtractFromCarrier_Error(t *testing.T) {
 	c := MapCarrier{}
 
 	extractor := MultiExtractor{
@@ -39,7 +39,7 @@ func TestMultiExtractor_ReadFromCarrier_Error(t *testing.T) {
 		},
 	}
 
-	_, err := extractor.ReadFromCarrier(context.Background(), c)
+	_, err := extractor.ExtractFromCarrier(context.Background(), c)
 	require.EqualError(t, err, "something went wrong")
 }
 
@@ -82,7 +82,7 @@ type testExtractor struct {
 	err error
 }
 
-func (e *testExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+func (e *testExtractor) ExtractFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
 	if e.err != nil {
 		return nil, e.err
 	}

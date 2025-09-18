@@ -10,9 +10,9 @@ import (
 
 // Extractor represents something that extracts auxiliary information from a request.
 type Extractor interface {
-	// ReadFromCarrier extracts auxiliary information from a request (represented by carrier)
+	// ExtractFromCarrier extracts auxiliary information from a request (represented by carrier)
 	// and returns a new context derived from ctx with that information included.
-	ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error)
+	ExtractFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error)
 }
 
 // Injector represents something that adds auxiliary information to a request.
@@ -23,7 +23,7 @@ type Injector interface {
 
 type NoopExtractor struct{}
 
-func (e *NoopExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+func (e *NoopExtractor) ExtractFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
 	return ctx, nil
 }
 
@@ -31,10 +31,10 @@ type MultiExtractor struct {
 	Extractors []Extractor
 }
 
-func (m *MultiExtractor) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+func (m *MultiExtractor) ExtractFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
 	for _, e := range m.Extractors {
 		var err error
-		ctx, err = e.ReadFromCarrier(ctx, carrier)
+		ctx, err = e.ExtractFromCarrier(ctx, carrier)
 		if err != nil {
 			return nil, err
 		}
