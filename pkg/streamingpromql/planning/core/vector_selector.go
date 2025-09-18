@@ -71,17 +71,13 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	matchers, err := LabelMatchersToPrometheusType(v.Matchers)
-	if err != nil {
-		return nil, err
-	}
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(v.Timestamp),
 		Offset:                   v.Offset.Milliseconds(),
 		LookbackDelta:            params.LookbackDelta,
-		Matchers:                 matchers,
+		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition(),
