@@ -13,22 +13,22 @@ import (
 
 func TestMultiExtractor_ReadFromCarrier_HappyPath(t *testing.T) {
 	c := MapCarrier{
-		"key-1": {"value-1"},
-		"key-2": {"value-2", "value-3"},
+		"Key-1": {"value-1"},
+		"Key-2": {"value-2", "value-3"},
 	}
 
 	p := MultiExtractor{
 		Extractors: []Extractor{
-			&testExtractor{key: "key-1"},
-			&testExtractor{key: "key-2"},
+			&testExtractor{key: "Key-1"},
+			&testExtractor{key: "Key-2"},
 		},
 	}
 
-	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), testExtractorContextKey("base-key"), "base-value"), c)
+	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), testExtractorContextKey("Base-Key"), "base-value"), c)
 	require.NoError(t, err)
-	require.Equal(t, "value-1", ctx.Value(testExtractorContextKey("key-1")))
-	require.Equal(t, "value-2", ctx.Value(testExtractorContextKey("key-2")))
-	require.Equal(t, "base-value", ctx.Value(testExtractorContextKey("base-key")), "should use provided context as parent context")
+	require.Equal(t, "value-1", ctx.Value(testExtractorContextKey("Key-1")))
+	require.Equal(t, "value-2", ctx.Value(testExtractorContextKey("Key-2")))
+	require.Equal(t, "base-value", ctx.Value(testExtractorContextKey("Base-Key")), "should use provided context as parent context")
 }
 
 func TestMultiExtractor_ReadFromCarrier_Error(t *testing.T) {
@@ -68,8 +68,15 @@ func TestMapCarrier(t *testing.T) {
 	c := MapCarrier(m)
 
 	require.Equal(t, "bar", c.Get("Foo"))
+	require.Equal(t, []string{"bar"}, c.GetAll("Foo"))
 	require.Equal(t, "value-1", c.Get("Multi-Value"))
+	require.Equal(t, []string{"value-1", "value-2"}, c.GetAll("Multi-Value"))
 	require.Equal(t, "", c.Get("not-set"))
+	require.Empty(t, c.GetAll("not-set"))
+
+	// Check that using non-canonical names works too.
+	require.Equal(t, "bar", c.Get("fOO"))
+	require.Equal(t, []string{"bar"}, c.GetAll("fOO"))
 }
 
 func TestHttpHeaderCarrier(t *testing.T) {
@@ -81,6 +88,13 @@ func TestHttpHeaderCarrier(t *testing.T) {
 	c := HttpHeaderCarrier(h)
 
 	require.Equal(t, "bar", c.Get("Foo"))
+	require.Equal(t, []string{"bar"}, c.GetAll("Foo"))
 	require.Equal(t, "value-1", c.Get("Multi-Value"))
+	require.Equal(t, []string{"value-1", "value-2"}, c.GetAll("Multi-Value"))
 	require.Equal(t, "", c.Get("not-set"))
+	require.Empty(t, c.GetAll("not-set"))
+
+	// Check that using non-canonical names works too.
+	require.Equal(t, "bar", c.Get("fOO"))
+	require.Equal(t, []string{"bar"}, c.GetAll("fOO"))
 }
