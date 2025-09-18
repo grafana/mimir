@@ -731,8 +731,26 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
+	if err := c.AddHeadersForMetricQueryRequest(ctx, r, req.Header); err != nil {
+		return nil, err
+	}
+
+	// Inject auth from context.
+	// This isn't included in AddHeadersForMetricQueryRequest as it's not needed for Protobuf requests to queriers.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return req.WithContext(ctx), nil
+}
+
+type Headers interface {
+	Set(key, value string)
+}
+
+func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers Headers) error {
 	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, level)
+		headers.Set(api.ReadConsistencyHeader, level)
 	}
 
 	// Propagate allowed HTTP headers.
@@ -741,18 +759,20 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			continue
 		}
 
-		for _, v := range h.Values {
-			// There should only be one value, but add all of them for completeness.
-			req.Header.Add(h.Name, v)
+		switch len(h.Values) {
+		case 0:
+			// Nothing to do.
+		case 1:
+			headers.Set(h.Name, h.Values[0])
+		default:
+			// We don't expect that any of the headers we propagate have multiple values,
+			// and most of the places that read these headers only check for the first value by calling Get().
+			// So rather than causing subtle bugs later on, stop now.
+			return fmt.Errorf("unexpected multiple values for header %q", h.Name)
 		}
 	}
 
-	// Inject auth from context.
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
-		return nil, err
-	}
-
-	return req.WithContext(ctx), nil
+	return nil
 }
 
 // EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
