@@ -554,7 +554,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// First of all we have to check if the shutdown marker is set. This needs to be done
 	// as first thing because, if found, it may change the behaviour of the ingester startup.
-	fmt.Println("checking", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
 	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
 		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerExists).Inc()
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
@@ -2957,6 +2956,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBDiscover).Inc()
 		level.Error(i.logger).Log("msg", "error while finding existing TSDBs", "err", err)
 		return err
 	}
@@ -3085,10 +3085,6 @@ func (i *Ingester) findUserIDsWithTSDBOnFilesystem() ([]string, error) {
 		// Don't descend into subdirectories.
 		return filepath.SkipDir
 	})
-
-	if walkErr != nil {
-		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBDiscover).Inc()
-	}
 	return userIDs, errors.Wrapf(walkErr, "unable to walk directory %s containing existing TSDBs", i.cfg.BlocksStorageConfig.TSDB.Dir)
 }
 
