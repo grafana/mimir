@@ -4875,9 +4875,9 @@
           "required": false,
           "desc": "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.",
           "fieldValue": null,
-          "fieldDefaultValue": null,
+          "fieldDefaultValue": "error",
           "fieldFlag": "validation.label-value-length-over-limit-strategy",
-          "fieldType": "int",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
