@@ -899,5 +899,13 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 	}, []string{"type"})
 	tsdbWblReplayUnknownRefsTotal.WithLabelValues("exemplars").Add(base)
 
+	// TSDB filesystem operations failed
+	tsdbFilesystemOperationsFailed := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_ingester_tsdb_filesystem_operations_failed_total",
+		Help: "The total number of TSDB filesystem operations that failed.",
+	}, []string{"operation"})
+	tsdbFilesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerExists).Add(2 * base)
+	tsdbFilesystemOperationsFailed.WithLabelValues(filesystemOpTSDBCreate).Add(3 * base)
+
 	return r
 }

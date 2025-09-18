@@ -554,7 +554,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// First of all we have to check if the shutdown marker is set. This needs to be done
 	// as first thing because, if found, it may change the behaviour of the ingester startup.
+	fmt.Println("checking", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
 	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerExists).Inc()
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
 	} else if exists {
 		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
@@ -700,6 +702,7 @@ func (i *Ingester) stopping(_ error) error {
 	// Remove the shutdown marker if it exists since we are shutting down
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerRemove).Inc()
 		level.Warn(i.logger).Log("msg", "failed to remove shutdown marker", "path", shutdownMarkerPath, "err", err)
 	}
 
@@ -2821,6 +2824,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		},
 	}, nil)
 	if err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBCreate).Inc()
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
 	db.DisableCompactions() // we will compact on our own schedule
@@ -2833,6 +2837,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// so passing an independent context here
 	err = db.Compact(context.Background())
 	if err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBCompact).Inc()
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
 
@@ -2968,6 +2973,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 			for userID := range queue {
 				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
+					i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBCreate).Inc()
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
 				}
@@ -3080,6 +3086,9 @@ func (i *Ingester) findUserIDsWithTSDBOnFilesystem() ([]string, error) {
 		return filepath.SkipDir
 	})
 
+	if walkErr != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBDiscover).Inc()
+	}
 	return userIDs, errors.Wrapf(walkErr, "unable to walk directory %s containing existing TSDBs", i.cfg.BlocksStorageConfig.TSDB.Dir)
 }
 
@@ -3633,6 +3642,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {
+		i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpTSDBRemove).Inc()
 		level.Error(i.logger).Log("msg", "failed to delete local TSDB", "user", userID, "err", err)
 		return tsdbDataRemovalFailed
 	}
@@ -3812,6 +3822,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 	case http.MethodGet:
 		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
 		if err != nil {
+			i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerExists).Inc()
 			level.Error(i.logger).Log("msg", "unable to check for prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -3824,6 +3835,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 		}
 	case http.MethodPost:
 		if err := shutdownmarker.Create(shutdownMarkerPath); err != nil {
+			i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerCreate).Inc()
 			level.Error(i.logger).Log("msg", "unable to create prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -3842,6 +3854,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 		}
 
 		if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
+			i.metrics.filesystemOperationsFailed.WithLabelValues(filesystemOpShutdownMarkerRemove).Inc()
 			level.Error(i.logger).Log("msg", "unable to remove prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return

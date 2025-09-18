@@ -8177,6 +8177,140 @@ func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	require.NoError(t, err)
 }
 
+func TestIngesterFilesystemOperationsFailedMetrics(t *testing.T) {
+	emptyFileBytes := []byte("\n")
+
+	tests := map[string]struct {
+		setup             func(*testing.T, *Config) string
+		triggerOp         func(*testing.T, *Ingester, *Config, ring.ReadRing)
+		expectedOperation string
+		expectStartFail   bool
+		waitForAsync      bool
+	}{
+		"shutdown_marker_exists_failure": {
+			setup: func(t *testing.T, cfg *Config) string {
+				dir := t.TempDir()
+				cfg.BlocksStorageConfig.TSDB.Dir = fmt.Sprintf("%s/data/tsdb", dir)
+				require.NoError(t, os.MkdirAll(fmt.Sprintf("%s/data", dir), 0755))
+				require.NoError(t, os.WriteFile(cfg.BlocksStorageConfig.TSDB.Dir, emptyFileBytes, 0644))
+				return dir
+			},
+			triggerOp: func(t *testing.T, i *Ingester, cfg *Config, r ring.ReadRing) {
+				err := services.StartAndAwaitRunning(context.Background(), i)
+				require.Error(t, err)
+			},
+			expectedOperation: filesystemOpShutdownMarkerExists,
+			expectStartFail:   true,
+		},
+		// "TSDB_discovery failure": {
+		// 	setup: func(t *testing.T, cfg *Config) string {
+		// 		require.NoError(t, os.WriteFile(cfg.BlocksStorageConfig.TSDB.Dir, emptyFileBytes, 0644))
+		// 	},
+		// 	triggerOp: func(t *testing.T, i *Ingester, cfg *Config, r ring.ReadRing) {
+		// 		err := services.StartAndAwaitRunning(context.Background(), i)
+		// 		require.Error(t, err)
+		// 	},
+		// 	expectedOperation: filesystemOpTSDBDiscover,
+		// 	expectStartFail:   true,
+		// },
+		// "TSDB creation failure": {
+		// 	configModify: func(cfg *Config) string {
+		// 		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
+		// 		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
+		// 	},
+		// 	setup: func(t *testing.T, cfg *Config) {
+		// 		userDir := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "user1")
+		// 		require.NoError(t, os.WriteFile(userDir, emptyFileBytes, 0644))
+		// 	},
+		// 	trigger: func(t *testing.T, i *Ingester, cfg *Config, r ring.ReadRing) {
+		// 		startAndWaitHealthy(t, i, r)
+		// 		ctx := user.InjectOrgID(context.Background(), "user1")
+		// 		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
+		// 		_, err := i.Push(ctx, req)
+		// 		require.Error(t, err)
+		// 	},
+		// 	expectedOperation: filesystemOpTSDBCreate,
+		// 	waitForAsync:      true,
+		// },
+		// "TSDB removal failure": {
+		// 	setup: func(t *testing.T, cfg *Config) {
+		// 		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
+		// 		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
+		// 	},
+		// 	triggerOp: func(t *testing.T, i *Ingester, cfg *Config, r ring.ReadRing) {
+		// 		startAndWaitHealthy(t, i, r)
+
+		// 		// Push data to create a TSDB
+		// 		pushSingleSampleWithMetadata(t, i)
+
+		// 		// Wait for TSDB to be created
+		// 		require.Eventually(t, func() bool {
+		// 			return i.seriesCount.Load() > 0
+		// 		}, time.Second, 10*time.Millisecond)
+
+		// 		// Make user TSDB directory read-only to cause removal failure
+		// 		userDir := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, userID)
+		// 		require.NoError(t, os.Chmod(userDir, 0555)) // read-only to prevent removal
+		// 		defer os.Chmod(userDir, 0755)               //nolint:errcheck
+
+		// 		// Force close idle TSDB - this should trigger removal failure
+		// 		i.updateActiveSeries(time.Now())
+		// 	},
+		// 	expectedOperation: filesystemOpTSDBRemove,
+		// 	waitForAsync:      true,
+		// },
+		// "shutdown marker removal failure": {
+		// 	triggerOp: func(t *testing.T, i *Ingester, cfg *Config, r ring.ReadRing) {
+		// 		startAndWaitHealthy(t, i, r)
+
+		// 		// First create shutdown marker successfully
+		// 		req := httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil)
+		// 		w := httptest.NewRecorder()
+		// 		i.PrepareShutdownHandler(w, req)
+		// 		require.Equal(t, http.StatusNoContent, w.Code)
+
+		// 		// Make TSDB directory read-only to simulate filesystem failure
+		// 		require.NoError(t, os.Chmod(cfg.BlocksStorageConfig.TSDB.Dir, 0444))
+		// 		defer os.Chmod(cfg.BlocksStorageConfig.TSDB.Dir, 0755) //nolint:errcheck
+
+		// 		// Try to remove shutdown marker - should fail
+		// 		req = httptest.NewRequest("DELETE", "/ingester/prepare-shutdown", nil)
+		// 		w = httptest.NewRecorder()
+		// 		i.PrepareShutdownHandler(w, req)
+		// 		require.Equal(t, http.StatusInternalServerError, w.Code)
+		// 	},
+		// 	expectedOperation: filesystemOpShutdownMarkerRemove,
+		// },
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultIngesterTestConfig(t)
+			reg := prometheus.NewRegistry()
+
+			tempDir := tt.setup(t, &cfg)
+
+
+			limitsCfg := defaultLimitsTestConfig()
+			limitsCfg.NativeHistogramsIngestionEnabled = true
+			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, tempDir, reg)
+			require.NoError(t, err)
+	
+			tt.triggerOp(t, i, &cfg, r)
+
+			require.Eventually(t, func() bool {
+				failureValue := testutil.ToFloat64(i.metrics.filesystemOperationsFailed.WithLabelValues(tt.expectedOperation))
+				return failureValue > 0
+			}, 5*time.Second, 100*time.Millisecond, "Expected failure metric to be incremented for operation: %s", tt.expectedOperation)
+			
+			if !tt.expectStartFail {
+				i.StopAsync()
+				require.NoError(t, i.AwaitTerminated(context.Background()))
+			}
+		})
+	}
+}
+
 func TestHeadCompactionOnStartup(t *testing.T) {
 	// Create a temporary directory for TSDB
 	tempDir := t.TempDir()

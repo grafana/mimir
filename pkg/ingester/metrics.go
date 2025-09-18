@@ -19,6 +19,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// Filesystem operation labels for the filesystemOperationsFailed metric
+const (
+	filesystemOpShutdownMarkerExists = "shutdown_marker_exists"
+	filesystemOpShutdownMarkerCreate = "shutdown_marker_create"
+	filesystemOpShutdownMarkerRemove = "shutdown_marker_remove"
+	filesystemOpTSDBDiscover         = "tsdb_discover"
+	filesystemOpTSDBCreate           = "tsdb_create"
+	filesystemOpTSDBCompact          = "tsdb_compact"
+	filesystemOpTSDBRemove           = "tsdb_remove"
+)
+
 type ingesterMetrics struct {
 	ingestedSamples       *prometheus.CounterVec
 	ingestedExemplars     prometheus.Counter
@@ -91,6 +102,9 @@ type ingesterMetrics struct {
 
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
+
+	// Filesystem operation failures
+	filesystemOperationsFailed *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -401,6 +415,11 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
+
+		filesystemOperationsFailed: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_filesystem_operations_failed_total",
+			Help: "The total number of TSDB filesystem operations that failed.",
+		}, []string{"operation"}),
 	}
 
 	// Initialize expected rejected request labels
