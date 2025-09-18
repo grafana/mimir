@@ -4,7 +4,6 @@ package lookupplan
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -31,22 +30,19 @@ type plan struct {
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, matchers []*labels.Matcher) (plan, error) {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, matchers []*labels.Matcher) plan {
 	p := plan{
 		predicates:     make([]planPredicate, 0, len(matchers)),
 		indexPredicate: make([]bool, 0, len(matchers)),
 		totalSeries:    stats.TotalSeries(),
 	}
 	for _, m := range matchers {
-		pred, err := newPlanPredicate(ctx, m, stats)
-		if err != nil {
-			return plan{}, fmt.Errorf("error converting matcher to plan predicate: %w", err)
-		}
+		pred := newPlanPredicate(ctx, m, stats)
 		p.predicates = append(p.predicates, pred)
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
-	return p, nil
+	return p
 }
 
 func (p plan) IndexMatchers() []*labels.Matcher {
