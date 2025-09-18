@@ -2690,7 +2690,7 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
 // If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
@@ -2797,7 +2797,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics, userLogger, lookupplan.NewStatisticsGenerator(userLogger))
+		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger))
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 		// Generate initial statistics only after the TSDB has been opened and initialized.
 		defer userDB.generateHeadStatistics()
@@ -2872,7 +2872,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		PostingsClonerFactory:  tsdb.DefaultPostingsClonerFactory{},
 		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
+		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
