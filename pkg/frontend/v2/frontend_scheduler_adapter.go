@@ -56,7 +56,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		msg.Payload = &schedulerpb.FrontendToScheduler_ProtobufRequest{
 			ProtobufRequest: &schedulerpb.ProtobufRequest{
 				Payload:  encodedRequest,
-				Metadata: schedulerpb.MetadataMapToSlice(metadata),
+				Metadata: schedulerpb.MapToMetadataSlice(metadata),
 			},
 		}
 	}

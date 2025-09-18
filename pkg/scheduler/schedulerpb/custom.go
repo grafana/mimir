@@ -20,7 +20,7 @@ func MetadataSliceToMap(m []MetadataItem) map[string][]string {
 	return metadataMap
 }
 
-func MetadataMapToSlice(m map[string][]string) []MetadataItem {
+func MapToMetadataSlice(m map[string][]string) []MetadataItem {
 	metadataSlice := make([]MetadataItem, 0, len(m))
 
 	for k, v := range m {
