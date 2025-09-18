@@ -8,6 +8,24 @@ import (
 	"net/textproto"
 )
 
+// Why does this package exist?
+//
+// We currently support two paths for sending requests to queriers:
+// - httpgrpc from query-frontends and query-schedulers / HTTP direct to queriers (previously this was the only path)
+// - Protobuf from query-frontends and query-schedulers (this is the new path, only used by remote execution at the time of writing)
+//
+// There are a number of pieces of auxiliary information that need to be passed for requests on both of these paths, such as
+// strong consistency information and chunk info debugging and GEM features like authentication and LBAC.
+// We don't want to have to implement each of these twice.
+//
+// So this package acts as an abstraction layer for the two paths, allowing for injection and extraction of auxiliary
+// information for requests.
+
+// Why can't we use gRPC metadata?
+//
+// We use long-lived streams between the query-frontend and the query-scheduler, and gRPC metadata can only
+// be attached to the stream, rather than individual messages sent over the stream.
+
 // Extractor represents something that extracts auxiliary information from a request.
 type Extractor interface {
 	// ExtractFromCarrier extracts auxiliary information from a request (represented by carrier)
