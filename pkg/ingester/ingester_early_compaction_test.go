@@ -123,7 +123,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ := ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 0, totalActiveSeries)
 
 	// Push 20 more series.
@@ -139,7 +139,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 20, totalActiveSeries)
 
 	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
@@ -149,7 +149,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 0, totalActiveSeries)
 }
 
