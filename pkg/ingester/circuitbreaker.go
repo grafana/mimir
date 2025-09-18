@@ -148,7 +148,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 		return metrics.circuitBreakerTransitions.WithLabelValues(state.String())
 	}
 
-	cbBuilder := circuitbreaker.Builder[any]().
+	cbBuilder := circuitbreaker.NewBuilder[any]().
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.ClosedState).Inc()
@@ -169,7 +169,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 		cbBuilder = cbBuilder.WithFailureThreshold(cfg.FailureThresholdPercentage)
 	} else {
 		// In case of production code, we prefer time based failure thresholding.
-		cbBuilder = cbBuilder.WithFailureRateThreshold(cfg.FailureThresholdPercentage, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod)
+		cbBuilder = cbBuilder.WithFailureRateThreshold(float64(cfg.FailureThresholdPercentage)/100, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod)
 	}
 
 	cb.cb = cbBuilder.Build()

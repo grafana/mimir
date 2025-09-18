@@ -4044,7 +4044,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
-		"should soft error on created timestamp causing an error": {
+		"should succeed on created timestamp being duplicate sample": {
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4074,7 +4074,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 400; overrides not allowed: existing 1, new value 0", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -4086,15 +4086,12 @@ func TestIngester_Push(t *testing.T) {
 			},
 			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
 			expectedMetrics: `
-				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 2
@@ -4121,7 +4118,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
-		"should soft error with histograms on created timestamp causing an error": {
+		"should succeed with histograms on created timestamp causing an error": {
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4151,7 +4148,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -4163,9 +4160,6 @@ func TestIngester_Push(t *testing.T) {
 			},
 			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
 			expectedMetrics: `
-				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
 				# TYPE cortex_ingester_active_native_histogram_buckets gauge
 				cortex_ingester_active_native_histogram_buckets{user="test"} 8
@@ -4177,7 +4171,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 2

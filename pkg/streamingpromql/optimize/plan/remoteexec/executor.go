@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -14,13 +15,13 @@ import (
 
 type RemoteExecutor interface {
 	// StartScalarExecution submits a request to remotely evaluate an expression that produces a scalar.
-	StartScalarExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ScalarRemoteExecutionResponse, error)
+	StartScalarExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (ScalarRemoteExecutionResponse, error)
 
 	// StartInstantVectorExecution submits a request to remotely evaluate an expression that produces an instant vector.
-	StartInstantVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (InstantVectorRemoteExecutionResponse, error)
+	StartInstantVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (InstantVectorRemoteExecutionResponse, error)
 
 	// StartRangeVectorExecution submits a request to remotely evaluate an expression that produces a range vector.
-	StartRangeVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (RangeVectorRemoteExecutionResponse, error)
+	StartRangeVectorExecution(ctx context.Context, plan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool) (RangeVectorRemoteExecutionResponse, error)
 }
 
 type ScalarRemoteExecutionResponse interface {
@@ -58,12 +59,12 @@ type RangeVectorRemoteExecutionResponse interface {
 }
 
 type RemoteExecutionResponse interface {
-	// GetEvaluationInfo returns the annotations and total number of samples read as part of the remote evaluation, or the next available error from the stream.
+	// GetEvaluationInfo returns the annotations and statistics from the remote evaluation, or the next available error from the stream.
 	//
 	// If any unread part of the response is not the evaluation info (eg. there is unread series data), this is skipped until the evaluation info or an error is found.
 	//
 	// GetEvaluationInfo can only be called before Close is called.
-	GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, int64, error)
+	GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
 
 	// Close cleans up any resources associated with this request.
 	//

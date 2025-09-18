@@ -161,6 +161,26 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
+func (p plan) addPredicatesToSpan(span trace.Span) {
+	// Preallocate the attributes. Use an array to ensure the capacity is correct at compile time.
+	const numAttributesPerPredicate = 7
+	attributes := make([]attribute.KeyValue, 0, len(p.predicates)*numAttributesPerPredicate)
+
+	for _, pred := range p.predicates {
+		predAttr := [numAttributesPerPredicate]attribute.KeyValue{
+			attribute.Stringer("matcher", pred.matcher),
+			attribute.Float64("selectivity", pred.selectivity),
+			attribute.Int64("cardinality", int64(pred.cardinality)),
+			attribute.Int64("label_name_unique_values", int64(pred.labelNameUniqueVals)),
+			attribute.Float64("single_match_cost", pred.singleMatchCost),
+			attribute.Float64("index_scan_cost", pred.indexScanCost),
+			attribute.Float64("index_lookup_cost", pred.indexLookupCost()),
+		}
+		attributes = append(attributes, predAttr[:]...)
+	}
+	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
+}
+
 func (p plan) addSpanEvent(span trace.Span, planName string) {
 	span.AddEvent("lookup plan", trace.WithAttributes(
 		attribute.String("plan_name", planName),

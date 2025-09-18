@@ -28,8 +28,8 @@ func (e *executor[R]) OnSuccess(exec policy.ExecutionInternal[R], result *common
 
 func (e *executor[R]) OnFailure(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) *common.PolicyResult[R] {
 	e.BaseExecutor.OnFailure(exec, result)
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	// Wrap the result in the execution, so it's available when computing a delay
 	e.recordFailure(exec.CopyWithResult(result))

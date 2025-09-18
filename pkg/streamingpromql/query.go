@@ -49,12 +49,12 @@ type Query struct {
 	succeeded bool
 }
 
-func (q *Query) Exec(ctx context.Context) *promql.Result {
+func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
 	defer logger.Finish()
 
 	defer func() {
-		msg := make([]interface{}, 0, 2*(3+4)) // 3 fields for all query types, plus worst case of 4 fields for range queries
+		msg := make([]interface{}, 0, 2*(3+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
 
 		msg = append(msg,
 			"msg", "evaluation stats",
@@ -73,6 +73,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 				"start", q.topLevelQueryTimeRange.StartT,
 				"end", q.topLevelQueryTimeRange.EndT,
 				"step", q.topLevelQueryTimeRange.IntervalMilliseconds,
+			)
+		}
+
+		if res.Err == nil {
+			msg = append(msg, "status", "success")
+		} else {
+			msg = append(msg,
+				"status", "failed",
+				"err", res.Err,
 			)
 		}
 

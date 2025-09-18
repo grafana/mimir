@@ -75,6 +75,9 @@
       'server.grpc-max-recv-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
       // The ruler-query-frontend sends the query response back to the ruler.
       'server.grpc-max-send-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
+
+      // The 100 default limit can be too low for large query frontends evaluating many rules.
+      'server.grpc-max-concurrent-streams': 300,
     },
 
   ruler_query_frontend_env_map:: $.query_frontend_env_map,

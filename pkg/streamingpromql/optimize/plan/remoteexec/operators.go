@@ -7,11 +7,12 @@ import (
 
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
-	newAnnos, totalSamples, err := resp.GetEvaluationInfo(ctx)
+	newAnnos, remoteStats, err := resp.GetEvaluationInfo(ctx)
 	if err != nil {
 		return err
 	}
@@ -20,7 +21,23 @@ func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotati
 
 	if queryStats != nil {
 		// FIXME: once we support evaluating multiple nodes at once, only do this once per request, not once per requested node
-		queryStats.TotalSamples += totalSamples
+		if len(remoteStats.SamplesProcessedPerStep) > 0 {
+			for _, step := range remoteStats.SamplesProcessedPerStep {
+				queryStats.IncrementSamplesAtTimestamp(step.Timestamp, step.Value)
+			}
+
+			// IncrementSamplesAtTimestamp updates TotalSamples, so there's nothing more to do.
+		} else {
+			queryStats.TotalSamples += int64(remoteStats.SamplesProcessed)
+		}
+	}
+
+	if localStats := stats.FromContext(ctx); localStats != nil {
+		// We need to remove the samples processed from the remote stats before merging them into the local stats, as we already added them to MQE's queryStats above.
+		// MQE's queryStats will be added to the local stats in engineQueryRequestRoundTripperHandler.Do when the query completes.
+		remoteStats.SamplesProcessed = 0
+		remoteStats.SamplesProcessedPerStep = nil
+		localStats.Merge(&stats.SafeStats{Stats: remoteStats})
 	}
 
 	return nil
