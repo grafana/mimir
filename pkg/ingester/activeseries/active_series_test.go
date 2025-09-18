@@ -1032,14 +1032,14 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 
 	valid := c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1}, activeMatching)
 
@@ -1053,7 +1053,7 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
 
@@ -1065,7 +1065,7 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	c.UpdateSeries(ls3, ref3, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Empty(t, activeMatching)
 
@@ -1080,7 +1080,7 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	c.UpdateSeries(ls4, ref4, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{0, 1}, activeMatching)
 }
@@ -1098,7 +1098,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	c := NewActiveSeries(asm, DefaultTimeout, cat)
 	valid := c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 	assert.Equal(t, cat, c.cat)
@@ -1106,7 +1106,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 	assert.Equal(t, cat, c.cat)
@@ -1120,7 +1120,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	currentTime = currentTime.Add(DefaultTimeout)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 }
@@ -1137,14 +1137,14 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	c := NewActiveSeries(asm, DefaultTimeout, nil)
 	valid := c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 
@@ -1160,7 +1160,7 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
-	allActive, _, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 }
