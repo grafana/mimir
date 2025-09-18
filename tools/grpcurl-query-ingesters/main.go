@@ -96,7 +96,7 @@ func dumpResponse(res QueryStreamResponse) {
 
 				switch sampleType {
 				case chunkenc.ValFloat:
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", time.UnixMilli(chunkIterator.Timestamp()).UTC().String(), "value:", chunkIterator.Value().Value)
 				case chunkenc.ValHistogram:
 					ts, h = chunkIterator.AtHistogram(h)
 					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h, "hint:", counterResetHintString(h.CounterResetHint))

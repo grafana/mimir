@@ -10,7 +10,7 @@ syntax = "proto3";
 
 package cortexpb;
 
-import "gogoproto/gogo.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 option go_package = "mimirpb";
 option (gogoproto.marshaler_all) = true;

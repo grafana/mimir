@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Begin of configuration.
-K8S_CONTEXT=""
-K8S_NAMESPACE=""
-MIMIR_TENANT_ID=""
+K8S_CONTEXT="dev-us-central-0"
+K8S_NAMESPACE="cortex-dev-01"
+MIMIR_TENANT_ID="9960"
 # End of configuration.
 
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
@@ -77,15 +77,16 @@ query_ingester() {
 # Get list of pods.
 PODS=$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods --no-headers | grep ingester | awk '{print $1}')
 
+  query_ingester ingester-zone-c-46 "${NEXT_PORT}" &
 # Concurrently query ingesters.
-for POD in $PODS; do
-  query_ingester "${POD}" "${NEXT_PORT}" &
-
-  NEXT_PORT=$((NEXT_PORT+1))
-
-  # Throttle to reduce the likelihood of networking issues and K8S rate limiting.
-  sleep 0.25
-done
+#for POD in $PODS; do
+#  query_ingester "${POD}" "${NEXT_PORT}" &
+#
+#  NEXT_PORT=$((NEXT_PORT+1))
+#
+#  # Throttle to reduce the likelihood of networking issues and K8S rate limiting.
+#  sleep 0.25
+#done
 
 # Wait for all background jobs to finish
 wait
