@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 const (
@@ -475,7 +476,8 @@ sendBody:
 
 func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, schedulerpb.MetadataSliceToMap(request.Metadata), writer)
+	metadataMap := schedulerpb.MetadataSliceToMap(request.Metadata)
+	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, propagation.MapCarrier(metadataMap), writer)
 	writer.Close(ctx)
 }
 

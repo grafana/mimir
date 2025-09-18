@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -978,7 +979,7 @@ type protobufRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata map[string][]string, stream frontendv2pb.QueryResultStream) {
+func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
 	m.Called(ctx, t, metadata, stream)
 }
 
