@@ -22,7 +22,6 @@ type IPlannerFactory interface {
 type StatisticsService struct {
 	logger         log.Logger
 	plannerFactory IPlannerFactory
-	userID         string
 
 	// In-memory planner storage by block ULID
 	mtx      sync.RWMutex
@@ -30,11 +29,10 @@ type StatisticsService struct {
 }
 
 // NewStatisticsService creates a new StatisticsService for a single tenant.
-func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory, userID string) *StatisticsService {
+func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory) *StatisticsService {
 	return &StatisticsService{
 		logger:         logger,
 		plannerFactory: plannerFactory,
-		userID:         userID,
 		planners:       make(map[ulid.ULID]index.LookupPlanner),
 	}
 }
@@ -58,12 +56,10 @@ func (s *StatisticsService) storePlanner(blockULID ulid.ULID, planner index.Look
 
 // generateStats generates statistics for the given head block metadata and index reader.
 func (s *StatisticsService) generateStats(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) {
-	logger := log.With(s.logger, "user", s.userID)
-
 	blockULID := blockMeta.ULID
 
 	// Generate planner using the factory
-	level.Info(logger).Log("msg", "generating statistics for head block", "block", blockULID.String(), "series_count", blockMeta.Stats.NumSeries)
+	level.Info(s.logger).Log("msg", "generating statistics for head block", "block", blockULID.String(), "series_count", blockMeta.Stats.NumSeries)
 	planner := s.plannerFactory.CreatePlanner(blockMeta, indexReader)
 
 	// Store the planner in our internal storage

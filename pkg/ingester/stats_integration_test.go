@@ -33,7 +33,7 @@ func TestStatisticsService_Integration(t *testing.T) {
 
 	// Create the statistics service
 	logger := log.NewNopLogger()
-	service := NewStatisticsService(logger, mockFactory, "test-user")
+	service := NewStatisticsService(logger, mockFactory)
 
 	// Initially, service should not have the planner
 	cachedPlanner := service.getPlanner(blockID)
@@ -61,7 +61,7 @@ func TestUserTSDB_getIndexLookupPlanner_WithCache(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
-	statisticsService := NewStatisticsService(logger, mockFactory, "test-user")
+	statisticsService := NewStatisticsService(logger, mockFactory)
 	statisticsService.storePlanner(blockID, cachedPlanner)
 
 	// Create user TSDB with the statistics service
@@ -93,7 +93,7 @@ func TestUserTSDB_getIndexLookupPlanner_FallbackToGeneration(t *testing.T) {
 	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndexReader")).Return(expectedPlanner)
 
 	// Empty statistics service
-	statisticsService := NewStatisticsService(logger, mockFactory, "test-user")
+	statisticsService := NewStatisticsService(logger, mockFactory)
 
 	// Create user TSDB
 	userTSDB := &userTSDB{

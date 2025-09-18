@@ -2831,7 +2831,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Create per-tenant statistics service if enabled
 	if i.cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency > 0 {
-		userDB.statisticsService = NewStatisticsService(userLogger, userDB.plannerFactory, userID)
+		userDB.statisticsService = NewStatisticsService(userLogger, userDB.plannerFactory)
 	}
 
 	userDBHasDB := atomic.NewBool(false)
