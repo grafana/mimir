@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -20,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 )
 
-// MockPlannerFactory is a mock implementation of the planner factory for testing
+// MockPlannerFactory is a mock implementation of IPlannerFactory
 type MockPlannerFactory struct {
 	mock.Mock
 }
@@ -30,67 +29,101 @@ func (m *MockPlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.Inde
 	return args.Get(0).(index.LookupPlanner)
 }
 
-type mockIndexReader struct{}
+// mockIndexReader is a mock implementation of tsdb.IndexReader
+type mockIndexReader struct {
+	mock.Mock
+}
 
-func (m *mockIndexReader) Close() error              { return nil }
-func (m *mockIndexReader) Symbols() index.StringIter { return nil }
-func (m *mockIndexReader) SortedLabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return []string{}, nil
+func (m *mockIndexReader) Symbols() index.StringIter {
+	args := m.Called()
+	return args.Get(0).(index.StringIter)
 }
-func (m *mockIndexReader) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return []string{}, nil
+
+func (m *mockIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	args := m.Called(ctx, name, hints, matchers)
+	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockIndexReader) Postings(context.Context, string, ...string) (index.Postings, error) {
-	return index.EmptyPostings(), nil
+
+func (m *mockIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	args := m.Called(ctx, name, hints, matchers)
+	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockIndexReader) PostingsForLabelMatching(context.Context, string, func(value string) bool) index.Postings {
-	return index.EmptyPostings()
+
+func (m *mockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	args := m.Called(ctx, name, values)
+	return args.Get(0).(index.Postings), args.Error(1)
 }
-func (m *mockIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
-	return index.EmptyPostings()
+
+func (m *mockIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings {
+	args := m.Called(ctx, name, match)
+	return args.Get(0).(index.Postings)
 }
-func (m *mockIndexReader) PostingsForMatchers(context.Context, bool, ...*labels.Matcher) (index.Postings, error) {
-	return index.EmptyPostings(), nil
+
+func (m *mockIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	args := m.Called(ctx, name)
+	return args.Get(0).(index.Postings)
 }
-func (m *mockIndexReader) SortedPostings(index.Postings) index.Postings { return nil }
-func (m *mockIndexReader) ShardedPostings(index.Postings, uint64, uint64) index.Postings {
-	return nil
+
+func (m *mockIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	args := m.Called(ctx, concurrent, ms)
+	return args.Get(0).(index.Postings), args.Error(1)
 }
-func (m *mockIndexReader) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]chunks.Meta) error {
-	return nil
+
+func (m *mockIndexReader) SortedPostings(p index.Postings) index.Postings {
+	args := m.Called(p)
+	return args.Get(0).(index.Postings)
 }
-func (m *mockIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
-	return []string{"__name__"}, nil
+
+func (m *mockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	args := m.Called(p, shardIndex, shardCount)
+	return args.Get(0).(index.Postings)
 }
-func (m *mockIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	return "", nil
+
+func (m *mockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	args := m.Called(ref, builder, chks)
+	return args.Error(0)
 }
-func (m *mockIndexReader) LabelValuesExcluding(index.Postings, string) storage.LabelValues {
-	return nil
+
+func (m *mockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockIndexReader) LabelValuesFor(index.Postings, string) storage.LabelValues {
-	return nil
+
+func (m *mockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
+	args := m.Called(ctx, id, label)
+	return args.String(0), args.Error(1)
 }
-func (m *mockIndexReader) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
-	return nil, nil
+
+func (m *mockIndexReader) LabelValuesFor(p index.Postings, name string) storage.LabelValues {
+	args := m.Called(p, name)
+	return args.Get(0).(storage.LabelValues)
 }
+
+func (m *mockIndexReader) LabelValuesExcluding(p index.Postings, name string) storage.LabelValues {
+	args := m.Called(p, name)
+	return args.Get(0).(storage.LabelValues)
+}
+
+func (m *mockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
+	args := m.Called(ctx, postings)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockIndexReader) IndexLookupPlanner() index.LookupPlanner {
-	return lookupplan.NoopPlanner{}
+	args := m.Called()
+	return args.Get(0).(index.LookupPlanner)
 }
 
-func TestStatisticsService_generateStats(t *testing.T) {
-	logger := log.NewNopLogger()
+func (m *mockIndexReader) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
 
-	// Create mock components
-	mockFactory := &MockPlannerFactory{}
-
-	// Create test data
+func TestPlannerProvider_getPlanner_DoesNotCachePlanners(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
-	expectedPlanner := lookupplan.NoopPlanner{}
-
-	// Set up expectations
-	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndexReader")).
-		Return(expectedPlanner)
+	expectedPlanner := &lookupplan.CostBasedPlanner{}
+	mockFactory := &MockPlannerFactory{}
+	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndex")).Return(expectedPlanner).Twice()
 
 	blockMeta := tsdb.BlockMeta{
 		ULID: blockID,
@@ -99,49 +132,35 @@ func TestStatisticsService_generateStats(t *testing.T) {
 		},
 	}
 
-	// Create service
-	service := newPlannerProvider(mockFactory)
+	provider := newPlannerProvider(mockFactory)
+	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
+	require.NotNil(t, resultPlanner, "should return a planner")
+	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
 
-	// Test generateAndStorePlanner with block metadata
-	mockReader := &mockIndexReader{}
-	service.generateAndStorePlanner(blockMeta, mockReader)
-
-	// Verify planner was stored in service
-	storedPlanner := service.getPlanner(blockID)
-	require.NotNil(t, storedPlanner)
-	assert.Equal(t, expectedPlanner, storedPlanner)
-
-	// Verify expectations
+	resultPlanner = provider.getPlanner(blockMeta, &mockIndex{})
+	require.NotNil(t, resultPlanner, "should return a planner")
+	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
 	mockFactory.AssertExpectations(t)
 }
 
-func TestStatisticsService_Interface(t *testing.T) {
-	logger := log.NewNopLogger()
-	mockFactory := &MockPlannerFactory{}
-
-	// Test that plannerProvider can be created
-	service := newPlannerProvider(mockFactory)
-
-	// Should be able to call service methods
-	require.NotNil(t, service)
-}
-
-func TestStatisticsService_GetPlanner(t *testing.T) {
-	logger := log.NewNopLogger()
-	mockFactory := &MockPlannerFactory{}
-
-	service := newPlannerProvider(mockFactory)
-
-	// Test getting a planner that doesn't exist
+func TestPlannerProvider_generateAndStorePlanner_CachesPlanners(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
-	planner := service.getPlanner(blockID)
-	assert.Nil(t, planner, "should return nil for non-existent planner")
+	expectedPlanner := &lookupplan.CostBasedPlanner{}
+	mockFactory := &MockPlannerFactory{}
+	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndex")).Return(expectedPlanner).Once()
 
-	// Test storing and getting a planner
-	expectedPlanner := lookupplan.NoopPlanner{}
-	service.storePlanner(blockID, expectedPlanner)
+	blockMeta := tsdb.BlockMeta{
+		ULID: blockID,
+		Stats: tsdb.BlockStats{
+			NumSeries: 15000,
+		},
+	}
 
-	storedPlanner := service.getPlanner(blockID)
-	require.NotNil(t, storedPlanner)
-	assert.Equal(t, expectedPlanner, storedPlanner)
+	provider := newPlannerProvider(mockFactory)
+	provider.generateAndStorePlanner(blockMeta, &mockIndex{})
+	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
+
+	require.NotNil(t, resultPlanner, "should return a planner")
+	assert.Equal(t, expectedPlanner, resultPlanner, "should return cached planner")
+	mockFactory.AssertNotCalled(t, "CreatePlanner")
 }
