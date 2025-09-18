@@ -30,6 +30,7 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 
 		for {
 			result := innerFn(exec)
+			// Check for cancellation during executing
 			if canceled, cancelResult := execInternal.IsCanceledWithResult(); canceled {
 				return cancelResult
 			}
@@ -42,7 +43,7 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 				return result
 			}
 
-			// Record result
+			// Record result and check for cancellation during PostExecute
 			if cancelResult := execInternal.RecordResult(result); cancelResult != nil {
 				return cancelResult
 			}
@@ -62,7 +63,7 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 				timer.Stop()
 			}
 
-			// Prepare for next iteration
+			// Prepare for next iteration and check for cancellation during delay
 			if cancelResult := execInternal.InitializeRetry(); cancelResult != nil {
 				return cancelResult
 			}
@@ -124,7 +125,7 @@ func (e *executor[R]) getFixedOrRandomDelay(exec failsafe.ExecutionAttempt[R]) t
 	if e.Delay != 0 {
 		// Adjust for backoffs
 		if e.lastDelay != 0 && exec.Retries() >= 1 && e.maxDelay != 0 {
-			backoffDelay := time.Duration(float32(e.lastDelay) * e.delayFactor)
+			backoffDelay := time.Duration(float64(e.lastDelay) * e.delayFactor)
 			e.lastDelay = min(backoffDelay, e.maxDelay)
 		} else {
 			e.lastDelay = e.Delay
@@ -141,7 +142,7 @@ func (e *executor[R]) adjustForJitter(delay time.Duration) time.Duration {
 	if e.jitter != 0 {
 		delay = util.RandomDelay(delay, e.jitter, rand.Float64())
 	} else if e.jitterFactor != 0 {
-		delay = util.RandomDelayFactor(delay, e.jitterFactor, rand.Float32())
+		delay = util.RandomDelayFactor(delay, e.jitterFactor, rand.Float64())
 	}
 	return delay
 }
