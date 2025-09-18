@@ -32108,7 +32108,7 @@ data:
              ]
           },
           "timezone": "utc",
-          "title": "Mimir / Rollout operator",
+          "title": "Mimir / rollout-operator",
           "uid": "6c62cd598d5e741954ca8ebb251c5852",
           "version": 0
        }
