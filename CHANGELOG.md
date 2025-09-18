@@ -52,6 +52,7 @@
 * [ENHANCEMENT] Querier: Include more information about inflight queries in the activity tracker. A querier logs this information after it restarts following a crash. #12526
 * [ENHANCEMENT] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning-comparison-portion` flag to enable mirrored chunk querier comparison between queries with and without index lookup planning. #12460
 * [ENHANCEMENT] Ruler: Add native histogram version of `cortex_ruler_sync_rules_duration_seconds`. #12628
+* [ENHANCEMENT] Block-builder: Implement concurrent consumption within a job when `-ingest-storage.kafka.fetch-concurrency-max` is given. #12222
 * [ENHANCEMENT] Query-frontend: Labels query optimizer is no longer experimental and is enabled by default. It can be disabled with `-query-frontend.labels-query-optimizer-enabled=false` CLI flag. #12606
 * [ENHANCEMENT] Distributor: Add value length to "label value too long" error. #12583
 * [ENHANCEMENT] Distributor: The metric `cortex_distributor_uncompressed_request_body_size_bytes` now differentiates by the handler serving the request. #12661

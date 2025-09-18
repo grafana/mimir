@@ -130,7 +130,6 @@ func TestBlockBuilder(t *testing.T) {
 					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 				)
 			}
-
 		})
 	}
 }
