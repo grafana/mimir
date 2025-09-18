@@ -868,7 +868,7 @@ Usage of ./cmd/mimir/mimir:
   -tests.ingest-storage-record.enabled
     	Whether the test for ingest-storage record correctness is enabled.
   -tests.ingest-storage-record.max-jump-size int
-    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 100000000)
+    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 500000000)
   -tests.ingest-storage-record.max-records-per-run int
     	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
   -tests.ingest-storage-record.records-processed-percent int
