@@ -403,7 +403,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	// Initialize statistics service for head block query planning
 	plannerFactory := lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
-	i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency)
+	i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, i)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -623,19 +623,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	// Always start statistics service for head block query planning
-	statsService := services.NewBasicService(nil, func(ctx context.Context) error {
-		return i.statisticsService.statsLoop(ctx, func() map[string]*userTSDB {
-			i.tsdbsMtx.RLock()
-			defer i.tsdbsMtx.RUnlock()
-
-			result := make(map[string]*userTSDB, len(i.tsdbs))
-			for userID, userTSDB := range i.tsdbs {
-				result[userID] = userTSDB
-			}
-			return result
-		})
-	}, nil)
-	servs = append(servs, statsService)
+	servs = append(servs, i.statisticsService)
 
 	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
 		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
@@ -2718,6 +2706,31 @@ func (i *Ingester) getTSDBUsers() []string {
 	}
 
 	return ids
+}
+
+func (i *Ingester) openHeadBlock(userID string) (tsdb.BlockMeta, tsdb.IndexReader, lookupplan.PlannerRepository, error) {
+	userTSDB := i.getTSDB(userID)
+	if userTSDB == nil {
+		return tsdb.BlockMeta{}, nil, nil, fmt.Errorf("user TSDB not found")
+	}
+
+	if userTSDB.db == nil {
+		return tsdb.BlockMeta{}, nil, nil, fmt.Errorf("user TSDB database is nil")
+	}
+
+	if userTSDB.plannerRepo == nil {
+		return tsdb.BlockMeta{}, nil, nil, fmt.Errorf("user TSDB planner repository is nil")
+	}
+
+	head := userTSDB.db.Head()
+	blockMeta := head.Meta()
+
+	indexReader, err := head.Index()
+	if err != nil {
+		return tsdb.BlockMeta{}, nil, nil, err
+	}
+
+	return blockMeta, indexReader, userTSDB.plannerRepo, nil
 }
 
 func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
