@@ -794,7 +794,7 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
+			codec := newTestCodecWithFormat(queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &req)
@@ -815,7 +815,7 @@ func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+			codec := newTestCodecWithFormat(formatProtobuf)
 			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
@@ -827,7 +827,7 @@ func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
 	const notAllowedHeader = "X-Some-Name"
 
-	codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+	codec := newTestCodecWithFormat(formatProtobuf)
 	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -1051,8 +1051,7 @@ func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := newTestCodecWithFormat(formatJSON)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -2102,8 +2101,16 @@ func newTestCodec() Codec {
 	return newTestCodecWithHeaders(nil)
 }
 
+func newTestCodecWithFormat(format string) Codec {
+	return newTestCodecWithFormatAndHeaders(format, nil)
+}
+
 func newTestCodecWithHeaders(propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
+	return newTestCodecWithFormatAndHeaders(formatJSON, propagateHeaders)
+}
+
+func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
+	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyLevelInjector{})
 }
 
 func mustSucceed[T any](value T, err error) T {
@@ -2112,4 +2119,13 @@ func mustSucceed[T any](value T, err error) T {
 	}
 
 	return value
+}
+
+func TestContextHeaderPropagation(t *testing.T) {
+	headers := HeadersToPropagateFromContext(context.Background())
+	require.Empty(t, headers)
+
+	ctx := ContextWithHeadersToPropagate(context.Background(), map[string][]string{"Some-Header": {"Some-Value"}})
+	headers = HeadersToPropagateFromContext(ctx)
+	require.Equal(t, map[string][]string{"Some-Header": {"Some-Value"}}, headers)
 }

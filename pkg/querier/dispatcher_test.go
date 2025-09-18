@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -30,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 func TestDispatcher_HandleProtobuf(t *testing.T) {
@@ -88,10 +91,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	expectedQueryWallTime := 2 * time.Second
 
 	testCases := map[string]struct {
-		req                      *prototypes.Any
-		dontSetTenantID          bool
-		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
-		expectedStatusCode       string
+		req                                          *prototypes.Any
+		dontSetTenantID                              bool
+		expectedResponseMessages                     []*frontendv2pb.QueryResultStreamRequest
+		expectedStatusCode                           string
+		expectStorageToBeCalledWithPropagatedHeaders bool
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
@@ -213,7 +217,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns a range vector": {
@@ -370,7 +375,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns a scalar": {
@@ -503,7 +509,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query with per-step stats enabled": {
@@ -580,7 +587,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that fails with an error": {
@@ -610,7 +618,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "ERROR_EXECUTION",
+			expectedStatusCode:                           "ERROR_EXECUTION",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 	}
 
@@ -641,9 +650,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
-			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, opts.Logger)
+			storage := &contextCapturingStorage{inner: storage}
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &testExtractor{}, opts.Logger)
 			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
-			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
+			metadata := &propagation.MapCarrier{}
+			metadata.Add(testExtractorHeaderName, "some-value-from-the-request")
+
+			dispatcher.HandleProtobuf(ctx, testCase.req, metadata, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 
 			expectedMetrics := fmt.Sprintf(`
@@ -700,6 +713,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			}
 
 			requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, metricNames...)
+
+			if testCase.expectStorageToBeCalledWithPropagatedHeaders {
+				require.NotNil(t, storage.ctx)
+				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
+			}
 		})
 	}
 }
@@ -748,14 +766,14 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 
 func TestDispatcher_MQEDisabled(t *testing.T) {
 	reg, requestMetrics, serverMetrics := newMetrics()
-	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, log.NewNopLogger())
+	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, log.NewNopLogger())
 
 	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
 	require.NoError(t, err)
 
 	stream := &mockQueryResultStream{t: t, route: "querierpb.EvaluateQueryRequest", reg: reg}
 	ctx := user.InjectOrgID(context.Background(), "test")
-	dispatcher.HandleProtobuf(ctx, req, stream)
+	dispatcher.HandleProtobuf(ctx, req, nil, stream)
 
 	expected := []*frontendv2pb.QueryResultStreamRequest{
 		{
@@ -800,4 +818,66 @@ func replaceTimeNow(times ...time.Time) func() time.Time {
 		times = times[1:]
 		return t
 	}
+}
+
+type contextCapturingStorage struct {
+	inner storage.Storage
+	ctx   context.Context
+}
+
+func (s *contextCapturingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &contextCapturingQuerier{q, s}, nil
+}
+
+func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) StartTime() (int64, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Close() error {
+	return s.inner.Close()
+}
+
+type contextCapturingQuerier struct {
+	inner   storage.Querier
+	storage *contextCapturingStorage
+}
+
+func (c *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	c.storage.ctx = ctx
+	return c.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (c *contextCapturingQuerier) Close() error {
+	return c.inner.Close()
+}
+
+func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+type testExtractor struct{}
+
+type testExtractorKeyType int
+
+const testExtractorHeaderName = "The-Test-Header"
+const testExtractorKey testExtractorKeyType = iota
+
+func (p *testExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	return context.WithValue(ctx, testExtractorKey, carrier.Get(testExtractorHeaderName)), nil
 }

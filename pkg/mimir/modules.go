@@ -71,7 +71,9 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -530,10 +532,6 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Server.HTTP.Use(querier.FilterQueryablesMiddleware().Wrap)
-	}
-
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner,
@@ -624,11 +622,26 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	// Add the default propagators.
+	t.Extractors = append(
+		t.Extractors,
+		&chunkinfologger.Extractor{},
+		&streamingpromqlcompat.EngineFallbackExtractor{},
+
+		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
+		&querierapi.ConsistencyExtractor{},
+	)
+
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
+	}
+
+	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, util_log.Logger)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, extractor, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
@@ -645,6 +658,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
+		extractor,
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
@@ -772,7 +786,17 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
+	// Add our default injectors.
+	t.Injectors = append(t.Injectors, &querierapi.ConsistencyLevelInjector{})
+
+	t.QueryFrontendCodec = querymiddleware.NewCodec(
+		t.Registerer,
+		t.Cfg.Querier.EngineConfig.LookbackDelta,
+		t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat,
+		t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders,
+		&propagation.MultiInjector{Injectors: t.Injectors},
+	)
+
 	return nil, nil
 }
 
@@ -906,7 +930,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
-	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
 	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()

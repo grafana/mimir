@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -40,6 +41,7 @@ var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQuery
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
 	queryable storage.Queryable
+	extractor propagation.Extractor
 	logger    log.Logger
 
 	// We need to report two kinds of metrics, to mirror those emitted by HTTP requests:
@@ -52,10 +54,11 @@ type Dispatcher struct {
 	timeNow func() time.Time
 }
 
-func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, extractor propagation.Extractor, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
 		engine:         engine,
 		queryable:      queryable,
+		extractor:      extractor,
 		logger:         logger,
 		querierMetrics: querierMetrics,
 		serverMetrics:  serverMetrics,
@@ -63,7 +66,7 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 	}
 }
 
-func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
 	writer := &queryResponseWriter{
 		stream:         stream,
 		querierMetrics: d.querierMetrics,
@@ -81,6 +84,12 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 	}
 
 	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		return
+	}
+
+	ctx, err = d.extractor.ExtractFromCarrier(ctx, metadata)
 	if err != nil {
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
 		return

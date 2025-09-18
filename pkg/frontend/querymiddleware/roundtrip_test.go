@@ -949,7 +949,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewCodec(nil, 0, formatJSON, nil),
+		newTestCodec(),
 		nil,
 		promEngine,
 		promOpts,

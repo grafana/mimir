@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -82,7 +83,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.QueryStoreAfter = 12 * time.Hour
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
+	codec := newTestCodec()
 
 	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
 	require.NoError(t, err)
@@ -189,13 +190,18 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 		newStringMessage("second message"),
 	}
 
+	headers := map[string][]string{"Some-Extra-Header": {"some-value", "some-other-value"}}
+
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
 			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
 			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		}
+
 		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
+		expectedMetadata := []schedulerpb.MetadataItem{{Key: "Some-Extra-Header", Value: []string{"some-value", "some-other-value"}}}
+		require.Equal(t, expectedMetadata, msg.GetProtobufRequest().Metadata)
 
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
@@ -203,6 +209,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithHeadersToPropagate(ctx, headers)
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
@@ -1460,7 +1467,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 	frontend := &Frontend{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+		codec:  newTestCodec(),
 	}
 
 	now := time.Now()
@@ -1593,7 +1600,7 @@ func TestQueryDecoding(t *testing.T) {
 	frontend := &Frontend{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+		codec:  newTestCodec(),
 	}
 
 	now := time.Now()
@@ -1645,4 +1652,8 @@ func TestQueryDecoding(t *testing.T) {
 		require.Error(t, errHTTPDecode)
 		require.Contains(t, errHTTPDecode.Error(), "net/http")
 	})
+}
+
+func newTestCodec() querymiddleware.Codec {
+	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyLevelInjector{})
 }

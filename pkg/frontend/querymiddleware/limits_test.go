@@ -18,10 +18,13 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -29,9 +32,12 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1126,7 +1132,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	logger := log.NewNopLogger()
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
-	handler := NewEngineQueryRequestRoundTripperHandler(engine, logger)
+	codec := newTestCodec()
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1s
@@ -1136,9 +1143,6 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	// Replace the handler's storage with our test storage so we can test specific scenarios that depend on data.
-	handler.(*engineQueryRequestRoundTripperHandler).storage = storage
-
 	lookbackDelta := 5 * time.Minute
 
 	mustParseExpr := func(s string) parser.Expr {
@@ -1147,15 +1151,36 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		return expr
 	}
 
+	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+
+	requestHeaders := []*PrometheusHeader{
+		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
+		{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"chunk-info-logging-enabled"}},
+		{Name: api.ReadConsistencyOffsetsHeader, Values: []string{encodedOffsets}},
+
+		{Name: "Some-Other-Ignored-Header", Values: []string{"some-value"}},
+	}
+
+	expectedHeaders := map[string][]string{
+		// From request headers:
+		compat.ForceFallbackHeaderName:         {"true"},
+		chunkinfologger.ChunkInfoLoggingHeader: {"chunk-info-logging-enabled"},
+		api.ReadConsistencyOffsetsHeader:       {encodedOffsets},
+
+		// From read consistency level in context:
+		api.ReadConsistencyHeader: {api.ReadConsistencyStrong},
+	}
+
 	testCases := map[string]struct {
 		req                             MetricsQueryRequest
 		expectedResponse                Response
 		expectedErr                     error
 		expectedSamplesProcessed        uint64
 		expectedSamplesProcessedPerStep []stats.StepStat
+		expectedPropagatedHeaders       map[string][]string
 	}{
 		"range query": {
-			req:                      NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
 			expectedSamplesProcessed: 4,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1178,10 +1203,11 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
+			expectedPropagatedHeaders: expectedHeaders,
 		},
 
 		"instant query": {
-			req:                      NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
 			expectedSamplesProcessed: 1,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1201,6 +1227,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
+			expectedPropagatedHeaders: expectedHeaders,
 		},
 
 		"scalar result": {
@@ -1250,7 +1277,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"annotations": {
-			req:                      NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
 			expectedSamplesProcessed: 2,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1265,10 +1292,11 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
 				},
 			},
+			expectedPropagatedHeaders: expectedHeaders,
 		},
 
 		"query with per-step stats enabled": {
-			req:                      NewPrometheusRangeQueryRequest("/", nil, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, "all"),
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, "all"),
 			expectedSamplesProcessed: 4,
 			expectedSamplesProcessedPerStep: []stats.StepStat{
 				{Timestamp: 1000, Value: 1},
@@ -1297,12 +1325,19 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
+			expectedPropagatedHeaders: expectedHeaders,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+			// Replace the handler's storage with our test storage so we can test specific scenarios that depend on data,
+			// and check that the expected headers have been captured for propagation to queriers, including the read consistency level.
+			contextCapturingStorage := &contextCapturingStorage{inner: storage}
+			handler.(*engineQueryRequestRoundTripperHandler).storage = contextCapturingStorage
+
+			ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
+			stats, ctx := stats.ContextWithEmptyStats(ctx)
 			response, err := handler.Do(ctx, testCase.req)
 			require.Equal(t, testCase.expectedErr, err)
 
@@ -1320,6 +1355,64 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
 			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
+
+			var propagatedHeaders map[string][]string
+			if contextCapturingStorage.ctx != nil {
+				propagatedHeaders = HeadersToPropagateFromContext(contextCapturingStorage.ctx)
+			}
+
+			require.Equal(t, testCase.expectedPropagatedHeaders, propagatedHeaders)
 		})
 	}
+}
+
+type contextCapturingStorage struct {
+	inner storage.Storage
+	ctx   context.Context
+}
+
+func (s *contextCapturingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &contextCapturingQuerier{q, s}, nil
+}
+
+func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) StartTime() (int64, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Close() error {
+	return s.inner.Close()
+}
+
+type contextCapturingQuerier struct {
+	inner   storage.Querier
+	storage *contextCapturingStorage
+}
+
+func (c *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	c.storage.ctx = ctx
+	return c.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (c *contextCapturingQuerier) Close() error {
+	return c.inner.Close()
+}
+
+func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
 }

@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -42,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 const (
@@ -275,10 +275,12 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			switch payload := request.Payload.(type) {
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				// We might have created a new span above, so reset the trace ID and span ID in the embedded HTTP request so
+				// the HTTP tracing middleware creates its span beneath the one created above.
 				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, payload.HttpRequest)
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -312,7 +314,8 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 	case *schedulerpb.SchedulerToQuerier_HttpRequest:
 		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
 	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().TraceHeaders))
+		carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(request.GetProtobufRequest().Metadata))
+		ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
 		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
 	default:
 		return ctx, false
@@ -471,9 +474,10 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
+func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
+	metadataMap := schedulerpb.MetadataSliceToMap(request.Metadata)
+	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, propagation.MapCarrier(metadataMap), writer)
 	writer.Close(ctx)
 }
 
