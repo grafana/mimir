@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -12,7 +13,18 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
+	if h == nil {
+		return nil
+	}
+	return &binops.Hints{
+		Include: slices.Clone(h.Include),
+	}
+}
 
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
 	return (*parser.VectorMatching)(v)
@@ -30,7 +42,7 @@ func (p PositionRange) ToPrometheusType() posrange.PositionRange {
 	return posrange.PositionRange(p)
 }
 
-func LabelMatchersFrom(matchers []*labels.Matcher) []*LabelMatcher {
+func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher {
 	if len(matchers) == 0 {
 		return nil
 	}
@@ -48,26 +60,21 @@ func LabelMatchersFrom(matchers []*labels.Matcher) []*LabelMatcher {
 	return converted
 }
 
-// LabelMatchersToPrometheusType converts matchers to a labels.Matcher slice.
-//
-// Any regex matchers will have their patterns parsed, and this method will return an error if parsing fails.
-func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
+func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 	if len(matchers) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	converted := make([]*labels.Matcher, 0, len(matchers))
-
+	converted := make([]types.Matcher, 0, len(matchers))
 	for _, m := range matchers {
-		m, err := labels.NewMatcher(m.Type, m.Name, m.Value)
-		if err != nil {
-			return nil, err
-		}
-
-		converted = append(converted, m)
+		converted = append(converted, types.Matcher{
+			Type:  m.Type,
+			Name:  m.Name,
+			Value: m.Value,
+		})
 	}
 
-	return converted, nil
+	return converted
 }
 
 func matchersEqual(a, b *LabelMatcher) bool {

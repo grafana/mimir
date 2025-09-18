@@ -1047,6 +1047,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 		request, err := pushReq.WriteRequest()
 		require.NoError(t, err)
+		require.Equal(t, mimirpb.OTLP, request.Source)
 
 		series := request.Timeseries
 		require.Len(t, series, 1)

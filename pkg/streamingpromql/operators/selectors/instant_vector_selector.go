@@ -45,8 +45,8 @@ func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.Selector.ExpressionPosition
 }
 
-func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return v.Selector.SeriesMetadata(ctx)
+func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	return v.Selector.SeriesMetadata(ctx, matchers)
 }
 
 func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
