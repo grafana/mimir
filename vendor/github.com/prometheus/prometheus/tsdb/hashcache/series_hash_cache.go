@@ -13,7 +13,7 @@ const (
 
 	// approxBytesPerEntry is the estimated memory footprint (in bytes) of 1 cache
 	// entry, measured with TestSeriesHashCache_MeasureApproximateSizePerEntry().
-	approxBytesPerEntry = 38
+	approxBytesPerEntry = 36
 )
 
 // SeriesHashCache is a bounded cache mapping the per-block series ID with
