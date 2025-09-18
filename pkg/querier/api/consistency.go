@@ -14,7 +14,6 @@ import (
 
 	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
-
 	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
