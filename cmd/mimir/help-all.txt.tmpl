@@ -1171,6 +1171,12 @@ Usage of ./cmd/mimir/mimir:
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
     	Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.
+  -distributor.artificial-latency-max duration
+    	[experimental] Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min
+  -distributor.artificial-latency-min duration
+    	[experimental] Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max
+  -distributor.artificial-latency-workers int
+    	[experimental] Number of workers to be used to simulate artificial latency. Disabled if 0.
   -distributor.client-cleanup-period duration
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string

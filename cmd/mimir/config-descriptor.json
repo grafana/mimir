@@ -2231,6 +2231,39 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "artificial_latency_min",
+          "required": false,
+          "desc": "Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.artificial-latency-min",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "artificial_latency_max",
+          "required": false,
+          "desc": "Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.artificial-latency-max",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "artificial_latency_workers",
+          "required": false,
+          "desc": "Number of workers to be used to simulate artificial latency. Disabled if 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.artificial-latency-workers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -8848,6 +8849,20 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 			require.LessOrEqual(t, difference.Abs(), tc.expectedSleep/10)
 		})
 	}
+}
+
+func TestAddArtificialLatency(t *testing.T) {
+	distributor := &Distributor{
+		cfg: Config{
+			ArtificialLatencyMin:     100 * time.Millisecond,
+			ArtificialLatencyMax:     3 * time.Second,
+			ArtificialLatencyWorkers: runtime.NumCPU(),
+		},
+	}
+
+	fmt.Printf("Starting busy work with %d workers...\n", distributor.cfg.ArtificialLatencyWorkers)
+	distributor.addArtificialLatency()
+	fmt.Println("Done")
 }
 
 type MockTimeSource struct {

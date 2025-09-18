@@ -282,6 +282,10 @@ type Config struct {
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
+
+	ArtificialLatencyMin     time.Duration `yaml:"artificial_latency_min" category:"experimental"`
+	ArtificialLatencyMax     time.Duration `yaml:"artificial_latency_max" category:"experimental"`
+	ArtificialLatencyWorkers int           `yaml:"artificial_latency_workers" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -304,6 +308,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.DurationVar(&cfg.ArtificialLatencyMin, "distributor.artificial-latency-min", 0, "Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max")
+	f.DurationVar(&cfg.ArtificialLatencyMax, "distributor.artificial-latency-max", 0, "Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min")
+	f.IntVar(&cfg.ArtificialLatencyWorkers, "distributor.artificial-latency-workers", 0, "Number of workers to be used to simulate artificial latency. Disabled if 0.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1839,6 +1846,39 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
+func (d *Distributor) addArtificialLatency() {
+	if d.cfg.ArtificialLatencyWorkers <= 0 {
+		return
+	}
+	if d.cfg.ArtificialLatencyMin > d.cfg.ArtificialLatencyMax {
+		return
+	}
+
+	// Pick random duration in [min, max].
+	duration := d.cfg.ArtificialLatencyMin + time.Duration(rand.Int63n(int64(d.cfg.ArtificialLatencyMax-d.cfg.ArtificialLatencyMin)))
+	end := time.Now().Add(duration)
+
+	var wg sync.WaitGroup
+	wg.Add(d.cfg.ArtificialLatencyWorkers)
+
+	for i := 0; i < d.cfg.ArtificialLatencyWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			x := 0
+			for time.Now().Before(end) {
+				// Do some meaningless work
+				x++
+				if x > 1_000_000 {
+					x = 0
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+}
+
 // push takes a write request and distributes it to ingesters using the ring.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
@@ -2024,6 +2064,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
+			d.addArtificialLatency()
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
@@ -2049,6 +2090,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
+			d.addArtificialLatency()
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// The partition ID is stored in the ring.InstanceDesc Id.
