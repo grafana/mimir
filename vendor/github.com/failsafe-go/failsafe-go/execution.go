@@ -86,7 +86,7 @@ func init() {
 
 type execution[R any] struct {
 	// Shared state across instances
-	mtx        *sync.Mutex
+	mu         *sync.Mutex
 	startTime  time.Time
 	attempts   *atomic.Uint32
 	retries    *atomic.Uint32
@@ -177,8 +177,8 @@ func (e *execution[_]) Canceled() <-chan struct{} {
 
 func (e *execution[R]) RecordResult(result *common.PolicyResult[R]) *common.PolicyResult[R] {
 	// Lock to guard against a race with a Timeout canceling the execution
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, cancelResult := e.isCanceledWithResult(); canceled {
 		return cancelResult
 	}
@@ -191,8 +191,8 @@ func (e *execution[R]) RecordResult(result *common.PolicyResult[R]) *common.Poli
 
 func (e *execution[R]) InitializeRetry() *common.PolicyResult[R] {
 	// Lock to guard against a race with a Timeout canceling the execution
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, cancelResult := e.isCanceledWithResult(); canceled {
 		return cancelResult
 	}
@@ -206,8 +206,8 @@ func (e *execution[R]) InitializeRetry() *common.PolicyResult[R] {
 }
 
 func (e *execution[R]) Cancel(result *common.PolicyResult[R]) {
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, _ := e.isCanceledWithResult(); canceled {
 		return
 	}
@@ -223,8 +223,8 @@ func (e *execution[R]) Cancel(result *common.PolicyResult[R]) {
 }
 
 func (e *execution[R]) IsCanceledWithResult() (bool, *common.PolicyResult[R]) {
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.isCanceledWithResult()
 }
 
@@ -267,9 +267,9 @@ func (e *execution[R]) CopyForHedge() Execution[R] {
 }
 
 func (e *execution[R]) copy() *execution[R] {
-	e.mtx.Lock()
+	e.mu.Lock()
 	c := *e
-	e.mtx.Unlock()
+	e.mu.Unlock()
 	return &c
 }
 
@@ -287,7 +287,7 @@ func newExecution[R any](ctx context.Context) *execution[R] {
 	now := time.Now()
 	return &execution[R]{
 		ctx:              ctx,
-		mtx:              &sync.Mutex{},
+		mu:               &sync.Mutex{},
 		attempts:         &attempts,
 		retries:          &retries,
 		hedges:           &hedges,
