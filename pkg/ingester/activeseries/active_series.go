@@ -227,13 +227,15 @@ func (c *ActiveSeries) Active() (total, totalOTLP, totalNativeHistograms, totalN
 	return
 }
 
-// ActiveWithMatchers returns the total number of active series, total active
-// series ingested using OTLP, as well as a slice of active series matching each
-// one of the custom trackers provided (in the same order as custom trackers are
-// defined), and then the same thing for only active series that are native
-// histograms, then the same for the number of buckets in those active native
-// histogram series. This method does not purge expired entries, so Purge should
-// be called periodically.
+// ActiveWithMatchers returns the total number of active series, as well as a
+// slice of active series matching each one of the custom trackers provided (in
+// the same order as custom trackers are defined), the total number of active
+// series ingested using OTLP, and then the total number of active series that
+// are native histograms and a slice of active native histogram series matching
+// each one of the custom trackers provided (in the same order as custom trackers
+// are defined), and then the same for the number of buckets in those active
+// native histogram series. This method does not purge expired entries, so Purge
+// should be called periodically.
 func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, totalOTLP int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
