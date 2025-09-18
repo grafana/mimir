@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -337,8 +338,9 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		spanLogger.Finish()
 	}()
 
-	headers := map[string][]string{}
-	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, propagation.MapCarrier(headers)); err != nil {
+	headers := http.Header{}
+	consistencyInjector := &api.ConsistencyInjector{}
+	if err := consistencyInjector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(headers)); err != nil {
 		return nil, err
 	}
 
