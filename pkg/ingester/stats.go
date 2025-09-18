@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // PlannerFactoryInterface defines the interface for creating planners
@@ -51,9 +50,7 @@ func NewStatisticsService(logger log.Logger, plannerFactory PlannerFactoryInterf
 		level.Debug(logger).Log("msg", "statistics collection disabled (frequency not configured)")
 		s.Service = services.NewIdleService(nil, nil)
 	} else {
-		// Add jitter to avoid all ingesters running at the same time
-		interval := util.DurationWithJitter(statsFrequency, 0.01)
-		s.Service = services.NewTimerService(interval, nil, s.iteration, nil).WithName("statistics service")
+		s.Service = services.NewTimerService(statsFrequency, nil, s.iteration, nil).WithName("headBlockStatisticsService")
 	}
 
 	return s
@@ -93,17 +90,11 @@ func (s *StatisticsService) generateStatsForUser(userID string) {
 	}
 	defer func() {
 		if closeErr := indexReader.Close(); closeErr != nil {
-			level.Warn(logger).Log("msg", "failed to close index reader", "err", closeErr)
+			level.Warn(logger).Log("msg", "failed to close index reader while generating head block statistics", "err", closeErr)
 		}
 	}()
 
 	blockULID := blockMeta.ULID
-
-	// Check if we already have a planner for this block
-	if existingPlanner := repo.GetPlanner(blockULID); existingPlanner != nil {
-		level.Debug(logger).Log("msg", "planner already exists for block", "block", blockULID.String())
-		return
-	}
 
 	// Generate planner using the factory
 	level.Info(logger).Log("msg", "generating statistics for head block", "block", blockULID.String(), "series_count", blockMeta.Stats.NumSeries)
@@ -111,6 +102,4 @@ func (s *StatisticsService) generateStatsForUser(userID string) {
 
 	// Store the planner in the repository
 	repo.StorePlanner(blockULID, planner)
-
-	level.Info(logger).Log("msg", "stored planner for head block", "block", blockULID.String())
 }

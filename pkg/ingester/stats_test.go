@@ -123,7 +123,6 @@ func TestStatisticsService_generateStatsForUser(t *testing.T) {
 	expectedPlanner := lookupplan.NoopPlanner{}
 
 	// Set up expectations
-	mockRepo.On("GetPlanner", blockID).Return(nil) // No existing planner
 	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndexReader")).
 		Return(expectedPlanner)
 	mockRepo.On("StorePlanner", blockID, expectedPlanner).Return()
