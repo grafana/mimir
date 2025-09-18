@@ -293,7 +293,7 @@ type Ingester struct {
 	compactionService     services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
-	statisticsService     *StatisticsService
+	statisticsService     services.Service
 
 	// Mimir blocks storage.
 	tsdbsMtx sync.RWMutex
@@ -402,8 +402,12 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
 	// Initialize statistics service for head block query planning
-	plannerFactory := lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
-	i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, i)
+	if cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency > 0 {
+		plannerFactory := lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
+		i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, i)
+	} else {
+		i.statisticsService = services.NewIdleService(nil, nil)
+	}
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
