@@ -532,10 +532,6 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Server.HTTP.Use(querier.FilterQueryablesMiddleware().Wrap)
-	}
-
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner,
@@ -635,6 +631,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency propagator here too.
 		&querierapi.ConsistencyPropagator{},
 	)
+
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Propagators = append(t.Propagators, &querier.FilterQueryablesPropagator{})
+	}
 
 	propagator := &propagation.MultiPropagator{Propagators: t.Propagators}
 
