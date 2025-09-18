@@ -943,7 +943,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 
 			valid := c.Purge(mockedTime, nil)
 			assert.True(t, valid)
-			allActive, _, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
+			allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
 			assert.Equal(t, []int{expMatchingSeries}, activeMatching)
 		})
