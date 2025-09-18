@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -29,7 +28,6 @@ import (
 // compactionExecutor defines how compaction work is executed.
 type compactionExecutor interface {
 	run(ctx context.Context, compactor *MultitenantCompactor) error
-	createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy
 	stop() error
 }
 
@@ -56,15 +54,6 @@ func (e *standaloneExecutor) run(ctx context.Context, c *MultitenantCompactor) e
 
 func (e *standaloneExecutor) stop() error {
 	return nil
-}
-
-func (e *standaloneExecutor) createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
-	return &splitAndMergeShardingStrategy{
-		allowedTenants: allowedTenants,
-		ring:           ring,
-		ringLifecycler: ringLifecycler,
-		configProvider: cfgProvider,
-	}
 }
 
 // schedulerExecutor requests compaction jobs from an external scheduler.
@@ -196,15 +185,6 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 
 	if err != nil {
 		level.Error(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
-	}
-}
-
-func (e *schedulerExecutor) createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
-	return &schedulerShardingStrategy{
-		allowedTenants: allowedTenants,
-		ring:           ring,
-		ringLifecycler: ringLifecycler,
-		configProvider: cfgProvider,
 	}
 }
 

@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
@@ -175,13 +174,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
-			allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-			c.shardingStrategy = schedulerExec.createShardingStrategy(
-				allowedTenants,
-				c.ring,
-				c.ringLifecycler,
-				c.cfgProvider,
-			)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 			require.NoError(t, err)
@@ -299,14 +291,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			require.NoError(t, err)
 			schedulerExec.schedulerClient = mockSchedulerClient
 
-			allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-			c.shardingStrategy = schedulerExec.createShardingStrategy(
-				allowedTenants,
-				c.ring,
-				c.ringLifecycler,
-				c.cfgProvider,
-			)
-
 			errCh := make(chan error, 1)
 			go func() {
 				errCh <- schedulerExec.run(context.Background(), c)
@@ -420,13 +404,6 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 	schedulerExec.schedulerClient = mockSchedulerClient
 
 	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
-	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-	c.shardingStrategy = schedulerExec.createShardingStrategy(
-		allowedTenants,
-		c.ring,
-		c.ringLifecycler,
-		c.cfgProvider,
-	)
 
 	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 	require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
