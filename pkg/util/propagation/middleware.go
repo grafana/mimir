@@ -13,7 +13,7 @@ func Middleware(propagator Propagator) middleware.Interface {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, err := propagator.ReadFromCarrier(r.Context(), HttpHeaderCarrier(r.Header))
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 
