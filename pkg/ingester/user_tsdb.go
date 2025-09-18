@@ -154,12 +154,12 @@ type userTSDB struct {
 }
 
 // generateHeadStatistics generates statistics for this user's head block.
-func (u *userTSDB) generateHeadStatistics() {
+func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
 	head := u.db.Head()
 	indexReader, err := head.Index()
 	if err != nil {
-		return
+		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
 	}
 	defer indexReader.Close()
 
@@ -168,6 +168,7 @@ func (u *userTSDB) generateHeadStatistics() {
 
 	// Generate statistics
 	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
+	return nil
 }
 
 // getIndexLookupPlanner returns a cached planner or generates one on-demand.

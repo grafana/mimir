@@ -532,7 +532,11 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 			// A race with a user TSDB being removed, just skip it.
 			continue
 		}
-		userDB.generateHeadStatistics()
+		err := userDB.generateHeadStatistics()
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to generate head statistics; previous statistics will be used for queries if have been computed since startup", "user", userID, "err", err)
+			continue
+		}
 	}
 	return nil
 }
@@ -2800,7 +2804,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger))
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 		// Generate initial statistics only after the TSDB has been opened and initialized.
-		defer userDB.generateHeadStatistics()
+		defer func() {
+			if err := userDB.generateHeadStatistics(); err != nil {
+				level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+			}
+		}()
 	}
 
 	userDBHasDB := atomic.NewBool(false)
