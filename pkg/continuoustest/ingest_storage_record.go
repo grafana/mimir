@@ -37,7 +37,7 @@ type IngestStorageRecordTestConfig struct {
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "tests.ingest-storage-record.enabled", false, "Whether the test for ingest-storage record correctness is enabled.")
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
-	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
+	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 500000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
 	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch.")
 	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
