@@ -187,7 +187,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 		}
 
 		// Recursively re-iterate if it's a struct and it's not a custom type.
-		if _, custom := getCustomFieldType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr) && !custom {
+		if _, custom := getFieldCustomType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr) && !custom {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
@@ -446,32 +446,6 @@ func getFieldType(t reflect.Type) (string, error) {
 
 	default:
 		return "", fmt.Errorf("unsupported data type %s", t.Kind())
-	}
-}
-
-func getCustomFieldType(t reflect.Type) (string, bool) {
-	// Handle custom data types used in the config
-	switch t.String() {
-	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
-		return "map of string to float64", true
-	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
-		return "map of string to int", true
-	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
-		return "map of string to string", true
-	case reflect.TypeOf(&url.URL{}).String():
-		return "url", true
-	case reflect.TypeOf(time.Duration(0)).String():
-		return "duration", true
-	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
-		return "string", true
-	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
-		return "string", true
-	case reflect.TypeOf([]*relabel.Config{}).String():
-		return "relabel_config...", true
-	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
-		return "map of tracker name (string) to matcher (string)", true
-	default:
-		return "", false
 	}
 }
 
