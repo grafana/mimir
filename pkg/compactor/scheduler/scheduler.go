@@ -150,7 +150,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobReque
 				Epoch: epoch,
 			},
 			Spec: &schedulerpb.JobSpec{
-				JobTypye: schedulerpb.PLANNING,
+				JobType: schedulerpb.PLANNING,
 			},
 		}, nil
 	}

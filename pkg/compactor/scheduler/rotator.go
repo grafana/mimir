@@ -92,8 +92,8 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 					Epoch: epoch,
 				},
 				Spec: &schedulerpb.JobSpec{
-					JobTypye: schedulerpb.COMPACTION,
-					Tenant:   tenant,
+					JobType: schedulerpb.COMPACTION,
+					Tenant:  tenant,
 					Job: &schedulerpb.CompactionJob{
 						BlockIds: job.blocks,
 						Split:    job.isSplit,
