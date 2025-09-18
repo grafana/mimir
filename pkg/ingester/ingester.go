@@ -295,6 +295,9 @@ type Ingester struct {
 	metadataPurgerService services.Service
 	statisticsService     services.Service
 
+	// Index lookup planning
+	plannerFactory IPlannerFactory
+
 	// Mimir blocks storage.
 	tsdbsMtx sync.RWMutex
 	tsdbs    map[string]*userTSDB // tsdb sharded by userID
@@ -401,10 +404,12 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
+	// Initialize planner factory for index lookup planning
+	i.plannerFactory = lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
+
 	// Initialize statistics service for head block query planning
 	if cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency > 0 {
-		plannerFactory := lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
-		i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, i)
+		i.statisticsService = NewStatisticsService(logger, i.plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, i)
 	} else {
 		i.statisticsService = services.NewIdleService(nil, nil)
 	}
@@ -2678,12 +2683,6 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
-	// Create fallback planner factory for when repository doesn't have the planner
-	metrics := lookupplan.NewMetrics(r)
-	logger := log.With(i.logger, "user", userID)
-	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
-	fallbackFactory := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
-
 	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
 		// First, try to get the planner from the repository
 		userTSDB := i.getTSDB(userID)
@@ -2693,8 +2692,8 @@ func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID str
 			}
 		}
 
-		// Fall back to generating planner on-demand
-		return fallbackFactory.CreatePlanner(meta, reader)
+		// Fall back to generating planner on-demand using shared factory
+		return i.plannerFactory.CreatePlanner(meta, reader)
 	}
 }
 
