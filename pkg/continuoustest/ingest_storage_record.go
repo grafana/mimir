@@ -135,12 +135,17 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 
 	level.Info(t.logger).Log("msg", "starting kafka client")
 
+	// One tenth of the normal ingest-storage max bytes per fetch, hardcoded.
+	// Smaller fetches reduce memory variance.
+	const fetchMaxBytes = 10_000_000
+
 	kc, err := ingest.NewKafkaReaderClient(
 		t.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "record-continuous-test", t.reg),
 		t.logger,
 		kgo.ConsumeTopics(t.cfg.Kafka.Topic),
 		kgo.ConsumerGroup(t.cfg.ConsumerGroup),
+		kgo.FetchMaxBytes(fetchMaxBytes),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -198,7 +203,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		// If there are a huge number of records written to a partition, skip it. We'll seek to the end and process it next run.
 		diff := endOffset.At - committedOffset.At
 		if diff > int64(t.cfg.MaxJumpLimitPerPartition) {
-			level.Warn(t.logger).Log(
+			level.Debug(t.logger).Log(
 				"msg", "skipping partition because it jumped by an amount greater than the limit per run",
 				"partition", partition,
 				"limit", t.cfg.MaxJumpLimitPerPartition,
