@@ -115,10 +115,8 @@ type Head struct {
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
-	postings      *index.MemPostings // Postings lists for terms.
-	postingsStats atomic.Pointer[index.Statistics]
-	pfmc          *PostingsForMatchersCache
-	planner       atomic.Pointer[index.LookupPlanner]
+	postings *index.MemPostings // Postings lists for terms.
+	pfmc     *PostingsForMatchersCache
 
 	tombstones *tombstones.MemTombstones
 
@@ -336,10 +334,6 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	return h, nil
 }
 
-func (h *Head) PostingsStats() index.Statistics {
-	return *h.postingsStats.Load()
-}
-
 func (h *Head) resetInMemoryState() error {
 	var err error
 	var em *ExemplarMetrics
@@ -395,29 +389,6 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
-}
-
-// updateHeadStatistics generates a new set of Statistics for the head, which consists of label cardinality,
-// and the total number of series in the head. It then updates postingsStats to point to the new statistics.
-func (h *Head) updateHeadStatistics() error {
-	start := time.Now()
-	stats := index.Statistics(newFullHeadStatistics(h))
-	h.postingsStats.Store(&stats)
-
-	iReader, err := h.Index()
-	if err != nil {
-		return fmt.Errorf("failed to get head index reader: %w", err)
-	}
-	planner := h.opts.IndexLookupPlannerFunc(h.Meta(), iReader)
-	h.planner.Store(&planner)
-	h.metrics.headStatisticsTimeToUpdate.Set(time.Since(start).Seconds())
-	h.metrics.headStatisticsLastUpdate.Set(float64(time.Now().Unix()))
-	h.logger.Info("successfully updated head statistics",
-		"duration", time.Since(start),
-		"num_series", stats.TotalSeries(),
-		"num_label_names", len(h.postings.LabelNames()),
-	)
-	return nil
 }
 
 type headMetrics struct {
@@ -748,12 +719,6 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
-	// We wait to calculate head statistics until after the WAL is replayed.
-	defer func() {
-		if err := h.updateHeadStatistics(); err != nil {
-			h.logger.Error("Failed to update head statistics", "err", err)
-		}
-	}()
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)

@@ -1257,13 +1257,6 @@ func (db *DB) BlockMetas() []BlockMeta {
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
-	var headStatsUpdateTicker <-chan time.Time
-	if db.opts.HeadStatisticsCollectionFrequency > 0 {
-		t := time.NewTicker(db.opts.HeadStatisticsCollectionFrequency)
-		defer t.Stop()
-		headStatsUpdateTicker = t.C
-	}
-
 	backoff := time.Duration(0)
 
 	for {
@@ -1303,12 +1296,6 @@ func (db *DB) run(ctx context.Context) {
 			}
 			db.autoCompactMtx.Unlock()
 
-		case <-headStatsUpdateTicker:
-			// If needed, this could instead be spun off concurrently as an optimization to allow
-			// head compaction to interrupt statistics collection (by taking the postings mutex).
-			if err := db.head.updateHeadStatistics(); err != nil {
-				db.logger.Error("update head statistics", "err", err)
-			}
 		case <-db.stopc:
 			return
 		}

@@ -26,6 +26,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -146,6 +147,9 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache
+
+	// Per-tenant repository for cached query planning statistics
+	plannerRepo lookupplan.PlannerRepository
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {

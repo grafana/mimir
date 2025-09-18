@@ -293,6 +293,7 @@ type Ingester struct {
 	compactionService     services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
+	statisticsService     *StatisticsService
 
 	// Mimir blocks storage.
 	tsdbsMtx sync.RWMutex
@@ -399,6 +400,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
 	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
+
+	// Initialize statistics service for head block query planning
+	plannerFactory := lookupplan.NewPlannerFactory(lookupplan.NewMetrics(nil), logger, lookupplan.NewStatisticsGenerator(logger))
+	i.statisticsService = NewStatisticsService(logger, plannerFactory, cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -616,6 +621,21 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
 		servs = append(servs, shippingService)
 	}
+
+	// Always start statistics service for head block query planning
+	statsService := services.NewBasicService(nil, func(ctx context.Context) error {
+		return i.statisticsService.statsLoop(ctx, func() map[string]*userTSDB {
+			i.tsdbsMtx.RLock()
+			defer i.tsdbsMtx.RUnlock()
+
+			result := make(map[string]*userTSDB, len(i.tsdbs))
+			for userID, userTSDB := range i.tsdbs {
+				result[userID] = userTSDB
+			}
+			return result
+		})
+	}, nil)
+	servs = append(servs, statsService)
 
 	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
 		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
@@ -2658,21 +2678,32 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
-// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
+// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
+// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
 // When disabled, it uses NoopPlanner which performs no optimization.
 func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
+	// Create fallback planner factory for when repository doesn't have the planner
 	metrics := lookupplan.NewMetrics(r)
 	logger := log.With(i.logger, "user", userID)
 	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
+	fallbackFactory := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
 
-	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
+	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
+		// First, try to get the planner from the repository
+		userTSDB := i.getTSDB(userID)
+		if userTSDB != nil && userTSDB.plannerRepo != nil {
+			if cachedPlanner := userTSDB.plannerRepo.GetPlanner(meta.ULID); cachedPlanner != nil {
+				return cachedPlanner
+			}
+		}
 
-	return provider.CreatePlanner
+		// Fall back to generating planner on-demand
+		return fallbackFactory.CreatePlanner(meta, reader)
+	}
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2761,6 +2792,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
 			localSeriesLimit: initialLocalLimit,
 		},
+
+		plannerRepo: lookupplan.NewInMemoryPlannerRepository(),
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
