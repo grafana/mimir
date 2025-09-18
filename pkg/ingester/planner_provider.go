@@ -43,7 +43,7 @@ func (s *plannerProvider) getPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.
 	}
 	// Planner not found in cache, create a new one.
 	// We do not store it here because sometimes the block it refers to may be deleted, and we don't want to retain planners for deleted blocks.
-	// We relay on the caller of generateAndStorePlanner to create a planner and store it when needed.
+	// We rely on the caller of generateAndStorePlanner to create a planner and store it when needed.
 	return s.plannerFactory.CreatePlanner(blockMeta, indexReader)
 }
 
