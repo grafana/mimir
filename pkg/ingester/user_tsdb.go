@@ -23,10 +23,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -148,8 +148,43 @@ type userTSDB struct {
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
-	// Per-tenant repository for cached query planning statistics
-	plannerRepo lookupplan.PlannerRepository
+	// Query planning
+	plannerFactory    IPlannerFactory
+	statisticsService *StatisticsService
+}
+
+// generateHeadStatistics generates statistics for this user's head block.
+func (u *userTSDB) generateHeadStatistics() {
+	if u.statisticsService == nil {
+		return
+	}
+
+	// Open head block
+	head := u.db.Head()
+	indexReader, err := head.Index()
+	if err != nil {
+		return
+	}
+	defer indexReader.Close()
+
+	// Get block metadata
+	blockMeta := head.Meta()
+
+	// Generate statistics
+	u.statisticsService.generateStats(blockMeta, indexReader)
+}
+
+// getIndexLookupPlanner returns a cached planner or generates one on-demand.
+func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+	// First, try to get the planner from the statistics service
+	if u.statisticsService != nil {
+		if cachedPlanner := u.statisticsService.getPlanner(blockMeta.ULID); cachedPlanner != nil {
+			return cachedPlanner
+		}
+	}
+
+	// Fall back to generating planner on-demand using per-tenant factory
+	return u.plannerFactory.CreatePlanner(blockMeta, indexReader)
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {

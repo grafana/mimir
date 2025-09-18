@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
@@ -29,38 +28,6 @@ type MockPlannerFactory struct {
 func (m *MockPlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
 	args := m.Called(meta, reader)
 	return args.Get(0).(index.LookupPlanner)
-}
-
-// MockPlannerRepository is a mock implementation of the planner repository for testing
-type MockPlannerRepository struct {
-	mock.Mock
-}
-
-func (m *MockPlannerRepository) GetPlanner(blockULID ulid.ULID) index.LookupPlanner {
-	args := m.Called(blockULID)
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(index.LookupPlanner)
-}
-
-func (m *MockPlannerRepository) StorePlanner(blockULID ulid.ULID, planner index.LookupPlanner) {
-	m.Called(blockULID, planner)
-}
-
-// MockTSDBProvider is a mock implementation of TSDBProvider for testing
-type MockTSDBProvider struct {
-	mock.Mock
-}
-
-func (m *MockTSDBProvider) getTSDBUsers() []string {
-	args := m.Called()
-	return args.Get(0).([]string)
-}
-
-func (m *MockTSDBProvider) openHeadBlock(userID string) (tsdb.BlockMeta, tsdb.IndexReader, lookupplan.PlannerRepository, error) {
-	args := m.Called(userID)
-	return args.Get(0).(tsdb.BlockMeta), args.Get(1).(tsdb.IndexReader), args.Get(2).(lookupplan.PlannerRepository), args.Error(3)
 }
 
 type mockIndexReader struct{}
@@ -111,12 +78,11 @@ func (m *mockIndexReader) IndexLookupPlanner() index.LookupPlanner {
 	return lookupplan.NoopPlanner{}
 }
 
-func TestStatisticsService_generateStatsForUser(t *testing.T) {
+func TestStatisticsService_generateStats(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Create mock components
 	mockFactory := &MockPlannerFactory{}
-	mockRepo := &MockPlannerRepository{}
 
 	// Create test data
 	blockID := ulid.MustNew(1, nil)
@@ -125,72 +91,57 @@ func TestStatisticsService_generateStatsForUser(t *testing.T) {
 	// Set up expectations
 	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndexReader")).
 		Return(expectedPlanner)
-	mockRepo.On("StorePlanner", blockID, expectedPlanner).Return()
 
-	// Create mock provider
-	mockProvider := &MockTSDBProvider{}
 	blockMeta := tsdb.BlockMeta{
 		ULID: blockID,
 		Stats: tsdb.BlockStats{
 			NumSeries: 15000,
 		},
 	}
-	mockProvider.On("getTSDBUsers").Return([]string{"test-user"})
-	mockProvider.On("openHeadBlock", "test-user").Return(blockMeta, &mockIndexReader{}, mockRepo, nil)
 
 	// Create service
-	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
+	service := NewStatisticsService(logger, mockFactory, "test-user")
 
-	// Test generateStatsForUser by calling iteration which will call generateStats
-	ctx := context.Background()
-	err := service.iteration(ctx)
-	require.NoError(t, err)
+	// Test generateStats with block metadata
+	mockReader := &mockIndexReader{}
+	service.generateStats(blockMeta, mockReader)
+
+	// Verify planner was stored in service
+	storedPlanner := service.getPlanner(blockID)
+	require.NotNil(t, storedPlanner)
+	assert.Equal(t, expectedPlanner, storedPlanner)
 
 	// Verify expectations
 	mockFactory.AssertExpectations(t)
-	mockRepo.AssertExpectations(t)
-	mockProvider.AssertExpectations(t)
 }
 
 func TestStatisticsService_Interface(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
-	// Create mock provider
-	mockProvider := &MockTSDBProvider{}
-
-	// Test that StatisticsService implements the expected interface
-	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
+	// Test that StatisticsService can be created
+	service := NewStatisticsService(logger, mockFactory, "test-user")
 
 	// Should be able to call service methods
 	require.NotNil(t, service)
 }
 
-func TestStatisticsService_Context(t *testing.T) {
+func TestStatisticsService_GetPlanner(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
-	// Create mock provider
-	mockProvider := &MockTSDBProvider{}
-	mockProvider.On("getTSDBUsers").Return([]string{})
+	service := NewStatisticsService(logger, mockFactory, "test-user")
 
-	service := NewStatisticsService(logger, mockFactory, 10*time.Millisecond, mockProvider)
+	// Test getting a planner that doesn't exist
+	blockID := ulid.MustNew(1, nil)
+	planner := service.getPlanner(blockID)
+	assert.Nil(t, planner, "should return nil for non-existent planner")
 
-	// Test context cancellation
-	ctx, cancel := context.WithCancel(context.Background())
+	// Test storing and getting a planner
+	expectedPlanner := lookupplan.NoopPlanner{}
+	service.storePlanner(blockID, expectedPlanner)
 
-	// Start the service
-	err := service.StartAsync(ctx)
-	require.NoError(t, err)
-
-	// Wait for it to be running
-	err = service.AwaitRunning(ctx)
-	require.NoError(t, err)
-
-	// Cancel context quickly
-	cancel()
-
-	// Should exit quickly
-	err = service.AwaitTerminated(context.Background())
-	assert.NoError(t, err)
+	storedPlanner := service.getPlanner(blockID)
+	require.NotNil(t, storedPlanner)
+	assert.Equal(t, expectedPlanner, storedPlanner)
 }
