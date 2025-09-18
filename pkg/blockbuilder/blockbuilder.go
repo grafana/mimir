@@ -275,12 +275,13 @@ func (s *swappableReaderMetricsSource) set(metricsSource ingest.ReaderMetricsSou
 	s.ReaderMetricsSource = metricsSource
 }
 
-// zeroReaderMetricsSource implements ReaderMetricsSource with all methods returning zero
 type zeroReaderMetricsSource struct{}
 
 func (z *zeroReaderMetricsSource) BufferedBytes() int64           { return 0 }
 func (z *zeroReaderMetricsSource) BufferedRecords() int64         { return 0 }
 func (z *zeroReaderMetricsSource) EstimatedBytesPerRecord() int64 { return 0 }
+
+var _ ingest.ReaderMetricsSource = (*zeroReaderMetricsSource)(nil)
 
 // newFetchers creates a new concurrent fetcher, retrying until it succeeds or the context is cancelled.
 // The returned error is the last error encountered.
@@ -391,9 +392,8 @@ func (b *BlockBuilder) consumePartitionSection(
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
 	firstRecOffset := int64(-1)
-	lastRecOffset := int64(-1)
 
-	for lastRecOffset < endOffset-1 {
+	for lastConsumedOffset < endOffset-1 {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
@@ -434,9 +434,9 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		records := recordsAll(fetches)
 		for rec := range records {
-			lastRecOffset = rec.Offset
+			lastConsumedOffset = rec.Offset
 			if firstRecOffset == -1 {
-				firstRecOffset = lastRecOffset
+				firstRecOffset = lastConsumedOffset
 			}
 		}
 
