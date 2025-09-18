@@ -111,7 +111,7 @@ func (h HttpHeaderCarrier) Get(name string) string {
 }
 
 func (h HttpHeaderCarrier) GetAll(name string) []string {
-	return h[textproto.CanonicalMIMEHeaderKey(name)]
+	return http.Header(h).Values(name)
 }
 
 func (h HttpHeaderCarrier) Add(name, value string) {
