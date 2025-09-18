@@ -53,6 +53,7 @@ type IngestStorageRecordTestMetrics struct {
 	histogramsProcessedTotal *prometheus.CounterVec
 	avgCompressionRatio      prometheus.Gauge
 	throughputBytes          prometheus.Counter
+	recordsWithGrowth        prometheus.Counter
 }
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
@@ -96,6 +97,10 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 		throughputBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_ingest_storage_v2_throughput_bytes_total",
 			Help: "The total number of bytes of v2 records generated.",
+		}),
+		recordsWithGrowth: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_records_processed_with_v2_growth_total",
+			Help: "The number of records processed that were larger in the V2 format than they were in V1.",
 		}),
 	}
 }
@@ -303,10 +308,11 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 
 // batchReport contains the running results of testing a batch.
 type batchReport struct {
-	err                 error
-	avgCompressionRatio float64
-	throughputBytes     int64
-	recordsSeen         int
+	err                   error
+	avgCompressionRatio   float64
+	throughputBytes       int64
+	recordsSeen           int
+	recordsSizeMismatched int
 }
 
 func (b batchReport) Error(err error) batchReport {
@@ -325,11 +331,16 @@ func (b batchReport) Track(v1buf, v2buf []byte) batchReport {
 
 	b.throughputBytes += int64(len(v2buf))
 
+	if len(v2buf) > len(v1buf) {
+		b.recordsSizeMismatched++
+	}
+
 	return b
 }
 
 func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
 	metrics.batchesProcessedTotal.Inc()
+	metrics.recordsWithGrowth.Add(float64(b.recordsSizeMismatched))
 	if b.err != nil {
 		metrics.batchesFailedTotal.Inc()
 	}
@@ -369,12 +380,6 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 
 	if string(rec.Key) != string(v2Rec.Key) {
 		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s", string(v2Rec.Key), string(rec.Key)))
-	}
-
-	if version != 2 {
-		if len(v2Rec.Value) > len(rec.Value) {
-			level.Warn(t.logger).Log("msg", "a v2 record was larger than its v1 counterpart", "user", string(rec.Key), "v1size", len(rec.Value), "v2size", len(v2Rec.Value))
-		}
 	}
 
 	v2Req := mimirpb.PreallocWriteRequest{}
