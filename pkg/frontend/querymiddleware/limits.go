@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -327,7 +328,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	defer spanLogger.Finish()
 
 	headers := map[string][]string{}
-	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, HeadersMap(headers)); err != nil {
+	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, propagation.MapCarrier(headers)); err != nil {
 		return nil, err
 	}
 

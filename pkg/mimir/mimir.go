@@ -879,7 +879,11 @@ type Mimir struct {
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
-	Extractors                       []propagation.Extractor
+	Extractors []propagation.Extractor
+
+	// Injectors are used by query-frontends to inject HTTP headers / metadata into outgoing requests to queriers.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Injectors []propagation.Injector
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
 	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,

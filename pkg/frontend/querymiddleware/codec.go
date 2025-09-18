@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -218,6 +219,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	injector                                        propagation.Injector
 }
 
 type formatter interface {
@@ -243,6 +245,7 @@ func NewCodec(
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
 	propagateHeaders []string,
+	injector propagation.Injector,
 ) Codec {
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
@@ -250,6 +253,7 @@ func NewCodec(
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
 		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		injector:                           injector,
 	}
 }
 
@@ -731,7 +735,7 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if err := c.AddHeadersForMetricQueryRequest(ctx, r, req.Header); err != nil {
+	if err := c.AddHeadersForMetricQueryRequest(ctx, r, propagation.HttpHeaderCarrier(req.Header)); err != nil {
 		return nil, err
 	}
 
@@ -744,19 +748,9 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 	return req.WithContext(ctx), nil
 }
 
-type Headers interface {
-	Add(key, value string)
-}
-
-type HeadersMap map[string][]string
-
-func (h HeadersMap) Add(key, value string) {
-	h[key] = append(h[key], value)
-}
-
-func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers Headers) error {
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		headers.Add(api.ReadConsistencyHeader, level)
+func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers propagation.Carrier) error {
+	if err := c.injector.InjectToCarrier(ctx, headers); err != nil {
+		return nil
 	}
 
 	// Propagate allowed HTTP headers.

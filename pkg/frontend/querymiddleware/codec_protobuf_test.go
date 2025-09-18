@@ -19,6 +19,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var expectedProtobufResponseHeaders = []*PrometheusHeader{
@@ -633,7 +634,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	for _, tc := range protobufCodecScenarios {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{})
 
 			body, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -674,7 +675,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{})
 
 			expectedBodyBytes, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -713,8 +714,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 
 func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil)
+	codec := newTestCodecWithFormat(formatProtobuf)
 
 	for _, tc := range protobufCodecScenarios {
 		body, err := tc.payload.Marshal()
@@ -738,8 +738,7 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 }
 
 func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil)
+	codec := newTestCodecWithFormat(formatProtobuf)
 
 	req := &http.Request{
 		Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},

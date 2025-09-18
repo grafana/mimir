@@ -89,6 +89,19 @@ func (e *ConsistencyExtractor) ReadFromCarrier(ctx context.Context, carrier prop
 	return ctx, nil
 }
 
+// ConsistencyLevelInjector injects the consistency level from the context (if any) into the carrier.
+//
+// It does not add the offsets to the carrier, as these are handled by the query-frontend's list of HTTP headers to propagate.
+type ConsistencyLevelInjector struct{}
+
+func (i *ConsistencyLevelInjector) InjectToCarrier(ctx context.Context, carrier propagation.Carrier) error {
+	if level, ok := ReadConsistencyLevelFromContext(ctx); ok {
+		carrier.Add(ReadConsistencyHeader, level)
+	}
+
+	return nil
+}
+
 const (
 	consistencyLevelGrpcMdKey   = "__consistency_level__"
 	consistencyOffsetsGrpcMdKey = "__consistency_offsets__"

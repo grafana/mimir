@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -82,7 +83,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.QueryStoreAfter = 12 * time.Hour
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	codec := querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
+	codec := newTestCodec()
 
 	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
 	require.NoError(t, err)
@@ -1466,7 +1467,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 	frontend := &Frontend{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+		codec:  newTestCodec(),
 	}
 
 	now := time.Now()
@@ -1599,7 +1600,7 @@ func TestQueryDecoding(t *testing.T) {
 	frontend := &Frontend{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
+		codec:  newTestCodec(),
 	}
 
 	now := time.Now()
@@ -1651,4 +1652,8 @@ func TestQueryDecoding(t *testing.T) {
 		require.Error(t, errHTTPDecode)
 		require.Contains(t, errHTTPDecode.Error(), "net/http")
 	})
+}
+
+func newTestCodec() querymiddleware.Codec {
+	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyLevelInjector{})
 }
