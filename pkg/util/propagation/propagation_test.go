@@ -24,11 +24,11 @@ func TestMultiPropagator_ReadFromCarrier_HappyPath(t *testing.T) {
 		},
 	}
 
-	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), "base-key", "base-value"), c)
+	ctx, err := p.ReadFromCarrier(context.WithValue(context.Background(), testPropagatorContextKey("base-key"), "base-value"), c)
 	require.NoError(t, err)
-	require.Equal(t, "value-1", ctx.Value("key-1"))
-	require.Equal(t, "value-2", ctx.Value("key-2"))
-	require.Equal(t, "base-value", ctx.Value("base-key"), "should use provided context as parent context")
+	require.Equal(t, "value-1", ctx.Value(testPropagatorContextKey("key-1")))
+	require.Equal(t, "value-2", ctx.Value(testPropagatorContextKey("key-2")))
+	require.Equal(t, "base-value", ctx.Value(testPropagatorContextKey("base-key")), "should use provided context as parent context")
 }
 
 func TestMultiPropagator_ReadFromCarrier_Error(t *testing.T) {
@@ -49,12 +49,14 @@ type testPropagator struct {
 	err error
 }
 
+type testPropagatorContextKey string
+
 func (p *testPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
 	if p.err != nil {
 		return nil, p.err
 	}
 
-	return context.WithValue(ctx, p.key, carrier.Get(p.key)), nil
+	return context.WithValue(ctx, testPropagatorContextKey(p.key), carrier.Get(p.key)), nil
 }
 
 func TestMapCarrier(t *testing.T) {
