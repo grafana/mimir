@@ -296,7 +296,7 @@ func newQueryTripperware(
 		var queryHandler MetricsQueryHandler
 
 		if useRemoteExecution {
-			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, log)
+			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, log)
 		} else {
 			queryHandler = NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
 		}

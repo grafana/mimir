@@ -2113,3 +2113,12 @@ func mustSucceed[T any](value T, err error) T {
 
 	return value
 }
+
+func TestContextHeaderPropagation(t *testing.T) {
+	headers := HeadersToPropagateFromContext(context.Background())
+	require.Empty(t, headers)
+
+	ctx := ContextWithHeadersToPropagate(context.Background(), map[string]string{"Some-Header": "Some-Value"})
+	headers = HeadersToPropagateFromContext(ctx)
+	require.Equal(t, map[string]string{"Some-Header": "Some-Value"}, headers)
+}

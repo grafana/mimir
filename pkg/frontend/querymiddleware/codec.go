@@ -748,6 +748,12 @@ type Headers interface {
 	Set(key, value string)
 }
 
+type HeadersMap map[string]string
+
+func (h HeadersMap) Set(key, value string) {
+	h[key] = value
+}
+
 func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers Headers) error {
 	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		headers.Set(api.ReadConsistencyHeader, level)
@@ -1325,4 +1331,20 @@ func DecorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+type headersContextKeyType int
+
+const headersContextKey headersContextKeyType = iota
+
+func ContextWithHeadersToPropagate(ctx context.Context, headers map[string]string) context.Context {
+	return context.WithValue(ctx, headersContextKey, headers)
+}
+
+func HeadersToPropagateFromContext(ctx context.Context) map[string]string {
+	if v := ctx.Value(headersContextKey); v != nil {
+		return v.(map[string]string)
+	}
+
+	return nil
 }

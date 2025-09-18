@@ -51,7 +51,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		// Propagate trace context for this query in the request payload.
 		// We can't use the trace headers from the gRPC request, as it is a long-running stream from the frontend to the scheduler
 		// that handles many queries.
-		metadata := map[string]string{}
+		metadata := req.protobufRequestHeaders
 		otel.GetTextMapPropagator().Inject(req.ctx, propagation.MapCarrier(metadata))
 
 		msg.Payload = &schedulerpb.FrontendToScheduler_ProtobufRequest{

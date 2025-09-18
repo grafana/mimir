@@ -309,13 +309,15 @@ func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metrics
 type engineQueryRequestRoundTripperHandler struct {
 	engine  *streamingpromql.Engine
 	storage storage.Queryable
+	codec   Codec
 	logger  log.Logger
 }
 
-func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, logger log.Logger) MetricsQueryHandler {
+func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, codec Codec, logger log.Logger) MetricsQueryHandler {
 	return &engineQueryRequestRoundTripperHandler{
 		engine:  engine,
 		storage: unqueryableQueryable{},
+		codec:   codec,
 		logger:  logger,
 	}
 }
@@ -324,6 +326,12 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
 	defer spanLogger.Finish()
 
+	headers := map[string]string{}
+	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, HeadersMap(headers)); err != nil {
+		return nil, err
+	}
+
+	ctx = ContextWithHeadersToPropagate(ctx, headers)
 	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
 
 	var q promql.Query

@@ -189,13 +189,17 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 		newStringMessage("second message"),
 	}
 
+	headers := map[string]string{"Some-Extra-Header": "some-value"}
+
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
 			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
 			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		}
+
 		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
+		require.Equal(t, headers, msg.GetProtobufRequest().Metadata)
 
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
@@ -203,6 +207,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithHeadersToPropagate(ctx, headers)
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
