@@ -148,9 +148,9 @@ type userTSDB struct {
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
-	// statisticsService is optional; if set, it will be used to generate and cache statistics for the user's head block.
+	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
 	// Other blocks' stats are immutable and the prometheus TSDB caches them itself.
-	statisticsService *StatisticsService
+	plannerProvider *plannerProvider
 }
 
 // generateHeadStatistics generates statistics for this user's head block.
@@ -167,12 +167,12 @@ func (u *userTSDB) generateHeadStatistics() {
 	blockMeta := head.Meta()
 
 	// Generate statistics
-	u.statisticsService.generateStats(blockMeta, indexReader)
+	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
 }
 
 // getIndexLookupPlanner returns a cached planner or generates one on-demand.
 func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
-	return u.statisticsService.getPlanner(blockMeta, indexReader)
+	return u.plannerProvider.getPlanner(blockMeta, indexReader)
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
