@@ -65,7 +65,12 @@ message ProtobufRequest {
   // Metadata is metadata orthogonal to the request itself, analogous to HTTP headers or gRPC metadata.
   // We can't use gRPC metadata in this context because this message is sent over long-lived streams, rather
   // than as an individual request.
-  map<string, string> metadata = 2;
+  repeated MetadataItem metadata = 2 [(gogoproto.nullable) = false];
+}
+
+message MetadataItem {
+  string key = 1;
+  repeated string value = 2;
 }
 
 // Scheduler interface exposed to Frontend. Frontend can enqueue and cancel requests.

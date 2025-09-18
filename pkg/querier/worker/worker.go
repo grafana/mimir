@@ -81,7 +81,7 @@ type RequestHandler interface {
 }
 
 type ProtobufRequestHandler interface {
-	HandleProtobuf(context.Context, *types.Any, map[string]string, frontendv2pb.QueryResultStream)
+	HandleProtobuf(context.Context, *types.Any, map[string][]string, frontendv2pb.QueryResultStream)
 }
 
 // Single processor handles all streaming operations to query-frontend or query-scheduler to fetch queries

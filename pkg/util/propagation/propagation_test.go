@@ -13,8 +13,8 @@ import (
 
 func TestMultiPropagator_ReadFromCarrier_HappyPath(t *testing.T) {
 	c := MapCarrier{
-		"key-1": "value-1",
-		"key-2": "value-2",
+		"key-1": {"value-1"},
+		"key-2": {"value-2", "value-3"},
 	}
 
 	p := MultiPropagator{
@@ -58,23 +58,27 @@ func (p *testPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (
 }
 
 func TestMapCarrier(t *testing.T) {
-	m := map[string]string{
-		"foo": "bar",
+	m := map[string][]string{
+		"Foo":         {"bar"},
+		"Multi-Value": {"value-1", "value-2"},
 	}
 
 	c := MapCarrier(m)
 
-	require.Equal(t, "bar", c.Get("foo"))
+	require.Equal(t, "bar", c.Get("Foo"))
+	require.Equal(t, "value-1", c.Get("Multi-Value"))
 	require.Equal(t, "", c.Get("not-set"))
 }
 
 func TestHttpHeaderCarrier(t *testing.T) {
 	h := http.Header{
-		"Foo": []string{"bar"},
+		"Foo":         []string{"bar"},
+		"Multi-Value": []string{"value-1", "value-2"},
 	}
 
 	c := HttpHeaderCarrier(h)
 
-	require.Equal(t, "bar", c.Get("foo"))
+	require.Equal(t, "bar", c.Get("Foo"))
+	require.Equal(t, "value-1", c.Get("Multi-Value"))
 	require.Equal(t, "", c.Get("not-set"))
 }

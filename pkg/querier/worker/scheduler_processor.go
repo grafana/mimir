@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -314,7 +313,8 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 	case *schedulerpb.SchedulerToQuerier_HttpRequest:
 		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
 	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().Metadata))
+		carrier := schedulerpb.MetadataMapCarrier(schedulerpb.MetadataSliceToMap(request.GetProtobufRequest().Metadata))
+		ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
 		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
 	default:
 		return ctx, false
@@ -475,7 +475,7 @@ sendBody:
 
 func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, request.Metadata, writer)
+	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, schedulerpb.MetadataSliceToMap(request.Metadata), writer)
 	writer.Close(ctx)
 }
 

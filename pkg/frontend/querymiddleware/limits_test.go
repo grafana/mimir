@@ -1161,14 +1161,14 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		{Name: "Some-Other-Ignored-Header", Values: []string{"some-value"}},
 	}
 
-	expectedHeaders := map[string]string{
+	expectedHeaders := map[string][]string{
 		// From request headers:
-		compat.ForceFallbackHeaderName:         "true",
-		chunkinfologger.ChunkInfoLoggingHeader: "chunk-info-logging-enabled",
-		api.ReadConsistencyOffsetsHeader:       encodedOffsets,
+		compat.ForceFallbackHeaderName:         {"true"},
+		chunkinfologger.ChunkInfoLoggingHeader: {"chunk-info-logging-enabled"},
+		api.ReadConsistencyOffsetsHeader:       {encodedOffsets},
 
 		// From read consistency level in context:
-		api.ReadConsistencyHeader: api.ReadConsistencyStrong,
+		api.ReadConsistencyHeader: {api.ReadConsistencyStrong},
 	}
 
 	testCases := map[string]struct {
@@ -1177,7 +1177,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		expectedErr                     error
 		expectedSamplesProcessed        uint64
 		expectedSamplesProcessedPerStep []stats.StepStat
-		expectedPropagatedHeaders       map[string]string
+		expectedPropagatedHeaders       map[string][]string
 	}{
 		"range query": {
 			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
@@ -1356,7 +1356,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
 			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
 
-			var propagatedHeaders map[string]string
+			var propagatedHeaders map[string][]string
 			if contextCapturingStorage.ctx != nil {
 				propagatedHeaders = HeadersToPropagateFromContext(contextCapturingStorage.ctx)
 			}

@@ -653,7 +653,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			storage := &contextCapturingStorage{inner: storage}
 			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &testPropagator{}, opts.Logger)
 			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
-			metadata := map[string]string{testPropagatorHeaderName: "some-value-from-the-request"}
+			metadata := map[string][]string{testPropagatorHeaderName: {"some-value-from-the-request"}}
 			dispatcher.HandleProtobuf(ctx, testCase.req, metadata, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 

@@ -978,7 +978,7 @@ type protobufRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata map[string]string, stream frontendv2pb.QueryResultStream) {
+func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata map[string][]string, stream frontendv2pb.QueryResultStream) {
 	m.Called(ctx, t, metadata, stream)
 }
 

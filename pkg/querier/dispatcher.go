@@ -66,7 +66,7 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 	}
 }
 
-func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata map[string]string, stream frontendv2pb.QueryResultStream) {
+func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata map[string][]string, stream frontendv2pb.QueryResultStream) {
 	writer := &queryResponseWriter{
 		stream:         stream,
 		querierMetrics: d.querierMetrics,

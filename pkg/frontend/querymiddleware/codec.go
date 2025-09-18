@@ -745,18 +745,18 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 }
 
 type Headers interface {
-	Set(key, value string)
+	Add(key, value string)
 }
 
-type HeadersMap map[string]string
+type HeadersMap map[string][]string
 
-func (h HeadersMap) Set(key, value string) {
-	h[key] = value
+func (h HeadersMap) Add(key, value string) {
+	h[key] = append(h[key], value)
 }
 
 func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers Headers) error {
 	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		headers.Set(api.ReadConsistencyHeader, level)
+		headers.Add(api.ReadConsistencyHeader, level)
 	}
 
 	// Propagate allowed HTTP headers.
@@ -765,16 +765,8 @@ func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQue
 			continue
 		}
 
-		switch len(h.Values) {
-		case 0:
-			// Nothing to do.
-		case 1:
-			headers.Set(h.Name, h.Values[0])
-		default:
-			// We don't expect that any of the headers we propagate have multiple values,
-			// and most of the places that read these headers only check for the first value by calling Get().
-			// So rather than causing subtle bugs later on, stop now.
-			return fmt.Errorf("unexpected multiple values for header %q", h.Name)
+		for _, v := range h.Values {
+			headers.Add(h.Name, v)
 		}
 	}
 
@@ -1337,13 +1329,13 @@ type headersContextKeyType int
 
 const headersContextKey headersContextKeyType = iota
 
-func ContextWithHeadersToPropagate(ctx context.Context, headers map[string]string) context.Context {
+func ContextWithHeadersToPropagate(ctx context.Context, headers map[string][]string) context.Context {
 	return context.WithValue(ctx, headersContextKey, headers)
 }
 
-func HeadersToPropagateFromContext(ctx context.Context) map[string]string {
+func HeadersToPropagateFromContext(ctx context.Context) map[string][]string {
 	if v := ctx.Value(headersContextKey); v != nil {
-		return v.(map[string]string)
+		return v.(map[string][]string)
 	}
 
 	return nil

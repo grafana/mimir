@@ -42,10 +42,14 @@ type Carrier interface {
 	Get(name string) string
 }
 
-type MapCarrier map[string]string
+type MapCarrier map[string][]string
 
 func (m MapCarrier) Get(name string) string {
-	return m[name]
+	if values := m[name]; len(values) > 0 {
+		return values[0]
+	}
+
+	return ""
 }
 
 type HttpHeaderCarrier http.Header

@@ -326,7 +326,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
 	defer spanLogger.Finish()
 
-	headers := map[string]string{}
+	headers := map[string][]string{}
 	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, HeadersMap(headers)); err != nil {
 		return nil, err
 	}

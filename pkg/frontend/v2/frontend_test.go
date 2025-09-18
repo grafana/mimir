@@ -189,7 +189,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 		newStringMessage("second message"),
 	}
 
-	headers := map[string]string{"Some-Extra-Header": "some-value"}
+	headers := map[string][]string{"Some-Extra-Header": {"some-value", "some-other-value"}}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
@@ -199,7 +199,8 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 		}
 
 		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
-		require.Equal(t, headers, msg.GetProtobufRequest().Metadata)
+		expectedMetadata := []schedulerpb.MetadataItem{{Key: "Some-Extra-Header", Value: []string{"some-value", "some-other-value"}}}
+		require.Equal(t, expectedMetadata, msg.GetProtobufRequest().Metadata)
 
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
