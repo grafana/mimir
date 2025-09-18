@@ -77,7 +77,7 @@ func ReadConsistencyEncodedOffsetsFromContext(ctx context.Context) (EncodedOffse
 // It can be retrieved with ReadConsistencyLevelFromContext.
 type ConsistencyExtractor struct{}
 
-func (p *ConsistencyExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+func (e *ConsistencyExtractor) ReadFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	if level := carrier.Get(ReadConsistencyHeader); IsValidReadConsistency(level) {
 		ctx = ContextWithReadConsistencyLevel(ctx, level)
 	}
