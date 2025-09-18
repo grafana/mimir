@@ -6,16 +6,19 @@
 package distributor
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -393,6 +396,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
+	LabelValueLengthOverLimitStrategy(userID string) validation.LabelValueLengthOverLimitStrategy
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
@@ -417,6 +421,7 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
+// It may mutate ls and the underlying UnsafeMutableLabel/Strings.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
@@ -451,8 +456,10 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	maxLabelNameLength := cfg.MaxLabelNameLength(userID)
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
+	labelValueLengthOverLimitStrategy := cfg.LabelValueLengthOverLimitStrategy(userID)
+
 	lastLabelName := ""
-	for _, l := range ls {
+	for i, l := range ls {
 		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
@@ -466,12 +473,22 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
-			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
-			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return labelValueTooLongError{
-				Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
-				Series: mimirpb.FromLabelAdaptersToString(ls),
-				Limit:  maxLabelValueLength,
+			switch labelValueLengthOverLimitStrategy {
+			case validation.LabelValueLengthOverLimitStrategyError:
+				cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
+				m.labelValueTooLong.WithLabelValues(userID, group).Inc()
+				return labelValueTooLongError{
+					Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
+					Series: mimirpb.FromLabelAdaptersToString(ls),
+					Limit:  maxLabelValueLength,
+				}
+			case validation.LabelValueLengthOverLimitStrategyTruncate:
+				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
+				ls[i].Value = ls[i].Value[:maxLabelValueLength]
+			case validation.LabelValueLengthOverLimitStrategyDrop:
+				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
+			default:
+				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))
 			}
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
@@ -481,7 +498,22 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 		lastLabelName = l.Name
 	}
+
 	return nil
+}
+
+func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
+	h := blake2b.Sum256(unsafeMutableStringToBytes(src))
+
+	buf := unsafeMutableStringToBytes(dst)
+	buf = buf[copy(buf, "(hash:"):]
+	buf = buf[hex.Encode(buf, h[:]):]
+	buf[0] = ')'
+	return dst[:validation.LabelValueHashLen]
+}
+
+func unsafeMutableStringToBytes(s mimirpb.UnsafeMutableString) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // metadataValidationMetrics is a collection of metrics used by metadata validation.

@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -48,6 +49,7 @@ const (
 	MaxLabelNamesPerInfoSeriesFlag            = "validation.max-label-names-per-info-series"
 	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
+	LabelValueLengthOverLimitStrategyFlag     = "validation.label-value-length-over-limit-strategy"
 	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag             = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
@@ -81,7 +83,10 @@ var (
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 )
 
-const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+const (
+	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
+)
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -131,23 +136,24 @@ type Limits struct {
 	// other than the replica written in the KVStore if the difference
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
-	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
-	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
-	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
-	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
-	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
-	MaxLabelNamesPerInfoSeries                  int                 `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
-	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
-	MaxExemplarsPerSeriesPerRequest             int                 `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
-	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
-	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
-	PastGracePeriod                             model.Duration      `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
-	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
-	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
-	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
-	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
-	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	HATrackerFailoverTimeout                    model.Duration                    `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
+	DropLabels                                  flagext.StringSlice               `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
+	MaxLabelNameLength                          int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
+	MaxLabelValueLength                         int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
+	LabelValueLengthOverLimitStrategy           LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	MaxLabelNamesPerSeries                      int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxLabelNamesPerInfoSeries                  int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
+	MaxMetadataLength                           int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
+	MaxNativeHistogramBuckets                   int                               `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	MaxExemplarsPerSeriesPerRequest             int                               `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
+	ReduceNativeHistogramOverMaxBuckets         bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
+	CreationGracePeriod                         model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	PastGracePeriod                             model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
+	EnforceMetadataMetricName                   bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
+	IngestionTenantShardSize                    int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
+	MetricRelabelConfigs                        []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
+	MetricRelabelingEnabled                     bool                              `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
+	ServiceOverloadStatusCodeOnRateLimitEnabled bool                              `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
 
 	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
@@ -330,6 +336,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
+	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
+	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -648,8 +656,20 @@ func (l *Limits) Validate() error {
 		}
 	}
 
+	switch l.LabelValueLengthOverLimitStrategy {
+	case LabelValueLengthOverLimitStrategyTruncate, LabelValueLengthOverLimitStrategyDrop:
+		if l.MaxLabelValueLength < LabelValueHashLen {
+			return fmt.Errorf(errLabelValueHashExceedsLimit, l.LabelValueLengthOverLimitStrategy, l.MaxLabelValueLength)
+		}
+	}
+
 	return nil
 }
+
+// LabelValueHashLen is the length of the hash portion that replaces part of all
+// of a label value when it exceeds [Limits.MaxLabelValueLength] and [Limits.LabelValueLengthOverLimitStrategy]
+// is [Limits.LabelValueLengthOverLimitStrategyTruncate] or  [Limits.LabelValueLengthOverLimitStrategyDrop].
+const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
 	for i, q := range l.BlockedQueries {
@@ -785,6 +805,11 @@ func (o *Overrides) MaxLabelNameLength(userID string) int {
 // the maximum length of a metric name.
 func (o *Overrides) MaxLabelValueLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelValueLength
+}
+
+// LabelValueLengthOverLimitStrategy returns the strategy for when label values exceed the limit.
+func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueLengthOverLimitStrategy {
+	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
 }
 
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
